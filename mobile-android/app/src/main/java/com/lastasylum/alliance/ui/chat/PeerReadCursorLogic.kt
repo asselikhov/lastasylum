@@ -25,4 +25,20 @@ internal object PeerReadCursorLogic {
         otherReadUptoByRoom[eventRoomId] = event.messageId
         return if (selectedRoomId?.trim() == eventRoomId) event.messageId else null
     }
+
+    /** Hydrate peer cursor from REST on room/topic open (offline restore + cold start). */
+    fun hydratePeerRead(
+        otherReadUptoByRoom: MutableMap<String, String>,
+        selectedRoomId: String?,
+        roomId: String,
+        peerUptoMessageId: String?,
+    ): String? {
+        val id = peerUptoMessageId?.trim().orEmpty()
+        val rid = roomId.trim()
+        if (id.isEmpty() || rid.isEmpty()) return null
+        val cur = otherReadUptoByRoom[rid]
+        if (!isObjectIdNewer(id, cur)) return null
+        otherReadUptoByRoom[rid] = id
+        return if (selectedRoomId?.trim() == rid) id else null
+    }
 }

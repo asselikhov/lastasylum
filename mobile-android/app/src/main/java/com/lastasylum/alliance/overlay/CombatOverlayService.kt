@@ -86,6 +86,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent
+import com.lastasylum.alliance.data.teams.TeamInboxBadgeDeriver
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.teams.TeamNewsReadCursorSync
 import com.lastasylum.alliance.data.isObjectIdNewer
@@ -1720,21 +1721,31 @@ class CombatOverlayService : Service() {
         mainHandler.postDelayed(statusHudRefreshRunnable, STATUS_HUD_REFRESH_MS)
     }
 
+    private fun ensureOverlayReadCursorsBound() {
+        val uid = jwtSubFromAccessToken()?.trim().orEmpty()
+        if (uid.isEmpty()) return
+        val container = AppContainer.from(this)
+        ReadCursorSession.bind(
+            container.chatRoomPreferences,
+            container.teamForumPreferences,
+            container.userSettingsPreferences,
+            uid,
+        )
+    }
+
     private fun bindOverlayReadCursorsIfPossible() {
+        ensureOverlayReadCursorsBound()
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
             val uid = container.usersRepository.resolveMyProfilePreferCache()?.id?.trim().orEmpty()
                 .ifEmpty { jwtSubFromAccessToken()?.trim().orEmpty() }
             if (uid.isEmpty()) return@launch
-            ReadCursorSession.bind(
-                container.chatRoomPreferences,
-                container.teamForumPreferences,
-                container.userSettingsPreferences,
-                uid,
-            )
-            ReadCursorSession.syncTeamNewsReadCursor(
+            ReadCursorSession.syncAllInboxReadCursors(
                 container.usersRepository,
                 container.teamsRepository,
+                container.chatRepository,
+                container.chatRoomPreferences,
+                container.teamForumPreferences,
                 container.userSettingsPreferences,
             )
         }
@@ -1751,7 +1762,7 @@ class CombatOverlayService : Service() {
 
     private fun refreshOverlayStatusHudData(force: Boolean = false) {
         if (!isInGameOverlayUiActive()) return
-        bindOverlayReadCursorsIfPossible()
+        ensureOverlayReadCursorsBound()
         applyInstantOverlayHudFromLocalCaches()
         val now = System.currentTimeMillis()
         if (!force && now - lastHudRefreshCompletedAtMs < HUD_REFRESH_MIN_INTERVAL_MS) {
@@ -1961,13 +1972,21 @@ class CombatOverlayService : Service() {
         val instant = OverlayGameStatusHudRefresh.buildInstantLocalState(this) ?: return
         val prev = overlayStatusHudFlow.value
         overlayStatusHudFlow.value = prev.copy(
-            allianceChatUnread = maxOf(
-                instant.allianceChatUnread,
-                prev.allianceChatUnread,
-                hubUnreadOptimisticFloor,
+            allianceChatUnread = TeamInboxBadgeDeriver.mergeForDisplay(
+                effectiveUnread = instant.allianceChatUnread,
+                previouslyDisplayed = prev.allianceChatUnread,
+                optimisticFloor = hubUnreadOptimisticFloor,
             ),
-            teamNewsUnread = maxOf(instant.teamNewsUnread, prev.teamNewsUnread),
-            forumUnread = maxOf(instant.forumUnread, prev.forumUnread),
+            teamNewsUnread = TeamInboxBadgeDeriver.mergeForDisplay(
+                effectiveUnread = instant.teamNewsUnread,
+                previouslyDisplayed = prev.teamNewsUnread,
+                optimisticFloor = inboxBadgeCoordinator.newsOptimisticFloor,
+            ),
+            forumUnread = TeamInboxBadgeDeriver.mergeForDisplay(
+                effectiveUnread = instant.forumUnread,
+                previouslyDisplayed = prev.forumUnread,
+                optimisticFloor = inboxBadgeCoordinator.forumOptimisticFloor,
+            ),
         )
     }
 
@@ -1976,6 +1995,7 @@ class CombatOverlayService : Service() {
      * Uses in-memory coordinator cache and local read cursors (no zero flash).
      */
     private fun seedOverlayInboxBadgesBeforeRefresh() {
+        ensureOverlayReadCursorsBound()
         bindOverlayReadCursorsIfPossible()
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
@@ -1983,35 +2003,35 @@ class CombatOverlayService : Service() {
             val teamId = profile.playerTeamId?.trim().orEmpty()
             if (teamId.isEmpty()) return@launch
             val userId = profile.id.trim()
-            ReadCursorSession.bind(
-                container.chatRoomPreferences,
-                container.teamForumPreferences,
-                container.userSettingsPreferences,
-                userId,
-            )
             val prev = overlayStatusHudFlow.value
             val cachedNews = inboxBadgeCoordinator.readCachedNews(teamId)
             val cachedForum = inboxBadgeCoordinator.readCachedForum(teamId)
             val localForumRead = container.teamForumPreferences.loadAllLastReadMessageIds(teamId)
             val forumFromTopics = container.launchDiskCache.loadForumTopics(userId, teamId)
-                ?.let { TeamInboxUnread.sumForumUnread(it, localForumRead) }
+                ?.let { TeamInboxBadgeDeriver.computeForumUnread(it, localForumRead) }
                 ?: container.teamsRepository.listForumTopics(teamId)
                     .getOrNull()
-                    ?.let { TeamInboxUnread.sumForumUnread(it, localForumRead) }
+                    ?.let { TeamInboxBadgeDeriver.computeForumUnread(it, localForumRead) }
             val hubPair = computeAllianceHubUnreadFromCache()
             mainHandler.post {
                 if (!isInGameOverlayUiActive()) return@post
-                val forumSeed = maxOf(
-                    prev.forumUnread,
-                    cachedForum ?: 0,
-                    forumFromTopics ?: 0,
-                    inboxBadgeCoordinator.forumOptimisticFloor,
+                val forumEffective = maxOf(cachedForum ?: 0, forumFromTopics ?: 0)
+                val forumSeed = TeamInboxBadgeDeriver.mergeForDisplay(
+                    effectiveUnread = forumEffective,
+                    previouslyDisplayed = prev.forumUnread,
+                    optimisticFloor = inboxBadgeCoordinator.forumOptimisticFloor,
                 )
-                val newsSeed = maxOf(prev.teamNewsUnread, cachedNews ?: 0)
-                val hubSeed = maxOf(
-                    prev.allianceChatUnread,
-                    hubPair?.first ?: 0,
-                    hubUnreadOptimisticFloor,
+                val newsSeed = TeamInboxBadgeDeriver.mergeForDisplay(
+                    effectiveUnread = cachedNews ?: prev.teamNewsUnread,
+                    previouslyDisplayed = prev.teamNewsUnread,
+                    optimisticFloor = inboxBadgeCoordinator.newsOptimisticFloor,
+                )
+                val hubEffective = hubPair?.first ?: prev.allianceChatUnread
+                val hubSeed = TeamInboxBadgeDeriver.mergeForDisplay(
+                    effectiveUnread = hubEffective,
+                    previouslyDisplayed = prev.allianceChatUnread,
+                    rawServerUnread = hubPair?.second ?: hubEffective,
+                    optimisticFloor = hubUnreadOptimisticFloor,
                 )
                 overlayStatusHudFlow.value = prev.copy(
                     allianceChatUnread = hubSeed,
@@ -3905,10 +3925,6 @@ class CombatOverlayService : Service() {
                     return@post
                 }
                 OverlayGameStatusHudRefresh.invalidateForumCache()
-                val current = overlayStatusHudFlow.value.forumUnread
-                val next = (current + 1).coerceAtMost(999)
-                inboxBadgeCoordinator.bumpForumOptimistic(next)
-                overlayStatusHudFlow.value = overlayStatusHudFlow.value.copy(forumUnread = next)
                 scheduleDebouncedForumHudRefresh()
             }
         }
@@ -5892,7 +5908,10 @@ class CombatOverlayService : Service() {
                                         title = stringResource(R.string.overlay_news_mark_all_read_confirm_title),
                                         message = stringResource(R.string.overlay_news_mark_all_read_confirm_message),
                                         onDismissRequest = { showNewsMarkAllReadConfirm = false },
-                                        onConfirm = { newsMarkReadAction?.invoke() },
+                                        onConfirm = {
+                                            showNewsMarkAllReadConfirm = false
+                                            newsMarkReadAction?.invoke()
+                                        },
                                     )
                                 }
                                 if (showForumMarkAllReadConfirm) {
@@ -5900,7 +5919,10 @@ class CombatOverlayService : Service() {
                                         title = stringResource(R.string.overlay_forum_mark_all_read_confirm_title),
                                         message = stringResource(R.string.overlay_forum_mark_all_read_confirm_message),
                                         onDismissRequest = { showForumMarkAllReadConfirm = false },
-                                        onConfirm = { forumMarkReadAction?.invoke() },
+                                        onConfirm = {
+                                            showForumMarkAllReadConfirm = false
+                                            forumMarkReadAction?.invoke()
+                                        },
                                     )
                                 }
                                 if (showNotificationsMarkAllReadConfirm) {
@@ -6558,6 +6580,16 @@ class CombatOverlayService : Service() {
             val service = runningInstance ?: return
             service.mainHandler.post {
                 service.applyLocalSentMessageToStrip(message)
+            }
+        }
+
+        /** Force overlay HUD refresh after chat mark-all (local-cursor merge, not raw API). */
+        fun refreshStatusHudAfterMarkAll() {
+            val service = runningInstance ?: return
+            service.mainHandler.post {
+                service.inboxBadgeCoordinator.clearForumOptimistic()
+                service.clearHubUnreadOptimisticState()
+                service.refreshOverlayStatusHudData(force = true)
             }
         }
 

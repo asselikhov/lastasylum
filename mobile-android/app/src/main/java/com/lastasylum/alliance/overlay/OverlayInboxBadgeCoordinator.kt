@@ -4,6 +4,7 @@ import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
+import com.lastasylum.alliance.data.teams.TeamInboxBadgeDeriver
 import com.lastasylum.alliance.di.AppContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -104,21 +105,11 @@ internal class OverlayInboxBadgeCoordinator {
         teamId: String,
     ): Int = withContext(Dispatchers.IO) {
         val container = AppContainer.from(context)
-        val badgeCount = container.teamsRepository.getTeamInboxBadges(teamId, null)
-            .getOrNull()
-            ?.forumUnread
-            ?.coerceAtLeast(0)
-        if (badgeCount != null) {
-            return@withContext badgeCount
-        }
-        val forumPrefs = container.teamForumPreferences
-        val topics = container.teamsRepository.listForumTopics(teamId).getOrNull()
-        if (topics != null) {
-            InboxUnreadReconciler.hydrateForumPrefsFromTopics(forumPrefs, teamId, topics)
-            val hydratedLocal = forumPrefs.loadAllLastReadMessageIds(teamId)
-            return@withContext TeamInboxUnread.sumForumUnread(topics, hydratedLocal)
-        }
-        0
+        TeamInboxBadgeDeriver.computeForumUnreadFromRepository(
+            teamsRepository = container.teamsRepository,
+            forumPrefs = container.teamForumPreferences,
+            teamId = teamId,
+        )
     }
 
     fun mergeNewsDisplayed(

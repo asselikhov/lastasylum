@@ -1029,17 +1029,8 @@ class ChatViewModel(
                 if (_state.value.selectedRoomId.isNullOrBlank()) {
                     ensureAllianceHubRoomSelected()
                 }
-                val activeRoomId = _state.value.selectedRoomId?.trim().orEmpty()
-                val newestId = _state.value.messages.firstOrNull()?._id
-                if (
-                    activeRoomId.isNotEmpty() &&
-                    isValidMarkReadMessageId(newestId) &&
-                    shouldAutoMarkReadSelectedRoom()
-                ) {
-                    markRoomReadUpTo(activeRoomId, newestId!!)
-                } else {
-                    recomputeRoomUnreadBadges()
-                }
+                markOverlayPanelReadToNewestIncoming()
+                recomputeRoomUnreadBadges()
                 val roomId = _state.value.selectedRoomId
                 if (!roomId.isNullOrBlank()) {
                     refreshMessagesInBackground(roomId, force = !hubReady)
@@ -1053,6 +1044,7 @@ class ChatViewModel(
         }
         overlayAutoMarkReadJob?.cancel()
         overlayAutoMarkReadJob = null
+        markOverlayPanelReadToNewestIncoming()
         snapshotSelectedRoomToMessageCache()
         schedulePersistChatSnapshot()
         viewModelScope.launch {
@@ -1113,6 +1105,47 @@ class ChatViewModel(
         // Overlay HUD: read cursor advances when the panel closes, not while browsing.
         if (overlayChatPanelVisible) return false
         return isRoomActivelyViewed(roomId)
+    }
+
+    private fun shouldOverlayAutoMarkReadSelectedRoom(): Boolean {
+        if (!overlayChatPanelVisible) return false
+        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty()) return false
+        return CombatOverlayService.isOverlayChatPanelOpenInGame() ||
+            com.lastasylum.alliance.overlay.OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
+    }
+
+    private fun markOverlayPanelReadToNewestIncoming() {
+        if (!overlayChatPanelVisible) return
+        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty()) return
+        val self = currentUserId.trim()
+        val targetId = _state.value.messages.firstOrNull { message ->
+            val id = message._id?.trim().orEmpty()
+            isValidMarkReadMessageId(id) &&
+                (self.isBlank() || message.senderId.trim() != self)
+        }?._id
+            ?: _state.value.messages.firstOrNull()?._id
+        if (isValidMarkReadMessageId(targetId)) {
+            viewModelScope.launch { markRoomReadUpTo(roomId, targetId!!) }
+        }
+    }
+
+    private suspend fun hydratePeerReadCursor(roomId: String) {
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return
+        repository.getPeerReadCursor(rid)
+            .onSuccess { peerUpto ->
+                val publish = PeerReadCursorLogic.hydratePeerRead(
+                    otherReadUptoByRoom = otherReadUptoByRoom,
+                    selectedRoomId = _state.value.selectedRoomId,
+                    roomId = rid,
+                    peerUptoMessageId = peerUpto,
+                )
+                if (publish != null) {
+                    _otherReadUptoMessageId.value = publish
+                }
+            }
     }
 
     /** Mark visible overlay messages read (viewport); advances cursor only forward. */
@@ -1273,6 +1306,7 @@ class ChatViewModel(
         recomputeRoomUnreadBadges()
         syncOverlayAllianceHubBadge()
         CombatOverlayService.clearHubUnreadState()
+        CombatOverlayService.refreshStatusHudAfterMarkAll()
     }
 
     private fun startOverlayAutoMarkReadCollector() {
@@ -1291,7 +1325,7 @@ class ChatViewModel(
                     if (!visible) return@collect
                     val rid = roomId?.trim().orEmpty()
                     if (rid.isEmpty() || !isValidMarkReadMessageId(newestId)) return@collect
-                    if (!shouldAutoMarkReadSelectedRoom()) return@collect
+                    if (!shouldOverlayAutoMarkReadSelectedRoom()) return@collect
                     markRoomReadUpTo(rid, newestId!!)
                 }
         }
@@ -2388,6 +2422,7 @@ class ChatViewModel(
         messagesAlreadyInState: Boolean = false,
         deferNetworkMessages: Boolean = false,
     ) {
+        hydratePeerReadCursor(roomId)
         typingEmitJob?.cancel()
         typingEmitJob = null
         synchronized(typingPeerJobsLock) {

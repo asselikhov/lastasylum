@@ -38,6 +38,14 @@ internal object OverlayColdStartHydrator {
             container.userSettingsPreferences,
             uid,
         )
+        ReadCursorSession.syncAllInboxReadCursors(
+            container.usersRepository,
+            container.teamsRepository,
+            container.chatRepository,
+            container.chatRoomPreferences,
+            container.teamForumPreferences,
+            container.userSettingsPreferences,
+        )
 
         var seededContext = false
         var seededRooms = false

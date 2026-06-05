@@ -41,6 +41,19 @@ class PeerReadCursorLogicTest {
     }
 
     @Test
+    fun hydratePeerRead_publishesWhenSelectedRoomMatches() {
+        val map = mutableMapOf<String, String>()
+        val publish = PeerReadCursorLogic.hydratePeerRead(
+            otherReadUptoByRoom = map,
+            selectedRoomId = "roomA",
+            roomId = "roomA",
+            peerUptoMessageId = "000000000000000000000050",
+        )
+        assertEquals("000000000000000000000050", publish)
+        assertEquals("000000000000000000000050", map["roomA"])
+    }
+
+    @Test
     fun mergePeerRead_afterRoomSwitch_usesStoredCursor() {
         val map = mutableMapOf("roomA" to "000000000000000000000060")
         val publish = PeerReadCursorLogic.mergePeerReadEvent(

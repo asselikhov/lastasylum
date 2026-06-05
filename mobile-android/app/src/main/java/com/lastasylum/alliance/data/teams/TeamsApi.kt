@@ -192,6 +192,12 @@ interface TeamsApi {
         @Body body: MarkTeamForumTopicReadBody,
     ): Map<String, String?>
 
+    @GET("teams/{teamId}/forum/topics/{topicId}/peer-read-cursor")
+    suspend fun getForumPeerReadCursor(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+    ): ForumPeerReadCursorResponse
+
     @GET("teams/{teamId}/forum/topics/{topicId}/messages")
     suspend fun listForumMessages(
         @Path("teamId") teamId: String,

@@ -31,6 +31,7 @@ internal fun ForumMessageBubble(
     onSwipeReply: () -> Unit,
     onOpenActions: (MessageActionOpenRequest) -> Unit,
     onToggleReaction: ((String, String) -> Unit)? = null,
+    otherReadUptoMessageId: String? = null,
     downloadingForumFileUrl: String? = null,
     onDownloadForumFile: (TeamForumMessageDto) -> Unit = {},
 ) {
@@ -47,7 +48,7 @@ internal fun ForumMessageBubble(
         inSelectionMode = inSelectionMode,
         isSelected = isSelected,
         overlayUi = overlayUi,
-        otherReadUptoMessageId = null,
+        otherReadUptoMessageId = otherReadUptoMessageId,
         inMessageList = true,
         onToggleReaction = onToggleReaction,
         onOpenActions = onOpenActions,

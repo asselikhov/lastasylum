@@ -488,6 +488,7 @@ fun TeamScreen(
                                                     .notifyOverlayTeamInboxChanged(forum = true)
                                             },
                                             onForumInboxChanged = {
+                                                teamViewModel.refreshSectionBadges(force = true)
                                                 com.lastasylum.alliance.overlay.CombatOverlayService
                                                     .notifyOverlayTeamInboxChanged(forum = true)
                                             },

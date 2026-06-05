@@ -79,6 +79,11 @@ interface ChatApi {
         @Path("messageId") messageId: String,
     ): ChatRoomDto
 
+    @GET("chat/rooms/{roomId}/peer-read-cursor")
+    suspend fun getPeerReadCursor(
+        @Path("roomId") roomId: String,
+    ): PeerReadCursorResponse
+
     @POST("chat/rooms/{roomId}/read")
     suspend fun markRoomRead(
         @Path("roomId") roomId: String,

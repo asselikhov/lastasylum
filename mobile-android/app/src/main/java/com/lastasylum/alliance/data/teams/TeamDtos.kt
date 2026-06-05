@@ -285,6 +285,11 @@ data class MarkTeamForumTopicReadBody(
 )
 
 @JsonClass(generateAdapter = true)
+data class ForumPeerReadCursorResponse(
+    val messageId: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
 data class CreateTeamForumTopicBody(
     val title: String,
 )

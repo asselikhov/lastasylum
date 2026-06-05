@@ -12,6 +12,7 @@ import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
+import com.lastasylum.alliance.data.teams.TeamInboxBadgeDeriver
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.MyProfileDto
@@ -152,7 +153,7 @@ class TeamViewModel(
         if (teamId.isEmpty()) return
         viewModelScope.launch {
             val localRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
-            val forumUnread = TeamInboxUnread.sumForumUnread(topics, localRead)
+            val forumUnread = TeamInboxBadgeDeriver.computeForumUnread(topics, localRead)
             _data.update {
                 it.copy(sectionBadges = it.sectionBadges.copy(forumUnread = forumUnread))
             }
@@ -177,11 +178,16 @@ class TeamViewModel(
                 val newsAfter = userSettingsPreferences.getLastSeenTeamNewsCreatedAt()
                 teamsRepository.getTeamInboxBadges(teamId, newsAfter)
                     .onSuccess { badges ->
+                        val localForumRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
+                        val topics = teamsRepository.listForumTopics(teamId).getOrNull()
+                        val forumUnread = topics?.let {
+                            TeamInboxBadgeDeriver.computeForumUnread(it, localForumRead)
+                        } ?: badges.forumUnread.coerceAtLeast(0)
                         _data.update {
                             it.copy(
                                 sectionBadges = TeamSectionBadges(
                                     newsUnread = badges.newsUnread.coerceAtLeast(0),
-                                    forumUnread = badges.forumUnread.coerceAtLeast(0),
+                                    forumUnread = forumUnread,
                                 ),
                             )
                         }

@@ -139,6 +139,9 @@ class ChatRestRepository(
             chatApi.markRoomRead(roomId, MarkRoomReadRequest(messageId = messageId))
         }
 
+    suspend fun getPeerReadCursor(roomId: String): Result<String?> =
+        runCatching { chatApi.getPeerReadCursor(roomId).messageId?.trim()?.takeIf { it.isNotEmpty() } }
+
     suspend fun clearRoomHistoryForUser(roomId: String): Result<ClearRoomHistoryResponse> =
         runCatching { chatApi.clearRoomHistory(roomId) }
 

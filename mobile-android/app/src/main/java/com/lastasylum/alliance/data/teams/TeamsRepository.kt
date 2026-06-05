@@ -271,6 +271,14 @@ class TeamsRepository(
             )
         }
 
+    suspend fun getForumPeerReadCursor(
+        teamId: String,
+        topicId: String,
+    ): Result<String?> =
+        runCatching {
+            teamsApi.getForumPeerReadCursor(teamId, topicId).messageId?.trim()?.takeIf { it.isNotEmpty() }
+        }
+
     suspend fun listForumMessages(
         teamId: String,
         topicId: String,

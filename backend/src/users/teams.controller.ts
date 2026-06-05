@@ -475,18 +475,40 @@ export class TeamsController {
 
   @Post(':teamId/forum/topics/:topicId/read')
   @Roles(AllianceRole.MEMBER)
-  markForumTopicRead(
+  async markForumTopicRead(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
     @Param('topicId') topicId: string,
     @Body() dto: MarkTeamForumTopicReadDto,
   ) {
-    return this.teamForum.markTopicRead(
+    const result = await this.teamForum.markTopicRead(
       teamId,
       topicId,
       req.user.userId,
       dto.messageId?.trim() ?? '',
     );
+    this.teamForumGateway.broadcastTopicRead(
+      teamId,
+      topicId,
+      req.user.userId,
+      result.messageId,
+    );
+    return result;
+  }
+
+  @Get(':teamId/forum/topics/:topicId/peer-read-cursor')
+  @Roles(AllianceRole.MEMBER)
+  async getForumPeerReadCursor(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+  ) {
+    const messageId = await this.teamForum.getPeerReadUptoMessageId(
+      teamId,
+      topicId,
+      req.user.userId,
+    );
+    return { messageId };
   }
 
   @Post(':teamId/forum/topics/:topicId/messages')

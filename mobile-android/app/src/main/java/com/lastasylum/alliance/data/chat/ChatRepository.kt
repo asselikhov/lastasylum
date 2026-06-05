@@ -134,6 +134,9 @@ class ChatRepository(
     suspend fun markRoomRead(roomId: String, messageId: String): Result<MarkRoomReadResponse> =
         rest.markRoomRead(roomId, messageId)
 
+    suspend fun getPeerReadCursor(roomId: String): Result<String?> =
+        rest.getPeerReadCursor(roomId)
+
     suspend fun clearRoomHistoryForUser(roomId: String): Result<ClearRoomHistoryResponse> =
         rest.clearRoomHistoryForUser(roomId)
 

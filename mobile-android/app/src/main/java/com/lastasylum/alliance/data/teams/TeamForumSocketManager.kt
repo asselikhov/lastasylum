@@ -27,6 +27,14 @@ data class TeamForumTypingEvent(
     val username: String,
 )
 
+/** Peer read cursor advance in a forum topic (read receipts ✓✓). */
+data class TeamForumTopicReadEvent(
+    val teamId: String,
+    val topicId: String,
+    val userId: String,
+    val messageId: String,
+)
+
 /** New message in any forum topic — for team inbox badges (overlay HUD, topic list). */
 data class TeamForumTopicActivityEvent(
     val teamId: String,
@@ -59,6 +67,8 @@ class TeamForumSocketManager {
         CopyOnWriteArrayList<(TeamForumTopicActivityEvent) -> Unit>()
     private val topicPinChangedListeners =
         CopyOnWriteArrayList<(TeamForumTopicPinChangedEvent) -> Unit>()
+    private val topicReadListeners =
+        CopyOnWriteArrayList<(TeamForumTopicReadEvent) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var reconnectAttempt = 0
     private var intentionalDisconnect = false
@@ -146,6 +156,16 @@ class TeamForumSocketManager {
         topicPinChangedListeners.remove(listener)
     }
 
+    fun addTopicReadListener(listener: (TeamForumTopicReadEvent) -> Unit) {
+        if (!topicReadListeners.contains(listener)) {
+            topicReadListeners.add(listener)
+        }
+    }
+
+    fun removeTopicReadListener(listener: (TeamForumTopicReadEvent) -> Unit) {
+        topicReadListeners.remove(listener)
+    }
+
     fun clearListeners() {
         messageListeners.clear()
         messageEditedListeners.clear()
@@ -153,6 +173,8 @@ class TeamForumSocketManager {
         messageDeletedListeners.clear()
         typingListeners.clear()
         topicActivityListeners.clear()
+        topicPinChangedListeners.clear()
+        topicReadListeners.clear()
     }
 
     /** Team-wide inbox (overlay HUD / topic list) without subscribing to a single topic room. */
@@ -395,6 +417,20 @@ class TeamForumSocketManager {
                     if (event.teamId != teamId || event.topicId != activeTopic) return@on
                     dispatchMain {
                         messageDeletedListeners.forEach { l -> runCatching { l(event) } }
+                    }
+                }
+                on("topic:read") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val ev = TeamForumTopicReadEvent(
+                        teamId = payload.optString("teamId"),
+                        topicId = payload.optString("topicId"),
+                        userId = payload.optString("userId"),
+                        messageId = payload.optString("messageId"),
+                    )
+                    val activeTopic = topicId?.trim()?.takeIf { it.isNotEmpty() } ?: return@on
+                    if (ev.teamId != teamId || ev.topicId != activeTopic) return@on
+                    dispatchMain {
+                        topicReadListeners.forEach { l -> runCatching { l(ev) } }
                     }
                 }
                 on("topic:pin-changed") { args ->

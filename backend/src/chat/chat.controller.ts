@@ -507,6 +507,21 @@ export class ChatController {
     return this.chatService.clearRoomHistoryForUser(req.user.userId, rid);
   }
 
+  @Get('rooms/:roomId/peer-read-cursor')
+  @Roles(AllianceRole.MEMBER)
+  async getPeerReadCursor(
+    @Req() req: { user: RequestUser },
+    @Param('roomId') roomId: string,
+  ) {
+    const rid = roomId?.trim() ?? '';
+    if (!rid) throw new BadRequestException('roomId is required');
+    const messageId = await this.chatService.getPeerReadUptoMessageId(
+      req.user.userId,
+      rid,
+    );
+    return { messageId };
+  }
+
   @Post('rooms/:roomId/read')
   @Roles(AllianceRole.MEMBER)
   async markRoomRead(

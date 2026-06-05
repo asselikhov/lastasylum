@@ -674,6 +674,38 @@ export class TeamForumService {
     return { topicId, messageId: lastReadMessageId };
   }
 
+  async getPeerReadUptoMessageId(
+    teamId: string,
+    topicId: string,
+    userId: string,
+  ): Promise<string | null> {
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    if (
+      !Types.ObjectId.isValid(teamId) ||
+      !Types.ObjectId.isValid(topicId)
+    ) {
+      throw new BadRequestException('Invalid id');
+    }
+    const memberIds = await this.teams.listSquadMemberUserIds(teamId);
+    const peerIds = memberIds.filter((id) => id !== userId);
+    if (peerIds.length === 0) return null;
+    const topOid = new Types.ObjectId(topicId);
+    const rows = await this.topicReadStateModel
+      .find({ topicId: topOid, userId: { $in: peerIds } })
+      .select('lastReadMessageId')
+      .lean()
+      .exec();
+    let max: string | null = null;
+    for (const row of rows) {
+      const id = row.lastReadMessageId?.trim();
+      if (!id || !Types.ObjectId.isValid(id)) continue;
+      if (!max || new Types.ObjectId(id) > new Types.ObjectId(max)) {
+        max = id;
+      }
+    }
+    return max;
+  }
+
   private rethrowMongooseValidation(err: unknown): never {
     if (err instanceof mongoose.Error.ValidationError) {
       const msg = Object.values(err.errors)

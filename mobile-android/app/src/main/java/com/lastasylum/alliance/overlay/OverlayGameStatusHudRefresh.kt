@@ -11,6 +11,7 @@ import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
+import com.lastasylum.alliance.data.teams.TeamInboxBadgeDeriver
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
@@ -132,13 +133,12 @@ internal object OverlayGameStatusHudRefresh {
                     ?.items
                     ?.let { TeamInboxUnread.countUnreadNews(it, prefs, profileUserId) }
                     ?: 0
-            forumUnread = badges?.forumUnread?.coerceAtLeast(0)
-                ?: run {
+            forumUnread = run {
                     val forumPrefs = container.teamForumPreferences
                     val topics = teamsRepository.listForumTopics(teamId).getOrNull()
                     topics?.let { InboxUnreadReconciler.hydrateForumPrefsFromTopics(forumPrefs, teamId, it) }
                     val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
-                    topics?.let { TeamInboxUnread.sumForumUnread(it, localRead) } ?: 0
+                    topics?.let { TeamInboxBadgeDeriver.computeForumUnread(it, localRead) } ?: 0
                 }
             cachedBadgeTeamId = teamId
             cachedNewsUnread = newsUnread

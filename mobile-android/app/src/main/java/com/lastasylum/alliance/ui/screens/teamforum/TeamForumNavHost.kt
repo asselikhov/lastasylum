@@ -148,6 +148,7 @@ import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
+import com.lastasylum.alliance.data.teams.TeamForumTopicReadEvent
 import com.lastasylum.alliance.ui.chat.ForumPinCoordinator
 import com.lastasylum.alliance.ui.chat.PinnedMessageBar
 import com.lastasylum.alliance.ui.chat.TopicPinSnapshot
@@ -512,6 +513,7 @@ private fun TeamForumListRoute(
         onProvideMarkReadAction(FORUM_MARK_READ_LIST_KEY) {
             scope.launch {
                 TeamForumMarkRead.markAllTopicsRead(teamsRepository, forumPrefs, teamId)
+                onInboxChanged()
                 reload()
             }
         }
@@ -971,6 +973,8 @@ private fun TeamForumTopicChatRoute(
     val app = remember { AppContainer.from(context.applicationContext) }
     val forumPrefs = remember { app.teamForumPreferences }
     var lastReadCursor by remember { mutableStateOf<String?>(null) }
+    var otherReadUptoMessageId by remember { mutableStateOf<String?>(null) }
+    val otherReadUptoByTopic = remember { mutableMapOf<String, String>() }
 
     var editingForumMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var replyToMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
@@ -1485,6 +1489,18 @@ private fun TeamForumTopicChatRoute(
 
     LaunchedEffect(teamId, topicId) {
         lastReadCursor = forumPrefs.getLastReadMessageId(teamId, topicId)
+        otherReadUptoMessageId = otherReadUptoByTopic[topicId]
+        teamsRepository.getForumPeerReadCursor(teamId, topicId)
+            .onSuccess { peerUpto ->
+                val published = ForumPeerReadCursorLogic.hydratePeerRead(
+                    otherReadUptoByTopic = otherReadUptoByTopic,
+                    topicId = topicId,
+                    peerUptoMessageId = peerUpto,
+                )
+                if (published != null) {
+                    otherReadUptoMessageId = published
+                }
+            }
     }
 
     LaunchedEffect(stableMessages.lastOrNull()?.id) {
@@ -1649,12 +1665,27 @@ private fun TeamForumTopicChatRoute(
                     applyForumMessageReactions(ev.messageId, ev.reactions)
                 }
             }
+            val onTopicRead: (TeamForumTopicReadEvent) -> Unit = { ev ->
+                if (ev.teamId == teamId && ev.topicId == topicId) {
+                    val published = ForumPeerReadCursorLogic.mergeTopicReadEvent(
+                        otherReadUptoByTopic = otherReadUptoByTopic,
+                        topicId = topicId,
+                        userId = ev.userId,
+                        messageId = ev.messageId,
+                        currentUserId = currentUserId,
+                    )
+                    if (published != null) {
+                        otherReadUptoMessageId = published
+                    }
+                }
+            }
             forumSocket.addMessageListener(onNew)
             forumSocket.addMessageEditedListener(onEdited)
             forumSocket.addMessageDeletedListener(onDeleted)
             forumSocket.addMessageReactionListener(onReaction)
             forumSocket.addTypingListener(onTyping)
             forumSocket.addTopicPinChangedListener(onPin)
+            forumSocket.addTopicReadListener(onTopicRead)
             forumSocket.connect(
                 BuildConfig.API_BASE_URL,
                 teamId,
@@ -1678,6 +1709,7 @@ private fun TeamForumTopicChatRoute(
                 forumSocket.removeMessageReactionListener(onReaction)
                 forumSocket.removeTypingListener(onTyping)
                 forumSocket.removeTopicPinChangedListener(onPin)
+                forumSocket.removeTopicReadListener(onTopicRead)
                 forumSocket.connectTeamInbox(
                     BuildConfig.API_BASE_URL,
                     teamId,
@@ -1965,6 +1997,7 @@ private fun TeamForumTopicChatRoute(
                             }
                         },
                         onToggleReaction = { messageId, emoji -> toggleForumReaction(messageId, emoji) },
+                        otherReadUptoMessageId = otherReadUptoMessageId,
                         downloadingForumFileUrl = downloadingForumFileUrl,
                         onDownloadForumFile = { forumMsg ->
                             val url = forumMsg.fileRelativeUrl?.trim().orEmpty()

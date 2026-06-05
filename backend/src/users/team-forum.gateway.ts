@@ -264,4 +264,18 @@ export class TeamForumGateway {
       ?.to(this.teamInboxRoomKey(teamId))
       .emit('topic:pin-changed', payload);
   }
+
+  broadcastTopicRead(
+    teamId: string,
+    topicId: string,
+    userId: string,
+    messageId: string,
+  ): void {
+    this.server?.to(this.roomKey(teamId, topicId)).emit('topic:read', {
+      teamId,
+      topicId,
+      userId,
+      messageId,
+    });
+  }
 }

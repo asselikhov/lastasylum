@@ -197,6 +197,10 @@ data class MarkRoomReadResponse(
     val unreadCount: Int = 0,
 )
 
+data class PeerReadCursorResponse(
+    val messageId: String? = null,
+)
+
 /** Per-user room history clear (messages stay in DB for other members). */
 data class ClearRoomHistoryResponse(
     val roomId: String,

@@ -1442,6 +1442,31 @@ export class ChatService {
     };
   }
 
+  async getPeerReadUptoMessageId(
+    userId: string,
+    roomId: string,
+  ): Promise<string | null> {
+    if (!Types.ObjectId.isValid(roomId)) {
+      throw new BadRequestException('Invalid room id');
+    }
+    await this.assertUserMayUseChat(userId);
+    const { roomObjectId } = await this.assertRoomForUser(userId, roomId);
+    const rows = await this.chatReadStateModel
+      .find({ roomId: roomObjectId, userId: { $ne: userId } })
+      .select('lastReadMessageId')
+      .lean()
+      .exec();
+    let max: string | null = null;
+    for (const row of rows) {
+      const id = row.lastReadMessageId?.trim();
+      if (!id || !Types.ObjectId.isValid(id)) continue;
+      if (!max || new Types.ObjectId(id) > new Types.ObjectId(max)) {
+        max = id;
+      }
+    }
+    return max;
+  }
+
   async markRoomRead(input: {
     userId: string;
     roomId: string;
