@@ -15,6 +15,7 @@ internal class OverlayPresenceCoordinator(
     private val isInGameOverlayUiActive: () -> Boolean,
     private val isOverlaySessionActive: () -> Boolean,
     private val isVoiceActive: () -> Boolean,
+    private val isOnlineParticipantsPanelVisible: () -> Boolean,
     private val canUseOverlayVoiceNow: () -> Boolean,
     private val onStopVoice: () -> Unit,
 ) {
@@ -39,7 +40,10 @@ internal class OverlayPresenceCoordinator(
             return
         }
         val keepIngamePing =
-            inGameProbe || isInGameOverlayUiActive() || isVoiceActive()
+            inGameProbe ||
+                isInGameOverlayUiActive() ||
+                isVoiceActive() ||
+                isOnlineParticipantsPanelVisible()
         if (keepIngamePing) {
             missStreak = 0
             val firstStart = !ingamePresenceActive
@@ -90,7 +94,7 @@ internal class OverlayPresenceCoordinator(
     }
 
     private companion object {
-        private const val HEARTBEAT_INTERVAL_MS = 60_000L
+        private const val HEARTBEAT_INTERVAL_MS = 45_000L
         private const val AWAY_MISS_STREAK = 3
         private const val PRESENCE_INGAME = "ingame"
         private const val PRESENCE_AWAY = "away"

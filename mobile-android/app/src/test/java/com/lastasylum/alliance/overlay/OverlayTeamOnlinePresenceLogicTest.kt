@@ -118,7 +118,7 @@ class OverlayTeamOnlinePresenceLogicTest {
         val now = Instant.now()
         val freshAt = now.minusMillis(59_000).toString()
         val staleSoonAt = now.minusMillis(75_000).toString()
-        val staleAt = now.minusMillis(91_000).toString()
+        val staleAt = now.minusMillis(121_000).toString()
         assertEquals(PresenceFreshness.Fresh, presenceFreshness(freshAt, now))
         assertEquals(PresenceFreshness.StaleSoon, presenceFreshness(staleSoonAt, now))
         assertEquals(PresenceFreshness.Stale, presenceFreshness(staleAt, now))
@@ -153,7 +153,7 @@ class OverlayTeamOnlinePresenceLogicTest {
     fun ingameCount_extraction_for_hud() {
         val ingame = listOf(
             member("u1", "a"),
-            member("u2", "b", lastPresenceAt = freshIso(120)),
+            member("u2", "b", lastPresenceAt = freshIso(130)),
         )
         assertEquals(1, rawIngameCount(ingame))
         val sections = buildPresenceSections(ingame, emptyList(), null)
@@ -278,12 +278,37 @@ class OverlayTeamOnlinePresenceLogicTest {
         )
         assertEquals(1, merged.ingame.size)
         assertEquals("new-user", merged.ingame.first().userId)
+        assertEquals(OVERLAY_UNKNOWN_MEMBER_USERNAME, merged.ingame.first().username)
+    }
+
+    @Test
+    fun resolveOverlayMemberUsername_prefersSocketAndCache() {
+        val objectId = "507f1f77bcf86cd799439011"
+        assertEquals(
+            "alice",
+            resolveOverlayMemberUsername(
+                objectId,
+                TeamPresenceSocketEvent(objectId, "ingame", freshIso(1), username = "alice"),
+            ),
+        )
+        assertEquals(
+            "bob",
+            resolveOverlayMemberUsername(
+                "user-2",
+                event = null,
+                fallbackMember = member("user-2", "bob"),
+            ),
+        )
+        assertFalse(
+            resolveOverlayMemberUsername(objectId, null, null)
+                .startsWith(objectId.take(12)),
+        )
     }
 
     @Test
     fun isRecentlyActiveOverlay_rejectsIngameAndStale() {
         assertFalse(isRecentlyActiveOverlay("ingame", freshIso(30)))
-        assertFalse(isRecentlyActiveOverlay("online", freshIso(120)))
+        assertFalse(isRecentlyActiveOverlay("online", freshIso(130)))
         assertTrue(isRecentlyActiveOverlay("online", freshIso(30)))
     }
 

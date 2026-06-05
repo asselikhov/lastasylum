@@ -190,6 +190,13 @@ class TeamsRepository(
         }
     }
 
+    fun invalidateForumMessagesCache(teamId: String, topicId: String) {
+        val prefix = "${teamId.trim()}|${topicId.trim()}|"
+        synchronized(forumMessagesResultCache) {
+            forumMessagesResultCache.keys.removeAll { it.startsWith(prefix) }
+        }
+    }
+
     suspend fun listForumTopics(
         teamId: String,
         bypassCache: Boolean = false,
@@ -356,6 +363,8 @@ class TeamsRepository(
                     fileFileId = fileId,
                 ),
             )
+        }.also { result ->
+            if (result.isSuccess) invalidateForumMessagesCache(teamId, topicId)
         }
 
     suspend fun patchForumMessage(
@@ -371,6 +380,8 @@ class TeamsRepository(
                 messageId,
                 UpdateTeamForumMessageBody(text = text.trim()),
             )
+        }.also { result ->
+            if (result.isSuccess) invalidateForumMessagesCache(teamId, topicId)
         }
 
     suspend fun deleteForumMessage(
@@ -380,6 +391,8 @@ class TeamsRepository(
     ): Result<Unit> =
         runCatching {
             teamsApi.deleteForumMessage(teamId, topicId, messageId).let { }
+        }.also { result ->
+            if (result.isSuccess) invalidateForumMessagesCache(teamId, topicId)
         }
 
     suspend fun bulkDeleteForumMessages(
@@ -398,6 +411,8 @@ class TeamsRepository(
                     BulkDeleteForumMessagesBody(messageIds = ids),
                 )
             }
+        }.also { result ->
+            if (result.isSuccess) invalidateForumMessagesCache(teamId, topicId)
         }
 
     suspend fun unpinOneForumTopicMessage(

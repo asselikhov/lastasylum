@@ -1971,6 +1971,7 @@ class OverlayCommandsPopover(
                             loadOverlayIngameReactionRecipients(
                                 usersRepository = container.usersRepository,
                                 teamsRepository = container.teamsRepository,
+                                launchDiskCache = container.launchDiskCache,
                             )
                         },
                     )

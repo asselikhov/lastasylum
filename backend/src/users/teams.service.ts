@@ -779,7 +779,7 @@ export class TeamsService {
   }
 
   /** Matches Android [OVERLAY_INGAME_PRESENCE_STALE_MS] and UsersService.OVERLAY_INGAME_LIST_STALE_MS. */
-  static readonly OVERLAY_PRESENCE_LIST_STALE_MS = 90_000;
+  static readonly OVERLAY_PRESENCE_LIST_STALE_MS = 120_000;
 
   private isOverlayIngameRow(
     row: TeamMemberRow,
@@ -844,15 +844,19 @@ export class TeamsService {
     playerTeamId: string | null;
     presenceStatus: string | null;
     lastPresenceAt: string | null;
+    username: string | null;
+    teamRole: string | null;
+    isLeader: boolean;
   } | null> {
     if (!Types.ObjectId.isValid(userId)) return null;
     const u = await this.userModel
       .findById(userId)
-      .select('playerTeamId presenceStatus lastPresenceAt')
+      .select('playerTeamId presenceStatus lastPresenceAt username')
       .lean<{
         playerTeamId?: Types.ObjectId | null;
         presenceStatus?: string | null;
         lastPresenceAt?: Date | null;
+        username?: string | null;
       }>()
       .exec();
     if (!u) return null;
@@ -862,11 +866,28 @@ export class TeamsService {
       if (v instanceof Date) return v.toISOString();
       return null;
     };
+    let username = (u.username ?? '').trim() || null;
+    let teamRole: string | null = null;
+    let isLeader = false;
+    if (squadTeamId) {
+      const detail = await this.getTeamDetailForUser(squadTeamId, userId).catch(
+        () => null,
+      );
+      const member = detail?.members.find((m) => m.userId === userId);
+      if (member) {
+        username = member.username?.trim() || username;
+        teamRole = member.teamRole ?? null;
+        isLeader = member.isLeader === true;
+      }
+    }
     return {
       userId,
       playerTeamId: squadTeamId,
       presenceStatus: u.presenceStatus ?? null,
       lastPresenceAt: toIso(u.lastPresenceAt),
+      username,
+      teamRole,
+      isLeader,
     };
   }
 

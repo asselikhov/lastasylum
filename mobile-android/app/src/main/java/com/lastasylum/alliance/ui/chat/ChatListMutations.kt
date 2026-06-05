@@ -170,33 +170,24 @@ internal fun mergeLoadedPageWithExisting(
     roomId: String? = null,
 ): List<ChatMessage> {
     val scopedExisting = roomId?.let { filterMessagesForRoom(existing, it) } ?: existing
-    if (scopedExisting.isEmpty()) return capNewestFirst(loaded, maxMessages)
     if (loaded.isEmpty()) {
-        // Server returned an empty page — room has no messages; do not resurrect disk/socket cache.
-        val pendingOnly = scopedExisting.filter { msg ->
+        val kept = scopedExisting.filter { msg ->
             val id = msg._id?.trim().orEmpty()
-            id.startsWith("pending-") && id !in excludedMessageIds
+            id.isNotEmpty() && id !in excludedMessageIds
         }
-        return capNewestFirst(pendingOnly, maxMessages)
+        return capNewestFirst(kept, maxMessages)
     }
+    if (scopedExisting.isEmpty()) return capNewestFirst(loaded, maxMessages)
     val loadedIds = loaded.mapNotNull { msg ->
         msg._id?.trim()?.takeIf { it.isNotEmpty() }
     }.toSet()
-    val newestLoadedId = loaded.firstOrNull()?._id?.trim().orEmpty()
     val known = loadedIds.toMutableSet()
     val index = mutableMapOf<String, Int>()
     rebuildMessageIdIndex(loaded, index)
     var messages = loaded
     for (msg in scopedExisting) {
         val id = msg._id?.trim().orEmpty()
-        if (id.isEmpty() || id in excludedMessageIds) continue
-        val keep = when {
-            id.startsWith("pending-") -> true
-            id in loadedIds -> false
-            newestLoadedId.isEmpty() -> false
-            else -> isObjectIdNewer(id, newestLoadedId)
-        }
-        if (!keep) continue
+        if (id.isEmpty() || id in excludedMessageIds || id in loadedIds) continue
         val update = upsertMessage(
             current = messages,
             incoming = msg,
@@ -206,7 +197,10 @@ internal fun mergeLoadedPageWithExisting(
         )
         messages = update.messages
     }
-    return dedupeMessagesByIdNewestFirst(capNewestFirst(messages, maxMessages))
+    val sorted = messages.sortedWith(
+        compareByDescending<ChatMessage> { it._id?.trim().orEmpty() },
+    )
+    return dedupeMessagesByIdNewestFirst(capNewestFirst(sorted, maxMessages))
 }
 
 /** Merge [roomMessageCache] rows into visible UI after tab/foreground resume. */
@@ -266,7 +260,12 @@ internal fun shouldSkipBackgroundMessageRefresh(
     val head = visible.firstOrNull()?._id?.trim().orEmpty()
     val cachedHead = sessionCache.firstOrNull()?._id?.trim().orEmpty()
     if (head.isEmpty() || cachedHead.isEmpty() || head != cachedHead) return false
-    return sessionCache.size >= visible.size
+    if (sessionCache.size < visible.size) return false
+    val compareCount = minOf(visible.size, sessionCache.size, pageSize)
+    val visibleIds = visible.take(compareCount).mapNotNull { it._id?.trim()?.takeIf { id -> id.isNotEmpty() } }.toSet()
+    val sessionIds = sessionCache.take(compareCount).mapNotNull { it._id?.trim()?.takeIf { id -> id.isNotEmpty() } }.toSet()
+    if (visibleIds != sessionIds) return false
+    return true
 }
 
 internal fun dedupeMessagesByIdNewestFirst(messages: List<ChatMessage>): List<ChatMessage> {

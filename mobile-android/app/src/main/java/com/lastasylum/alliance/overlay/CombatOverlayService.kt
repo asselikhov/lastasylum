@@ -247,6 +247,10 @@ class CombatOverlayService : Service() {
             isInGameOverlayUiActive = { isInGameOverlayUiActive() },
             isOverlaySessionActive = { overlaySessionActive },
             isVoiceActive = { voiceSession?.let { it.micOn || it.soundOn } == true },
+            isOnlineParticipantsPanelVisible = {
+                overlayChatTeamPanelVisible &&
+                    currentOverlayHudPane == OverlayHudPane.Participants
+            },
             canUseOverlayVoiceNow = { canUseOverlayVoiceNow() },
             onStopVoice = { stopOverlayVoice() },
         )
@@ -2426,11 +2430,7 @@ class CombatOverlayService : Service() {
     private fun forwardOverlaySocketMessageToViewModel(msg: ChatMessage) {
         val vm = resolveChatViewModel() ?: return
         if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
-        if (isOverlayRaidStripSocketMessage(msg)) {
-            vm.stashOverlayRealtimeMessage(msg)
-        } else if (!activityChatViewModelHandlesUnread()) {
-            vm.stashOverlayRealtimeMessage(msg)
-        }
+        vm.stashOverlayRealtimeMessage(msg)
         if (!overlayChatTeamPanelVisible) return
         if (activityChatViewModelHandlesUnread()) return
         vm.applyOverlayChatMessageFromSocket(msg)

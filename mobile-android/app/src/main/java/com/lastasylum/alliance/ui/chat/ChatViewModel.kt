@@ -58,7 +58,6 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.CopyOnWriteArrayList
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -194,10 +193,7 @@ class ChatViewModel(
     private val typingPeerJobsLock = Any()
     private var typingEmitJob: Job? = null
 
-    private val incomingMessages = Channel<ChatMessage>(
-        capacity = 256,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
+    private val incomingMessages = Channel<ChatMessage>(Channel.UNLIMITED)
     private val roomMessageCache = mutableMapOf<String, RoomMessageCache>()
     /** Hard-deleted ids — mergeLoadedPageWithExisting must not resurrect them from disk/socket cache. */
     private val locallyRemovedMessageIds = LinkedHashSet<String>()
@@ -439,6 +435,7 @@ class ChatViewModel(
     private fun processRealtimeMessageForUnread(message: ChatMessage) {
         val roomId = message.roomId
         if (roomId.isBlank()) return
+        if (!isIncomingMessageVisible(message)) return
         if (isKnownChatMessageId(message._id)) {
             applyKnownChatMessageUpdate(message)
             return
@@ -528,7 +525,7 @@ class ChatViewModel(
             selectedRoomId = _state.value.selectedRoomId,
             raidRoomId = chatRoomPreferences.getRaidRoomId(),
             hubRoomId = ChatRoomKindResolver.allianceHubRoom(rooms)?.id,
-            subscribeAllRooms = isChatTabActive || overlayChatPanelVisible,
+            subscribeAllRooms = true,
         )
 
     fun refreshChat() {
@@ -1070,6 +1067,15 @@ class ChatViewModel(
         }
     }
 
+    private fun isIncomingMessageVisible(message: ChatMessage): Boolean {
+        val roomId = message.roomId.trim()
+        if (roomId.isEmpty()) return false
+        return com.lastasylum.alliance.data.chat.ChatMessageVisibilityPolicy.isMessageVisible(
+            message,
+            hiddenBeforeForRoom(roomId),
+        )
+    }
+
     private fun hiddenBeforeForRoom(roomId: String): String? =
         chatRoomPreferences.getHiddenBeforeMessageId(roomId)
 
@@ -1097,10 +1103,8 @@ class ChatViewModel(
         if (shouldBlockOwnOutgoingRealtime(message)) return
         val selected = _state.value.selectedRoomId
         when {
-            roomId == selected ->
-                applyIncomingMessage(message)
-            roomMessageCache.containsKey(roomId) ->
-                stashIncomingMessageForRoom(message)
+            roomId == selected -> applyIncomingMessage(message)
+            else -> stashIncomingMessageForRoom(message)
         }
     }
 
@@ -2409,6 +2413,14 @@ class ChatViewModel(
         ChatSessionCache.update(_state.value.rooms)
         syncTabUnreadBadge()
         syncOverlayAllianceHubBadge()
+        if (serverUnread > 0) {
+            val selectedId = _state.value.selectedRoomId
+            val activelyViewing = selectedId == roomId && isRoomActivelyViewed(roomId)
+            if (!activelyViewing) {
+                repository.ensureRoomJoined(roomId)
+                refreshMessagesInBackground(roomId, force = true)
+            }
+        }
     }
 
     private fun reconnectRealtimeIfNeeded() {
@@ -2427,13 +2439,17 @@ class ChatViewModel(
         )
     }
 
-    /** Gap-fill after socket reconnect: merge stash + REST for the visible room. */
+    /** Gap-fill after socket reconnect: merge stash + REST for subscribed rooms. */
     private fun onChatSocketConnected() {
         rehydrateSelectedRoomMessagesFromCache()
-        if (!isChatTabActive && !overlayChatPanelVisible) return
         reconnectRealtimeIfNeeded()
-        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
-        if (roomId.isNotEmpty()) {
+        val rooms = _state.value.rooms
+        val roomIds = if (rooms.isNotEmpty()) {
+            realtimeSubscriptionRoomIds(rooms)
+        } else {
+            _state.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let { listOf(it) }.orEmpty()
+        }
+        for (roomId in roomIds) {
             refreshMessagesInBackground(roomId, force = true)
         }
     }
@@ -2555,10 +2571,7 @@ class ChatViewModel(
                     markRoomReadUpTo(roomId, newestId)
                 }
             }
-            refreshMessagesInBackground(
-                roomId,
-                force = overlayChatPanelVisible || !shouldSkipBackgroundMessageRefreshForRoom(roomId),
-            )
+            refreshMessagesInBackground(roomId, force = true)
             schedulePersistChatSnapshot()
             return
         }
@@ -2594,8 +2607,8 @@ class ChatViewModel(
         }
         viewModelScope.launch {
             if (deferMs > 0L) delay(deferMs)
-            if (_state.value.selectedRoomId != roomId) return@launch
-            val overlayEmptyLoad = overlayChatPanelVisible && _state.value.messages.isEmpty()
+            val isSelectedRoom = _state.value.selectedRoomId == roomId
+            val overlayEmptyLoad = isSelectedRoom && overlayChatPanelVisible && _state.value.messages.isEmpty()
             val loadResult = if (overlayEmptyLoad) {
                 withTimeoutOrNull(OVERLAY_PANEL_LOAD_MAX_MS) {
                     repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
@@ -2604,7 +2617,7 @@ class ChatViewModel(
                 repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
             }
             if (loadResult == null) {
-                if (overlayEmptyLoad && _state.value.selectedRoomId == roomId) {
+                if (overlayEmptyLoad) {
                     _state.update {
                         it.copy(
                             isLoading = false,
@@ -2616,9 +2629,12 @@ class ChatViewModel(
             }
             loadResult
                 .onSuccess { loaded ->
-                    if (_state.value.selectedRoomId != roomId) return@onSuccess
                     val hasMoreOlder = loaded.size >= PAGE_SIZE
-                    val current = _state.value.messages
+                    val current = if (isSelectedRoom) {
+                        filterMessagesForRoom(_state.value.messages, roomId)
+                    } else {
+                        roomMessageCache[roomId]?.messages.orEmpty()
+                    }
                     val merged = withContext(Dispatchers.Default) {
                         mergeLoadedPageWithExisting(
                             existing = current,
@@ -2628,15 +2644,16 @@ class ChatViewModel(
                             roomId = roomId,
                         )
                     }
+                    roomMessageCache[roomId] = RoomMessageCache(
+                        messages = merged,
+                        hasMoreOlder = hasMoreOlder,
+                    )
+                    ChatSessionCache.updateMessages(roomId, merged)
+                    if (!isSelectedRoom || _state.value.selectedRoomId != roomId) return@onSuccess
                     val unchanged = withContext(Dispatchers.Default) {
                         chatMessagesListContentEqual(current, merged)
                     }
                     if (unchanged) {
-                        roomMessageCache[roomId] = RoomMessageCache(
-                            messages = merged,
-                            hasMoreOlder = hasMoreOlder,
-                        )
-                        ChatSessionCache.updateMessages(roomId, merged)
                         if (_state.value.hasMoreOlder != hasMoreOlder) {
                             _state.update { it.copy(hasMoreOlder = hasMoreOlder) }
                         }
@@ -2646,11 +2663,6 @@ class ChatViewModel(
                     messageIdIndex.clear()
                     knownMessageIds.addAll(merged.mapNotNull { it._id })
                     rebuildMessageIdIndex(merged, messageIdIndex)
-                    roomMessageCache[roomId] = RoomMessageCache(
-                        messages = merged,
-                        hasMoreOlder = hasMoreOlder,
-                    )
-                    ChatSessionCache.updateMessages(roomId, merged)
                     _state.update {
                         it.copy(
                             messages = merged,
@@ -2663,7 +2675,7 @@ class ChatViewModel(
                 .onFailure { e ->
                     if (
                         overlayChatPanelVisible &&
-                        _state.value.selectedRoomId == roomId &&
+                        isSelectedRoom &&
                         _state.value.messages.isEmpty()
                     ) {
                         _state.update {
@@ -4050,13 +4062,15 @@ class ChatViewModel(
 
     private fun onIncomingMessage(message: ChatMessage) {
         if (shouldBlockOwnOutgoingRealtime(message)) return
+        if (!isIncomingMessageVisible(message)) return
         if (!incomingMessages.trySend(message).isSuccess) {
-            if (BuildConfig.DEBUG) {
-                Log.w("ChatViewModel", "incomingMessages channel overflow; flushing on main")
-            }
             viewModelScope.launch(Dispatchers.Main) {
-                if (shouldBlockOwnOutgoingRealtime(message)) return@launch
+                if (shouldBlockOwnOutgoingRealtime(message) || !isIncomingMessageVisible(message)) return@launch
                 dispatchIncomingBatch(listOf(message))
+            }
+            val roomId = message.roomId.trim()
+            if (roomId.isNotEmpty()) {
+                refreshMessagesInBackground(roomId, force = true)
             }
         }
     }
@@ -4186,12 +4200,11 @@ class ChatViewModel(
         if (id.isEmpty()) return
         locallyRemovedMessageIds.add(id)
         while (locallyRemovedMessageIds.size > 512) {
-            val eldest = locallyRemovedMessageIds.first()
-            locallyRemovedMessageIds.remove(eldest)
+            locallyRemovedMessageIds.remove(locallyRemovedMessageIds.first())
         }
         if (currentUserId.isNotBlank()) {
             viewModelScope.launch(Dispatchers.IO) {
-                launchDiskCache.addRemovedMessageId(currentUserId, id)
+                launchDiskCache.saveRemovedMessageIds(currentUserId, locallyRemovedMessageIds)
             }
         }
     }
@@ -4326,6 +4339,7 @@ class ChatViewModel(
     private fun stashIncomingMessageForRoom(message: ChatMessage) {
         val roomId = message.roomId.trim()
         if (roomId.isBlank()) return
+        if (!isIncomingMessageVisible(message)) return
         if (message._id == null) return
         val cached = roomMessageCache[roomId]
         val existing = cached?.messages ?: emptyList()

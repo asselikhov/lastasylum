@@ -667,14 +667,14 @@ export class UsersService implements OnModuleInit {
       .exec();
   }
 
-  /** Push alerts: treat overlay as inactive after ~90s without ingame ping. */
-  private static readonly OVERLAY_INGAME_STALE_MS = 90_000;
+  /** Push alerts: treat overlay as inactive after ~120s without ingame ping. */
+  private static readonly OVERLAY_INGAME_STALE_MS = 120_000;
 
   /**
    * «Участники онлайн» / broadcast reactions — matches Android
-   * [OVERLAY_INGAME_PRESENCE_STALE_MS] (~1.5× overlay heartbeat 60 s).
+   * [OVERLAY_INGAME_PRESENCE_STALE_MS] (~2.5× overlay heartbeat 45 s).
    */
-  static readonly OVERLAY_INGAME_LIST_STALE_MS = 90_000;
+  static readonly OVERLAY_INGAME_LIST_STALE_MS = 120_000;
 
   /** Fresh overlay «ingame» ping (same window as list/broadcast). */
   async isOverlayIngameNow(userId: string): Promise<boolean> {

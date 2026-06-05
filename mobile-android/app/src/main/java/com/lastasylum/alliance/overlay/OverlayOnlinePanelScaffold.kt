@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -55,6 +57,7 @@ fun OverlayOnlinePanelScaffold(
     loading: Boolean,
     refreshing: Boolean,
     error: String?,
+    staleDataHint: String? = null,
     selfLabel: String,
     voiceSelfUserId: String? = null,
     voiceLocalMicOn: Boolean? = null,
@@ -76,6 +79,14 @@ fun OverlayOnlinePanelScaffold(
         verticalArrangement = Arrangement.spacedBy(OnlinePanelSectionSpacing),
     ) {
         topBar()
+        staleDataHint?.takeIf { it.isNotBlank() }?.let { hint ->
+            Text(
+                text = hint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+            )
+        }
         OnlinePanelFilterSearchRow(
             activeChip = activeFilterChip,
             searchQuery = searchQuery,
@@ -101,11 +112,16 @@ fun OverlayOnlinePanelScaffold(
                         .padding(SquadRelayDimens.contentPaddingHorizontal),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = error,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        TextButton(onClick = onRefresh) {
+                            Text(stringResource(R.string.overlay_panel_load_retry))
+                        }
+                    }
                 }
             }
             totalVisible == 0 -> {

@@ -38,6 +38,8 @@ import com.lastasylum.alliance.ui.chat.ChatComposer
 import com.lastasylum.alliance.ui.chat.ChatComposerBar
 import com.lastasylum.alliance.ui.chat.stabilizeComposerImageUris
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
+import com.lastasylum.alliance.ui.chat.capForumMessagesTrimNewestOnly
+import com.lastasylum.alliance.ui.chat.mergeForumMessagesPage
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthCap
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction
@@ -550,7 +552,9 @@ private fun TeamForumListRoute(
         val idx = topics.indexOfFirst { it.id == event.topicId }
         if (idx >= 0) {
             val row = topics[idx]
-            if (!isObjectIdNewer(messageId, lastReadByTopic[row.id])) return@LaunchedEffect
+            val localLast = forumPrefs.getLastReadMessageId(teamId, event.topicId)
+                ?: lastReadByTopic[row.id]
+            if (!isObjectIdNewer(messageId, localLast.orEmpty())) return@LaunchedEffect
             val bumped = row.copy(
                 unreadCount = row.unreadCount + 1,
                 messageCount = row.messageCount + 1,
@@ -1182,7 +1186,21 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
+    fun persistForumMessagesToDisk() {
+        if (currentUserId.isBlank()) return
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            app.launchDiskCache.saveForumMessages(
+                currentUserId,
+                teamId,
+                topicId,
+                messages.toList(),
+                hasMoreOlder,
+            )
+        }
+    }
+
     fun applyEdited(msg: TeamForumMessageDto) {
+        teamsRepository.invalidateForumMessagesCache(teamId, topicId)
         val i = messages.indexOfFirst { it.id == msg.id }
         if (i >= 0) {
             messages[i] = messages[i].mergePreservingForumMedia(msg)
@@ -1190,6 +1208,7 @@ private fun TeamForumTopicChatRoute(
             messages.add(msg)
             trimForumMessagesInMemory()
         }
+        persistForumMessagesToDisk()
         pinCoordinator.refreshPinAfterMessageEdit(msg.id, stableMessages)
         bumpPinUi()
     }
@@ -1224,8 +1243,10 @@ private fun TeamForumTopicChatRoute(
     }
 
     fun removeMessage(messageId: String) {
+        teamsRepository.invalidateForumMessagesCache(teamId, topicId)
         messages.removeAll { it.id == messageId }
         bumpMessagesGeneration()
+        persistForumMessagesToDisk()
         if (activeActionMessageId == messageId) {
             activeActionMessageId = null
         }
@@ -1336,6 +1357,7 @@ private fun TeamForumTopicChatRoute(
     }
 
     fun mergeNew(msg: TeamForumMessageDto) {
+        teamsRepository.invalidateForumMessagesCache(teamId, topicId)
         val i = messages.indexOfFirst { it.id == msg.id }
         if (i >= 0) {
             messages[i] = messages[i].mergePreservingForumMedia(msg)
@@ -1343,6 +1365,7 @@ private fun TeamForumTopicChatRoute(
             messages.add(msg)
             trimForumMessagesInMemory()
         }
+        persistForumMessagesToDisk()
         if (!overlayUi || isNearBottom) {
             markTopicReadToLatest()
         }
@@ -1400,7 +1423,8 @@ private fun TeamForumTopicChatRoute(
             val existingIds = messages.asSequence().map { it.id }.toHashSet()
             val older = visible.filter { it.id !in existingIds }
             messages.addAll(0, older)
-            trimForumMessagesInMemory()
+            capForumMessagesTrimNewestOnly(messages)
+            bumpMessagesGeneration()
             hasMoreOlder = page.size >= 50 && messages.isNotEmpty()
             true
         } finally {
@@ -1471,30 +1495,31 @@ private fun TeamForumTopicChatRoute(
                     loading = true
                 }
             }
-            teamsRepository.listForumMessages(teamId, topicId, before = before, limit = 50)
+            teamsRepository.listForumMessages(
+                teamId,
+                topicId,
+                before = before,
+                limit = 50,
+                bypassCache = !appendOlder,
+            )
                 .onSuccess { page ->
                     val visible = visibleForumMessages(page)
                     if (appendOlder) {
                         val existingIds = messages.asSequence().map { it.id }.toHashSet()
                         val older = visible.filter { it.id !in existingIds }
                         messages.addAll(0, older)
-                        trimForumMessagesInMemory()
+                        capForumMessagesTrimNewestOnly(messages)
+                        bumpMessagesGeneration()
                     } else {
+                        val merged = mergeForumMessagesPage(messages.toList(), visible)
                         messages.clear()
-                        messages.addAll(visible)
-                        trimForumMessagesInMemory()
+                        messages.addAll(merged)
+                        capForumMessagesOldestFirst(messages)
+                        bumpMessagesGeneration()
                     }
                     hasMoreOlder = page.size >= 50 && messages.isNotEmpty()
-                    if (!appendOlder && currentUserId.isNotBlank()) {
-                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            app.launchDiskCache.saveForumMessages(
-                                currentUserId,
-                                teamId,
-                                topicId,
-                                messages.toList(),
-                                hasMoreOlder,
-                            )
-                        }
+                    if (!appendOlder) {
+                        persistForumMessagesToDisk()
                     }
                 }
                 .onFailure { e ->
@@ -1527,9 +1552,23 @@ private fun TeamForumTopicChatRoute(
             }
     }
 
-    LaunchedEffect(stableMessages.lastOrNull()?.id) {
-        if (!overlayUi && stableMessages.isNotEmpty()) {
+    LaunchedEffect(stableMessages.lastOrNull()?.id, isNearBottom) {
+        if (!overlayUi && stableMessages.isNotEmpty() && isNearBottom) {
             markTopicReadToLatest()
+        }
+    }
+
+    var forumSocketHadConnected by remember(teamId, topicId) { mutableStateOf(false) }
+    LaunchedEffect(teamId, topicId, sectionActive) {
+        if (!sectionActive) return@LaunchedEffect
+        forumSocket.connectionState.collect { state ->
+            if (state == com.lastasylum.alliance.data.teams.TeamForumSocketState.Connected) {
+                if (forumSocketHadConnected) {
+                    teamsRepository.invalidateForumMessagesCache(teamId, topicId)
+                    loadForumMessages(before = null, appendOlder = false)
+                }
+                forumSocketHadConnected = true
+            }
         }
     }
 

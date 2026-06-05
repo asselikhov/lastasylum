@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.overlay
 
 import android.content.res.Resources
+import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketEvent
@@ -11,11 +12,13 @@ import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.OVERLAY_PANEL_LOAD_MAX_MS
 import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_MS
-import com.lastasylum.alliance.ui.util.isOverlayIngameNow
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +35,7 @@ data class OverlayTeamOnlineUiState(
     val loading: Boolean = true,
     val refreshing: Boolean = false,
     val error: String? = null,
+    val staleDataHint: String? = null,
     val team: TeamDetailDto? = null,
     val profile: MyProfileDto? = null,
     val baseSections: List<OverlayOnlinePresenceSection> = emptyList(),
@@ -48,6 +52,7 @@ class OverlayTeamOnlineController(
     private val teamsRepository: TeamsRepository,
     private val usersRepository: UsersRepository,
     private val teamPresenceSocket: TeamPresenceSocketManager,
+    private val launchDiskCache: LaunchDiskCache?,
     private val tokenProvider: () -> String?,
     private val baseUrl: String,
     private val resources: Resources,
@@ -68,6 +73,7 @@ class OverlayTeamOnlineController(
             presenceMergeMutex.withLock {
                 val current = _state.value
                 val fallback = current.team?.members?.firstOrNull { it.userId == event.userId }
+                    ?: OverlayTeamContextCache.memberDto(event.userId)
                 val merged = mergePresenceSocketEvent(
                     lists = OverlayOnlinePresenceLists(current.ingameRaw, current.recentRaw),
                     event = event,
@@ -90,11 +96,12 @@ class OverlayTeamOnlineController(
     fun start() {
         if (started) return
         started = true
-        applyCachedBootstrapIfAvailable()
-        teamPresenceSocket.addPresenceListener(presenceSocketListener)
         scope.launch {
+            hydrateFromDiskIfNeeded()
+            applyCachedBootstrapIfAvailable()
             bootstrap(forceTeamRefresh = false, showBlockingSpinner = _state.value.team == null)
         }
+        teamPresenceSocket.addPresenceListener(presenceSocketListener)
         pollJob = scope.launch {
             while (isActive && started) {
                 delay(OVERLAY_ONLINE_PANEL_POLL_MS)
@@ -130,6 +137,12 @@ class OverlayTeamOnlineController(
         }
     }
 
+    fun onPresenceSocketConnected() {
+        scope.launch {
+            refreshPresenceOnly(showRefreshing = false)
+        }
+    }
+
     fun onSearchQuery(query: String) {
         _state.update { it.copy(searchQuery = query) }
     }
@@ -148,24 +161,38 @@ class OverlayTeamOnlineController(
         )
     }
 
+    private suspend fun hydrateFromDiskIfNeeded() {
+        withContext(Dispatchers.IO) {
+            val uid = usersRepository.peekMyProfile()?.id?.trim().orEmpty()
+                .ifEmpty { usersRepository.peekMyProfileDisk()?.id?.trim().orEmpty() }
+            if (uid.isEmpty() || launchDiskCache == null) return@withContext
+            OverlayTeamContextCache.hydrateFromDisk(
+                userId = uid,
+                usersRepository = usersRepository,
+                launchDiskCache = launchDiskCache,
+            )
+            val teamId = OverlayTeamContextCache.peekForPanel()?.teamId?.trim().orEmpty()
+            if (teamId.isEmpty()) return@withContext
+            launchDiskCache.loadOverlayPresence(uid, teamId)?.let { presence ->
+                OverlayTeamPresenceCache.seedFromDisk(teamId, presence)
+            }
+        }
+    }
+
     private fun applyCachedBootstrapIfAvailable() {
         val ctx = OverlayTeamContextCache.peekForPanel() ?: return
         val team = OverlayTeamContextCache.peekCachedTeam()?.takeIf { it.id == ctx.teamId } ?: return
         val profile = usersRepository.peekMyProfile()
             ?: usersRepository.peekMyProfileDisk()
             ?: return
-        teamId = ctx.teamId
-        teamPresenceSocket.connect(
-            baseUrl = baseUrl,
-            teamId = ctx.teamId,
-            tokenProvider = tokenProvider,
-        )
+        teamId = team.id.trim().ifEmpty { ctx.teamId }
+        connectPresenceSocket(teamId!!)
         val presence = OverlayTeamPresenceCache.peek(ctx.teamId)
         _state.update {
             it.copy(
                 profile = profile,
                 team = team,
-                loading = presence == null,
+                loading = presence == null && it.baseSections.isEmpty(),
                 error = null,
             )
         }
@@ -176,7 +203,7 @@ class OverlayTeamOnlineController(
 
     private suspend fun bootstrap(forceTeamRefresh: Boolean, showBlockingSpinner: Boolean) {
         bootstrapMutex.withLock {
-            val hadCachedContent = _state.value.team != null
+            val hadCachedContent = _state.value.team != null || _state.value.baseSections.isNotEmpty()
             if (showBlockingSpinner && !hadCachedContent) {
                 _state.update { it.copy(loading = true) }
             }
@@ -192,33 +219,29 @@ class OverlayTeamOnlineController(
             }
             when {
                 loaded == null -> {
-                    if (!hadCachedContent && _state.value.team == null) {
+                    if (!hadCachedContent && _state.value.team == null && _state.value.baseSections.isEmpty()) {
                         _state.update {
                             it.copy(
-                                profile = null,
-                                ingameRaw = emptyList(),
-                                recentRaw = emptyList(),
-                                baseSections = emptyList(),
-                                ingameCount = 0,
-                                recentCount = 0,
                                 loading = false,
                                 refreshing = false,
                                 error = resources.getString(R.string.overlay_panel_load_timeout),
                             )
                         }
                     } else {
-                        _state.update { it.copy(loading = false, refreshing = false) }
+                        _state.update {
+                            it.copy(
+                                loading = false,
+                                refreshing = false,
+                                staleDataHint = resources.getString(R.string.overlay_online_stale_data),
+                            )
+                        }
                     }
                     return@withLock
                 }
             }
             loaded.onSuccess { result ->
                 teamId = result.teamId
-                teamPresenceSocket.connect(
-                    baseUrl = baseUrl,
-                    teamId = result.teamId,
-                    tokenProvider = tokenProvider,
-                )
+                connectPresenceSocket(result.teamId)
                 _state.update {
                     it.copy(
                         profile = result.profile,
@@ -226,59 +249,112 @@ class OverlayTeamOnlineController(
                         loading = false,
                         refreshing = false,
                         error = null,
+                        staleDataHint = null,
                     )
                 }
                 applyPresenceLists(result.ingame, result.recentlyActive)
             }.onFailure { e ->
-                if (!hadCachedContent && _state.value.team == null) {
+                if (!hadCachedContent && _state.value.team == null && _state.value.baseSections.isEmpty()) {
                     _state.update {
                         it.copy(
-                            profile = null,
-                            ingameRaw = emptyList(),
-                            recentRaw = emptyList(),
-                            baseSections = emptyList(),
-                            ingameCount = 0,
-                            recentCount = 0,
                             loading = false,
                             refreshing = false,
-                            error = e.toUserMessageRu(resources),
+                            error = resources.getString(R.string.overlay_online_error),
                         )
                     }
                 } else {
-                    _state.update { it.copy(loading = false, refreshing = false) }
+                    _state.update {
+                        it.copy(
+                            loading = false,
+                            refreshing = false,
+                            staleDataHint = resources.getString(R.string.overlay_online_stale_data),
+                            error = if (it.baseSections.isEmpty()) {
+                                e.toUserMessageRu(resources)
+                            } else {
+                                null
+                            },
+                        )
+                    }
                 }
             }
         }
     }
 
-    private suspend fun loadBootstrapFromNetwork(forceTeamRefresh: Boolean): BootstrapResult {
-        val ctx = OverlayTeamContextCache.load(
-            usersRepository = usersRepository,
-            teamsRepository = teamsRepository,
-            forceRefresh = forceTeamRefresh,
-        ).getOrThrow()
-        if (forceTeamRefresh) {
-            OverlayTeamPresenceCache.invalidate()
+    private suspend fun loadBootstrapFromNetwork(forceTeamRefresh: Boolean): BootstrapResult =
+        coroutineScope {
+            val userId = currentUserId()
+            val ctxDeferred = async(Dispatchers.IO) {
+                if (!forceTeamRefresh) {
+                    OverlayTeamContextCache.peekForPanel()?.let { cached ->
+                        return@async Result.success(cached)
+                    }
+                }
+                OverlayTeamContextCache.load(
+                    usersRepository = usersRepository,
+                    teamsRepository = teamsRepository,
+                    forceRefresh = forceTeamRefresh,
+                )
+            }
+            val ctx = ctxDeferred.await().getOrThrow()
+            val requestedTeamId = ctx.teamId.trim()
+            if (forceTeamRefresh) {
+                OverlayTeamPresenceCache.invalidate()
+            }
+            val teamDeferred = loadTeamDetailAsync(requestedTeamId, forceTeamRefresh)
+            val presenceDeferred = loadPresenceAsync(requestedTeamId, userId, forceTeamRefresh)
+            val profileDeferred = loadProfileAsync(forceTeamRefresh)
+            val team = teamDeferred.await().getOrThrow()
+            val authoritativeTeamId = team.id.trim().ifEmpty { requestedTeamId }
+            val presence = presenceDeferred.await().getOrThrow()
+            val profile = profileDeferred.await()
+            BootstrapResult(
+                profile = profile,
+                team = team,
+                teamId = authoritativeTeamId,
+                ingame = presence.ingame,
+                recentlyActive = presence.recentlyActive,
+            )
         }
-        val team = OverlayTeamContextCache.loadTeamDetail(
-            teamId = ctx.teamId,
-            teamsRepository = teamsRepository,
-            forceRefresh = forceTeamRefresh,
-        ).getOrThrow()
-        val presence = OverlayTeamPresenceCache.load(
-            teamId = ctx.teamId,
-            teamsRepository = teamsRepository,
-            forceRefresh = forceTeamRefresh,
-        ).getOrThrow()
-        val profile = usersRepository.resolveMyProfilePreferCache()
-            ?: usersRepository.getMyProfile(forceRefresh = forceTeamRefresh).getOrThrow()
-        return BootstrapResult(
-            profile = profile,
-            team = team,
-            teamId = ctx.teamId,
-            ingame = presence.ingame,
-            recentlyActive = presence.recentlyActive,
-        )
+
+    private fun CoroutineScope.loadTeamDetailAsync(
+        teamId: String,
+        forceTeamRefresh: Boolean,
+    ): Deferred<Result<TeamDetailDto>> = async(Dispatchers.IO) {
+        withTimeoutOrNull(STEP_TIMEOUT_MS) {
+            OverlayTeamContextCache.loadTeamDetail(
+                teamId = teamId,
+                teamsRepository = teamsRepository,
+                forceRefresh = forceTeamRefresh,
+            )
+        } ?: Result.failure(IllegalStateException("team_timeout"))
+    }
+
+    private fun CoroutineScope.loadPresenceAsync(
+        teamId: String,
+        userId: String?,
+        forceTeamRefresh: Boolean,
+    ): Deferred<Result<com.lastasylum.alliance.data.teams.TeamOverlayPresenceDto>> =
+        async(Dispatchers.IO) {
+            withTimeoutOrNull(STEP_TIMEOUT_MS) {
+                OverlayTeamPresenceCache.load(
+                    teamId = teamId,
+                    teamsRepository = teamsRepository,
+                    launchDiskCache = launchDiskCache,
+                    userId = userId,
+                    forceRefresh = forceTeamRefresh,
+                )
+            } ?: Result.failure(IllegalStateException("presence_timeout"))
+        }
+
+    private fun CoroutineScope.loadProfileAsync(
+        forceTeamRefresh: Boolean,
+    ): Deferred<MyProfileDto> = async(Dispatchers.IO) {
+        withTimeoutOrNull(STEP_TIMEOUT_MS) {
+            usersRepository.resolveMyProfilePreferCache()
+                ?: usersRepository.getMyProfile(forceRefresh = forceTeamRefresh).getOrNull()
+        } ?: usersRepository.peekMyProfile()
+            ?: usersRepository.peekMyProfileDisk()
+            ?: throw IllegalStateException("profile_timeout")
     }
 
     private suspend fun refreshPresenceOnly(showRefreshing: Boolean) {
@@ -291,14 +367,27 @@ class OverlayTeamOnlineController(
             OverlayTeamPresenceCache.load(
                 teamId = tid,
                 teamsRepository = teamsRepository,
+                launchDiskCache = launchDiskCache,
+                userId = currentUserId(),
                 forceRefresh = true,
             )
         }
         loaded.onSuccess { presence ->
             applyPresenceLists(presence.ingame, presence.recentlyActive)
-            _state.update { it.copy(error = null, refreshing = false) }
+            _state.update { it.copy(error = null, staleDataHint = null, refreshing = false) }
         }.onFailure {
-            _state.update { it.copy(refreshing = false) }
+            _state.update { state ->
+                state.copy(
+                    refreshing = false,
+                    staleDataHint = state.staleDataHint
+                        ?: resources.getString(R.string.overlay_online_stale_data),
+                    error = if (state.baseSections.isEmpty()) {
+                        resources.getString(R.string.overlay_online_error)
+                    } else {
+                        state.error
+                    },
+                )
+            }
         }
     }
 
@@ -340,6 +429,21 @@ class OverlayTeamOnlineController(
         }
     }
 
+    private fun connectPresenceSocket(teamId: String) {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
+        teamPresenceSocket.connect(
+            baseUrl = baseUrl,
+            teamId = tid,
+            tokenProvider = tokenProvider,
+        )
+    }
+
+    private fun currentUserId(): String? =
+        _state.value.profile?.id?.trim()?.takeIf { it.isNotEmpty() }
+            ?: usersRepository.peekMyProfile()?.id?.trim()?.takeIf { it.isNotEmpty() }
+            ?: usersRepository.peekMyProfileDisk()?.id?.trim()?.takeIf { it.isNotEmpty() }
+
     private data class BootstrapResult(
         val profile: MyProfileDto,
         val team: TeamDetailDto,
@@ -350,5 +454,6 @@ class OverlayTeamOnlineController(
 
     private companion object {
         private const val FRESHNESS_REBUILD_MS = 30_000L
+        private const val STEP_TIMEOUT_MS = 8_000L
     }
 }

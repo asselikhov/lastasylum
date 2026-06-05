@@ -29,4 +29,10 @@ class PresenceFormatTest {
     fun freshPing_formatsJustNow() {
         assertEquals("только что", formatOverlayPresenceAgeRu(Instant.now().toString()))
     }
+
+    @Test
+    fun ingamePingWithin120s_isOverlayIngameNow() {
+        val ping = Instant.now().minusSeconds(100).toString()
+        assertTrue(isOverlayIngameNow("ingame", ping))
+    }
 }

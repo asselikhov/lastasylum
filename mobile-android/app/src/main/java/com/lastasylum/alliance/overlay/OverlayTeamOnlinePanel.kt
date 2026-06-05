@@ -76,12 +76,13 @@ fun OverlayTeamOnlinePanel(
     val voiceSession = appContainer.overlayVoiceSession
     val voiceRosterSync = remember(appContainer) { VoicePresenceRosterSync(appContainer) }
 
-    val controller = remember(teamsRepository, usersRepository, teamPresenceSocket) {
+    val controller = remember(teamsRepository, usersRepository, teamPresenceSocket, appContainer) {
         OverlayTeamOnlineController(
             scope = scope,
             teamsRepository = teamsRepository,
             usersRepository = usersRepository,
             teamPresenceSocket = teamPresenceSocket,
+            launchDiskCache = appContainer.launchDiskCache,
             tokenProvider = tokenProvider,
             baseUrl = BuildConfig.API_BASE_URL,
             resources = res,
@@ -94,8 +95,16 @@ fun OverlayTeamOnlinePanel(
     val presenceSocketState by teamPresenceSocket.connectionState.collectAsStateWithLifecycle(lifecycleOwner)
 
     LaunchedEffect(controller) {
+        withContext(Dispatchers.IO) {
+            usersRepository.updatePresence("ingame")
+        }
         controller.start()
         controller.refresh(force = true)
+    }
+    LaunchedEffect(presenceSocketState) {
+        if (presenceSocketState == TeamPresenceSocketState.Connected) {
+            controller.onPresenceSocketConnected()
+        }
     }
     DisposableEffect(controller) {
         onDispose { controller.stop() }
@@ -289,6 +298,7 @@ fun OverlayTeamOnlinePanel(
         loading = uiState.loading,
         refreshing = uiState.refreshing,
         error = uiState.error,
+        staleDataHint = uiState.staleDataHint,
         selfLabel = selfLabel,
         onSearchQuery = controller::onSearchQuery,
         onFilterChip = controller::onFilterChip,

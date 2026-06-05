@@ -48,6 +48,24 @@ class OverlayTeamPresenceCacheTest {
     }
 
     @Test
+    fun seedFromDisk_restoresPresenceForPeek() {
+        val presence = TeamOverlayPresenceDto(
+            ingame = listOf(
+                PlayerTeamMemberDto(
+                    userId = "u1",
+                    username = "alice",
+                    isLeader = false,
+                    telegramUsername = null,
+                    presenceStatus = "ingame",
+                    lastPresenceAt = Instant.now().toString(),
+                ),
+            ),
+        )
+        OverlayTeamPresenceCache.seedFromDisk("team-1", presence)
+        assertEquals("alice", OverlayTeamPresenceCache.peek("team-1")?.ingame?.first()?.username)
+    }
+
+    @Test
     fun invalidate_clearsCache() {
         OverlayTeamPresenceCache.seedCacheForTest(
             teamId = "team-1",

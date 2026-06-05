@@ -23,6 +23,9 @@ data class TeamPresenceSocketEvent(
     val userId: String,
     val presenceStatus: String?,
     val lastPresenceAt: String?,
+    val username: String? = null,
+    val teamRole: String? = null,
+    val isLeader: Boolean? = null,
 )
 
 class TeamPresenceSocketManager {
@@ -178,10 +181,16 @@ class TeamPresenceSocketManager {
         if (userId.isBlank()) return null
         val status = optString("presenceStatus", "").trim()
         val lastAt = optString("lastPresenceAt", "").trim()
+        val username = optString("username", "").trim().takeIf { it.isNotEmpty() }
+        val teamRole = optString("teamRole", "").trim().takeIf { it.isNotEmpty() }
+        val leader = if (has("isLeader") && !isNull("isLeader")) optBoolean("isLeader") else null
         return TeamPresenceSocketEvent(
             userId = userId,
             presenceStatus = status.takeIf { it.isNotEmpty() },
             lastPresenceAt = lastAt.takeIf { it.isNotEmpty() },
+            username = username,
+            teamRole = teamRole,
+            isLeader = leader,
         )
     }
 

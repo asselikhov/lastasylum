@@ -58,6 +58,25 @@ data class OverlayOnlinePresenceLists(
 
 internal const val OVERLAY_PRESENCE_STALE_SOON_MS = 60_000L
 
+/** Placeholder when roster username is not yet available (never show ObjectId fragments). */
+internal const val OVERLAY_UNKNOWN_MEMBER_USERNAME = "Участник"
+
+internal fun resolveOverlayMemberUsername(
+    userId: String,
+    event: TeamPresenceSocketEvent? = null,
+    fallbackMember: PlayerTeamMemberDto? = null,
+): String {
+    event?.username?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+    fallbackMember?.username?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+    OverlayTeamContextCache.memberUsername(userId)?.let { return it }
+    OverlayTeamPresenceCache.findMember(userId)?.username?.trim()?.takeIf { it.isNotEmpty() }
+        ?.let { return it }
+    return OVERLAY_UNKNOWN_MEMBER_USERNAME
+}
+
+internal fun isPlaceholderOverlayUsername(username: String): Boolean =
+    username.trim() == OVERLAY_UNKNOWN_MEMBER_USERNAME
+
 fun presenceFreshness(
     lastPresenceAt: String?,
     now: Instant = Instant.now(),
@@ -121,7 +140,7 @@ fun mergePresenceSocketEvent(
     val existing = ingame.firstOrNull { it.userId == event.userId }
         ?: recent.firstOrNull { it.userId == event.userId }
         ?: fallbackMember
-        ?: event.toMinimalMember()
+        ?: event.toMemberDto(fallbackMember)
     if (nowIngame) {
         recent.removeAll { it.userId == event.userId }
         val patched = existing.copy(
@@ -330,13 +349,17 @@ fun buildVoiceFlagsMap(
     }
 }
 
-private fun TeamPresenceSocketEvent.toMinimalMember(): PlayerTeamMemberDto =
+private fun TeamPresenceSocketEvent.toMemberDto(
+    fallbackMember: PlayerTeamMemberDto?,
+): PlayerTeamMemberDto =
     PlayerTeamMemberDto(
         userId = userId,
-        username = userId.take(12),
-        isLeader = false,
-        teamRole = "R1",
-        telegramUsername = null,
+        username = resolveOverlayMemberUsername(userId, this, fallbackMember),
+        isLeader = fallbackMember?.isLeader ?: (isLeader == true),
+        teamRole = fallbackMember?.teamRole?.trim()?.takeIf { it.isNotEmpty() }
+            ?: teamRole?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "R1",
+        telegramUsername = fallbackMember?.telegramUsername,
         presenceStatus = presenceStatus,
         lastPresenceAt = lastPresenceAt,
     )

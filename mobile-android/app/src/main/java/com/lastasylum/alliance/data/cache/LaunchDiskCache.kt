@@ -5,6 +5,7 @@ import com.lastasylum.alliance.data.auth.AuthUser
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.teams.TeamDetailDto
+import com.lastasylum.alliance.data.teams.TeamOverlayPresenceDto
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamNewsListPageDto
@@ -29,6 +30,7 @@ class LaunchDiskCache(private val context: Context) {
     private val newsAdapter = moshi.adapter(CachedTeamNews::class.java)
     private val forumTopicsAdapter = moshi.adapter(CachedForumTopics::class.java)
     private val forumMessagesAdapter = moshi.adapter(CachedForumMessages::class.java)
+    private val overlayPresenceAdapter = moshi.adapter(CachedOverlayPresence::class.java)
     private val authUserAdapter = moshi.adapter(CachedAuthUser::class.java)
 
     fun saveAuthUser(userId: String, user: AuthUser) {
@@ -170,6 +172,36 @@ class LaunchDiskCache(private val context: Context) {
         trimForumMessageFiles(userId, keepFileName = forumMessagesFileName(teamId, topicId))
     }
 
+    fun saveOverlayPresence(
+        userId: String,
+        teamId: String,
+        presence: TeamOverlayPresenceDto,
+    ) {
+        if (userId.isBlank() || teamId.isBlank()) return
+        write(
+            userId,
+            overlayPresenceFileName(teamId),
+            overlayPresenceAdapter.toJson(CachedOverlayPresence(presence, nowMs())),
+        )
+    }
+
+    fun loadOverlayPresence(
+        userId: String,
+        teamId: String,
+        maxAgeMs: Long = OVERLAY_PRESENCE_DISK_SOFT_TTL_MS,
+    ): TeamOverlayPresenceDto? {
+        if (userId.isBlank() || teamId.isBlank()) return null
+        val cached = readCached(
+            userId,
+            overlayPresenceFileName(teamId),
+            overlayPresenceAdapter,
+        ) ?: return null
+        if (maxAgeMs > 0L && System.currentTimeMillis() - cached.savedAtMs > maxAgeMs) {
+            return null
+        }
+        return cached.presence
+    }
+
     fun loadForumMessages(
         userId: String,
         teamId: String,
@@ -261,6 +293,9 @@ class LaunchDiskCache(private val context: Context) {
     private fun forumMessagesFileName(teamId: String, topicId: String): String =
         "forum_messages_${sanitizeUserId(teamId)}_${sanitizeUserId(topicId)}.json"
 
+    private fun overlayPresenceFileName(teamId: String): String =
+        "overlay_presence_${sanitizeUserId(teamId)}.json"
+
     private fun trimForumMessageFiles(userId: String, keepFileName: String) {
         val dir = userDir(userId)
         if (!dir.isDirectory) return
@@ -287,12 +322,15 @@ class LaunchDiskCache(private val context: Context) {
         private const val FILE_REMOVED_MESSAGE_IDS = "chat_removed_message_ids.json"
         private const val MESSAGE_FILE_PREFIX = "messages_"
         private const val FORUM_MESSAGES_FILE_PREFIX = "forum_messages_"
-        private const val MAX_MESSAGE_ROOM_FILES = 3
+        private const val MAX_MESSAGE_ROOM_FILES = 12
         private const val MAX_FORUM_MESSAGE_FILES = 5
         private const val MAX_REMOVED_MESSAGE_IDS = 512
 
         /** Soft TTL — stale data is still returned; callers refresh from network. */
         const val SOFT_TTL_MS = 7L * 24 * 60 * 60 * 1000
+
+        /** Overlay «Участники онлайн» snapshot — short TTL for stale fallback only. */
+        const val OVERLAY_PRESENCE_DISK_SOFT_TTL_MS = 5L * 60_000
 
         fun isStale(savedAtMs: Long, nowMs: Long = System.currentTimeMillis()): Boolean =
             savedAtMs <= 0L || nowMs - savedAtMs > SOFT_TTL_MS
@@ -352,5 +390,11 @@ data class CachedForumTopics(
 data class CachedForumMessages(
     val messages: List<TeamForumMessageDto>,
     val hasMoreOlder: Boolean,
+    val savedAtMs: Long,
+)
+
+@JsonClass(generateAdapter = true)
+data class CachedOverlayPresence(
+    val presence: TeamOverlayPresenceDto,
     val savedAtMs: Long,
 )

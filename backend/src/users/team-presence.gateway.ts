@@ -18,6 +18,9 @@ export type TeamPresenceSocketPayload = {
   userId: string;
   presenceStatus: string | null;
   lastPresenceAt: string | null;
+  username?: string | null;
+  teamRole?: string | null;
+  isLeader?: boolean;
 };
 
 type GatewayUser = {
@@ -102,6 +105,9 @@ export class TeamPresenceGateway {
       userId: row.userId,
       presenceStatus: row.presenceStatus,
       lastPresenceAt: row.lastPresenceAt,
+      username: row.username,
+      teamRole: row.teamRole,
+      isLeader: row.isLeader,
     });
   }
 }

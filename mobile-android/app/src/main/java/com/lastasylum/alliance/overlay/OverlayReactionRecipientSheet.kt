@@ -79,17 +79,27 @@ private val OverlayCyan = Color(0xFF38BDF8)
 internal suspend fun loadOverlayIngameReactionRecipients(
     usersRepository: UsersRepository,
     teamsRepository: TeamsRepository,
+    launchDiskCache: com.lastasylum.alliance.data.cache.LaunchDiskCache? = null,
 ): Result<List<PlayerTeamMemberDto>> =
     withContext(Dispatchers.IO) {
         runCatching {
-            val ctx = OverlayTeamContextCache.load(
-                usersRepository = usersRepository,
-                teamsRepository = teamsRepository,
-            ).getOrThrow()
+            val uid = usersRepository.peekMyProfile()?.id?.trim().orEmpty()
+            if (uid.isNotEmpty() && launchDiskCache != null) {
+                OverlayTeamContextCache.hydrateFromDisk(uid, usersRepository, launchDiskCache)
+            }
+            val ctx = OverlayTeamContextCache.peekForPanel()
+                ?: OverlayTeamContextCache.load(
+                    usersRepository = usersRepository,
+                    teamsRepository = teamsRepository,
+                ).getOrThrow()
             val self = ctx.currentUserId
+            val teamId = OverlayTeamContextCache.peekCachedTeam()?.id?.trim().orEmpty()
+                .ifEmpty { ctx.teamId }
             val presence = OverlayTeamPresenceCache.load(
-                teamId = ctx.teamId,
+                teamId = teamId,
                 teamsRepository = teamsRepository,
+                launchDiskCache = launchDiskCache,
+                userId = uid.ifEmpty { self },
                 forceRefresh = true,
             ).getOrThrow()
             filterFreshIngameRecipients(presence.ingame, selfUserId = self)
@@ -223,7 +233,7 @@ fun OverlayReactionRecipientSheet(
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
-                                text = stringResource(R.string.overlay_reactions_none_ingame),
+                                text = stringResource(R.string.overlay_reactions_no_recipients_hint),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = OverlayMuted,
                             )
@@ -247,7 +257,7 @@ fun OverlayReactionRecipientSheet(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = stringResource(R.string.overlay_reactions_none_ingame),
+                                    text = stringResource(R.string.overlay_reactions_no_recipients_hint),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = OverlayMuted,
                                 )

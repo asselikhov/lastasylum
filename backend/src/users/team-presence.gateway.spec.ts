@@ -47,10 +47,21 @@ describe('TeamPresenceGateway', () => {
       playerTeamId: 'team-1',
       presenceStatus: 'online',
       lastPresenceAt: null,
+      username: 'alice',
+      teamRole: 'R3',
+      isLeader: false,
     });
     await gateway.broadcastUserPresence('u1');
     expect(getUserPresenceBroadcastRow).toHaveBeenCalledWith('u1');
     expect(to).toHaveBeenCalledWith('team:team-1');
+    expect(emit).toHaveBeenCalledWith('team:presence', {
+      userId: 'u1',
+      presenceStatus: 'online',
+      lastPresenceAt: null,
+      username: 'alice',
+      teamRole: 'R3',
+      isLeader: false,
+    });
   });
 
   it('broadcastUserPresence skips when user has no squad team', async () => {

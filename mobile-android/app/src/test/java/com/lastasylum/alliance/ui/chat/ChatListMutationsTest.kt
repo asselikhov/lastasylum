@@ -149,14 +149,14 @@ class ChatListMutationsTest {
     }
 
     @Test
-    fun mergeLoadedPageWithExisting_dropsStaleOlderMissingFromServer() {
+    fun mergeLoadedPageWithExisting_keepsUnionByIdWhenPartialRest() {
         val anchor = "507f1f77bcf86cd799439013"
-        val staleMiddle = "507f1f77bcf86cd799439012"
+        val socketMiddle = "507f1f77bcf86cd799439012"
         val older = "507f1f77bcf86cd799439011"
-        val existing = listOf(msg(anchor), msg(staleMiddle), msg(older))
+        val existing = listOf(msg(anchor), msg(socketMiddle), msg(older))
         val loaded = listOf(msg(anchor), msg(older))
         val merged = mergeLoadedPageWithExisting(existing, loaded)
-        assertEquals(listOf(anchor, older), merged.map { it._id })
+        assertEquals(listOf(anchor, socketMiddle, older), merged.map { it._id })
     }
 
     @Test
@@ -174,10 +174,10 @@ class ChatListMutationsTest {
     }
 
     @Test
-    fun mergeLoadedPageWithExisting_clearsCacheWhenServerPageEmpty() {
+    fun mergeLoadedPageWithExisting_keepsExistingWhenServerPageEmpty() {
         val existing = listOf(msg("stale-1", "old"), msg("pending-1", "sending"))
         val merged = mergeLoadedPageWithExisting(existing, loaded = emptyList())
-        assertEquals(listOf("pending-1"), merged.map { it._id })
+        assertEquals(listOf("stale-1", "pending-1"), merged.map { it._id })
     }
 
     @Test
@@ -240,6 +240,25 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun orderRealtimeSubscriptionRoomIds_includesAllAllianceRoomsWhenSubscribeAll() {
+        val rooms = listOf(
+            roomDto("raid", unread = 0),
+            roomDto("hub", unread = 0),
+            roomDto("quiet", unread = 0),
+        )
+        val ids = orderRealtimeSubscriptionRoomIds(
+            rooms = rooms,
+            selectedRoomId = "quiet",
+            raidRoomId = "raid",
+            hubRoomId = "hub",
+            subscribeAllRooms = true,
+        )
+        assertEquals("quiet", ids.first())
+        assertEquals(3, ids.toSet().size)
+        assertTrue(ids.containsAll(listOf("raid", "hub", "quiet")))
+    }
+
+    @Test
     fun orderRealtimeSubscriptionRoomIds_putsSelectedFirst() {
         val rooms = listOf(
             roomDto("raid", unread = 0),
@@ -283,6 +302,26 @@ class ChatListMutationsTest {
                 sessionCache = session,
                 roomCache = room,
                 pageSize = 30,
+            ),
+        )
+    }
+
+    @Test
+    fun shouldSkipBackgroundMessageRefresh_falseWhenIdSetsDiffer() {
+        val visible = listOf(
+            msg("507f1f77bcf86cd799439013", "new"),
+            msg("507f1f77bcf86cd799439011", "old"),
+        )
+        val session = listOf(
+            msg("507f1f77bcf86cd799439013", "new"),
+            msg("507f1f77bcf86cd799439010", "different middle"),
+        )
+        assertFalse(
+            shouldSkipBackgroundMessageRefresh(
+                visible = visible,
+                sessionCache = session,
+                roomCache = session,
+                pageSize = 2,
             ),
         )
     }

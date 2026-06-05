@@ -3,8 +3,8 @@ package com.lastasylum.alliance.ui.util
 import java.time.Duration
 import java.time.Instant
 
-/** Окно свежести пинга оверлея (~1.5× heartbeat оверлея 60 с). */
-const val OVERLAY_INGAME_PRESENCE_STALE_MS = 90_000L
+/** Окно свежести пинга оверлея (~2.5× heartbeat оверлея 45 с). */
+const val OVERLAY_INGAME_PRESENCE_STALE_MS = 120_000L
 
 /** Как часто обновлять список «Участники онлайн», пока панель открыта. */
 const val OVERLAY_ONLINE_PANEL_POLL_MS = 60_000L
