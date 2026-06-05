@@ -1,13 +1,12 @@
 package com.lastasylum.alliance.data.auth
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
 class TokenStore(context: Context) {
-    private val prefs: SharedPreferences = createPrefs(context.applicationContext)
+    private val prefs = createPrefs(context.applicationContext)
 
     @Volatile
     private var memoryAccessToken: String? = null
@@ -15,8 +14,8 @@ class TokenStore(context: Context) {
     @Volatile
     private var memoryRefreshToken: String? = null
 
-    private fun createPrefs(appContext: Context): SharedPreferences {
-        return runCatching {
+    private fun createPrefs(appContext: Context) =
+        runCatching {
             EncryptedSharedPreferences.create(
                 appContext,
                 PREFS_NAME_SECURE,
@@ -27,10 +26,12 @@ class TokenStore(context: Context) {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
             )
         }.getOrElse { e ->
-            Log.e(TAG, "EncryptedSharedPreferences unavailable; using plain prefs fallback", e)
-            appContext.getSharedPreferences(PREFS_NAME_FALLBACK, Context.MODE_PRIVATE)
+            Log.e(TAG, "EncryptedSharedPreferences unavailable", e)
+            throw TokenStoreSecurityException(
+                "Secure token storage is unavailable on this device",
+                e,
+            )
         }
-    }
 
     fun saveTokens(accessToken: String, refreshToken: String) {
         memoryAccessToken = accessToken
@@ -57,10 +58,12 @@ class TokenStore(context: Context) {
         return prefs.getString(KEY_REFRESH, null)?.also { memoryRefreshToken = it }
     }
 
+    class TokenStoreSecurityException(message: String, cause: Throwable?) :
+        RuntimeException(message, cause)
+
     private companion object {
         private const val TAG = "TokenStore"
         private const val PREFS_NAME_SECURE = "last_asylum_secure_tokens"
-        private const val PREFS_NAME_FALLBACK = "last_asylum_tokens_fallback"
         private const val KEY_ACCESS = "access_token"
         private const val KEY_REFRESH = "refresh_token"
     }

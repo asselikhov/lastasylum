@@ -235,16 +235,19 @@ class CombatOverlayService : Service() {
             it.setSafeTopMinYProvider { overlayReactionSafeTopMinY() }
         }
     }
-    private val presenceHeartbeat by lazy {
-        OverlayPresenceHeartbeat(
+    private val overlayPresenceCoordinator by lazy {
+        OverlayPresenceCoordinator(
             scope = serviceScope,
-            intervalMs = 60_000L,
-            ping = {
-                AppContainer.from(this@CombatOverlayService).usersRepository.updatePresence(
-                    OVERLAY_PRESENCE_INGAME,
-                )
-                Unit
+            usersRepository = AppContainer.from(this).usersRepository,
+            isOverlayEnabled = {
+                AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isOverlayPanelEnabled()
             },
+            hasSession = { AppContainer.from(this@CombatOverlayService).authRepository.hasSession() },
+            isInGameOverlayUiActive = { isInGameOverlayUiActive() },
+            isOverlaySessionActive = { overlaySessionActive },
+            isVoiceActive = { voiceSession?.let { it.micOn || it.soundOn } == true },
+            canUseOverlayVoiceNow = { canUseOverlayVoiceNow() },
+            onStopVoice = { stopOverlayVoice() },
         )
     }
 
@@ -254,56 +257,11 @@ class CombatOverlayService : Service() {
      * сразу, away — после нескольких тиков без игры (без 3‑минутного grace).
      */
     private fun syncOverlayIngamePresence(inGameProbe: Boolean) {
-        val container = AppContainer.from(this)
-        if (!container.userSettingsPreferences.isOverlayPanelEnabled() ||
-            !container.authRepository.hasSession()
-        ) {
-            overlayIngameMissStreak = 0
-            stopOverlayIngamePresence(markAway = false)
-            return
-        }
-        val voiceActive = voiceSession?.let { it.micOn || it.soundOn } == true
-        val keepIngamePing =
-            inGameProbe || isInGameOverlayUiActive() || voiceActive
-        if (keepIngamePing) {
-            overlayIngameMissStreak = 0
-            val firstStart = !overlayIngamePresenceActive
-            overlayIngamePresenceActive = true
-            presenceHeartbeat.start()
-            if (firstStart || voiceActive) {
-                serviceScope.launch {
-                    runCatching {
-                        container.usersRepository.updatePresence(OVERLAY_PRESENCE_INGAME)
-                    }
-                }
-            }
-            return
-        }
-        presenceHeartbeat.stop()
-        overlayIngameMissStreak++
-        if (overlayIngameMissStreak < OVERLAY_INGAME_AWAY_MISS_STREAK) {
-            return
-        }
-        if (overlaySessionActive && isInGameOverlayUiActive()) {
-            return
-        }
-        stopOverlayIngamePresence(markAway = true)
+        overlayPresenceCoordinator.sync(inGameProbe)
     }
 
     private fun stopOverlayIngamePresence(markAway: Boolean) {
-        presenceHeartbeat.stop()
-        overlayIngamePresenceActive = false
-        if (markAway && !canUseOverlayVoiceNow()) {
-            stopOverlayVoice()
-        }
-        if (!markAway) return
-        val container = AppContainer.from(this)
-        if (!container.authRepository.hasSession()) return
-        serviceScope.launch {
-            runCatching {
-                container.usersRepository.updatePresence(OVERLAY_PRESENCE_AWAY)
-            }
-        }
+        overlayPresenceCoordinator.stop(markAway)
     }
 
     private fun canUseOverlayVoiceNow(): Boolean =
@@ -966,8 +924,8 @@ class CombatOverlayService : Service() {
     @Volatile
     private var overlayInGameProbeActive: Boolean = false
     /** Heartbeat «ingame» для списка союзников — не привязан к видимости HUD/ленты. */
-    private var overlayIngamePresenceActive = false
-    private var overlayIngameMissStreak = 0
+    private val overlayIngamePresenceActive: Boolean
+        get() = overlayPresenceCoordinator.ingamePresenceActive
     /** Не вызывать [NotificationManager.notify] с тем же текстом подряд (лишние всплытия на части OEM). */
     private var lastForegroundNotificationText: String? = null
     private var lastForegroundMicActive: Boolean = false
@@ -1563,18 +1521,6 @@ class CombatOverlayService : Service() {
             }
             return
         }
-        // Main app UI is open and overlay HUD is not shown — skip UsageStats heuristics.
-        if (mainAppForegroundActive &&
-            !isInGameOverlayUiActive() &&
-            !isOverlayShellActive() &&
-            !overlayChatTeamPanelVisible &&
-            !OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
-        ) {
-            overlayInGameProbeActive = false
-            syncOverlayIngamePresence(inGameProbe = false)
-            scheduleGameGateTick(GAME_GATE_POLL_MAIN_APP_FOREGROUND_MS)
-            return
-        }
         if (gateCheckInFlight) {
             scheduleGameGateTick(nextGameGateDelayMs())
             return
@@ -1720,6 +1666,11 @@ class CombatOverlayService : Service() {
                             hudStatusVisible = overlayStatusHudHost?.visibility == View.VISIBLE,
                             hudTopRightVisible = overlayTopRightHudHost?.visibility == View.VISIBLE,
                         )
+                        OverlayRuntimeMetrics.logGameGate(
+                            inGame = inGame,
+                            showUi = stableShowInGameOverlayUi,
+                            mainAppForeground = mainAppForegroundActive,
+                        )
                     }
                     syncOverlayIngamePresence(inGameProbe = inGame)
                     applyGameGateState(
@@ -1743,32 +1694,18 @@ class CombatOverlayService : Service() {
         mainHandler.postDelayed(gameGateRunnable, delayMs)
     }
 
-    private fun nextGameGateDelayMs(): Long {
-        if (mainAppForegroundActive && !isInGameOverlayUiActive() && !isOverlayShellActive()) {
-            return GAME_GATE_POLL_MAIN_APP_FOREGROUND_MS
-        }
-        if (overlayCommandsPopover.isBlockingGameGateDismiss() ||
-            overlayChatTeamPanelVisible ||
-            OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
-        ) {
-            return GAME_GATE_POLL_MODAL_UI_MS
-        }
-        if (!isInGameOverlayUiActive()) {
-            val last = lastOverlayInGameAtMs
-            return if (last > 0L && System.currentTimeMillis() - last <= GAME_GATE_RECENT_INGAME_WINDOW_MS) {
-                GAME_GATE_POLL_WARM_MS
-            } else {
-                GAME_GATE_POLL_IDLE_MS
-            }
-        }
-        if (isOverlayShellActive() &&
-            stableGatePollTicks >= GATE_STABLE_TICKS_FOR_SLOW_POLL
-        ) {
-            return GAME_GATE_POLL_STABLE_MS
-        }
-        if (isOverlayShellActive()) return GAME_GATE_POLL_ACTIVE_MS
-        return GAME_GATE_POLL_IDLE_MS
-    }
+    private fun nextGameGateDelayMs(): Long =
+        OverlayGameGatePollPolicy.nextPollDelayMs(
+            mainAppForegroundActive = mainAppForegroundActive,
+            inGameOverlayUiActive = isInGameOverlayUiActive(),
+            overlayShellActive = isOverlayShellActive(),
+            modalUiActive = overlayCommandsPopover.isBlockingGameGateDismiss() ||
+                overlayChatTeamPanelVisible ||
+                OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible,
+            lastOverlayInGameAtMs = lastOverlayInGameAtMs,
+            stableGatePollTicks = stableGatePollTicks,
+            stableTicksForSlowPoll = GATE_STABLE_TICKS_FOR_SLOW_POLL,
+        )
 
     private fun shouldKeepUsageAccessDiag(): Boolean {
         val now = System.currentTimeMillis()
@@ -4900,11 +4837,15 @@ class CombatOverlayService : Service() {
         cancelStripTick()
         val reactionListener: (OverlayReactionEvent) -> Unit = { event ->
             mainHandler.post {
-                if (!overlaySessionActive) return@post
                 val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
-                if (selfId.isBlank()) return@post
-                if (event.fromUserId == selfId) return@post
-                if (event.targetUserId != selfId) return@post
+                if (!OverlayReactionCoordinator.shouldDeliverIncomingReaction(
+                        event = event,
+                        selfUserId = selfId,
+                        overlaySessionActive = overlaySessionActive,
+                    )
+                ) {
+                    return@post
+                }
                 val wm = windowManager ?: getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@post
                 when {
                     event.replyToLog != null -> maybeShowIncomingReactionBurst(wm, event)
@@ -6650,24 +6591,19 @@ class CombatOverlayService : Service() {
             }
         }
 
-        /** Main app in foreground — rare gate polls, no UsageStats churn while browsing UI. */
-        private const val GAME_GATE_POLL_MAIN_APP_FOREGROUND_MS = 45_000L
-
         @Volatile
         var mainAppForegroundActive: Boolean = false
 
         fun setMainAppUiInForeground(inForeground: Boolean) {
             mainAppForegroundActive = inForeground
             val service = runningInstance ?: return
-            if (!inForeground) {
-                service.mainHandler.post { service.scheduleGameGateTick(service.nextGameGateDelayMs()) }
-                return
-            }
-            if (!service.isInGameOverlayUiActive() && !service.isOverlayShellActive()) {
-                service.mainHandler.post {
-                    service.scheduleGameGateTick(GAME_GATE_POLL_MAIN_APP_FOREGROUND_MS)
-                }
-            }
+            service.mainHandler.post { service.scheduleGameGateTick(service.nextGameGateDelayMs()) }
+        }
+
+        /** True when UsageStats probe sees the target game, even if HUD is hidden for SquadRelay foreground. */
+        fun isTargetGameForeground(): Boolean {
+            val service = runningInstance ?: return false
+            return service.overlayInGameProbeActive || service.isInGameOverlayUiActive()
         }
 
         /** Частый prune ленты относительно TTL ~10 с. */

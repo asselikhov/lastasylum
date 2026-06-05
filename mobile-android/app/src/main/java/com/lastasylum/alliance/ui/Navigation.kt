@@ -69,6 +69,7 @@ import android.content.Intent
 import com.lastasylum.alliance.MainActivity
 import com.lastasylum.alliance.di.ChatViewModelRegistry
 import com.lastasylum.alliance.overlay.CombatOverlayService
+import com.lastasylum.alliance.overlay.OverlayMainAppPresencePolicy
 import com.lastasylum.alliance.push.FcmTokenManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -157,7 +158,12 @@ fun AppNavigation(
                         CombatOverlayService.ensureRuntimeIfUserEnabled(appContext)
                         activity.lifecycleScope.launch(Dispatchers.IO) {
                             runCatching { FcmTokenManager.registerWithBackend(appContext) }
-                            if (!CombatOverlayService.inGameOverlayUiActive.value) {
+                            delay(OverlayMainAppPresencePolicy.AWAY_PING_DEFER_MS)
+                            val skipAway = OverlayMainAppPresencePolicy.shouldSkipAwayPing(
+                                inGameOverlayUiActive = CombatOverlayService.inGameOverlayUiActive.value,
+                                targetGameForeground = CombatOverlayService.isTargetGameForeground(),
+                            )
+                            if (!skipAway) {
                                 runCatching {
                                     app.usersRepository.updatePresence("away")
                                 }
@@ -186,7 +192,13 @@ fun AppNavigation(
         while (isActive) {
             delay(45_000)
             // Пока гейт видит игру — ingame heartbeat в FGS; иначе «online» для push раскопок.
-            if (inGameOverlayUiActive) continue
+            if (OverlayMainAppPresencePolicy.shouldSkipOnlinePing(
+                    inGameOverlayUiActive = inGameOverlayUiActive,
+                    targetGameForeground = CombatOverlayService.isTargetGameForeground(),
+                )
+            ) {
+                continue
+            }
             runCatching {
                 withContext(Dispatchers.IO) {
                     app.usersRepository.updatePresence("online")

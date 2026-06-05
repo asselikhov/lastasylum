@@ -134,3 +134,9 @@ UserSchema.index({
 UserSchema.index({ playerTeamId: 1 });
 UserSchema.index({ 'gameIdentities.serverNumber': 1 });
 UserSchema.index({ 'gameIdentities.playerTeamId': 1 });
+UserSchema.index({
+  playerTeamId: 1,
+  membershipStatus: 1,
+  presenceStatus: 1,
+  lastPresenceAt: -1,
+});

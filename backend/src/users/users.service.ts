@@ -775,29 +775,38 @@ export class UsersService implements OnModuleInit {
     if (!Types.ObjectId.isValid(excludeUserId)) {
       return [];
     }
+    const squadTeamId =
+      await this.teamsService.resolveSquadTeamIdForUser(excludeUserId);
+    if (!squadTeamId) {
+      return [];
+    }
     const sender = await this.userModel
       .findById(excludeUserId)
-      .select('playerTeamId membershipStatus')
-      .lean<{
-        playerTeamId?: Types.ObjectId | null;
-        membershipStatus?: string;
-      }>()
+      .select('membershipStatus')
+      .lean<{ membershipStatus?: string }>()
       .exec();
     if (
-      !sender?.playerTeamId ||
+      !sender ||
       this.effectiveMembership(sender as UserDocument) !==
         TeamMembershipStatus.ACTIVE
     ) {
       return [];
     }
+    const memberIds = await this.teamsService.listSquadMemberUserIds(
+      squadTeamId,
+    );
+    const teammateOids = memberIds
+      .filter((id) => id !== excludeUserId && Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (teammateOids.length === 0) {
+      return [];
+    }
     const staleBefore = new Date(
       Date.now() - UsersService.OVERLAY_INGAME_LIST_STALE_MS,
     );
-    const excludeOid = new Types.ObjectId(excludeUserId);
     const rows = await this.userModel
       .find({
-        playerTeamId: sender.playerTeamId,
-        _id: { $ne: excludeOid },
+        _id: { $in: teammateOids },
         membershipStatus: TeamMembershipStatus.ACTIVE,
         presenceStatus: 'ingame',
         lastPresenceAt: { $gte: staleBefore },

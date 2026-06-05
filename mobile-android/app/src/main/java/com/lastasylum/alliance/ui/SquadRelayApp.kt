@@ -23,8 +23,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lastasylum.alliance.di.AppContainer
-import com.lastasylum.alliance.di.ChatViewModelRegistry
-import androidx.compose.runtime.DisposableEffect
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayRuntimeScheduler
 import com.lastasylum.alliance.ui.auth.AuthScreen
@@ -146,18 +144,6 @@ fun SquadRelayApp() {
                                     currentUserRole = authState.user?.role.orEmpty(),
                                 ),
                             )
-                            DisposableEffect(chatViewModel) {
-                                ChatViewModelRegistry.bind(chatViewModel)
-                                CombatOverlayService.bindActivityChatViewModel(chatViewModel)
-                                onDispose {
-                                    if (ChatViewModelRegistry.shared === chatViewModel) {
-                                        ChatViewModelRegistry.bind(null)
-                                    }
-                                    if (CombatOverlayService.activityScopedChatViewModel === chatViewModel) {
-                                        CombatOverlayService.bindActivityChatViewModel(null)
-                                    }
-                                }
-                            }
                             if (!postAuthSplashComplete) {
                                 PostAuthLaunchSplash(
                                     onComplete = {

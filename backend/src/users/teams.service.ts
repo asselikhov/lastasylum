@@ -193,6 +193,23 @@ export class TeamsService {
   }
 
   /** Squad roster membership (authoritative), not only denormalized `user.playerTeamId`. */
+  async resolveSquadTeamIdForUser(userId: string): Promise<string | null> {
+    const oid = await this.findSquadMembershipTeamId(userId);
+    return oid?.toString() ?? null;
+  }
+
+  /** Active squad roster user ids for overlay/presence targeting. */
+  async listSquadMemberUserIds(teamId: string): Promise<string[]> {
+    if (!Types.ObjectId.isValid(teamId)) return [];
+    const team = await this.teamModel
+      .findById(teamId)
+      .select('squadMembers.userId')
+      .lean<{ squadMembers?: Array<{ userId: Types.ObjectId }> }>()
+      .exec();
+    if (!team?.squadMembers?.length) return [];
+    return team.squadMembers.map((m) => m.userId.toString());
+  }
+
   private async findSquadMembershipTeamId(
     userId: string,
   ): Promise<Types.ObjectId | null> {
@@ -839,6 +856,7 @@ export class TeamsService {
       }>()
       .exec();
     if (!u) return null;
+    const squadTeamId = await this.resolveSquadTeamIdForUser(userId);
     const toIso = (v: Date | null | undefined): string | null => {
       if (v == null) return null;
       if (v instanceof Date) return v.toISOString();
@@ -846,7 +864,7 @@ export class TeamsService {
     };
     return {
       userId,
-      playerTeamId: u.playerTeamId?.toString() ?? null,
+      playerTeamId: squadTeamId,
       presenceStatus: u.presenceStatus ?? null,
       lastPresenceAt: toIso(u.lastPresenceAt),
     };
@@ -1078,8 +1096,11 @@ export class TeamsService {
       return { ok: true };
     }
     await this.teamModel
-      .updateOne(
-        { _id: team._id },
+      .findOneAndUpdate(
+        {
+          _id: team._id,
+          'squadMembers.userId': { $ne: rid },
+        },
         {
           $push: {
             squadMembers: {
@@ -1144,8 +1165,11 @@ export class TeamsService {
     }
     await this.assertTeamHasMemberOnServer(team._id, serverNumber);
     await this.teamModel
-      .updateOne(
-        { _id: team._id },
+      .findOneAndUpdate(
+        {
+          _id: team._id,
+          'squadMembers.userId': { $ne: tid },
+        },
         {
           $push: {
             squadMembers: {

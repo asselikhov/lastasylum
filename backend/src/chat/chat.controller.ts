@@ -46,24 +46,12 @@ import { UploadChatAttachmentDto } from './dto/upload-chat-attachment.dto';
 import { ToggleReactionDto } from './dto/toggle-reaction.dto';
 import { MarkRoomReadDto } from './dto/mark-room-read.dto';
 import { PinRoomMessageDto } from './dto/pin-room-message.dto';
+import { EditMessageDto } from './dto/edit-message.dto';
+import { ForwardMessageDto } from './dto/forward-message.dto';
+import { OverlayReactionReadCursorDto } from './dto/overlay-reaction-read-cursor.dto';
+import { ToggleOverlayReactionLogReactionDto } from './dto/toggle-overlay-reaction-log-reaction.dto';
 import type { Response } from 'express';
 import { Types } from 'mongoose';
-
-class EditMessageDto {
-  text: string;
-}
-
-class ForwardMessageDto {
-  roomId: string;
-}
-
-class OverlayReactionReadCursorDto {
-  lastSeenLogId: string;
-}
-
-class ToggleOverlayReactionLogReactionDto {
-  emoji: string;
-}
 
 type RequestUser = {
   userId: string;

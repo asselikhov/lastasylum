@@ -45,6 +45,8 @@ import com.lastasylum.alliance.data.chat.isCompactReactionSocketUpdate
 import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 import com.lastasylum.alliance.data.users.UsersRepository
+import com.lastasylum.alliance.ui.chat.usecase.ChatRoomsUseCase
+import com.lastasylum.alliance.ui.chat.usecase.ChatUnreadUseCase
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import com.squareup.moshi.JsonDataException
 import com.squareup.moshi.JsonEncodingException
@@ -1513,17 +1515,7 @@ class ChatViewModel(
     }
 
     private fun sortChatRoomsForDisplay(rooms: List<ChatRoomDto>): List<ChatRoomDto> =
-        rooms.sortedWith(
-            compareBy<ChatRoomDto> { room ->
-                when (ChatRoomKindResolver.kindOf(room)) {
-                    ChatRoomKind.GlobalUnion -> 0
-                    ChatRoomKind.Server -> 1
-                    ChatRoomKind.AllianceHub -> 2
-                    ChatRoomKind.Raid -> 3
-                    ChatRoomKind.Other -> 4
-                }
-            }.thenBy { it.sortOrder }.thenBy { it.title },
-        )
+        ChatRoomsUseCase.sortForDisplay(rooms)
 
     private fun syncRaidRoomPreference(rooms: List<ChatRoomDto>) {
         repository.applyOverlayRoomsFromRooms(rooms)
@@ -1595,11 +1587,10 @@ class ChatViewModel(
         )
 
     private fun allianceHubRoomId(rooms: List<ChatRoomDto>): String? =
-        ChatRoomKindResolver.allianceHubRoom(rooms)?.id
+        ChatRoomsUseCase.allianceHubRoomId(rooms)
 
     private fun allianceRaidRoomId(rooms: List<ChatRoomDto>): String? =
-        ChatRoomKindResolver.allianceRaidRoom(rooms)?.id
-            ?: chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
+        ChatRoomsUseCase.allianceRaidRoomId(rooms, chatRoomPreferences.getRaidRoomId())
 
     private fun messagesBelongToRoom(messages: List<ChatMessage>, roomId: String): Boolean {
         if (messages.isEmpty()) return true
@@ -2070,10 +2061,7 @@ class ChatViewModel(
         val room = _state.value.rooms.find { it.id == roomId }
         val lastRead = room?.let { resolvedLastReadMessageId(it) }
             ?: chatRoomPreferences.getLastReadMessageId(roomId)
-        if (lastRead != null && !isObjectIdNewer(messageId, lastRead)) {
-            return false
-        }
-        return true
+        return ChatUnreadUseCase.shouldTrackUnreadForMessage(messageId, lastRead)
     }
 
     private fun bumpRoomUnreadLocally(roomId: String, messageId: String) {

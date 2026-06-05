@@ -1,4 +1,4 @@
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { IsIn, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class RegisterPushTokenDto {
   @IsString()
@@ -7,9 +7,11 @@ export class RegisterPushTokenDto {
   token!: string;
 }
 
+const PRESENCE_STATUSES = ['ingame', 'online', 'away'] as const;
+
 export class UpdatePresenceDto {
   @IsString()
-  @MinLength(1)
+  @IsIn(PRESENCE_STATUSES)
   @MaxLength(32)
   status!: string;
 }

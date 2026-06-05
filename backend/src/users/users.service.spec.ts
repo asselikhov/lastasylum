@@ -11,6 +11,8 @@ import { GameIdentitiesService } from './game-identities.service';
 
 describe('UsersService', () => {
   const reconcileSquadTeamBindingForUser = jest.fn();
+  const resolveSquadTeamIdForUser = jest.fn();
+  const listSquadMemberUserIds = jest.fn();
   const updateOneExec = jest.fn().mockResolvedValue({ modifiedCount: 1 });
   const updateOne = jest.fn().mockReturnValue({ exec: updateOneExec });
   const execFindById = jest.fn();
@@ -41,6 +43,8 @@ describe('UsersService', () => {
     reconcileSquadTeamBindingForUser.mockImplementation((id: string) =>
       findById(id).exec(),
     );
+    resolveSquadTeamIdForUser.mockResolvedValue(null);
+    listSquadMemberUserIds.mockResolvedValue([]);
     const moduleRef = await Test.createTestingModule({
       providers: [
         UsersService,
@@ -48,6 +52,8 @@ describe('UsersService', () => {
           provide: TeamsService,
           useValue: {
             reconcileSquadTeamBindingForUser,
+            resolveSquadTeamIdForUser,
+            listSquadMemberUserIds,
             getPlayerTeamProfileFields: jest.fn().mockResolvedValue({
               playerTeamId: null,
               playerTeamTag: null,
@@ -300,25 +306,22 @@ describe('UsersService', () => {
     it('returns teammate ids with fresh ingame overlay', async () => {
       const teamId = new Types.ObjectId();
       const mate = new Types.ObjectId();
+      const senderId = '507f1f77bcf86cd799439011';
+      resolveSquadTeamIdForUser.mockResolvedValue(teamId.toString());
+      listSquadMemberUserIds.mockResolvedValue([senderId, mate.toString()]);
       execFindByIdLean.mockResolvedValue({
-        playerTeamId: teamId,
         membershipStatus: TeamMembershipStatus.ACTIVE,
       });
       execFindIngame.mockResolvedValue([{ _id: mate }]);
-      const out = await usersService.listOverlayIngameTeammateIds(
-        '507f1f77bcf86cd799439011',
-      );
+      const out = await usersService.listOverlayIngameTeammateIds(senderId);
       expect(out).toEqual([mate.toString()]);
       const call = findIngameList.mock.calls[0][0] as Record<string, unknown>;
       expect(call.presenceStatus).toBe('ingame');
-      expect(call.playerTeamId).toEqual(teamId);
+      expect(call._id).toEqual({ $in: [mate] });
     });
 
     it('returns empty when sender has no team', async () => {
-      execFindByIdLean.mockResolvedValue({
-        playerTeamId: null,
-        membershipStatus: TeamMembershipStatus.ACTIVE,
-      });
+      resolveSquadTeamIdForUser.mockResolvedValue(null);
       const out = await usersService.listOverlayIngameTeammateIds(
         '507f1f77bcf86cd799439011',
       );
