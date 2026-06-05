@@ -126,6 +126,22 @@ data class AdminUiState(
     val clearAllChatHistoryLoading: Boolean = false,
 )
 
+/** Top-bar refresh spinner scoped to the visible admin route (not every in-flight request). */
+fun AdminUiState.routeRefreshing(): Boolean = when (route) {
+    AdminRoute.Hub -> overviewLoading || clearAllChatHistoryLoading
+    AdminRoute.PlayerTeams -> playerTeamsLoading
+    AdminRoute.Players -> gameServersLoading || usersOnServersLoading
+    AdminRoute.ChatRouting -> alliancesLoading
+    is AdminRoute.PlayerTeamDetail -> when (teamDetailTab) {
+        AdminTeamDetailTab.MEMBERS -> teamMembersLoading
+        AdminTeamDetailTab.CHAT_ROOMS -> teamChatRoomsLoading
+        AdminTeamDetailTab.NEWS -> teamNewsLoading
+        AdminTeamDetailTab.FORUM -> teamForumLoading
+    }
+    is AdminRoute.ChatRoomViewer -> chatRoomMessagesLoading
+    is AdminRoute.ForumTopicViewer -> forumTopicMessagesLoading
+}
+
 /** Unified player row for admin lists and edit sheet. */
 typealias AdminPlayerRow = com.lastasylum.alliance.data.admin.AdminUserOnServerDto
 
@@ -225,19 +241,22 @@ class AdminViewModel(
     private fun refreshGameServerSummaries() {
         viewModelScope.launch {
             _state.value = _state.value.copy(gameServersLoading = true, gameServersError = null)
-            adminRepository.listGameServers()
-                .onSuccess { list ->
-                    _state.value = _state.value.copy(
-                        gameServersLoading = false,
-                        gameServers = list,
-                    )
-                }
-                .onFailure { e ->
-                    _state.value = _state.value.copy(
-                        gameServersLoading = false,
-                        gameServersError = e.toUserMessageRu(res),
-                    )
-                }
+            try {
+                adminRepository.listGameServers()
+                    .onSuccess { list ->
+                        _state.value = _state.value.copy(
+                            gameServers = list,
+                            gameServersError = null,
+                        )
+                    }
+                    .onFailure { e ->
+                        _state.value = _state.value.copy(
+                            gameServersError = e.toUserMessageRu(res),
+                        )
+                    }
+            } finally {
+                _state.value = _state.value.copy(gameServersLoading = false)
+            }
         }
     }
 
@@ -248,25 +267,28 @@ class AdminViewModel(
                 usersOnServersError = null,
             )
             val withoutTeam = _state.value.playersSegment == AdminPlayersSegment.WITHOUT_TEAM
-            adminRepository.listUsersOnServers(
-                serverNumber = _state.value.gameServerFilter,
-                q = _state.value.playersSearchQuery,
-                withoutTeam = withoutTeam,
-                skip = 0,
-            )
-                .onSuccess { page ->
-                    _state.value = _state.value.copy(
-                        usersOnServersLoading = false,
-                        usersOnServers = page.items,
-                        usersOnServersHasMore = page.hasMore,
-                    )
-                }
-                .onFailure { e ->
-                    _state.value = _state.value.copy(
-                        usersOnServersLoading = false,
-                        usersOnServersError = e.toUserMessageRu(res),
-                    )
-                }
+            try {
+                adminRepository.listUsersOnServers(
+                    serverNumber = _state.value.gameServerFilter,
+                    q = _state.value.playersSearchQuery,
+                    withoutTeam = withoutTeam,
+                    skip = 0,
+                )
+                    .onSuccess { page ->
+                        _state.value = _state.value.copy(
+                            usersOnServers = page.items,
+                            usersOnServersHasMore = page.hasMore,
+                            usersOnServersError = null,
+                        )
+                    }
+                    .onFailure { e ->
+                        _state.value = _state.value.copy(
+                            usersOnServersError = e.toUserMessageRu(res),
+                        )
+                    }
+            } finally {
+                _state.value = _state.value.copy(usersOnServersLoading = false)
+            }
         }
     }
 
@@ -573,43 +595,49 @@ class AdminViewModel(
     fun refreshOverview() {
         viewModelScope.launch {
             _state.value = _state.value.copy(overviewLoading = true, overviewError = null)
-            adminRepository.getOverview()
-                .onSuccess { o ->
-                    _state.value = _state.value.copy(
-                        overviewLoading = false,
-                        playerTeamCount = o.playerTeamCount,
-                        usersWithoutTeamCount = o.usersWithoutTeamCount,
-                    )
-                }
-                .onFailure { e ->
-                    _state.value = _state.value.copy(
-                        overviewLoading = false,
-                        overviewError = e.toUserMessageRu(res),
-                    )
-                }
+            try {
+                adminRepository.getOverview()
+                    .onSuccess { o ->
+                        _state.value = _state.value.copy(
+                            playerTeamCount = o.playerTeamCount,
+                            usersWithoutTeamCount = o.usersWithoutTeamCount,
+                            overviewError = null,
+                        )
+                    }
+                    .onFailure { e ->
+                        _state.value = _state.value.copy(
+                            overviewError = e.toUserMessageRu(res),
+                        )
+                    }
+            } finally {
+                _state.value = _state.value.copy(overviewLoading = false)
+            }
         }
     }
 
     fun refreshPlayerTeams() {
         viewModelScope.launch {
             _state.value = _state.value.copy(playerTeamsLoading = true, playerTeamsError = null)
-            adminRepository.listPlayerTeams(
-                serverNumber = _state.value.teamsServerFilter,
-                skip = 0,
-            )
-                .onSuccess { page ->
-                    _state.value = _state.value.copy(
-                        playerTeamsLoading = false,
-                        playerTeams = page.items.sortedBy { it.displayName.lowercase() },
-                        playerTeamsHasMore = page.hasMore,
-                    )
-                }
-                .onFailure { e ->
-                    _state.value = _state.value.copy(
-                        playerTeamsLoading = false,
-                        playerTeamsError = e.toUserMessageRu(res),
-                    )
-                }
+            try {
+                adminRepository.listPlayerTeams(
+                    serverNumber = _state.value.teamsServerFilter,
+                    skip = 0,
+                )
+                    .onSuccess { page ->
+                        _state.value = _state.value.copy(
+                            playerTeams = page.items.sortedBy { it.displayName.lowercase() },
+                            playerTeamsHasMore = page.hasMore,
+                            playerTeamsError = null,
+                        )
+                    }
+                    .onFailure { e ->
+                        _state.value = _state.value.copy(
+                            playerTeamsError = e.toUserMessageRu(res),
+                        )
+                    }
+            } finally {
+                _state.value = _state.value.copy(playerTeamsLoading = false)
+            }
         }
     }
 
@@ -670,19 +698,22 @@ class AdminViewModel(
     fun refreshAlliances() {
         viewModelScope.launch {
             _state.value = _state.value.copy(alliancesLoading = true, alliancesError = null)
-            adminRepository.listAlliances()
-                .onSuccess { list ->
-                    _state.value = _state.value.copy(
-                        alliancesLoading = false,
-                        alliances = list.sortedBy { it.allianceCode.lowercase() },
-                    )
-                }
-                .onFailure { e ->
-                    _state.value = _state.value.copy(
-                        alliancesLoading = false,
-                        alliancesError = e.toUserMessageRu(res),
-                    )
-                }
+            try {
+                adminRepository.listAlliances()
+                    .onSuccess { list ->
+                        _state.value = _state.value.copy(
+                            alliances = list.sortedBy { it.allianceCode.lowercase() },
+                            alliancesError = null,
+                        )
+                    }
+                    .onFailure { e ->
+                        _state.value = _state.value.copy(
+                            alliancesError = e.toUserMessageRu(res),
+                        )
+                    }
+            } finally {
+                _state.value = _state.value.copy(alliancesLoading = false)
+            }
         }
     }
 

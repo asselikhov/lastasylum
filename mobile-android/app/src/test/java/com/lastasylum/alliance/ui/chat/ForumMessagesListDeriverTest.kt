@@ -18,6 +18,18 @@ class ForumMessagesListDeriverTest {
     }
 
     @Test
+    fun forumLazyIndexForMessageId_fallsBackWhenDerivedEmpty() {
+        val m1 = msg("a", "u1", "2024-01-01T10:00:00Z")
+        val m2 = msg("b", "u1", "2024-01-02T10:00:00Z")
+        val idx = forumLazyIndexForMessageId(
+            messages = listOf(m1, m2),
+            derived = ForumMessagesListDerived.Empty,
+            messageId = "a",
+        )
+        assertEquals(2, idx)
+    }
+
+    @Test
     fun `bottom index is zero for reverse chat parity`() {
         val messages = List(3) { i -> msg("id$i", "u", "2024-01-01T${10 + i}:00:00Z") }
         val derived = buildForumMessagesListDerived(messages)

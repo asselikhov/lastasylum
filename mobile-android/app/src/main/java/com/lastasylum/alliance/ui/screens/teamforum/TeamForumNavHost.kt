@@ -156,6 +156,7 @@ import com.lastasylum.alliance.ui.chat.forumPinPreviewDisplayState
 import com.lastasylum.alliance.ui.chat.isForumPinnedPreviewLikelyDeleted
 import com.lastasylum.alliance.ui.chat.isForumPinnedPreviewUnavailable
 import com.lastasylum.alliance.ui.chat.PinnedMessagesSheet
+import com.lastasylum.alliance.ui.chat.forumLazyIndexForMessageId
 import com.lastasylum.alliance.ui.chat.jumpToForumPinnedMessage
 import com.lastasylum.alliance.ui.chat.resolvedThumbnailUrl
 import com.lastasylum.alliance.ui.chat.toPinnedPreview
@@ -1765,7 +1766,7 @@ private fun TeamForumTopicChatRoute(
                             isLoadingOlder = { loadingOlder },
                             loadOlder = { loadOlderForumPage() },
                             timelineIndexForMessageId = { id ->
-                                listDerived.fullLazyIndexForMessageId(id) ?: -1
+                                forumLazyIndexForMessageId(stableMessages, listDerived, id)
                             },
                             scrollToTimelineIndex = { idx ->
                                 runCatching { listState.scrollTimelineItemToViewportCenter(idx) }
@@ -1813,7 +1814,7 @@ private fun TeamForumTopicChatRoute(
                         isLoadingOlder = { loadingOlder },
                         loadOlder = { loadOlderForumPage() },
                         timelineIndexForMessageId = { mid ->
-                            listDerived.fullLazyIndexForMessageId(mid) ?: -1
+                            forumLazyIndexForMessageId(stableMessages, listDerived, mid)
                         },
                         scrollToTimelineIndex = { idx ->
                             runCatching { listState.scrollTimelineItemToViewportCenter(idx) }

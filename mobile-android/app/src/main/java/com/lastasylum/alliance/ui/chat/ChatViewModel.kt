@@ -3355,6 +3355,15 @@ class ChatViewModel(
         if (roomId.isEmpty() || trimmedId.isEmpty() || _state.value.pinInFlight) return
         val roomsSnapshot = _state.value.rooms
         val pinHistorySnapshot = pinHistoryByRoom[roomId]?.toList().orEmpty()
+        val localHistory = pinHistorySnapshot.ifEmpty {
+            roomsSnapshot.find { it.id == roomId }?.pinnedMessagesOrEmpty().orEmpty()
+        }
+        pinHistoryByRoom[roomId] = removePinFromHistory(localHistory, trimmedId)
+        val optimisticRoom = roomsSnapshot.find { it.id == roomId }
+            ?.withOptimisticUnpinOne(trimmedId, localHistory)
+        if (optimisticRoom != null) {
+            publishRoomPin(optimisticRoom)
+        }
         _state.update { it.copy(pinInFlight = true) }
         viewModelScope.launch {
             repository.unpinOneRoomMessage(roomId, trimmedId)
@@ -3572,8 +3581,23 @@ class ChatViewModel(
         }
         if (parseOnly) {
             viewModelScope.launch {
+                ChatRoomsSessionCache.invalidate()
                 repository.listRooms()
-                    .onSuccess { rooms -> applyRoomsFromServer(rooms) }
+                    .onSuccess { rooms ->
+                        val selectedId = _state.value.selectedRoomId?.trim().orEmpty()
+                        val currentRooms = _state.value.rooms
+                        val merged = if (selectedId.isEmpty()) {
+                            rooms
+                        } else {
+                            rooms.map { serverRoom ->
+                                if (serverRoom.id != selectedId) serverRoom
+                                else currentRooms.find { it.id == selectedId } ?: serverRoom
+                            }
+                        }
+                        _state.update { st ->
+                            applyPinBarUi(st.copy(rooms = applyRoomsFromServer(merged)))
+                        }
+                    }
             }
         }
     }

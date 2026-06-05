@@ -72,6 +72,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.ui.admin.AdminPlayersSegment
 import com.lastasylum.alliance.ui.admin.AdminRoute
 import com.lastasylum.alliance.ui.admin.AdminUiState
+import com.lastasylum.alliance.ui.admin.routeRefreshing
 import com.lastasylum.alliance.ui.admin.toAdminPlayerRow
 import com.lastasylum.alliance.ui.admin.AdminTeamDetailTab
 import com.lastasylum.alliance.ui.screens.admin.AdminChatRoomViewerContent
@@ -170,13 +171,7 @@ fun AdminScreen(
                 AdminRoute.Players -> onRefreshPlayers
                 AdminRoute.ChatRouting -> onRefreshAlliances
             },
-            refreshing = state.overviewLoading || state.playerTeamsLoading ||
-                state.teamMembersLoading || state.teamChatRoomsLoading ||
-                state.teamNewsLoading || state.teamForumLoading ||
-                state.chatRoomMessagesLoading || state.forumTopicMessagesLoading ||
-                state.alliancesLoading ||
-                state.gameServersLoading || state.usersOnServersLoading ||
-                state.clearAllChatHistoryLoading,
+            refreshing = state.routeRefreshing(),
         )
 
         state.snackMessage?.let { msg ->
@@ -800,7 +795,13 @@ private fun AdminPlayerTeamsContent(
                 onSelect = onServerFilter,
             )
         }
-        if (filtered.isEmpty() && !state.playerTeamsLoading) {
+        if (state.playerTeamsLoading && filtered.isEmpty()) {
+            item {
+                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(strokeWidth = 2.dp)
+                }
+            }
+        } else if (filtered.isEmpty()) {
             item {
                 Text(
                     stringResource(R.string.admin_teams_empty),
@@ -886,6 +887,13 @@ private fun AdminChatRoutingContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             state.alliancesError?.let { AdminErrorBanner(it) {} }
+        }
+        if (state.alliancesLoading && state.alliances.isEmpty()) {
+            item {
+                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(strokeWidth = 2.dp)
+                }
+            }
         }
         items(state.alliances, key = { it.publicId }) { row ->
             Surface(

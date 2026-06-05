@@ -1,8 +1,22 @@
 package com.lastasylum.alliance.ui.chat
 
+import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import kotlinx.coroutines.delay
 
 const val FORUM_PIN_JUMP_MAX_ATTEMPTS = 40
+
+/** Resolve lazy-list index even when deferred timeline derive is still empty/stale. */
+fun forumLazyIndexForMessageId(
+    messages: List<TeamForumMessageDto>,
+    derived: ForumMessagesListDerived,
+    messageId: String,
+): Int {
+    val id = messageId.trim()
+    if (id.isEmpty()) return -1
+    derived.fullLazyIndexForMessageId(id)?.let { return it }
+    if (messages.isEmpty()) return -1
+    return buildForumMessagesListDerived(messages).fullLazyIndexForMessageId(id) ?: -1
+}
 
 /**
  * Scroll to a pinned forum message, loading older pages when needed.
@@ -22,6 +36,9 @@ suspend fun jumpToForumPinnedMessage(
     val id = messageId.trim()
     if (id.isEmpty()) return false
 
+    fun messageLoaded(): Boolean =
+        messageIdsOldestFirst.any { it.trim() == id }
+
     suspend fun tryJump(): Boolean {
         val idx = timelineIndexForMessageId(id)
         if (idx < 0) return false
@@ -36,7 +53,7 @@ suspend fun jumpToForumPinnedMessage(
 
     var attempts = 0
     while (attempts < FORUM_PIN_JUMP_MAX_ATTEMPTS) {
-        if (messageIdsOldestFirst.any { it == id }) {
+        if (messageLoaded()) {
             if (tryJump()) return true
         }
         if (!hasMoreOlder()) break

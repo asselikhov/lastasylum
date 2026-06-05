@@ -113,6 +113,11 @@ fun AppNavigation(
         key = "alliance_chat",
         factory = chatViewModelFactory,
     )
+    val adminViewModel: AdminViewModel = viewModel(
+        viewModelStoreOwner = activity,
+        key = "alliance_admin",
+        factory = adminViewModelFactory,
+    )
     LaunchedEffect(Unit) {
         if (ChatSessionCache.getFreshRooms() != null) return@LaunchedEffect
         val s = chatViewModel.state.value
@@ -499,7 +504,6 @@ fun AppNavigation(
                         }
                         AppTab.ADMIN.route -> {
                             if (active) {
-                            val adminViewModel: AdminViewModel = viewModel(factory = adminViewModelFactory)
                             val adminState by adminViewModel.state.collectAsStateWithLifecycle()
                             AdminScreen(
                     currentUserId = userId,

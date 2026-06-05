@@ -81,7 +81,31 @@ fun ChatRoomDto.withOptimisticUnpin(): ChatRoomDto = copy(
     pinnedAt = null,
     pinnedByUserId = null,
     pinnedMessage = null,
+    pinnedMessages = emptyList(),
 )
+
+/** Remove one pin from history; promote the next head entry when the active pin was removed. */
+fun ChatRoomDto.withOptimisticUnpinOne(
+    messageId: String,
+    localHistory: List<PinnedMessagePreviewDto> = pinnedMessagesOrEmpty(),
+): ChatRoomDto {
+    val id = messageId.trim()
+    if (id.isEmpty()) return this
+    val history = removePinFromHistory(localHistory, id)
+    if (pinnedMessageId?.trim() != id) {
+        return copy(pinnedMessages = history)
+    }
+    val next = history.firstOrNull()
+    return if (next != null) {
+        copy(
+            pinnedMessageId = next.id,
+            pinnedMessage = next,
+            pinnedMessages = history,
+        )
+    } else {
+        withOptimisticUnpin()
+    }
+}
 
 fun ChatRoomDto.mergePinFromPrevious(
     previous: ChatRoomDto?,
