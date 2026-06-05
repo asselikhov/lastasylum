@@ -3,6 +3,7 @@ package com.lastasylum.alliance.data.auth
 import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+import com.lastasylum.alliance.data.chat.PinHistoryPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import java.util.Locale
@@ -13,6 +14,7 @@ class AuthRepository(
     private val authorizedAuthApi: AuthApi,
     private val tokenStore: TokenStore,
     private val chatRoomPreferences: ChatRoomPreferences,
+    private val pinHistoryPreferences: PinHistoryPreferences,
     private val teamForumPreferences: TeamForumPreferences,
     private val userSettingsPreferences: UserSettingsPreferences,
     private val launchDiskCache: LaunchDiskCache,
@@ -119,6 +121,7 @@ class AuthRepository(
         tokenStore.clearTokens()
         JwtAccessTokenClaims.invalidateCache()
         onProfileCacheInvalidate()
+        pinHistoryPreferences.clearUser()
         ReadCursorSession.clearAll(
             chatRoomPreferences,
             teamForumPreferences,

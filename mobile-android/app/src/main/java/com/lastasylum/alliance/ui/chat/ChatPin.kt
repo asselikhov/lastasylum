@@ -6,12 +6,32 @@ import com.lastasylum.alliance.data.chat.ChatRoomPinChangedEvent
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
+import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
 import java.time.Instant
+
+data class TopicPinSnapshot(
+    val pinnedMessageId: String?,
+    val pinnedAt: String?,
+    val pinnedByUserId: String?,
+    val pinnedMessage: PinnedMessagePreviewDto?,
+)
+
+fun PinnedMessagePreviewDto.resolvedThumbnailUrl(): String? {
+    val raw = imageThumbnailUrl?.trim().orEmpty()
+    if (raw.isEmpty()) return null
+    return resolvedChatAttachmentImageUrl(raw)
+}
+
+private fun firstForumImageRelativeUrl(msg: TeamForumMessageDto): String? {
+    msg.imageRelativeUrls.firstOrNull { it.isNotBlank() }?.let { return it }
+    return msg.imageRelativeUrl?.trim()?.takeIf { it.isNotEmpty() }
+}
 
 fun ChatMessage.toPinnedPreview(): PinnedMessagePreviewDto? {
     val id = _id?.trim().orEmpty()
     if (id.isEmpty()) return null
-    val hasImage = attachments.any { it.kind == "image" && it.url.isNotBlank() }
+    val imageUrl = attachments.firstOrNull { it.kind == "image" && it.url.isNotBlank() }?.url
+    val hasImage = imageUrl != null
     return PinnedMessagePreviewDto(
         id = id,
         text = text,
@@ -22,11 +42,14 @@ fun ChatMessage.toPinnedPreview(): PinnedMessagePreviewDto? {
         editedAt = editedAt,
         hasImage = hasImage,
         isSticker = StickerPacks.stemForMessage(text) != null,
+        imageThumbnailUrl = imageUrl,
+        pinnedByUsername = null,
     )
 }
 
-fun TeamForumMessageDto.toPinnedPreview(): PinnedMessagePreviewDto =
-    PinnedMessagePreviewDto(
+fun TeamForumMessageDto.toPinnedPreview(): PinnedMessagePreviewDto {
+    val imageUrl = firstForumImageRelativeUrl(this)
+    return PinnedMessagePreviewDto(
         id = id,
         text = text,
         senderUsername = senderUsername,
@@ -34,9 +57,12 @@ fun TeamForumMessageDto.toPinnedPreview(): PinnedMessagePreviewDto =
         senderServerNumber = senderServerNumber,
         createdAt = createdAt,
         editedAt = editedAt,
-        hasImage = imageRelativeUrl != null || imageRelativeUrls.isNotEmpty(),
+        hasImage = imageUrl != null,
         isSticker = StickerPacks.stemForMessage(text) != null,
+        imageThumbnailUrl = imageUrl,
+        pinnedByUsername = null,
     )
+}
 
 fun ChatRoomDto.withOptimisticPin(
     messageId: String,
@@ -56,8 +82,23 @@ fun ChatRoomDto.withOptimisticUnpin(): ChatRoomDto = copy(
     pinnedMessage = null,
 )
 
-fun ChatRoomDto.mergePinFromPrevious(previous: ChatRoomDto?): ChatRoomDto {
+fun ChatRoomDto.mergePinFromPrevious(
+    previous: ChatRoomDto?,
+    pinOperationInFlight: Boolean = false,
+): ChatRoomDto {
     if (previous == null) return this
+    if (pinOperationInFlight) {
+        val prevPinId = previous.pinnedMessageId?.trim().orEmpty()
+        val serverPinId = pinnedMessageId?.trim().orEmpty()
+        if (prevPinId != serverPinId) {
+            return copy(
+                pinnedMessageId = previous.pinnedMessageId,
+                pinnedAt = previous.pinnedAt,
+                pinnedByUserId = previous.pinnedByUserId,
+                pinnedMessage = previous.pinnedMessage ?: pinnedMessage,
+            )
+        }
+    }
     val pinId = pinnedMessageId?.trim().orEmpty()
     if (pinId.isEmpty()) return this
     if (pinnedMessage != null) return this
@@ -200,4 +241,87 @@ fun isPinnedPreviewLikelyDeleted(
     if (id.isEmpty()) return false
     val msg = messages.find { it._id?.trim() == id } ?: return false
     return msg.deletedAt != null
+}
+
+fun isForumPinnedPreviewLikelyDeleted(
+    preview: PinnedMessagePreviewDto,
+    messages: List<TeamForumMessageDto>,
+): Boolean {
+    val id = preview.id.trim()
+    if (id.isEmpty()) return false
+    val msg = messages.find { it.id.trim() == id } ?: return false
+    return !msg.deletedAt.isNullOrBlank()
+}
+
+fun TopicPinSnapshot.mergePinFromEvent(event: TeamForumTopicPinChangedEvent): TopicPinSnapshot {
+    val eventPinId = event.pinnedMessageId?.trim().orEmpty()
+    val keptPreview = when {
+        event.pinnedMessage != null -> event.pinnedMessage
+        eventPinId.isEmpty() -> null
+        pinnedMessage?.id == eventPinId -> pinnedMessage
+        else -> null
+    }
+    return copy(
+        pinnedMessageId = event.pinnedMessageId,
+        pinnedAt = event.pinnedAt,
+        pinnedByUserId = event.pinnedByUserId,
+        pinnedMessage = keptPreview,
+    )
+}
+
+fun TopicPinSnapshot.mergePinFromPrevious(
+    previous: TopicPinSnapshot?,
+    pinOperationInFlight: Boolean = false,
+): TopicPinSnapshot {
+    if (previous == null) return this
+    if (pinOperationInFlight) {
+        val prevPinId = previous.pinnedMessageId?.trim().orEmpty()
+        val serverPinId = pinnedMessageId?.trim().orEmpty()
+        if (prevPinId != serverPinId) {
+            return copy(
+                pinnedMessageId = previous.pinnedMessageId,
+                pinnedAt = previous.pinnedAt,
+                pinnedByUserId = previous.pinnedByUserId,
+                pinnedMessage = previous.pinnedMessage ?: pinnedMessage,
+            )
+        }
+    }
+    val pinId = pinnedMessageId?.trim().orEmpty()
+    if (pinId.isEmpty()) return this
+    if (pinnedMessage != null) return this
+    val prevId = previous.pinnedMessageId?.trim().orEmpty()
+    if (pinId == prevId && previous.pinnedMessage != null) {
+        return copy(
+            pinnedMessage = previous.pinnedMessage,
+            pinnedAt = pinnedAt ?: previous.pinnedAt,
+            pinnedByUserId = pinnedByUserId ?: previous.pinnedByUserId,
+        )
+    }
+    return this
+}
+
+fun formatPinnedMetaLine(
+    pinnedAt: String?,
+    pinnedByUsername: String?,
+    pinnedByUserId: String?,
+    currentUserId: String,
+    youLabel: String,
+    userTemplate: (String) -> String,
+    formatTime: (String) -> String,
+): String? {
+    val at = pinnedAt?.trim().orEmpty()
+    val timePart = if (at.isNotEmpty()) formatTime(at) else null
+    val pinUserId = pinnedByUserId?.trim().orEmpty()
+    val name = pinnedByUsername?.trim().orEmpty()
+    val who = when {
+        pinUserId.isNotEmpty() && pinUserId == currentUserId.trim() -> youLabel
+        name.isNotEmpty() -> userTemplate(name)
+        else -> null
+    }
+    return when {
+        who != null && timePart != null -> "$who · $timePart"
+        who != null -> who
+        timePart != null -> timePart
+        else -> null
+    }
 }

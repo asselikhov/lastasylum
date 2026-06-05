@@ -10,6 +10,7 @@ import com.lastasylum.alliance.data.chat.OverlayReactionLogPreferences
 import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
 import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+import com.lastasylum.alliance.data.chat.PinHistoryPreferences
 import com.lastasylum.alliance.data.chat.ChatRoomsRepository
 import com.lastasylum.alliance.data.chat.ChatSocketManager
 import com.lastasylum.alliance.data.network.NetworkModule
@@ -31,6 +32,7 @@ class AppContainer private constructor(context: Context) {
     val tokenStore: TokenStore by lazy { TokenStore(appContext) }
 
     val chatRoomPreferences: ChatRoomPreferences = ChatRoomPreferences(appContext)
+    val pinHistoryPreferences: PinHistoryPreferences = PinHistoryPreferences(appContext)
     val teamForumPreferences: TeamForumPreferences = TeamForumPreferences(appContext)
     val userSettingsPreferences: UserSettingsPreferences = UserSettingsPreferences(appContext)
     val onboardingPreferences: OnboardingPreferences = OnboardingPreferences(appContext)
@@ -107,6 +109,7 @@ class AppContainer private constructor(context: Context) {
             authorizedAuthApi = authorizedClients.authorizedAuthApi,
             tokenStore = tokenStore,
             chatRoomPreferences = chatRoomPreferences,
+            pinHistoryPreferences = pinHistoryPreferences,
             teamForumPreferences = teamForumPreferences,
             userSettingsPreferences = userSettingsPreferences,
             launchDiskCache = launchDiskCache,

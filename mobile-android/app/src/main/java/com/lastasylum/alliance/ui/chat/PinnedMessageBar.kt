@@ -1,16 +1,18 @@
 package com.lastasylum.alliance.ui.chat
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.PushPin
@@ -21,12 +23,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
@@ -57,6 +61,38 @@ fun PinnedMessageBar(
     modifier: Modifier = Modifier,
     historyCount: Int = 0,
     messageDeleted: Boolean = false,
+    thumbnailUrl: String? = null,
+    pinnedMetaLine: String? = null,
+) {
+    AnimatedContent(
+        targetState = preview.id,
+        modifier = modifier,
+        label = "pinnedBarPreview",
+    ) { _ ->
+        PinnedMessageBarContent(
+            preview = preview,
+            canUnpin = canUnpin,
+            onTap = onTap,
+            onUnpin = onUnpin,
+            historyCount = historyCount,
+            messageDeleted = messageDeleted,
+            thumbnailUrl = thumbnailUrl,
+            pinnedMetaLine = pinnedMetaLine,
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PinnedMessageBarContent(
+    preview: PinnedMessagePreviewDto,
+    canUnpin: Boolean,
+    onTap: () -> Unit,
+    onUnpin: () -> Unit,
+    historyCount: Int,
+    messageDeleted: Boolean,
+    thumbnailUrl: String?,
+    pinnedMetaLine: String?,
 ) {
     val senderLine = chatSenderDisplayWithTag(
         preview.senderTeamTag,
@@ -65,7 +101,7 @@ fun PinnedMessageBar(
     )
     val bodyLine = pinnedPreviewLabel(preview, messageDeleted)
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .combinedClickable(
@@ -76,6 +112,16 @@ fun PinnedMessageBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        if (!thumbnailUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = thumbnailUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(6.dp)),
+                contentScale = ContentScale.Crop,
+            )
+        }
         Box(contentAlignment = Alignment.TopEnd) {
             Icon(
                 imageVector = Icons.Outlined.PushPin,
@@ -113,6 +159,15 @@ fun PinnedMessageBar(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (!pinnedMetaLine.isNullOrBlank()) {
+                Text(
+                    text = pinnedMetaLine,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         if (canUnpin) {
             IconButton(

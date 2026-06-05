@@ -578,6 +578,8 @@ private fun JSONObject.toPinnedMessagePreviewDto(): PinnedMessagePreviewDto? {
         editedAt = optionalStringField("editedAt"),
         hasImage = optBoolean("hasImage", false),
         isSticker = optBoolean("isSticker", false),
+        imageThumbnailUrl = optString("imageThumbnailUrl").takeIf { it.isNotBlank() },
+        pinnedByUsername = optString("pinnedByUsername").takeIf { it.isNotBlank() },
     )
 }
 

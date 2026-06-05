@@ -37,6 +37,7 @@ import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayRaidChatForwardPolicy
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+import com.lastasylum.alliance.data.chat.PinHistoryPreferences
 import com.lastasylum.alliance.data.chat.isCompactReactionSocketUpdate
 import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
@@ -92,6 +93,7 @@ class ChatViewModel(
     application: Application,
     private val repository: ChatRepository,
     private val chatRoomPreferences: ChatRoomPreferences,
+    private val pinHistoryPreferences: PinHistoryPreferences,
     private val usersRepository: UsersRepository,
     private val launchDiskCache: LaunchDiskCache,
     private val currentUserId: String,
@@ -553,10 +555,12 @@ class ChatViewModel(
                     selected?.let { chatRoomPreferences.setSelectedRoomId(it) }
                     reconcileStaleServerUnread(rooms, raw)
                     _state.update {
-                        it.copy(
-                            rooms = rooms,
-                            isRoomsLoading = false,
-                            selectedRoomId = selected ?: it.selectedRoomId,
+                        applyPinBarUi(
+                            it.copy(
+                                rooms = rooms,
+                                isRoomsLoading = false,
+                                selectedRoomId = selected ?: it.selectedRoomId,
+                            ),
                         )
                     }
                     schedulePersistChatSnapshot()
@@ -713,26 +717,30 @@ class ChatViewModel(
             messageIdIndex.clear()
             knownMessageIds.addAll(cached.messages.mapNotNull { it._id })
             rebuildMessageIdIndex(cached.messages, messageIdIndex)
-            _state.value = _state.value.copy(
-                isLoading = false,
-                isRoomsLoading = false,
-                rooms = rooms,
-                selectedRoomId = selected,
-                messages = cached.messages,
-                hasMoreOlder = cached.hasMoreOlder,
-                error = null,
-                scrollToLatestNonce = _state.value.scrollToLatestNonce + 1L,
+            _state.value = applyPinBarUi(
+                _state.value.copy(
+                    isLoading = false,
+                    isRoomsLoading = false,
+                    rooms = rooms,
+                    selectedRoomId = selected,
+                    messages = cached.messages,
+                    hasMoreOlder = cached.hasMoreOlder,
+                    error = null,
+                    scrollToLatestNonce = _state.value.scrollToLatestNonce + 1L,
+                ),
             )
             publishMessagesDerived(cached.messages)
         } else {
-            _state.value = _state.value.copy(
-                isLoading = true,
-                isRoomsLoading = false,
-                rooms = rooms,
-                selectedRoomId = selected,
-                messages = emptyList(),
-                hasMoreOlder = true,
-                error = null,
+            _state.value = applyPinBarUi(
+                _state.value.copy(
+                    isLoading = true,
+                    isRoomsLoading = false,
+                    rooms = rooms,
+                    selectedRoomId = selected,
+                    messages = emptyList(),
+                    hasMoreOlder = true,
+                    error = null,
+                ),
             )
             _listDerived.value = ChatMessagesListDerived.Empty
         }
@@ -936,7 +944,7 @@ class ChatViewModel(
                     val next = applyRoomsFromServer(raw)
                     syncRaidRoomPreference(next)
                     ChatSessionCache.update(raw)
-                    _state.update { it.copy(rooms = next) }
+                    _state.update { applyPinBarUi(it.copy(rooms = next)) }
                     syncTabUnreadBadge(next)
                     syncOverlayAllianceHubBadge(next)
                     if (overlayChatPanelVisible) {
@@ -1334,9 +1342,11 @@ class ChatViewModel(
                     roomsResult.getOrElse { _state.value.rooms },
                 )
                 syncRaidRoomPreference(nextRooms)
-                _state.value.copy(
-                    hasTeamProfileForGlobalChat = hasTeam,
-                    rooms = nextRooms,
+                applyPinBarUi(
+                    _state.value.copy(
+                        hasTeamProfileForGlobalChat = hasTeam,
+                        rooms = nextRooms,
+                    ),
                 )
             } else {
                 _state.value.copy(hasTeamProfileForGlobalChat = hasTeam)
@@ -1353,7 +1363,7 @@ class ChatViewModel(
                 .onSuccess { raw ->
                     val next = applyRoomsFromServer(raw)
                     syncRaidRoomPreference(next)
-                    _state.update { it.copy(rooms = next) }
+                    publishRooms(next)
                     syncTabUnreadBadge(next)
                     reconcileStaleServerUnread(next, raw)
                     if (reconfirmVisibleRoom) {
@@ -1395,7 +1405,7 @@ class ChatViewModel(
             when {
                 cachedRooms != null && _state.value.rooms.isEmpty() -> {
                     val next = applyRoomsFromServer(cachedRooms)
-                    _state.update { it.copy(rooms = next) }
+                    publishRooms(next)
                     lastRoomsSyncedAtMs = System.currentTimeMillis()
                 }
                 _state.value.rooms.isNotEmpty() && !roomsStale -> {
@@ -1805,6 +1815,8 @@ class ChatViewModel(
                     (overlayChatPanelVisible && CombatOverlayService.isOverlayChatTabActive()),
             ),
         )
+        pinHistoryByRoom[roomId] = pinHistoryPreferences.load(pinHistoryPreferences.chatScopeKey(roomId))
+        pinBarIndexByRoom[roomId] = 0
         updatePinBarUi()
         if (hasCachedMessages) {
             knownMessageIds.addAll(cachedMessages.mapNotNull { it._id })
@@ -1889,6 +1901,8 @@ class ChatViewModel(
 
     private fun mergeRoomsUnreadFromServer(serverRooms: List<ChatRoomDto>): List<ChatRoomDto> {
         val previousById = _state.value.rooms.associateBy { it.id }
+        val pinInFlight = _state.value.pinInFlight
+        val selectedRoomId = _state.value.selectedRoomId?.trim().orEmpty()
         return serverRooms.map { room ->
             val previousUnread = previousById[room.id]?.unreadCount ?: 0
             val serverUnread = when {
@@ -1912,7 +1926,10 @@ class ChatViewModel(
             room.copy(
                 unreadCount = unread,
                 lastReadMessageId = resolvedLast ?: room.lastReadMessageId,
-            ).mergePinFromPrevious(previousById[room.id])
+            ).mergePinFromPrevious(
+                previous = previousById[room.id],
+                pinOperationInFlight = pinInFlight && room.id == selectedRoomId,
+            )
         }
     }
 
@@ -3152,6 +3169,15 @@ class ChatViewModel(
     private fun applyRoomPinToRooms(rooms: List<ChatRoomDto>, room: ChatRoomDto): List<ChatRoomDto> =
         rooms.map { if (it.id == room.id) room else it }
 
+    private fun publishRooms(next: List<ChatRoomDto>) {
+        _state.update { applyPinBarUi(it.copy(rooms = next)) }
+    }
+
+    private fun persistPinHistory(roomId: String) {
+        val history = pinHistoryByRoom[roomId].orEmpty()
+        pinHistoryPreferences.save(pinHistoryPreferences.chatScopeKey(roomId), history)
+    }
+
     private fun syncPinHistoryForRoom(
         roomId: String,
         room: ChatRoomDto,
@@ -3174,6 +3200,7 @@ class ChatViewModel(
             room.pinnedMessageId,
         )
         pinHistoryByRoom[roomId] = updated
+        persistPinHistory(roomId)
         if (resetIndex || !pinBarIndexByRoom.containsKey(roomId)) {
             pinBarIndexByRoom[roomId] = 0
         }
@@ -3263,6 +3290,7 @@ class ChatViewModel(
         preview?.let { p ->
             pinHistoryByRoom[roomId] = pushPinHistory(pinHistoryByRoom[roomId].orEmpty(), p)
             pinBarIndexByRoom[roomId] = 0
+            persistPinHistory(roomId)
         }
         val optimisticRoom = roomBefore?.let { room ->
             preview?.let { room.withOptimisticPin(trimmedId, it, _state.value.currentUserId) }
@@ -3294,10 +3322,12 @@ class ChatViewModel(
                 }
                 .onFailure { e ->
                     _state.update {
-                        it.copy(
-                            rooms = roomsSnapshot,
-                            pinInFlight = false,
-                            transientNotice = e.toUserMessageRu(res),
+                        applyPinBarUi(
+                            it.copy(
+                                rooms = roomsSnapshot,
+                                pinInFlight = false,
+                                transientNotice = e.toUserMessageRu(res),
+                            ),
                         )
                     }
                 }
@@ -3326,10 +3356,12 @@ class ChatViewModel(
                 }
                 .onFailure { e ->
                     _state.update {
-                        it.copy(
-                            rooms = roomsSnapshot,
-                            pinInFlight = false,
-                            transientNotice = e.toUserMessageRu(res),
+                        applyPinBarUi(
+                            it.copy(
+                                rooms = roomsSnapshot,
+                                pinInFlight = false,
+                                transientNotice = e.toUserMessageRu(res),
+                            ),
                         )
                     }
                 }

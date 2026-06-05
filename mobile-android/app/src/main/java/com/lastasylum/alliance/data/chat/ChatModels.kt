@@ -2,7 +2,9 @@ package com.lastasylum.alliance.data.chat
 
 import androidx.compose.runtime.Immutable
 import com.squareup.moshi.Json
+import com.squareup.moshi.JsonClass
 
+@JsonClass(generateAdapter = true)
 @Immutable
 data class PinnedMessagePreviewDto(
     val id: String,
@@ -14,6 +16,8 @@ data class PinnedMessagePreviewDto(
     val editedAt: String? = null,
     val hasImage: Boolean = false,
     val isSticker: Boolean = false,
+    val imageThumbnailUrl: String? = null,
+    val pinnedByUsername: String? = null,
 )
 
 @Immutable

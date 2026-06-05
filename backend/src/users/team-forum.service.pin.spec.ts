@@ -48,6 +48,14 @@ describe('TeamForumService pin', () => {
     editedAt: null,
   };
 
+  const usersService = {
+    findById: jest.fn().mockResolvedValue({
+      _id: new Types.ObjectId(userId),
+      username: 'officer',
+      email: 'officer@test',
+    }),
+  };
+
   const teams = {
     getTeamIfMemberOrThrow: jest.fn().mockResolvedValue({ _id: teamId }),
     getSquadRoleForUser: jest.fn(),
@@ -88,7 +96,7 @@ describe('TeamForumService pin', () => {
         { provide: TeamNewsAttachmentsService, useValue: {} },
         { provide: StickerAccessService, useValue: {} },
         { provide: GameIdentitiesService, useValue: {} },
-        { provide: UsersService, useValue: {} },
+        { provide: UsersService, useValue: usersService },
       ],
     }).compile();
 
@@ -104,6 +112,7 @@ describe('TeamForumService pin', () => {
       messageId,
     );
     expect(pinChanged.pinnedMessageId).toBe(messageId);
+    expect(pinChanged.pinnedMessage?.pinnedByUsername).toBe('officer');
     expect(topicDoc.save).toHaveBeenCalled();
   });
 

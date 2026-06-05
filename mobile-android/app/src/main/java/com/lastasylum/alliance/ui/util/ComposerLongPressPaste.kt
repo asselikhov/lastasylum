@@ -9,15 +9,13 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 
 /**
- * Long-press в области композера без фокуса в [TextField]: кастомная кнопка «Вставить».
- * Когда [interceptLongPress] false (поле в фокусе), системное меню вставки не блокируется.
+ * Long-press в области композера: кастомная кнопка «Вставить» над полем (в т.ч. когда [TextField] в фокусе).
  */
 fun Modifier.composerLongPressPaste(
     enabled: Boolean,
     onLongPress: () -> Unit,
-    interceptLongPress: Boolean = true,
 ): Modifier {
-    if (!enabled || !interceptLongPress) return this
+    if (!enabled) return this
     return pointerInput(onLongPress) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)

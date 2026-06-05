@@ -26,6 +26,8 @@ describe('ChatService pin (team rooms)', () => {
     _id: new Types.ObjectId(userId),
     role: 'MEMBER',
     playerTeamId: new Types.ObjectId(teamId),
+    username: 'officer',
+    email: 'officer@test',
   };
 
   const roomDoc = {
@@ -135,6 +137,8 @@ describe('ChatService pin (team rooms)', () => {
     );
     expect(pinChanged.pinnedMessageId).toBe(messageId);
     expect(pinChanged.pinnedMessage?.text).toBe('hello');
+    expect(pinChanged.pinnedMessage?.imageThumbnailUrl).toBeNull();
+    expect(pinChanged.pinnedMessage?.pinnedByUsername).toBe('officer');
     expect(chatRoomsService.setPinnedMessage).toHaveBeenCalled();
   });
 

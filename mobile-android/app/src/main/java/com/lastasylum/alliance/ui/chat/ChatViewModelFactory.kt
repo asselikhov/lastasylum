@@ -7,6 +7,7 @@ import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+import com.lastasylum.alliance.data.chat.PinHistoryPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.users.UsersRepository
@@ -15,6 +16,7 @@ class ChatViewModelFactory(
     private val application: Application,
     private val repository: ChatRepository,
     private val chatRoomPreferences: ChatRoomPreferences,
+    private val pinHistoryPreferences: PinHistoryPreferences,
     private val teamForumPreferences: TeamForumPreferences,
     private val userSettingsPreferences: UserSettingsPreferences,
     private val usersRepository: UsersRepository,
@@ -31,10 +33,12 @@ class ChatViewModelFactory(
                 userSettingsPreferences,
                 currentUserId,
             )
+            pinHistoryPreferences.bindUser(currentUserId)
             return ChatViewModel(
                 application,
                 repository,
                 chatRoomPreferences,
+                pinHistoryPreferences,
                 usersRepository,
                 launchDiskCache,
                 currentUserId,

@@ -157,6 +157,9 @@
     <string name="chat_pinned_preview_deleted">Сообщение удалено</string>
     <string name="chat_pinned_toast_pinned">Сообщение закреплено</string>
     <string name="chat_pinned_toast_unpinned">Закрепление снято</string>
+    <string name="chat_pinned_meta_you">Вы</string>
+    <string name="chat_pinned_meta_user">@%1$s</string>
+    <string name="forum_topic_pinned_preview">Закреплено</string>
     <string name="chat_pin_replace_title">Заменить закрепление?</string>
     <string name="chat_pin_replace_message">Другое сообщение уже закреплено. Закрепить это вместо него?</string>
     <string name="chat_pin_replace_confirm">Закрепить</string>

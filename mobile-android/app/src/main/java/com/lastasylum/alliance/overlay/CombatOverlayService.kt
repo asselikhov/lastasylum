@@ -5522,10 +5522,12 @@ class CombatOverlayService : Service() {
             container.userSettingsPreferences,
             userId,
         )
+        container.pinHistoryPreferences.bindUser(userId)
         return ChatViewModel(
             application = application,
             repository = container.chatRepository,
             chatRoomPreferences = container.chatRoomPreferences,
+            pinHistoryPreferences = container.pinHistoryPreferences,
             usersRepository = container.usersRepository,
             launchDiskCache = container.launchDiskCache,
             currentUserId = userId,

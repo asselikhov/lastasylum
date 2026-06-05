@@ -18,10 +18,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -43,7 +46,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
+import coil3.compose.AsyncImage
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
+import com.lastasylum.alliance.ui.chat.pinnedPreviewLabel
+import com.lastasylum.alliance.ui.chat.resolvedThumbnailUrl
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 
@@ -112,6 +118,40 @@ fun ForumTopicFeedCard(
                         ForumTopicUnreadBadge(count = badgeUnread)
                     }
                     menu()
+                }
+                if (topic.pinnedMessageId != null && topic.pinnedMessage != null) {
+                    val pinPreview = topic.pinnedMessage
+                    val thumbUrl = pinPreview.resolvedThumbnailUrl()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.PushPin,
+                            contentDescription = stringResource(R.string.forum_topic_pinned_preview),
+                            modifier = Modifier.size(14.dp),
+                            tint = PremiumColors.accentCyan.copy(alpha = 0.85f),
+                        )
+                        if (!thumbUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = thumbUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(RoundedCornerShape(4.dp)),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                        Text(
+                            text = pinnedPreviewLabel(pinPreview),
+                            style = ForumTopicCardTokens.metaStyle,
+                            color = ForumTopicCardTokens.metaIcon,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                    }
                 }
                 ForumTopicTacticalMetaRow(
                     messageCount = topic.messageCount,

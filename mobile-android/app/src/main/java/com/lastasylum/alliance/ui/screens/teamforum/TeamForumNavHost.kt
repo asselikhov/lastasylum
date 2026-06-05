@@ -148,9 +148,15 @@ import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
+import com.lastasylum.alliance.ui.chat.ForumPinCoordinator
 import com.lastasylum.alliance.ui.chat.PinnedMessageBar
+import com.lastasylum.alliance.ui.chat.TopicPinSnapshot
+import com.lastasylum.alliance.ui.chat.formatPinnedMetaLine
+import com.lastasylum.alliance.ui.chat.isForumPinnedPreviewLikelyDeleted
+import com.lastasylum.alliance.ui.chat.jumpToForumPinnedMessage
+import com.lastasylum.alliance.ui.chat.resolvedThumbnailUrl
 import com.lastasylum.alliance.ui.chat.toPinnedPreview
-import com.lastasylum.alliance.ui.chat.resolveForumPinnedPreview
+import com.lastasylum.alliance.ui.util.formatForumTopicTimeRu
 import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
 import com.lastasylum.alliance.data.teams.TeamForumMarkRead
 import com.lastasylum.alliance.data.teams.TeamsRepository
@@ -161,9 +167,7 @@ import com.lastasylum.alliance.ui.chat.MessageContextMenuScrim
 import com.lastasylum.alliance.ui.chat.saveChatImagesToGallery
 import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
 import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
-import com.lastasylum.alliance.ui.util.appendTextToDraft
 import com.lastasylum.alliance.ui.util.forumMessageHasMenuCopyAction
-import com.lastasylum.alliance.ui.util.forumMessageTextForComposer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayReactionLogJumpToUnreadFab
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
@@ -892,10 +896,21 @@ private fun TeamForumTopicChatRoute(
     var confirmBulkDelete by remember { mutableStateOf(false) }
     var deletingSelection by remember { mutableStateOf(false) }
     var highlightMessageId by remember { mutableStateOf<String?>(null) }
-    var pinnedMessageId by remember(teamId, topicId) { mutableStateOf<String?>(null) }
-    var pinnedMessage by remember(teamId, topicId) { mutableStateOf<PinnedMessagePreviewDto?>(null) }
+    val pinHistoryPrefs = remember { AppContainer.from(context).pinHistoryPreferences }
+    LaunchedEffect(currentUserId) {
+        pinHistoryPrefs.bindUser(currentUserId)
+    }
+    val pinScopeKey = remember(teamId, topicId, currentUserId) {
+        pinHistoryPrefs.forumScopeKey(teamId, topicId)
+    }
+    val pinCoordinator = remember(pinScopeKey) {
+        ForumPinCoordinator(pinHistoryPrefs, pinScopeKey)
+    }
+    var pinRevision by remember(teamId, topicId) { mutableIntStateOf(0) }
+    fun bumpPinUi() {
+        pinRevision++
+    }
     var pinNotice by remember { mutableStateOf<String?>(null) }
-    var pinInFlight by remember { mutableStateOf(false) }
     var pendingForumPinMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var remoteImagePreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     val openImages = remember {
@@ -916,73 +931,81 @@ private fun TeamForumTopicChatRoute(
 
     fun applyTopicPin(event: TeamForumTopicPinChangedEvent) {
         if (event.teamId != teamId || event.topicId != topicId) return
-        pinnedMessageId = event.pinnedMessageId
-        pinnedMessage = event.pinnedMessage
+        pinCoordinator.applyTopicPin(event)
+        bumpPinUi()
     }
 
     fun refreshTopicPinFromServer() {
+        if (pinCoordinator.pinInFlight) return
         scope.launch {
             teamsRepository.listForumTopics(teamId)
                 .onSuccess { topics ->
                     val topic = topics.find { it.id == topicId } ?: return@onSuccess
-                    pinnedMessageId = topic.pinnedMessageId
-                    pinnedMessage = topic.pinnedMessage
+                    pinCoordinator.applyTopicFromServer(topic, stableMessages)
+                    bumpPinUi()
                 }
         }
     }
 
     LaunchedEffect(teamId, topicId) {
+        pinCoordinator.onEnterTopic()
+        bumpPinUi()
         refreshTopicPinFromServer()
     }
 
     fun pinForumMessage(messageId: String, previewSource: TeamForumMessageDto? = null) {
         val trimmedId = messageId.trim()
-        if (trimmedId.isEmpty() || pinInFlight) return
-        val pinIdSnapshot = pinnedMessageId
-        val pinPreviewSnapshot = pinnedMessage
-        val msg = previewSource?.takeIf { it.id == trimmedId }
-            ?: messages.find { it.id == trimmedId }
-        val optimisticPreview = msg?.toPinnedPreview()
-        pinnedMessageId = trimmedId
-        pinnedMessage = optimisticPreview ?: pinPreviewSnapshot?.takeIf { it.id == trimmedId }
-        pinInFlight = true
+        if (trimmedId.isEmpty() || pinCoordinator.pinInFlight) return
+        val snapshot = TopicPinSnapshot(
+            pinnedMessageId = pinCoordinator.pinnedMessageId,
+            pinnedAt = pinCoordinator.pinnedAt,
+            pinnedByUserId = pinCoordinator.pinnedByUserId,
+            pinnedMessage = pinCoordinator.pinnedMessage,
+        )
+        pinCoordinator.pinInFlight = true
+        pinCoordinator.prepareOptimisticPin(trimmedId, previewSource, stableMessages, currentUserId)
+        bumpPinUi()
         scope.launch {
             teamsRepository.pinForumTopicMessage(teamId, topicId, trimmedId)
                 .onSuccess { topic ->
-                    pinnedMessageId = topic.pinnedMessageId
-                    pinnedMessage = topic.pinnedMessage
+                    pinCoordinator.pinInFlight = false
+                    pinCoordinator.onPinSuccess(topic, stableMessages)
+                    bumpPinUi()
                     pinNotice = res.getString(R.string.forum_pinned_toast_pinned)
-                    pinInFlight = false
                 }
                 .onFailure { e ->
-                    pinnedMessageId = pinIdSnapshot
-                    pinnedMessage = pinPreviewSnapshot
+                    pinCoordinator.pinInFlight = false
+                    pinCoordinator.rollbackTo(snapshot, stableMessages)
+                    bumpPinUi()
                     pinNotice = e.toUserMessageRu(res)
-                    pinInFlight = false
                 }
         }
     }
 
     fun unpinForumTopic() {
-        if (pinInFlight) return
-        val pinIdSnapshot = pinnedMessageId
-        val pinPreviewSnapshot = pinnedMessage
-        pinnedMessageId = null
-        pinnedMessage = null
-        pinInFlight = true
+        if (pinCoordinator.pinInFlight) return
+        val snapshot = TopicPinSnapshot(
+            pinnedMessageId = pinCoordinator.pinnedMessageId,
+            pinnedAt = pinCoordinator.pinnedAt,
+            pinnedByUserId = pinCoordinator.pinnedByUserId,
+            pinnedMessage = pinCoordinator.pinnedMessage,
+        )
+        pinCoordinator.pinInFlight = true
+        pinCoordinator.prepareOptimisticUnpin(stableMessages)
+        bumpPinUi()
         scope.launch {
             teamsRepository.pinForumTopicMessage(teamId, topicId, null)
                 .onSuccess { topic ->
-                    pinnedMessageId = topic.pinnedMessageId
-                    pinnedMessage = topic.pinnedMessage
+                    pinCoordinator.pinInFlight = false
+                    pinCoordinator.onUnpinSuccess(topic)
+                    bumpPinUi()
                     pinNotice = res.getString(R.string.forum_pinned_toast_unpinned)
-                    pinInFlight = false
                 }
                 .onFailure { e ->
-                    pinnedMessageId = pinIdSnapshot
-                    pinnedMessage = pinPreviewSnapshot
+                    pinCoordinator.pinInFlight = false
+                    pinCoordinator.rollbackTo(snapshot, stableMessages)
+                    bumpPinUi()
                     pinNotice = e.toUserMessageRu(res)
-                    pinInFlight = false
                 }
         }
     }
@@ -1043,10 +1066,8 @@ private fun TeamForumTopicChatRoute(
 
     fun applyDeleted(ev: TeamForumMessageDeletedEvent) {
         removeMessage(ev.messageId)
-        if (pinnedMessageId == ev.messageId) {
-            pinnedMessageId = null
-            pinnedMessage = null
-        }
+        pinCoordinator.clearPinIfMessageDeleted(ev.messageId, stableMessages)
+        bumpPinUi()
     }
 
     fun mergeReadCursor(messageId: String) {
@@ -1210,6 +1231,29 @@ private fun TeamForumTopicChatRoute(
             }
         },
     )
+
+    suspend fun loadOlderForumPage(): Boolean {
+        if (!hasMoreOlder || loadingOlder) return false
+        val oldestId = messages.firstOrNull()?.id?.trim().orEmpty()
+        if (oldestId.isEmpty()) return false
+        loadingOlder = true
+        return try {
+            val page = teamsRepository.listForumMessages(teamId, topicId, before = oldestId, limit = 50)
+                .getOrElse { return false }
+            val visible = page.filter { m ->
+                m.deletedAt.isNullOrBlank() ||
+                    m.deletedAt.equals("null", ignoreCase = true)
+            }
+            val existingIds = messages.asSequence().map { it.id }.toHashSet()
+            val older = visible.filter { it.id !in existingIds }
+            messages.addAll(0, older)
+            trimForumMessagesInMemory()
+            hasMoreOlder = page.size >= 50 && messages.isNotEmpty()
+            true
+        } finally {
+            loadingOlder = false
+        }
+    }
 
     fun loadForumMessages(before: String?, appendOlder: Boolean) {
         scope.launch {
@@ -1493,34 +1537,64 @@ private fun TeamForumTopicChatRoute(
                 if (pinNotice == notice) pinNotice = null
             }
         }
-        val forumPinnedPreview = remember(pinnedMessageId, pinnedMessage, stableMessages) {
-            resolveForumPinnedPreview(
-                pinnedMessageId = pinnedMessageId,
-                pinnedMessage = pinnedMessage,
-                messages = stableMessages,
+        val pinBarPreview = remember(pinRevision) { pinCoordinator.pinBarPreview }
+        val pinHistoryCount = remember(pinRevision) { pinCoordinator.pinHistoryCount }
+        val pinMessageId = remember(pinRevision) { pinCoordinator.pinnedMessageId }
+        val pinnedYouLabel = stringResource(R.string.chat_pinned_meta_you)
+        val pinnedMetaLine = remember(pinRevision, pinBarPreview) {
+            formatPinnedMetaLine(
+                pinnedAt = pinCoordinator.pinnedAt,
+                pinnedByUsername = pinBarPreview?.pinnedByUsername,
+                pinnedByUserId = pinCoordinator.pinnedByUserId,
+                currentUserId = currentUserId,
+                youLabel = pinnedYouLabel,
+                userTemplate = { name -> res.getString(R.string.chat_pinned_meta_user, name) },
+                formatTime = { formatForumTopicTimeRu(it) },
             )
         }
-        forumPinnedPreview?.let { preview ->
+        if (pinMessageId != null) {
+            pinBarPreview?.let { preview ->
+            val pinnedDeleted = isForumPinnedPreviewLikelyDeleted(preview, stableMessages)
             PinnedMessageBar(
                 preview = preview,
                 canUnpin = canModerateMessages,
                 onTap = {
-                    val targetId = preview.id
-                    val lazyIdx = listDerived.timeline.indexOfFirst { entry ->
-                        entry is ForumTimelineEntry.Message && entry.messageId == targetId
-                    }
-                    if (lazyIdx >= 0) {
-                        scope.launch {
-                            runCatching { listState.scrollTimelineItemToViewportCenter(lazyIdx) }
-                            highlightMessageId = targetId
+                    scope.launch {
+                        val targetId = preview.id
+                        val jumped = jumpToForumPinnedMessage(
+                            messageId = targetId,
+                            messageIdsOldestFirst = stableMessages.map { it.id },
+                            hasMoreOlder = { hasMoreOlder },
+                            isLoadingOlder = { loadingOlder },
+                            loadOlder = { loadOlderForumPage() },
+                            timelineIndexForMessageId = { id ->
+                                listDerived.timeline.indexOfFirst { entry ->
+                                    entry is ForumTimelineEntry.Message && entry.messageId == id
+                                }
+                            },
+                            scrollToTimelineIndex = { idx ->
+                                runCatching { listState.scrollTimelineItemToViewportCenter(idx) }
+                            },
+                            onHighlight = { id -> highlightMessageId = id },
+                        )
+                        if (!jumped) {
+                            pinNotice = res.getString(R.string.chat_jump_quote_not_found)
+                        } else {
                             delay(900)
                             if (highlightMessageId == targetId) highlightMessageId = null
+                            pinCoordinator.advancePinBarIndex(stableMessages)
+                            bumpPinUi()
                         }
                     }
                 },
                 onUnpin = { unpinForumTopic() },
+                historyCount = pinHistoryCount,
+                messageDeleted = pinnedDeleted,
+                thumbnailUrl = preview.resolvedThumbnailUrl(),
+                pinnedMetaLine = pinnedMetaLine,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
             )
+            }
         }
         if (selectedMessageIds.isNotEmpty()) {
             ForumSelectionToolbar(
@@ -1901,7 +1975,8 @@ private fun TeamForumTopicChatRoute(
     if (selectedMessageIds.isEmpty()) {
         activeActionMessage?.let { msg ->
             val menuCanPin = canModerateMessages && msg.deletedAt.isNullOrBlank()
-            val isTopicPinnedMessage = pinnedMessageId != null && msg.id == pinnedMessageId
+            val isTopicPinnedMessage =
+                pinCoordinator.pinnedMessageId != null && msg.id == pinCoordinator.pinnedMessageId
             val menuImageUrls = remember(msg.id, msg.imageRelativeUrl, msg.imageRelativeUrls) {
                 buildList {
                     msg.imageRelativeUrl?.trim()?.takeIf { it.isNotBlank() }?.let {
@@ -1932,7 +2007,7 @@ private fun TeamForumTopicChatRoute(
                         canCopy = forumMessageHasMenuCopyAction(msg),
                         canPin = menuCanPin,
                         isPinned = isTopicPinnedMessage,
-                        pinActionsEnabled = !pinInFlight,
+                        pinActionsEnabled = !pinCoordinator.pinInFlight,
                         mayEdit = menuMayEdit,
                         hasImages = menuHasImages,
                         hasMapCoordinate = menuHasMapCoordinate,
@@ -1945,13 +2020,10 @@ private fun TeamForumTopicChatRoute(
                             },
                             onCopy = {
                                 copyForumMessageToClipboard(context, msg)
-                                forumMessageTextForComposer(msg)?.let { text ->
-                                    draft = appendTextToDraft(draft, text)
-                                }
                                 dismissMessageActions()
                             },
                             onPin = {
-                                val existingPin = pinnedMessageId?.trim().orEmpty()
+                                val existingPin = pinCoordinator.pinnedMessageId?.trim().orEmpty()
                                 if (existingPin.isNotEmpty() && existingPin != msg.id) {
                                     pendingForumPinMessage = msg
                                 } else {

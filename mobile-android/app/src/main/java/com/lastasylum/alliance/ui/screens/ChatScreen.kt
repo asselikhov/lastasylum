@@ -184,7 +184,10 @@ import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.ChatListPaneState
 import com.lastasylum.alliance.ui.chat.ChatChromePaneState
 import com.lastasylum.alliance.ui.chat.PinnedMessageBar
+import com.lastasylum.alliance.ui.chat.formatPinnedMetaLine
 import com.lastasylum.alliance.ui.chat.isPinnedPreviewLikelyDeleted
+import com.lastasylum.alliance.ui.chat.resolvedThumbnailUrl
+import com.lastasylum.alliance.ui.util.formatForumTopicTimeRu
 import com.lastasylum.alliance.ui.chat.canPinChatMessage
 import com.lastasylum.alliance.ui.chat.ChatComposerPaneState
 import com.lastasylum.alliance.ui.chat.toListPane
@@ -277,10 +280,7 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.chatRoomTabLabelForServer
-import com.lastasylum.alliance.ui.util.appendTextToDraft
 import com.lastasylum.alliance.ui.util.chatMessageHasMenuCopyAction
-import com.lastasylum.alliance.ui.util.chatMessageTextForComposer
-import com.lastasylum.alliance.ui.util.chatMessageTextForComposer
 import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
 import com.lastasylum.alliance.ui.util.ComposerPasteChipRow
 import com.lastasylum.alliance.ui.util.composerLongPressPaste
@@ -409,6 +409,22 @@ private fun ChatScreenMessagesHost(
     val pinHistoryCount = chromePane.pinHistoryCount
     val pinnedMessageDeleted = remember(pinnedPreview, messages) {
         pinnedPreview?.let { isPinnedPreviewLikelyDeleted(it, messages) } == true
+    }
+    val pinnedYouLabel = stringResource(R.string.chat_pinned_meta_you)
+    val pinnedMetaLine = remember(selectedRoom, pinnedPreview, pinnedYouLabel, listUiState.currentUserId) {
+        val room = selectedRoom ?: return@remember null
+        formatPinnedMetaLine(
+            pinnedAt = room.pinnedAt,
+            pinnedByUsername = pinnedPreview?.pinnedByUsername ?: room.pinnedMessage?.pinnedByUsername,
+            pinnedByUserId = room.pinnedByUserId,
+            currentUserId = listUiState.currentUserId,
+            youLabel = pinnedYouLabel,
+            userTemplate = { name -> context.getString(R.string.chat_pinned_meta_user, name) },
+            formatTime = { formatForumTopicTimeRu(it) },
+        )
+    }
+    val pinnedThumbnailUrl = remember(pinnedPreview) {
+        pinnedPreview?.resolvedThumbnailUrl()
     }
     val canUnpinPinned = canPinChatMessage(
         selectedRoom?.allianceId,
@@ -706,6 +722,8 @@ private fun ChatScreenMessagesHost(
                         onUnpin = onUnpinRoom,
                         historyCount = pinHistoryCount,
                         messageDeleted = pinnedMessageDeleted,
+                        thumbnailUrl = pinnedThumbnailUrl,
+                        pinnedMetaLine = pinnedMetaLine,
                         modifier = Modifier.padding(bottom = 4.dp),
                     )
                 }
@@ -1190,9 +1208,6 @@ fun ChatScreen(
                             },
                             onCopy = {
                                 copyChatMessageToClipboard(context, message)
-                                chatMessageTextForComposer(message)?.let { text ->
-                                    onDraftChange(appendTextToDraft(draftMessage, text))
-                                }
                                 dismissMessageActions()
                             },
                             onPin = {

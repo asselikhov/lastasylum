@@ -34,6 +34,7 @@ import { ChatAttachmentsService } from './chat-attachments.service';
 import { assertStickerPayload } from './sticker-payload.util';
 import {
   buildPinnedPreviewFromChatMessage,
+  enrichPinnedPreview,
   PinnedMessagePreview,
 } from '../common/pinned-message-preview';
 import {
@@ -360,11 +361,41 @@ export class ChatService {
         buildPinnedPreviewFromChatMessage(m),
       ]),
     );
+    const pinUserIds = [
+      ...new Set(
+        rooms
+          .map((r) => r.pinnedByUserId?.trim())
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const pinUsernames = await this.resolvePinnedByUsernames(pinUserIds);
     for (const room of rooms) {
       const rid = room._id.toString();
       const pinId = room.pinnedMessageId?.toString();
-      out.set(rid, pinId ? (byMsgId.get(pinId) ?? null) : null);
+      let preview = pinId ? (byMsgId.get(pinId) ?? null) : null;
+      if (preview && room.pinnedByUserId) {
+        preview = enrichPinnedPreview(
+          preview,
+          pinUsernames.get(room.pinnedByUserId.trim()) ?? null,
+        );
+      }
+      out.set(rid, preview);
     }
+    return out;
+  }
+
+  private async resolvePinnedByUsernames(
+    userIds: string[],
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const unique = [...new Set(userIds.map((id) => id.trim()).filter(Boolean))];
+    await Promise.all(
+      unique.map(async (id) => {
+        const user = await this.usersService.findById(id);
+        const name = (user?.username ?? user?.email ?? '').trim();
+        if (name) out.set(id, name);
+      }),
+    );
     return out;
   }
 
@@ -452,7 +483,11 @@ export class ChatService {
     if (!updated) {
       throw new NotFoundException('Room not found');
     }
-    const preview = buildPinnedPreviewFromChatMessage(msg);
+    const actorName = (actor.username ?? actor.email ?? '').trim() || null;
+    const preview = enrichPinnedPreview(
+      buildPinnedPreviewFromChatMessage(msg),
+      actorName,
+    );
     const room = this.attachPinStateToRoom(updated, preview);
     return {
       room,

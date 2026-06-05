@@ -28,6 +28,7 @@ import { StickerAccessService } from './sticker-access.service';
 import { UsersService } from './users.service';
 import {
   buildPinnedPreviewFromForumMessage,
+  enrichPinnedPreview,
   PinnedMessagePreview,
 } from '../common/pinned-message-preview';
 
@@ -248,7 +249,11 @@ export class TeamForumService {
   }
 
   private async buildPinnedPreviewsForTopics(
-    docs: Array<{ _id: Types.ObjectId; pinnedMessageId?: Types.ObjectId | null }>,
+    docs: Array<{
+      _id: Types.ObjectId;
+      pinnedMessageId?: Types.ObjectId | null;
+      pinnedByUserId?: string | null;
+    }>,
   ): Promise<Map<string, PinnedMessagePreview | null>> {
     const pinIds = [
       ...new Set(
@@ -274,11 +279,41 @@ export class TeamForumService {
         buildPinnedPreviewFromForumMessage(m),
       ]),
     );
+    const pinUserIds = [
+      ...new Set(
+        docs
+          .map((d) => d.pinnedByUserId?.trim())
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const pinUsernames = await this.resolvePinnedByUsernames(pinUserIds);
     for (const doc of docs) {
       const tid = doc._id.toString();
       const pinId = doc.pinnedMessageId?.toString();
-      out.set(tid, pinId ? (byMsgId.get(pinId) ?? null) : null);
+      let preview = pinId ? (byMsgId.get(pinId) ?? null) : null;
+      if (preview && doc.pinnedByUserId) {
+        preview = enrichPinnedPreview(
+          preview,
+          pinUsernames.get(doc.pinnedByUserId.trim()) ?? null,
+        );
+      }
+      out.set(tid, preview);
     }
+    return out;
+  }
+
+  private async resolvePinnedByUsernames(
+    userIds: string[],
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const unique = [...new Set(userIds.map((id) => id.trim()).filter(Boolean))];
+    await Promise.all(
+      unique.map(async (id) => {
+        const user = await this.usersService.findById(id);
+        const name = (user?.username ?? user?.email ?? '').trim();
+        if (name) out.set(id, name);
+      }),
+    );
     return out;
   }
 
@@ -883,7 +918,12 @@ export class TeamForumService {
     topic.pinnedAt = new Date();
     topic.pinnedByUserId = userId;
     await topic.save();
-    const preview = buildPinnedPreviewFromForumMessage(msg);
+    const actor = await this.usersService.findById(userId);
+    const actorName = (actor?.username ?? actor?.email ?? '').trim() || null;
+    const preview = enrichPinnedPreview(
+      buildPinnedPreviewFromForumMessage(msg),
+      actorName,
+    );
     const row = this.topicRow(topic, { pinnedMessage: preview });
     return {
       topic: row,
