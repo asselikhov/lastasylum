@@ -21,6 +21,26 @@ class MessagesListDeriverPatchTest {
     )
 
     @Test
+    fun resolveChatListDerivedAfterMessagesUpdate_patchesSingleEditedRow() {
+        val messages = listOf(
+            chatMsg("507f1f77bcf86cd799439013"),
+            chatMsg("507f1f77bcf86cd799439011"),
+        )
+        val derived = buildChatMessagesListDerived(messages)
+        val edited = messages.mapIndexed { i, m ->
+            if (i == 1) m.copy(text = "edited body") else m
+        }
+        val resolved = resolveChatListDerivedAfterMessagesUpdate(
+            previousDerived = derived,
+            previousMessages = messages,
+            nextMessages = edited,
+        )
+        val item = resolved.timeline.filterIsInstance<ChatTimelineEntry.ChatMessageItem>()
+            .first { it.messageIndex == 1 }
+        assertEquals("edited body", item.message.text)
+    }
+
+    @Test
     fun patchMessage_updatesEditedTextInTimeline() {
         val messages = listOf(
             chatMsg("507f1f77bcf86cd799439013"),

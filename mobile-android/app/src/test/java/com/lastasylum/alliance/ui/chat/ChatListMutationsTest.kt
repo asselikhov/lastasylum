@@ -332,6 +332,20 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun findSingleChangedMessageIndex_detectsOneRowChange() {
+        val before = listOf(msg("1", "a"), msg("2", "b"))
+        val after = listOf(msg("1", "a"), msg("2", "changed"))
+        assertEquals(1, findSingleChangedMessageIndex(before, after))
+    }
+
+    @Test
+    fun findSingleChangedMessageIndex_nullWhenMultipleRowsChange() {
+        val before = listOf(msg("1", "a"), msg("2", "b"))
+        val after = listOf(msg("1", "x"), msg("2", "y"))
+        assertNull(findSingleChangedMessageIndex(before, after))
+    }
+
+    @Test
     fun isDuplicateOwnOutgoingDelivery_whenRowAlreadyInList() {
         val server = msg("server-1", "hello")
         val index = mapOf("server-1" to 0)

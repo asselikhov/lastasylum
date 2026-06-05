@@ -413,6 +413,21 @@ internal fun chatMessagesListContentEqual(
     return true
 }
 
+/** Index of the only changed row, or null when size differs or multiple rows changed. */
+internal fun findSingleChangedMessageIndex(
+    before: List<ChatMessage>,
+    after: List<ChatMessage>,
+): Int? {
+    if (before.size != after.size) return null
+    var changedIndex: Int? = null
+    for (i in before.indices) {
+        if (before[i] == after[i]) continue
+        if (changedIndex != null) return null
+        changedIndex = i
+    }
+    return changedIndex
+}
+
 internal fun upsertMessagesBatch(
     current: List<ChatMessage>,
     incoming: List<ChatMessage>,

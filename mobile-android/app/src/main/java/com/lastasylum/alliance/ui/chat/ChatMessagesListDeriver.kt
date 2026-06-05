@@ -30,6 +30,23 @@ fun clusterTopSpacingAt(derived: ChatMessagesListDerived, timelineIndex: Int): I
 fun chatTimelineDaySeparatorKey(label: String): String =
     "day:${label.trim()}"
 
+fun resolveChatListDerivedAfterMessagesUpdate(
+    previousDerived: ChatMessagesListDerived,
+    previousMessages: List<ChatMessage>,
+    nextMessages: List<ChatMessage>,
+    precomputedDerived: ChatMessagesListDerived? = null,
+): ChatMessagesListDerived {
+    if (precomputedDerived != null) return precomputedDerived
+    findSingleChangedMessageIndex(previousMessages, nextMessages)?.let { patchIndex ->
+        return buildChatMessagesListDerivedAfterPatchMessage(
+            previousDerived = previousDerived,
+            messages = nextMessages,
+            messageIndex = patchIndex,
+        )
+    }
+    return buildChatMessagesListDerived(nextMessages)
+}
+
 fun buildChatMessagesListDerived(messages: List<ChatMessage>): ChatMessagesListDerived {
     if (messages.isEmpty()) return ChatMessagesListDerived.Empty
     val timeline = buildChatTimeline(messages)

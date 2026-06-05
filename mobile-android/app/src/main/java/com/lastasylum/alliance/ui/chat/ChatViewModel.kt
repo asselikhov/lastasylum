@@ -3276,7 +3276,7 @@ class ChatViewModel(
         viewModelScope.launch {
             repository.toggleReaction(messageId, emoji)
                 .onSuccess { updated ->
-                    applyIncomingMessage(updated)
+                    applyMessageReplaceSynchronously(updated.normalizeEditedAtForDisplay())
                     if (_state.value.activeActionMessageId == messageId) {
                         _state.value = _state.value.copy(activeActionMessageId = null)
                     }
@@ -4626,27 +4626,27 @@ class ChatViewModel(
                 )
             }
             if (roomId != null && _state.value.selectedRoomId != roomId) return@withLock
+            val cappedMessages = sanitizeMessagesAfterRealtimeApply(
+                work.cappedMessages,
+                currentUserId,
+                activeOutgoingPendingId,
+            )
+            val derived = resolveChatListDerivedAfterMessagesUpdate(
+                previousDerived = work.previousDerived,
+                previousMessages = work.previousMessages,
+                nextMessages = cappedMessages,
+                precomputedDerived = work.precomputedDerived?.takeIf {
+                    chatMessagesListContentEqual(cappedMessages, work.cappedMessages)
+                },
+            )
             withContext(Dispatchers.Main) {
                 if (roomId != null && _state.value.selectedRoomId != roomId) return@withContext
-                val cappedMessages = sanitizeMessagesAfterRealtimeApply(
-                    work.cappedMessages,
-                    currentUserId,
-                    activeOutgoingPendingId,
-                )
                 val snapshot = _state.value
                 if (work.echoesOnly &&
                     !clearComposer &&
                     chatMessagesListContentEqual(snapshot.messages, cappedMessages)
                 ) {
                     return@withContext
-                }
-                val derived = if (
-                    work.precomputedDerived != null &&
-                    chatMessagesListContentEqual(cappedMessages, work.cappedMessages)
-                ) {
-                    work.precomputedDerived
-                } else {
-                    buildChatMessagesListDerived(cappedMessages)
                 }
                 var nextState = snapshot.copy(
                     messages = cappedMessages,

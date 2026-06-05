@@ -1167,7 +1167,6 @@ private fun TeamForumTopicChatRoute(
             messages.add(msg)
             trimForumMessagesInMemory()
         }
-        bumpMessagesGeneration()
         pinCoordinator.refreshPinAfterMessageEdit(msg.id, stableMessages)
         bumpPinUi()
     }
@@ -1178,7 +1177,6 @@ private fun TeamForumTopicChatRoute(
         val current = messages[i]
         if (current.reactions == reactions) return
         messages[i] = current.copy(reactions = reactions)
-        bumpMessagesGeneration()
     }
 
     fun toggleForumReaction(messageId: String, emoji: String) {
@@ -1189,7 +1187,6 @@ private fun TeamForumTopicChatRoute(
         val optimistic = applyOptimisticForumReactionToggle(previous, emoji)
         if (optimistic === previous) return
         messages[i] = optimistic
-        bumpMessagesGeneration()
         scope.launch {
             teamsRepository.toggleForumMessageReaction(teamId, topicId, messageId, emoji)
                 .onSuccess { updated -> applyForumMessageReactions(updated.id, updated.reactions) }
@@ -1197,7 +1194,6 @@ private fun TeamForumTopicChatRoute(
                     val rollbackIndex = messages.indexOfFirst { it.id == messageId }
                     if (rollbackIndex >= 0) {
                         messages[rollbackIndex] = previous
-                        bumpMessagesGeneration()
                     }
                     error = e.toUserMessageRu(res)
                 }
@@ -1294,22 +1290,6 @@ private fun TeamForumTopicChatRoute(
         scheduleMarkForumTopicRead(markId)
     }
 
-    fun jumpToFirstUnreadInTopic() {
-        val lastRead = lastReadCursor?.trim().orEmpty()
-        val self = currentUserId.trim()
-        val targetId = stableMessages.lastOrNull { msg ->
-            val id = msg.id.trim()
-            if (id.isEmpty()) return@lastOrNull false
-            if (self.isNotBlank() && msg.senderUserId.trim() == self) return@lastOrNull false
-            lastRead.isEmpty() || isObjectIdNewer(id, lastRead)
-        }?.id ?: return
-        val lazyIdx = listDerived.fullLazyIndexForMessageId(targetId) ?: return
-        scope.launch {
-            runCatching { listState.scrollTimelineItemToViewportCenter(lazyIdx) }
-                .onFailure { listState.scrollToItem(lazyIdx) }
-        }
-    }
-
     val markReadTopicKey = forumMarkReadTopicKey(topicId)
     LaunchedEffect(teamId, topicId, stableMessages.lastOrNull()?.id) {
         onProvideMarkReadAction(markReadTopicKey) {
@@ -1340,7 +1320,6 @@ private fun TeamForumTopicChatRoute(
             messages.add(msg)
             trimForumMessagesInMemory()
         }
-        bumpMessagesGeneration()
         if (!overlayUi || isNearBottom) {
             markTopicReadToLatest()
         }
@@ -1403,6 +1382,35 @@ private fun TeamForumTopicChatRoute(
             true
         } finally {
             loadingOlder = false
+        }
+    }
+
+    fun jumpToFirstUnreadInTopic() {
+        val lastRead = lastReadCursor?.trim().orEmpty()
+        if (lastRead.isEmpty()) return
+        val self = currentUserId.trim()
+        val targetId = stableMessages.lastOrNull { msg ->
+            val id = msg.id.trim()
+            if (id.isEmpty()) return@lastOrNull false
+            if (self.isNotBlank() && msg.senderUserId.trim() == self) return@lastOrNull false
+            isObjectIdNewer(id, lastRead)
+        }?.id ?: return
+        scope.launch {
+            jumpToForumPinnedMessage(
+                messageId = targetId,
+                messageIdsOldestFirst = { stableMessages.map { it.id } },
+                hasMoreOlder = { hasMoreOlder },
+                isLoadingOlder = { loadingOlder },
+                loadOlder = { loadOlderForumPage() },
+                timelineIndexForMessageId = { id ->
+                    forumLazyIndexForMessageId(stableMessages, listDerived, id)
+                },
+                scrollToTimelineIndex = { idx ->
+                    runCatching { listState.scrollTimelineItemToViewportCenter(idx) }
+                        .onFailure { listState.scrollToItem(idx) }
+                },
+                onHighlight = { id -> highlightMessageId = id },
+            )
         }
     }
 
