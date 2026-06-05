@@ -169,6 +169,8 @@ class ChatViewModel(
     /** Client-side pin history per room (Telegram-style bar cycling). */
     private val pinHistoryByRoom = mutableMapOf<String, List<com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto>>()
     private val pinBarIndexByRoom = mutableMapOf<String, Int>()
+    /** Detect active pin change to reset bar cycle index. */
+    private val lastSyncedActivePinIdByRoom = mutableMapOf<String, String>()
 
     private val knownMessageIds = LinkedHashSet<String>()
   /** messageId → index in [ChatState.messages] (newest-first); cleared on room switch. */
@@ -3201,7 +3203,11 @@ class ChatViewModel(
         )
         pinHistoryByRoom[roomId] = updated
         persistPinHistory(roomId)
-        if (resetIndex || !pinBarIndexByRoom.containsKey(roomId)) {
+        val prevActivePin = lastSyncedActivePinIdByRoom[roomId]
+        if (prevActivePin != pinId) {
+            lastSyncedActivePinIdByRoom[roomId] = pinId
+            pinBarIndexByRoom[roomId] = 0
+        } else if (resetIndex || !pinBarIndexByRoom.containsKey(roomId)) {
             pinBarIndexByRoom[roomId] = 0
         }
     }
@@ -3223,7 +3229,7 @@ class ChatViewModel(
             room.pinnedMessage,
             state.messages,
         )
-        val preview = pinBarPreviewAtIndex(history, barIndex, serverPreview)
+        val preview = pinBarPreviewAtIndex(history, barIndex, serverPreview, room.pinnedMessageId)
         return state.copy(
             pinBarPreview = preview,
             pinHistoryCount = pinHistoryDisplayCount(history),
@@ -3239,18 +3245,13 @@ class ChatViewModel(
         val roomId = st.selectedRoomId?.trim().orEmpty()
         if (roomId.isEmpty()) return
         val room = st.rooms.find { it.id == roomId } ?: return
-        if (room.pinnedMessageId.isNullOrBlank()) return
-        syncPinHistoryForRoom(roomId, room, st.messages)
+        val activePinId = room.pinnedMessageId?.trim().orEmpty()
+        if (activePinId.isEmpty()) return
+        val targetId = st.pinBarPreview?.id?.trim().orEmpty().ifEmpty { activePinId }
+        jumpToQuotedMessage(targetId)
         val history = pinHistoryByRoom[roomId].orEmpty()
-        val barIndex = pinBarIndexByRoom.getOrDefault(roomId, 0)
-        val serverPreview = resolveChatPinnedPreview(
-            room.pinnedMessageId,
-            room.pinnedMessage,
-            st.messages,
-        )
-        val target = pinBarPreviewAtIndex(history, barIndex, serverPreview) ?: return
-        jumpToQuotedMessage(target.id)
         if (history.size > 1) {
+            val barIndex = pinBarIndexByRoom.getOrDefault(roomId, 0)
             pinBarIndexByRoom[roomId] = advancePinBarIndex(history, barIndex)
             updatePinBarUi()
         }

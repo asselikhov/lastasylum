@@ -49,7 +49,6 @@ import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -108,7 +107,6 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.ComposerPasteChipRow
 import com.lastasylum.alliance.ui.util.composerLongPressPaste
-import com.lastasylum.alliance.ui.util.rememberComposerClipboardHasText
 import com.lastasylum.alliance.ui.util.rememberComposerPasteState
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -150,7 +148,6 @@ internal fun ChatComposer(
         draft = draft,
         onDraftChange = onDraftChange,
     )
-    val clipboardHasText = rememberComposerClipboardHasText()
     val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
@@ -692,21 +689,6 @@ internal fun ChatComposer(
                                         } else {
                                             stringResource(R.string.chat_open_media_panel_cd)
                                         },
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            }
-                            if (clipboardHasText) {
-                                IconButton(
-                                    onClick = { pasteState.onPaste() },
-                                    enabled = !composerLocked,
-                                    modifier = Modifier.size(40.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.ContentPaste,
-                                        contentDescription = stringResource(
-                                            R.string.chat_composer_paste_label,
-                                        ),
                                         tint = MaterialTheme.colorScheme.primary,
                                     )
                                 }

@@ -182,7 +182,13 @@ fun pinBarPreviewAtIndex(
     history: List<PinnedMessagePreviewDto>,
     barIndex: Int,
     serverPreview: PinnedMessagePreviewDto?,
+    activePinId: String? = null,
 ): PinnedMessagePreviewDto? {
+    val pinId = activePinId?.trim().orEmpty()
+    if (barIndex == 0 && pinId.isNotEmpty()) {
+        serverPreview?.takeIf { it.id.trim() == pinId }?.let { return it }
+        history.firstOrNull { it.id.trim() == pinId }?.let { return it }
+    }
     if (history.isNotEmpty() && barIndex in history.indices) return history[barIndex]
     return serverPreview ?: history.firstOrNull()
 }

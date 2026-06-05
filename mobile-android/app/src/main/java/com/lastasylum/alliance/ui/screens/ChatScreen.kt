@@ -67,7 +67,6 @@ import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.automirrored.outlined.Forward
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PushPin
@@ -282,9 +281,6 @@ import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.chatRoomTabLabelForServer
 import com.lastasylum.alliance.ui.util.chatMessageHasMenuCopyAction
 import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
-import com.lastasylum.alliance.ui.util.ComposerPasteChipRow
-import com.lastasylum.alliance.ui.util.composerLongPressPaste
-import com.lastasylum.alliance.ui.util.rememberComposerPasteState
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
@@ -576,7 +572,7 @@ private fun ChatScreenMessagesHost(
         }
     }
 
-    LaunchedEffect(listPane.scrollToMessageId, timelineSize) {
+    LaunchedEffect(listPane.scrollToMessageId, listDerived.timeline) {
         val targetId = listPane.scrollToMessageId?.trim().orEmpty()
         if (targetId.isEmpty()) return@LaunchedEffect
         val timeline = listDerived.timeline

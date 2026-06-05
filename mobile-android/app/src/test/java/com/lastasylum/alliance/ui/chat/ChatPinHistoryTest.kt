@@ -54,6 +54,16 @@ class ChatPinHistoryTest {
     }
 
     @Test
+    fun pinBarPreviewAtIndex_prefersActivePinAtIndexZero() {
+        val history = listOf(preview("old"), preview("older"))
+        val server = preview("current")
+        assertEquals(
+            "current",
+            pinBarPreviewAtIndex(history, 0, server, activePinId = "current")?.id,
+        )
+    }
+
+    @Test
     fun pinHistoryDisplayCount_showsOnlyWhenMultiple() {
         assertEquals(0, pinHistoryDisplayCount(listOf(preview("1"))))
         assertEquals(3, pinHistoryDisplayCount(listOf(preview("1"), preview("2"), preview("3"))))

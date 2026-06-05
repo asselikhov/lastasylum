@@ -1560,7 +1560,10 @@ private fun TeamForumTopicChatRoute(
                 canUnpin = canModerateMessages,
                 onTap = {
                     scope.launch {
-                        val targetId = preview.id
+                        val targetId = preview.id.trim().ifEmpty {
+                            pinCoordinator.pinnedMessageId?.trim().orEmpty()
+                        }
+                        if (targetId.isEmpty()) return@launch
                         val jumped = jumpToForumPinnedMessage(
                             messageId = targetId,
                             messageIdsOldestFirst = stableMessages.map { it.id },
@@ -1582,8 +1585,10 @@ private fun TeamForumTopicChatRoute(
                         } else {
                             delay(900)
                             if (highlightMessageId == targetId) highlightMessageId = null
-                            pinCoordinator.advancePinBarIndex(stableMessages)
-                            bumpPinUi()
+                            if (pinCoordinator.pinHistoryCount > 1) {
+                                pinCoordinator.advancePinBarIndex(stableMessages)
+                                bumpPinUi()
+                            }
                         }
                     }
                 },

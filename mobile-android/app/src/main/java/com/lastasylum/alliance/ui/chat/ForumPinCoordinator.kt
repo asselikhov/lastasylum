@@ -23,10 +23,12 @@ class ForumPinCoordinator(
 
     private var pinHistory: List<PinnedMessagePreviewDto> = emptyList()
     private var pinBarIndex: Int = 0
+    private var lastSyncedActivePinId: String? = null
 
     fun onEnterTopic() {
         pinHistory = pinHistoryPrefs.load(scopeKey)
         pinBarIndex = 0
+        lastSyncedActivePinId = null
         applyPinBarUi(emptyList())
     }
 
@@ -109,19 +111,13 @@ class ForumPinCoordinator(
     ): String? {
         val pinId = pinnedMessageId?.trim().orEmpty()
         if (pinId.isEmpty()) return null
-        syncPinHistory(messages)
-        val serverPreview = resolveForumPinnedPreview(
-            pinnedMessageId,
-            pinnedMessage,
-            messages,
-        )
-        val target = pinBarPreviewAtIndex(pinHistory, pinBarIndex, serverPreview) ?: return null
-        jumpToMessage(target.id)
+        val targetId = pinBarPreview?.id?.trim().orEmpty().ifEmpty { pinId }
+        jumpToMessage(targetId)
         if (pinHistory.size > 1) {
             pinBarIndex = advancePinBarIndex(pinHistory, pinBarIndex)
             applyPinBarUi(messages)
         }
-        return target.id
+        return targetId
     }
 
     private fun syncPinHistory(messages: List<TeamForumMessageDto>) {
@@ -141,7 +137,11 @@ class ForumPinCoordinator(
             pinnedMessageId,
         )
         pinHistory = updated
-        if (resetIndex || pinBarIndex !in pinHistory.indices) {
+        val prevActivePin = lastSyncedActivePinId
+        if (prevActivePin != pinId) {
+            lastSyncedActivePinId = pinId
+            pinBarIndex = 0
+        } else if (resetIndex || pinBarIndex !in pinHistory.indices) {
             pinBarIndex = 0
         }
         pinHistoryPrefs.save(scopeKey, pinHistory)
@@ -161,7 +161,7 @@ class ForumPinCoordinator(
             pinnedMessage,
             messages,
         )
-        pinBarPreview = pinBarPreviewAtIndex(pinHistory, pinBarIndex, serverPreview)
+        pinBarPreview = pinBarPreviewAtIndex(pinHistory, pinBarIndex, serverPreview, pinnedMessageId)
         pinHistoryCount = pinHistoryDisplayCount(pinHistory)
     }
 
