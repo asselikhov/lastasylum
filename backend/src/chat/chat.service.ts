@@ -41,6 +41,7 @@ import {
 } from '../common/pinned-message-preview';
 import {
   ensurePinHistoryMigrated,
+  normalizePinHistory,
   type PinHistoryEntry,
 } from '../common/pin-history.util';
 import {
@@ -490,7 +491,7 @@ export class ChatService {
   >(rooms: T[]): Promise<Map<string, PinnedMessagePreview[]>> {
     const histories = rooms.map((doc) => ({
       roomId: doc._id.toString(),
-      history: this.chatRoomsService.pinHistoryForRoom(doc as ChatRoomDocument),
+      history: normalizePinHistory(ensurePinHistoryMigrated(doc)),
     }));
     const allMessageIds = [
       ...new Set(

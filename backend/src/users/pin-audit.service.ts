@@ -53,10 +53,10 @@ export class PinAuditService {
     if (!Types.ObjectId.isValid(teamOid)) return [];
     const limit = Math.min(200, Math.max(1, limitRaw));
     const rows = await this.auditModel
-      .find({ teamId: new Types.ObjectId(teamOid) })
+      .find({ teamId: teamOid })
       .sort({ createdAt: -1 })
       .limit(limit)
-      .lean()
+      .lean<Array<PinAuditLog & { _id: Types.ObjectId; createdAt?: Date }>>()
       .exec();
     return rows.map((row) => ({
       id: String(row._id),

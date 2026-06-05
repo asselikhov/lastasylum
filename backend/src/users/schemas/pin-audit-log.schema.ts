@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Schema as MongooseSchema } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 
 export type PinAuditLogDocument = HydratedDocument<PinAuditLog>;
 
@@ -8,8 +8,8 @@ export type PinAuditAction = 'pin' | 'unpin' | 'unpin_all';
 
 @Schema({ collection: 'pin_audit_logs', timestamps: { createdAt: true, updatedAt: false } })
 export class PinAuditLog {
-  @Prop({ type: MongooseSchema.Types.ObjectId, required: true, index: true })
-  teamId!: MongooseSchema.Types.ObjectId;
+  @Prop({ type: Types.ObjectId, required: true, index: true })
+  teamId: Types.ObjectId;
 
   @Prop({ type: String, required: true, enum: ['chat', 'forum'] })
   scope!: PinAuditScope;
@@ -25,7 +25,9 @@ export class PinAuditLog {
   action!: PinAuditAction;
 
   @Prop({ type: String, required: true })
-  userId!: string;
+  userId: string;
+
+  createdAt?: Date;
 }
 
 export const PinAuditLogSchema = SchemaFactory.createForClass(PinAuditLog);
