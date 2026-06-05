@@ -191,6 +191,7 @@ import com.lastasylum.alliance.ui.chat.isPinnedPreviewUnavailable
 import com.lastasylum.alliance.ui.chat.resolvedThumbnailUrl
 import com.lastasylum.alliance.ui.util.formatForumTopicTimeRu
 import com.lastasylum.alliance.ui.chat.canPinChatMessage
+import com.lastasylum.alliance.ui.chat.resolveChatPinAllianceId
 import com.lastasylum.alliance.ui.chat.ChatComposerPaneState
 import com.lastasylum.alliance.ui.chat.toListPane
 import com.lastasylum.alliance.ui.chat.toChromePane
@@ -452,7 +453,7 @@ private fun ChatScreenMessagesHost(
         }
     }
     val canUnpinPinned = canPinChatMessage(
-        selectedRoom?.allianceId,
+        resolveChatPinAllianceId(selectedRoom, messages.firstOrNull()),
         chromePane.playerTeamSquadRole,
     )
     val inSelectionMode = listPane.selectedMessageIds.isNotEmpty()
@@ -578,8 +579,14 @@ private fun ChatScreenMessagesHost(
         mutableStateOf<ChatScrollAnchor?>(null)
     }
 
-    LaunchedEffect(listPane.isLoadingOlder) {
-        if (listPane.isLoadingOlder && pendingScrollAnchor == null) {
+    val pendingJumpTarget = listPane.scrollToMessageId?.trim().orEmpty()
+
+    LaunchedEffect(listPane.isLoadingOlder, pendingJumpTarget) {
+        if (
+            listPane.isLoadingOlder &&
+            pendingScrollAnchor == null &&
+            pendingJumpTarget.isEmpty()
+        ) {
             pendingScrollAnchor = ChatScrollAnchor(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
@@ -588,10 +595,11 @@ private fun ChatScreenMessagesHost(
         }
     }
 
-    LaunchedEffect(listPane.isLoadingOlder, timelineSize) {
+    LaunchedEffect(listPane.isLoadingOlder, timelineSize, pendingJumpTarget) {
         if (listPane.isLoadingOlder) return@LaunchedEffect
         val anchor = pendingScrollAnchor ?: return@LaunchedEffect
         pendingScrollAnchor = null
+        if (pendingJumpTarget.isNotEmpty()) return@LaunchedEffect
         val delta = timelineSize - anchor.timelineSize
         if (delta > 0) {
             listState.scrollToItem(
@@ -1227,12 +1235,20 @@ fun ChatScreen(
                 playerTeamSquadRole = chromePane.playerTeamSquadRole,
             )
             val menuCanPin = canPinChatMessage(
-                selectedRoom?.allianceId,
+                resolveChatPinAllianceId(selectedRoom, message),
                 chromePane.playerTeamSquadRole,
             )
             val roomPinnedId = selectedRoom?.pinnedMessageId
+            val pinnedMessageIds = remember(roomPinnedId, chromePane.pinnedMessages) {
+                buildSet {
+                    roomPinnedId?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+                    chromePane.pinnedMessages.forEach { pin ->
+                        pin.id.trim().takeIf { it.isNotEmpty() }?.let { add(it) }
+                    }
+                }
+            }
             val isRoomPinnedMessage =
-                message._id != null && roomPinnedId != null && message._id == roomPinnedId
+                message._id != null && message._id in pinnedMessageIds
             val menuImageUrls = remember(message.attachments) {
                 message.chatImageAttachments().map { resolvedChatAttachmentImageUrl(it.url) }
             }
@@ -1276,7 +1292,7 @@ fun ChatScreen(
                                 }
                             },
                             onUnpin = {
-                                onUnpinRoom()
+                                message._id?.let(onUnpinOnePinned)
                                 dismissMessageActions()
                             },
                             onEdit = {

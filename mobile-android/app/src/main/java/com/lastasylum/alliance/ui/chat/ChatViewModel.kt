@@ -2815,6 +2815,13 @@ class ChatViewModel(
     fun jumpToQuotedMessage(messageId: String) {
         val id = messageId.trim()
         if (id.isEmpty()) return
+        _state.update {
+            it.copy(
+                scrollToMessageId = id,
+                highlightMessageId = id,
+                transientNotice = null,
+            )
+        }
         viewModelScope.launch {
             val found = jumpToChatPinnedMessage(
                 messageId = id,
@@ -3346,6 +3353,13 @@ class ChatViewModel(
     fun onJumpToPinnedMessage(messageId: String) {
         val targetId = messageId.trim()
         if (targetId.isEmpty()) return
+        _state.update {
+            it.copy(
+                scrollToMessageId = targetId,
+                highlightMessageId = targetId,
+                transientNotice = null,
+            )
+        }
         viewModelScope.launch {
             val found = jumpToChatPinnedMessage(
                 messageId = targetId,
@@ -3391,6 +3405,13 @@ class ChatViewModel(
         if (activePinId.isEmpty()) return
         val targetId = st.pinBarPreview?.id?.trim().orEmpty().ifEmpty { activePinId }
         val history = pinHistoryByRoom[roomId].orEmpty()
+        _state.update {
+            it.copy(
+                scrollToMessageId = targetId,
+                highlightMessageId = targetId,
+                transientNotice = null,
+            )
+        }
         viewModelScope.launch {
             val found = jumpToChatPinnedMessage(
                 messageId = targetId,

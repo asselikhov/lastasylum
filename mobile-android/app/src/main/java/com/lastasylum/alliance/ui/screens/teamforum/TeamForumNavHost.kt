@@ -1672,12 +1672,11 @@ private fun TeamForumTopicChatRoute(
                             isLoadingOlder = { loadingOlder },
                             loadOlder = { loadOlderForumPage() },
                             timelineIndexForMessageId = { id ->
-                                listDerived.timeline.indexOfFirst { entry ->
-                                    entry is ForumTimelineEntry.Message && entry.messageId == id
-                                }
+                                listDerived.fullLazyIndexForMessageId(id) ?: -1
                             },
                             scrollToTimelineIndex = { idx ->
                                 runCatching { listState.scrollTimelineItemToViewportCenter(idx) }
+                                    .onFailure { listState.scrollToItem(idx) }
                             },
                             onHighlight = { id -> highlightMessageId = id },
                         )
@@ -1721,12 +1720,11 @@ private fun TeamForumTopicChatRoute(
                             isLoadingOlder = { loadingOlder },
                             loadOlder = { loadOlderForumPage() },
                             timelineIndexForMessageId = { mid ->
-                                listDerived.timeline.indexOfFirst { entry ->
-                                    entry is ForumTimelineEntry.Message && entry.messageId == mid
-                                }
+                                listDerived.fullLazyIndexForMessageId(mid) ?: -1
                             },
                             scrollToTimelineIndex = { idx ->
                                 runCatching { listState.scrollTimelineItemToViewportCenter(idx) }
+                                    .onFailure { listState.scrollToItem(idx) }
                             },
                             onHighlight = { mid -> highlightMessageId = mid },
                         )

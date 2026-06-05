@@ -3,6 +3,7 @@ package com.lastasylum.alliance.ui.chat
 import com.lastasylum.alliance.data.auth.AccountRoles
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatRoomDto
 
 /** App admin account ([AccountRoles.ADMIN]), not squad rank R5. */
 fun isAppAdmin(allianceAccountRole: String): Boolean =
@@ -33,6 +34,17 @@ fun canModerateChatMessage(
         return r == "R4" || r == "R5"
     }
     return false
+}
+
+/** Prefer room scope; fall back to message scope when room DTO omits allianceId. */
+fun resolveChatPinAllianceId(
+    room: ChatRoomDto?,
+    message: ChatMessage? = null,
+): String? {
+    val fromRoom = room?.allianceId?.trim().orEmpty()
+    if (fromRoom.isNotEmpty()) return fromRoom
+    val fromMessage = message?.allianceId?.trim().orEmpty()
+    return fromMessage.takeIf { it.isNotEmpty() }
 }
 
 /** Squad R4/R5 may pin/unpin in `pt:*` team chat rooms. */
