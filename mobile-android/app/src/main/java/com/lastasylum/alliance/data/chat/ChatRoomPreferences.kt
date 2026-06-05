@@ -71,6 +71,17 @@ class ChatRoomPreferences(context: Context) {
         prefs.edit().remove(hiddenBeforeKey(roomId)).apply()
     }
 
+    /** Drop per-room history watermarks (admin wipe / reinstall repair). */
+    fun clearAllHiddenBeforeMessageIds() {
+        val prefix = hiddenBeforeKeyPrefix()
+        val editor = prefs.edit()
+        prefs.all.keys
+            .filterIsInstance<String>()
+            .filter { it.startsWith(prefix) }
+            .forEach { editor.remove(it) }
+        editor.apply()
+    }
+
     fun loadAllLastReadMessageIds(): Map<String, String> {
         if (activeUserId.isNullOrBlank()) return emptyMap()
         val prefix = lastReadKeyPrefix()

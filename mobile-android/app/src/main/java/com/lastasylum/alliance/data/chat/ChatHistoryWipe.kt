@@ -20,6 +20,7 @@ object ChatHistoryWipe {
         }
         ChatSessionCache.clear()
         chatRoomPreferences.clearLastReadCursors()
+        chatRoomPreferences.clearAllHiddenBeforeMessageIds()
         CombatOverlayService.clearHubUnreadState()
         OverlayGameStatusHudRefresh.invalidateNewsForumCache()
     }

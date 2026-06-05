@@ -715,7 +715,7 @@ class ChatViewModel(
                 val capped = capNewestFirst(scrubbed, PAGE_SIZE)
                 roomCaches[rid] = RoomMessageCache(
                     messages = capped,
-                    hasMoreOlder = disk.hasMoreOlder,
+                    hasMoreOlder = disk.hasMoreOlder || capped.size >= PAGE_SIZE,
                 )
             }
         }
@@ -867,7 +867,10 @@ class ChatViewModel(
         preferOverlayRaidRoom: Boolean = false,
     ) {
         if (preferOverlayRaidRoom && overlayRaidAlreadyReady(_state.value.rooms)) {
-            allianceRaidRoomId(_state.value.rooms)?.let { rehydrateRoomMessagesFromCache(it) }
+            allianceRaidRoomId(_state.value.rooms)?.let { raidId ->
+                rehydrateRoomMessagesFromCache(raidId)
+                scheduleOverlayRoomHistorySync(raidId)
+            }
             _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
             refreshPinBarForSelectedRoom()
             return
@@ -950,6 +953,18 @@ class ChatViewModel(
         )
         refreshPinBarForSelectedRoom()
         publishMessagesDerived(cached.messages)
+        if (overlayChatPanelVisible) {
+            scheduleOverlayRoomHistorySync(roomId)
+        }
+    }
+
+    /** Pull server timeline after showing overlay cache (missed messages while offline). */
+    private fun scheduleOverlayRoomHistorySync(roomId: String) {
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return
+        viewModelScope.launch {
+            refreshMessagesInBackground(rid, force = true)
+        }
     }
 
     /** Оверлей-чат: по умолчанию комната «Альянс» (hub), как вкладка чата в приложении. */
@@ -1034,7 +1049,7 @@ class ChatViewModel(
                 recomputeRoomUnreadBadges()
                 val roomId = _state.value.selectedRoomId
                 if (!roomId.isNullOrBlank()) {
-                    refreshMessagesInBackground(roomId, force = !hubReady)
+                    refreshMessagesInBackground(roomId, force = true)
                 }
                 if (!hubReady && !overlayHubReadyForPanel()) {
                     scheduleBootstrap(preferAllianceHubRoom = true, force = false)
@@ -1694,9 +1709,7 @@ class ChatViewModel(
                     recomputeRoomUnreadBadges()
                     viewModelScope.launch { syncRoomsFromServer(reconfirmVisibleRoom = false) }
                     _state.value.selectedRoomId?.let { rid ->
-                        if (_state.value.messages.size < PAGE_SIZE) {
-                            refreshMessagesInBackground(rid, force = true)
-                        }
+                        refreshMessagesInBackground(rid, force = true)
                     }
                     return
                 }
@@ -2542,11 +2555,10 @@ class ChatViewModel(
                     markRoomReadUpTo(roomId, newestId)
                 }
             }
-            if (!shouldSkipBackgroundMessageRefreshForRoom(roomId)) {
-                refreshMessagesInBackground(roomId)
-            } else if (filteredCache.size < PAGE_SIZE) {
-                refreshMessagesInBackground(roomId, force = true)
-            }
+            refreshMessagesInBackground(
+                roomId,
+                force = overlayChatPanelVisible || !shouldSkipBackgroundMessageRefreshForRoom(roomId),
+            )
             schedulePersistChatSnapshot()
             return
         }
