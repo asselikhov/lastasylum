@@ -335,6 +335,7 @@ export class ChatService {
     T extends {
       _id: Types.ObjectId;
       pinnedMessageId?: Types.ObjectId | null;
+      pinnedByUserId?: string | null;
     },
   >(rooms: T[]): Promise<Map<string, PinnedMessagePreview | null>> {
     const pinIds = [
