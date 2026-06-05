@@ -314,7 +314,18 @@ export class UsersService implements OnModuleInit {
   }
 
   async deleteUser(userId: string): Promise<boolean> {
+    if (!Types.ObjectId.isValid(userId)) {
+      return false;
+    }
+    const existing = await this.userModel.findById(userId).exec();
+    if (!existing) {
+      return false;
+    }
+    await this.teamsService.purgeUserSquadMembershipOnDelete(userId);
     const res = await this.userModel.deleteOne({ _id: userId }).exec();
+    if (res.deletedCount === 1) {
+      this.invalidateSafeUserCache(userId);
+    }
     return res.deletedCount === 1;
   }
 

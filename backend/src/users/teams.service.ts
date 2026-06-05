@@ -247,6 +247,117 @@ export class TeamsService {
    * Ensures `squadMembers` is populated (migrates legacy `memberUserIds` if needed).
    * Mutates the passed `team` document in memory when migration runs.
    */
+  private pickSuccessorLeaderUserId(
+    remaining: { userId: Types.ObjectId; role: PlayerTeamMemberRole }[],
+  ): Types.ObjectId {
+    const sorted = [...remaining].sort((a, b) => {
+      const dr = squadRoleRank(b.role) - squadRoleRank(a.role);
+      if (dr !== 0) {
+        return dr;
+      }
+      return a.userId.toString().localeCompare(b.userId.toString());
+    });
+    return sorted[0]!.userId;
+  }
+
+  /**
+   * Remove squad roster rows whose user documents no longer exist (e.g. admin delete).
+   */
+  private async pruneOrphanSquadMembers(
+    team: PlayerTeamDocument,
+  ): Promise<PlayerTeamDocument | null> {
+    if (!team.squadMembers?.length) {
+      return team;
+    }
+    const memberIds = team.squadMembers.map((m) => m.userId);
+    const existing = await this.userModel
+      .find({ _id: { $in: memberIds } })
+      .select('_id')
+      .lean<Array<{ _id: Types.ObjectId }>>()
+      .exec();
+    const existingSet = new Set(existing.map((u) => u._id.toString()));
+    const orphanOids = team.squadMembers
+      .filter((m) => !existingSet.has(m.userId.toString()))
+      .map((m) => m.userId);
+    if (orphanOids.length === 0) {
+      return team;
+    }
+
+    const remaining = team.squadMembers.filter((m) =>
+      existingSet.has(m.userId.toString()),
+    );
+    if (remaining.length === 0) {
+      await this.teamModel.deleteOne({ _id: team._id }).exec();
+      return null;
+    }
+
+    const leaderOrphan = orphanOids.some((oid) =>
+      team.leaderUserId.equals(oid),
+    );
+    const setLeader = leaderOrphan
+      ? { leaderUserId: this.pickSuccessorLeaderUserId(remaining) }
+      : null;
+
+    if (setLeader) {
+      await this.teamModel
+        .updateOne({ _id: team._id }, { $set: setLeader })
+        .exec();
+    }
+    for (const orphanOid of orphanOids) {
+      await this.teamModel
+        .updateOne(
+          { _id: team._id },
+          { $pull: { squadMembers: { userId: orphanOid } } },
+        )
+        .exec();
+    }
+
+    const refreshed = await this.teamModel.findById(team._id).exec();
+    return refreshed ?? null;
+  }
+
+  /** Drop squad membership and pending join requests before user document deletion. */
+  async purgeUserSquadMembershipOnDelete(userId: string): Promise<void> {
+    if (!Types.ObjectId.isValid(userId)) {
+      return;
+    }
+    const oid = new Types.ObjectId(userId);
+
+    await this.joinRequestModel.deleteMany({ requesterUserId: oid }).exec();
+
+    const teams = await this.teamModel
+      .find({ 'squadMembers.userId': oid })
+      .exec();
+    for (const team of teams) {
+      await this.migrateLegacyIfNeeded(team);
+      const remaining = team.squadMembers.filter((m) => !m.userId.equals(oid));
+      if (team.leaderUserId.equals(oid)) {
+        if (remaining.length === 0) {
+          await this.teamModel.deleteOne({ _id: team._id }).exec();
+          continue;
+        }
+        await this.teamModel
+          .updateOne(
+            { _id: team._id },
+            {
+              $set: {
+                leaderUserId: this.pickSuccessorLeaderUserId(remaining),
+              },
+              $pull: { squadMembers: { userId: oid } },
+            },
+          )
+          .exec();
+      } else {
+        await this.teamModel
+          .updateOne(
+            { _id: team._id },
+            { $pull: { squadMembers: { userId: oid } } },
+          )
+          .exec();
+      }
+    }
+  }
+
   private async migrateLegacyIfNeeded(team: PlayerTeamDocument): Promise<void> {
     const hasSquad =
       Array.isArray(team.squadMembers) && team.squadMembers.length > 0;
@@ -572,11 +683,16 @@ export class TeamsService {
     if (!Types.ObjectId.isValid(teamId)) {
       throw new NotFoundException('Team not found');
     }
-    const team = await this.teamModel.findById(teamId).exec();
+    let team: PlayerTeamDocument | null =
+      await this.teamModel.findById(teamId).exec();
     if (!team) {
       throw new NotFoundException('Team not found');
     }
     await this.migrateLegacyIfNeeded(team);
+    team = await this.pruneOrphanSquadMembers(team);
+    if (!team) {
+      throw new NotFoundException('Team not found');
+    }
     this.assertMember(team, requesterUserId);
 
     const ids = team.squadMembers.map((m) => m.userId.toString());
@@ -1377,11 +1493,16 @@ export class TeamsService {
     if (!Types.ObjectId.isValid(teamId)) {
       return null;
     }
-    const team = await this.teamModel.findById(teamId).exec();
+    let team: PlayerTeamDocument | null =
+      await this.teamModel.findById(teamId).exec();
     if (!team) {
       return null;
     }
     await this.migrateLegacyIfNeeded(team);
+    team = await this.pruneOrphanSquadMembers(team);
+    if (!team) {
+      return null;
+    }
     const users = await this.userModel
       .find({ _id: { $in: team.squadMembers.map((m) => m.userId) } })
       .exec();
@@ -1394,37 +1515,45 @@ export class TeamsService {
       if (v instanceof Date) return v.toISOString();
       return String(v);
     };
-    const members: AdminTeamMemberRow[] = users.map((u) => {
+    const members: AdminTeamMemberRow[] = team.squadMembers.flatMap((m) => {
+      const u = users.find((row) => row._id.equals(m.userId));
+      if (!u) {
+        return [];
+      }
       const uid = u._id.toString();
       const displayNick = this.gameIdentities.resolveMemberDisplayNickname(
         u,
         teamIdStr,
       );
-      return {
-        userId: uid,
-        username: displayNick,
-        email: u.email,
-        isLeader: team.leaderUserId.equals(u._id),
-        accountRole: normalizeAllianceRole(u.role),
-        teamRole: roleByUserId.get(uid) ?? 'R1',
-        telegramUsername: u.telegramUsername ?? null,
-        presenceStatus: u.presenceStatus ?? null,
-        lastPresenceAt: toIso(u.lastPresenceAt),
-        lastAppActiveAt: toIso(u.lastAppActiveAt),
-        membershipStatus: u.membershipStatus ?? 'active',
-        allianceName: u.allianceName?.trim() || '—',
-        serverNumber: this.gameIdentities.resolveServerNumberForTeam(
-          u,
-          teamIdStr,
-        ),
-        gameNickname: displayNick,
-        accountUsername: u.username,
-        identityId: this.gameIdentities.resolveIdentityIdForTeam(u, teamIdStr),
-        appVersionName: u.lastAppVersionName?.trim() || null,
-        appVersionCode:
-          typeof u.lastAppVersionCode === 'number' ? u.lastAppVersionCode : null,
-        appVersionReportedAt: toIso(u.lastAppVersionReportedAt),
-      };
+      return [
+        {
+          userId: uid,
+          username: displayNick,
+          email: u.email,
+          isLeader: team.leaderUserId.equals(u._id),
+          accountRole: normalizeAllianceRole(u.role),
+          teamRole: roleByUserId.get(uid) ?? 'R1',
+          telegramUsername: u.telegramUsername ?? null,
+          presenceStatus: u.presenceStatus ?? null,
+          lastPresenceAt: toIso(u.lastPresenceAt),
+          lastAppActiveAt: toIso(u.lastAppActiveAt),
+          membershipStatus: u.membershipStatus ?? 'active',
+          allianceName: u.allianceName?.trim() || '—',
+          serverNumber: this.gameIdentities.resolveServerNumberForTeam(
+            u,
+            teamIdStr,
+          ),
+          gameNickname: displayNick,
+          accountUsername: u.username,
+          identityId: this.gameIdentities.resolveIdentityIdForTeam(u, teamIdStr),
+          appVersionName: u.lastAppVersionName?.trim() || null,
+          appVersionCode:
+            typeof u.lastAppVersionCode === 'number'
+              ? u.lastAppVersionCode
+              : null,
+          appVersionReportedAt: toIso(u.lastAppVersionReportedAt),
+        },
+      ];
     });
     members.sort(
       (a, b) => squadRoleRank(b.teamRole) - squadRoleRank(a.teamRole),
