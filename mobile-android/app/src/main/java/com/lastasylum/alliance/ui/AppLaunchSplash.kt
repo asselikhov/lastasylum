@@ -267,5 +267,11 @@ const val LAUNCH_WARMUP_MAX_MS = 5_000L
 /** Максимум ожидания refresh при восстановлении сессии (без FCM на критическом пути). */
 const val SESSION_BOOTSTRAP_MAX_MS = 8_000L
 
+/** Максимум ожидания загрузки данных в оверлей-панелях (новости, участники, чат). */
+const val OVERLAY_PANEL_LOAD_MAX_MS = 12_000L
+
+/** Максимум ожидания фонового прогрева оверлея после входа в игру. */
+const val OVERLAY_WARMUP_MAX_MS = 18_000L
+
 /** @deprecated Используйте [LAUNCH_SPLASH_MIN_MS]; оставлено для совместимости. */
 const val LAUNCH_SPLASH_MS = LAUNCH_SPLASH_MIN_MS

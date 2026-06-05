@@ -193,6 +193,16 @@ fun pinBarPreviewAtIndex(
     return serverPreview ?: history.firstOrNull()
 }
 
+/** Drop a deleted/unpinned message from local pin history. */
+fun removePinFromHistory(
+    history: List<PinnedMessagePreviewDto>,
+    messageId: String,
+): List<PinnedMessagePreviewDto> {
+    val id = messageId.trim()
+    if (id.isEmpty()) return history
+    return history.filter { it.id.trim() != id }
+}
+
 /** Advance to the next pin in Telegram-style history cycling. */
 fun advancePinBarIndex(
     history: List<PinnedMessagePreviewDto>,
@@ -245,7 +255,7 @@ fun isPinnedPreviewLikelyDeleted(
 ): Boolean {
     val id = preview.id.trim()
     if (id.isEmpty()) return false
-    val msg = messages.find { it._id?.trim() == id } ?: return false
+    val msg = messages.find { it._id?.trim() == id } ?: return true
     return msg.deletedAt != null
 }
 

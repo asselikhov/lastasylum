@@ -45,7 +45,9 @@ import com.lastasylum.alliance.data.voice.VoicePresenceRosterSync
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.screens.TeamLeaderDialogsHost
 import com.lastasylum.alliance.ui.screens.rememberTeamLeaderOverlayState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun OverlayTeamOnlinePanel(
@@ -55,6 +57,7 @@ fun OverlayTeamOnlinePanel(
     tokenProvider: () -> String?,
     openJoinInboxInitially: Boolean = false,
     onOpenJoinInboxConsumed: () -> Unit = {},
+    initialJoinRequestCount: Int = 0,
     onHudRefresh: () -> Unit,
     onClose: () -> Unit = {},
     onIngameCountChanged: (Int) -> Unit = {},
@@ -105,8 +108,12 @@ fun OverlayTeamOnlinePanel(
         leaderUi.showJoinInbox = true
         scope.launch {
             leaderUi.inboxBusy = true
-            teamsRepository.listPendingJoinRequests()
+            teamsRepository.loadPendingJoinRequestsForOverlay(context)
                 .onSuccess { leaderUi.inboxRequests = it }
+                .onFailure { err ->
+                    leaderUi.inboxRequests = emptyList()
+                    leaderUi.inboxFeedback = joinInboxLoadErrorMessage(context, err)
+                }
             leaderUi.inboxBusy = false
         }
         onOpenJoinInboxConsumed()
@@ -154,8 +161,42 @@ fun OverlayTeamOnlinePanel(
     val team = uiState.team
     val profile = uiState.profile
     val isLeader = profile?.isPlayerTeamLeader == true
-    val pending = profile?.pendingPlayerTeamJoinRequests ?: 0
+    var joinRequestCount by remember(initialJoinRequestCount) {
+        mutableStateOf(initialJoinRequestCount)
+    }
+    LaunchedEffect(isLeader, initialJoinRequestCount, profile?.pendingPlayerTeamJoinRequests) {
+        val leaderProfile = profile
+        if (!isLeader || leaderProfile == null) {
+            joinRequestCount = 0
+            return@LaunchedEffect
+        }
+        joinRequestCount = initialJoinRequestCount.coerceAtLeast(
+            leaderProfile.pendingPlayerTeamJoinRequests,
+        )
+        val refreshed = withContext(Dispatchers.IO) {
+            OverlayGameStatusHudRefresh.loadTeamJoinRequestCount(context)
+        }
+        joinRequestCount = refreshed
+    }
     val selfLabel = stringResource(R.string.overlay_online_self)
+
+    val openJoinInbox: () -> Unit = {
+        leaderUi.inboxFeedback = null
+        leaderUi.showJoinInbox = true
+        scope.launch {
+            leaderUi.inboxBusy = true
+            teamsRepository.loadPendingJoinRequestsForOverlay(context)
+                .onSuccess {
+                    leaderUi.inboxRequests = it
+                    joinRequestCount = it.size
+                }
+                .onFailure { err ->
+                    leaderUi.inboxRequests = emptyList()
+                    leaderUi.inboxFeedback = joinInboxLoadErrorMessage(context, err)
+                }
+            leaderUi.inboxBusy = false
+        }
+    }
 
     TeamLeaderDialogsHost(
         teamId = team?.id,
@@ -262,7 +303,7 @@ fun OverlayTeamOnlinePanel(
                     }
                     if (team != null && isLeader) {
                         OverlayOnlineLeaderToolbarActions(
-                            pendingJoinRequests = pending,
+                            pendingJoinRequests = joinRequestCount,
                             membersBusy = leaderUi.membersBusy,
                             editNameBusy = leaderUi.editNameBusy,
                             onAddMember = {
@@ -274,19 +315,7 @@ fun OverlayTeamOnlinePanel(
                                 leaderUi.editTeamTagDraft = team.tag.trim()
                                 leaderUi.showEditTeam = true
                             },
-                            onOpenInbox = {
-                                leaderUi.inboxFeedback = null
-                                leaderUi.showJoinInbox = true
-                                scope.launch {
-                                    leaderUi.inboxBusy = true
-                                    teamsRepository.listPendingJoinRequests()
-                                        .onSuccess { leaderUi.inboxRequests = it }
-                                        .onFailure { _ ->
-                                            leaderUi.inboxRequests = emptyList()
-                                        }
-                                    leaderUi.inboxBusy = false
-                                }
-                            },
+                            onOpenInbox = openJoinInbox,
                         )
                     }
                 },
@@ -329,6 +358,19 @@ private fun RowScope.OverlayOnlineLeaderToolbarActions(
             modifier = Modifier.size(20.dp),
         )
     }
+    val inboxButton: @Composable () -> Unit = {
+        IconButton(
+            onClick = onOpenInbox,
+            modifier = Modifier.size(40.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Inbox,
+                contentDescription = stringResource(R.string.profile_join_inbox_cd),
+                tint = tokens.borderLive,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
     if (pendingJoinRequests > 0) {
         BadgedBox(
             badge = {
@@ -337,18 +379,10 @@ private fun RowScope.OverlayOnlineLeaderToolbarActions(
                 }
             },
         ) {
-            IconButton(
-                onClick = onOpenInbox,
-                modifier = Modifier.size(40.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Inbox,
-                    contentDescription = stringResource(R.string.profile_join_inbox_cd),
-                    tint = tokens.borderLive,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+            inboxButton()
         }
+    } else {
+        inboxButton()
     }
 }
 

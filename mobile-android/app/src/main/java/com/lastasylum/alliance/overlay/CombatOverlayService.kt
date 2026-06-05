@@ -144,6 +144,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import com.lastasylum.alliance.ui.OVERLAY_WARMUP_MAX_MS
 import com.lastasylum.alliance.push.FcmTokenManager
 import com.lastasylum.alliance.update.downloadAndInstallAppUpdate
 import com.lastasylum.alliance.update.fetchNewerApkDownloadUrl
@@ -3125,7 +3127,8 @@ class CombatOverlayService : Service() {
                         },
                         onOnlineClick = {
                             overlayCommandsPopover.hide()
-                            pendingOpenJoinInboxOnParticipants = false
+                            pendingOpenJoinInboxOnParticipants =
+                                overlayTopRightHudFlow.value.teamJoinRequestCount > 0
                             showOverlayHudPane(OverlayHudPane.Participants)
                         },
                         onQuickCommandsClick = { openOverlayQuickCommandsFromHud() },
@@ -5568,32 +5571,34 @@ class CombatOverlayService : Service() {
         if (overlayHudWarmupJob?.isActive == true) return
         overlayHudWarmupJob = serviceScope.launch {
             try {
-                val uid = jwtSubFromAccessToken()?.trim().orEmpty()
-                if (uid.isNotEmpty()) {
-                    val hydrateStarted = android.os.SystemClock.elapsedRealtime()
-                    val hydrateResult = withContext(Dispatchers.IO) {
-                        OverlayColdStartHydrator.hydrate(this@CombatOverlayService, uid)
-                    }
-                    withContext(Dispatchers.Main.immediate) {
-                        applyInstantOverlayHudFromLocalCaches()
-                    }
-                    OverlayPerfDiag.logColdHydrate(
-                        durationMs = android.os.SystemClock.elapsedRealtime() - hydrateStarted,
-                        seededContext = hydrateResult.seededContext,
-                        seededRooms = hydrateResult.seededRooms,
-                        seededBadges = hydrateResult.seededBadges,
-                    )
-                    if (hydrateResult.needsNetworkPrefetch) {
-                        launch(Dispatchers.IO) {
-                            OverlayColdStartHydrator.prefetchTeamContent(this@CombatOverlayService, uid)
+                withTimeoutOrNull(OVERLAY_WARMUP_MAX_MS) {
+                    val uid = jwtSubFromAccessToken()?.trim().orEmpty()
+                    if (uid.isNotEmpty()) {
+                        val hydrateStarted = android.os.SystemClock.elapsedRealtime()
+                        val hydrateResult = withContext(Dispatchers.IO) {
+                            OverlayColdStartHydrator.hydrate(this@CombatOverlayService, uid)
+                        }
+                        withContext(Dispatchers.Main.immediate) {
+                            applyInstantOverlayHudFromLocalCaches()
+                        }
+                        OverlayPerfDiag.logColdHydrate(
+                            durationMs = android.os.SystemClock.elapsedRealtime() - hydrateStarted,
+                            seededContext = hydrateResult.seededContext,
+                            seededRooms = hydrateResult.seededRooms,
+                            seededBadges = hydrateResult.seededBadges,
+                        )
+                        if (hydrateResult.needsNetworkPrefetch) {
+                            launch(Dispatchers.IO) {
+                                OverlayColdStartHydrator.prefetchTeamContent(this@CombatOverlayService, uid)
+                            }
                         }
                     }
-                }
-                prepareOverlayChatBeforePanelShowSuspend()
-                preloadOverlayHudDataSuspend()
-                mainHandler.post {
-                    if (isInGameOverlayUiActive()) {
-                        showOverlayChatTeamPanel(warmHostOnly = true)
+                    prepareOverlayChatBeforePanelShowSuspend()
+                    preloadOverlayHudDataSuspend()
+                    mainHandler.post {
+                        if (isInGameOverlayUiActive()) {
+                            showOverlayChatTeamPanel(warmHostOnly = true)
+                        }
                     }
                 }
             } finally {
@@ -5783,6 +5788,7 @@ class CombatOverlayService : Service() {
                 val panelHost by overlayHudPanelHostState.collectAsState()
                 val overlayPane = panelHost.hudPane
                 val initialTab = panelHost.initialTabIndex
+                val topRightHud by overlayTopRightHudFlow.collectAsStateWithLifecycle(owner)
                 val container = remember { AppContainer.from(this@CombatOverlayService) }
                 val userId = remember { jwtSubFromAccessToken().orEmpty() }
                 val userRole = remember { jwtRoleFromAccessToken() }
@@ -5882,6 +5888,7 @@ class CombatOverlayService : Service() {
                                                     onOpenJoinInboxConsumed = {
                                                         pendingOpenJoinInboxOnParticipants = false
                                                     },
+                                                    initialJoinRequestCount = topRightHud.teamJoinRequestCount,
                                                     onClose = { hideOverlayChatTeamPanel() },
                                                     onIngameCountChanged = { count ->
                                                         overlayTopRightHudFlow.value =

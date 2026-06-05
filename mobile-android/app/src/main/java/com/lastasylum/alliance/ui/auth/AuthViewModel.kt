@@ -50,27 +50,41 @@ class AuthViewModel(
         authBootstrapJob = viewModelScope.launch {
             val bootstrapStartMs = System.currentTimeMillis()
             var tokenProbeMs = 0L
-            val hasRefresh = withContext(Dispatchers.IO) {
-                val probeStart = System.currentTimeMillis()
-                val found = runCatching { tokenStore.getRefreshToken() != null }.getOrDefault(false)
-                tokenProbeMs = System.currentTimeMillis() - probeStart
-                found
-            }
-            if (!hasRefresh) {
-                logBootstrapDebug(
-                    bootstrapStartMs = bootstrapStartMs,
-                    tokenProbeMs = tokenProbeMs,
-                    path = "no_refresh",
-                )
+            try {
+                val hasRefresh = withContext(Dispatchers.IO) {
+                    val probeStart = System.currentTimeMillis()
+                    val found = runCatching { tokenStore.getRefreshToken() != null }.getOrDefault(false)
+                    tokenProbeMs = System.currentTimeMillis() - probeStart
+                    found
+                }
+                if (!hasRefresh) {
+                    logBootstrapDebug(
+                        bootstrapStartMs = bootstrapStartMs,
+                        tokenProbeMs = tokenProbeMs,
+                        path = "no_refresh",
+                    )
+                    _state.value = AuthState(
+                        isCheckingStoredSession = false,
+                        isLoading = false,
+                        isAuthenticated = false,
+                    )
+                    return@launch
+                }
+                withContext(Dispatchers.IO) {
+                    restoreSession(bootstrapStartMs, tokenProbeMs)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logAuthFailure("sessionBootstrap", e)
                 _state.value = AuthState(
                     isCheckingStoredSession = false,
                     isLoading = false,
                     isAuthenticated = false,
+                    error = e.toUserMessageRu(res),
                 )
-                return@launch
-            }
-            withContext(Dispatchers.IO) {
-                restoreSession(bootstrapStartMs, tokenProbeMs)
+            } finally {
+                ensureSessionCheckCompleted()
             }
         }
     }
@@ -104,6 +118,25 @@ class AuthViewModel(
         )
     }
 
+    private fun scheduleBindAndSyncReadCursorsInBackground(userId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { bindAndSyncReadCursors(userId) }
+                .onFailure { err ->
+                    if (err is CancellationException) throw err
+                    logAuthFailure("bindAndSyncReadCursors", err)
+                }
+        }
+    }
+
+    private fun ensureSessionCheckCompleted() {
+        if (_state.value.isCheckingStoredSession) {
+            _state.value = _state.value.copy(
+                isCheckingStoredSession = false,
+                isLoading = false,
+            )
+        }
+    }
+
     private fun registerFcmInBackground() {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { FcmTokenManager.registerWithBackend(getApplication()) }
@@ -125,9 +158,9 @@ class AuthViewModel(
             _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
             authRepository.login(email, password)
                 .onSuccess { user ->
-                    bindAndSyncReadCursors(user.id)
-                    registerFcmInBackground()
                     completeAuthenticated(user)
+                    scheduleBindAndSyncReadCursorsInBackground(user.id)
+                    registerFcmInBackground()
                 }
                 .onFailure { throwable ->
                     logAuthFailure("login", throwable)
@@ -154,9 +187,9 @@ class AuthViewModel(
                 .onSuccess { result ->
                     when (result) {
                         is RegisterResult.LoggedIn -> {
-                            bindAndSyncReadCursors(result.user.id)
-                            registerFcmInBackground()
                             completeAuthenticated(result.user)
+                            scheduleBindAndSyncReadCursorsInBackground(result.user.id)
+                            registerFcmInBackground()
                         }
                         RegisterResult.PendingApproval -> {
                             _state.value = AuthState(
@@ -271,8 +304,8 @@ class AuthViewModel(
             JwtAccessTokenClaims.isAccessTokenValid(access) &&
             fastUser != null
         ) {
-            bindAndSyncReadCursors(fastUser.id)
             completeAuthenticated(fastUser)
+            scheduleBindAndSyncReadCursorsInBackground(fastUser.id)
             logBootstrapDebug(
                 bootstrapStartMs = bootstrapStartMs,
                 tokenProbeMs = tokenProbeMs,
@@ -312,8 +345,8 @@ class AuthViewModel(
             }
             refreshResult.isSuccess -> {
                 val user = refreshResult.getOrThrow()
-                bindAndSyncReadCursors(user.id)
                 completeAuthenticated(user)
+                scheduleBindAndSyncReadCursorsInBackground(user.id)
                 logBootstrapDebug(
                     bootstrapStartMs = bootstrapStartMs,
                     tokenProbeMs = tokenProbeMs,
@@ -347,8 +380,8 @@ class AuthViewModel(
             return false
         }
         val user = authRepository.resolveSessionUserForFastPath(access) ?: return false
-        bindAndSyncReadCursors(user.id)
         completeAuthenticated(user)
+        scheduleBindAndSyncReadCursorsInBackground(user.id)
         return true
     }
 

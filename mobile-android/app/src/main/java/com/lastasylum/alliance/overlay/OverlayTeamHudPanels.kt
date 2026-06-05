@@ -1,11 +1,13 @@
 package com.lastasylum.alliance.overlay
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -20,7 +22,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.data.teams.TeamNewsMarkRead
 import com.lastasylum.alliance.data.teams.TeamsRepository
+import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.ui.OVERLAY_PANEL_LOAD_MAX_MS
 import com.lastasylum.alliance.ui.screens.teamforum.TeamForumNavHost
 import com.lastasylum.alliance.ui.screens.teamnews.TeamNewsNavHost
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -28,6 +32,8 @@ import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.ui.res.stringResource
 
 @Composable
 private fun OverlayTeamHudLoading(modifier: Modifier = Modifier) {
@@ -37,18 +43,29 @@ private fun OverlayTeamHudLoading(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun OverlayTeamHudError(message: String, modifier: Modifier = Modifier) {
+private fun OverlayTeamHudError(
+    message: String,
+    modifier: Modifier = Modifier,
+    onRetry: (() -> Unit)? = null,
+) {
     Box(
         modifier
             .fillMaxSize()
             .padding(SquadRelayDimens.contentPaddingHorizontal),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.error,
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            if (onRetry != null) {
+                TextButton(onClick = onRetry) {
+                    Text(stringResource(R.string.overlay_panel_load_retry))
+                }
+            }
+        }
     }
 }
 
@@ -65,8 +82,9 @@ private fun OverlayTeamHudScaffold(
     var loading by remember { mutableStateOf(cachedInitially == null) }
     var error by remember { mutableStateOf<String?>(null) }
     var hudContext by remember { mutableStateOf(cachedInitially) }
+    var reloadNonce by remember { mutableStateOf(0) }
 
-    LaunchedEffect(forceReload) {
+    LaunchedEffect(forceReload, reloadNonce) {
         val hadCache = hudContext != null
         if (forceReload) {
             hudContext = null
@@ -93,25 +111,38 @@ private fun OverlayTeamHudScaffold(
             }
         }
         val loaded = withContext(Dispatchers.IO) {
-            OverlayTeamContextCache.load(
-                usersRepository = app.usersRepository,
-                teamsRepository = app.teamsRepository,
-                forceRefresh = forceReload,
-            )
+            withTimeoutOrNull(OVERLAY_PANEL_LOAD_MAX_MS) {
+                OverlayTeamContextCache.load(
+                    usersRepository = app.usersRepository,
+                    teamsRepository = app.teamsRepository,
+                    forceRefresh = forceReload,
+                )
+            }
         }
-        loaded.onSuccess { hudContext = it }
-            .onFailure { e ->
+        when {
+            loaded == null -> {
                 if (hudContext == null) {
-                    error = e.toUserMessageRu(res)
+                    error = context.getString(R.string.overlay_panel_load_timeout)
                 }
             }
+            else -> loaded.onSuccess { hudContext = it }
+                .onFailure { e ->
+                    if (hudContext == null) {
+                        error = e.toUserMessageRu(res)
+                    }
+                }
+        }
         loading = false
     }
 
     Box(modifier.fillMaxSize()) {
         when {
             loading -> OverlayTeamHudLoading(Modifier.fillMaxSize())
-            error != null -> OverlayTeamHudError(error!!, Modifier.fillMaxSize())
+            error != null -> OverlayTeamHudError(
+                message = error!!,
+                modifier = Modifier.fillMaxSize(),
+                onRetry = { reloadNonce++ },
+            )
             hudContext != null -> content(hudContext!!)
         }
     }

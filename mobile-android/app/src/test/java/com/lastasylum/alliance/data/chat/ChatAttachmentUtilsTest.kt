@@ -99,4 +99,23 @@ class ChatAttachmentUtilsTest {
         assertEquals("u1", merged.senderId)
         assertEquals(2, merged.reactions.single().count)
     }
+
+    @Test
+    fun mergeIncomingChatUpdate_edit_appliesNewText() {
+        val existing = ChatMessage(
+            _id = "1",
+            allianceId = "a",
+            roomId = "room",
+            senderId = "u1",
+            senderUsername = "alice",
+            senderRole = "R1",
+            text = "before",
+        )
+        val edited = existing.copy(
+            text = "after edit",
+            editedAt = "2026-05-22T10:05:00.000Z",
+        )
+        val merged = edited.mergeIncomingChatUpdate(existing)
+        assertEquals("after edit", merged.text)
+    }
 }

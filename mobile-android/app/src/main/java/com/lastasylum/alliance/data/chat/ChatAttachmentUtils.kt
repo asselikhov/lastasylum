@@ -50,7 +50,11 @@ fun ChatMessage.mergeIncomingChatUpdate(existing: ChatMessage): ChatMessage {
         )
     }
     val merged = mergePreservingAttachments(existing)
-    return merged.copy(reactions = merged.reactions.resolveFromSocketUpdate(existing.reactions))
+    return merged.copy(
+        text = text,
+        editedAt = merged.editedAt ?: existing.editedAt,
+        reactions = merged.reactions.resolveFromSocketUpdate(existing.reactions),
+    )
 }
 
 /**

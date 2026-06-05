@@ -8,6 +8,8 @@ import com.lastasylum.alliance.data.teams.TeamPresenceSocketManager
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.data.users.UsersRepository
+import com.lastasylum.alliance.R
+import com.lastasylum.alliance.ui.OVERLAY_PANEL_LOAD_MAX_MS
 import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_MS
 import com.lastasylum.alliance.ui.util.isOverlayIngameNow
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class OverlayTeamOnlineUiState(
     val loading: Boolean = true,
@@ -146,34 +149,66 @@ class OverlayTeamOnlineController(
             _state.update { it.copy(loading = true) }
         }
         _state.update { it.copy(error = null) }
-        val loaded = withContext(Dispatchers.IO) {
-            runCatching {
-                val ctx = OverlayTeamContextCache.load(
-                    usersRepository = usersRepository,
-                    teamsRepository = teamsRepository,
-                    forceRefresh = forceTeamRefresh,
-                ).getOrThrow()
-                if (forceTeamRefresh) {
-                    OverlayTeamPresenceCache.invalidate()
+        val loaded = try {
+            withContext(Dispatchers.IO) {
+                withTimeoutOrNull(OVERLAY_PANEL_LOAD_MAX_MS) {
+                    runCatching {
+                        val ctx = OverlayTeamContextCache.load(
+                            usersRepository = usersRepository,
+                            teamsRepository = teamsRepository,
+                            forceRefresh = forceTeamRefresh,
+                        ).getOrThrow()
+                        if (forceTeamRefresh) {
+                            OverlayTeamPresenceCache.invalidate()
+                        }
+                        val t = OverlayTeamContextCache.loadTeamDetail(
+                            teamId = ctx.teamId,
+                            teamsRepository = teamsRepository,
+                            forceRefresh = forceTeamRefresh,
+                        ).getOrThrow()
+                        val presence = OverlayTeamPresenceCache.load(
+                            teamId = ctx.teamId,
+                            teamsRepository = teamsRepository,
+                            forceRefresh = forceTeamRefresh,
+                        ).getOrThrow()
+                        val p = usersRepository.getMyProfile().getOrThrow()
+                        BootstrapResult(
+                            profile = p,
+                            team = t,
+                            teamId = ctx.teamId,
+                            ingame = presence.ingame,
+                            recentlyActive = presence.recentlyActive,
+                        )
+                    }
                 }
-                val t = OverlayTeamContextCache.loadTeamDetail(
-                    teamId = ctx.teamId,
-                    teamsRepository = teamsRepository,
-                    forceRefresh = forceTeamRefresh,
-                ).getOrThrow()
-                val presence = OverlayTeamPresenceCache.load(
-                    teamId = ctx.teamId,
-                    teamsRepository = teamsRepository,
-                    forceRefresh = forceTeamRefresh,
-                ).getOrThrow()
-                val p = usersRepository.getMyProfile().getOrThrow()
-                BootstrapResult(
-                    profile = p,
-                    team = t,
-                    teamId = ctx.teamId,
-                    ingame = presence.ingame,
-                    recentlyActive = presence.recentlyActive,
-                )
+            }
+        } finally {
+            if (_state.value.loading && _state.value.team == null) {
+                _state.update { it.copy(loading = false) }
+            }
+        }
+        when {
+            loaded == null -> {
+                _state.update {
+                    val cleared = if (it.team == null) {
+                        it.copy(
+                            profile = null,
+                            ingameRaw = emptyList(),
+                            recentRaw = emptyList(),
+                            baseSections = emptyList(),
+                            ingameCount = 0,
+                            recentCount = 0,
+                        )
+                    } else {
+                        it
+                    }
+                    cleared.copy(
+                        loading = false,
+                        refreshing = false,
+                        error = resources.getString(R.string.overlay_panel_load_timeout),
+                    )
+                }
+                return
             }
         }
         loaded.onSuccess { result ->

@@ -66,6 +66,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import com.lastasylum.alliance.ui.OVERLAY_PANEL_LOAD_MAX_MS
 import android.widget.Toast
 import java.io.File
 import java.io.InputStream
@@ -1274,11 +1276,37 @@ class ChatViewModel(
     ) {
         bootstrapJob?.cancel()
         bootstrapJob = viewModelScope.launch {
-            bootstrap(
-                preferAllianceHubRoom = preferAllianceHubRoom,
-                preferOverlayRaidRoom = preferOverlayRaidRoom,
-                force = force,
-            )
+            val useOverlayTimeout = overlayChatPanelVisible ||
+                preferAllianceHubRoom ||
+                preferOverlayRaidRoom
+            if (useOverlayTimeout) {
+                val completed = withTimeoutOrNull(OVERLAY_PANEL_LOAD_MAX_MS) {
+                    bootstrap(
+                        preferAllianceHubRoom = preferAllianceHubRoom,
+                        preferOverlayRaidRoom = preferOverlayRaidRoom,
+                        force = force,
+                    )
+                }
+                if (completed == null && overlayChatPanelVisible) {
+                    _state.update {
+                        if (it.isLoading || it.isRoomsLoading) {
+                            it.copy(
+                                isLoading = false,
+                                isRoomsLoading = false,
+                                error = it.error ?: res.getString(R.string.overlay_panel_load_timeout),
+                            )
+                        } else {
+                            it
+                        }
+                    }
+                }
+            } else {
+                bootstrap(
+                    preferAllianceHubRoom = preferAllianceHubRoom,
+                    preferOverlayRaidRoom = preferOverlayRaidRoom,
+                    force = force,
+                )
+            }
         }
     }
 
@@ -2462,7 +2490,26 @@ class ChatViewModel(
         viewModelScope.launch {
             if (deferMs > 0L) delay(deferMs)
             if (_state.value.selectedRoomId != roomId) return@launch
-            repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
+            val overlayEmptyLoad = overlayChatPanelVisible && _state.value.messages.isEmpty()
+            val loadResult = if (overlayEmptyLoad) {
+                withTimeoutOrNull(OVERLAY_PANEL_LOAD_MAX_MS) {
+                    repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
+                }
+            } else {
+                repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
+            }
+            if (loadResult == null) {
+                if (overlayEmptyLoad && _state.value.selectedRoomId == roomId) {
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            error = it.error ?: res.getString(R.string.overlay_panel_load_timeout),
+                        )
+                    }
+                }
+                return@launch
+            }
+            loadResult
                 .onSuccess { loaded ->
                     if (_state.value.selectedRoomId != roomId) return@onSuccess
                     val hasMoreOlder = loaded.size >= PAGE_SIZE
@@ -2507,6 +2554,20 @@ class ChatViewModel(
                         )
                     }
                     publishMessagesDerived(merged)
+                }
+                .onFailure { e ->
+                    if (
+                        overlayChatPanelVisible &&
+                        _state.value.selectedRoomId == roomId &&
+                        _state.value.messages.isEmpty()
+                    ) {
+                        _state.update {
+                            it.copy(
+                                isLoading = false,
+                                error = e.toUserMessageRu(res),
+                            )
+                        }
+                    }
                 }
         }
     }
@@ -2737,58 +2798,31 @@ class ChatViewModel(
     fun jumpToQuotedMessage(messageId: String) {
         val id = messageId.trim()
         if (id.isEmpty()) return
-        if (messageIdIndex.containsKey(id)) {
-            _state.update {
-                it.copy(
-                    scrollToMessageId = id,
-                    highlightMessageId = id,
-                    transientNotice = null,
-                )
-            }
-            return
-        }
-        if (!_state.value.hasMoreOlder) {
-            _state.update {
-                it.copy(
-                    transientNotice = res.getString(R.string.chat_jump_quote_not_found),
-                    scrollToMessageId = null,
-                    highlightMessageId = null,
-                )
-            }
-            return
-        }
         viewModelScope.launch {
-            var attempts = 0
-            while (attempts < 40) {
-                if (messageIdIndex.containsKey(id)) {
+            val found = jumpToChatPinnedMessage(
+                messageId = id,
+                messageIdsNewestFirst = _state.value.messages.mapNotNull { it._id },
+                hasMoreOlder = { _state.value.hasMoreOlder },
+                isLoadingOlder = { _state.value.isLoadingOlder },
+                loadOlder = { loadOlderMessagesAwait() },
+                timelineIndexForMessageId = { targetId ->
+                    chatTimelineIndexForMessageId(
+                        _listDerived.value.timeline,
+                        _state.value.messages,
+                        targetId,
+                    )
+                },
+                onJumpToMessage = { targetId ->
                     _state.update {
                         it.copy(
-                            scrollToMessageId = id,
-                            highlightMessageId = id,
+                            scrollToMessageId = targetId,
+                            highlightMessageId = targetId,
                             transientNotice = null,
                         )
                     }
-                    return@launch
-                }
-                if (!_state.value.hasMoreOlder) break
-                if (_state.value.isLoadingOlder) {
-                    delay(40)
-                    attempts++
-                    continue
-                }
-                val loaded = loadOlderMessagesAwait()
-                if (!loaded) break
-                attempts++
-            }
-            if (messageIdIndex.containsKey(id)) {
-                _state.update {
-                    it.copy(
-                        scrollToMessageId = id,
-                        highlightMessageId = id,
-                        transientNotice = null,
-                    )
-                }
-            } else {
+                },
+            )
+            if (!found) {
                 _state.update {
                     it.copy(
                         transientNotice = res.getString(R.string.chat_jump_quote_not_found),
@@ -3248,12 +3282,46 @@ class ChatViewModel(
         val activePinId = room.pinnedMessageId?.trim().orEmpty()
         if (activePinId.isEmpty()) return
         val targetId = st.pinBarPreview?.id?.trim().orEmpty().ifEmpty { activePinId }
-        jumpToQuotedMessage(targetId)
         val history = pinHistoryByRoom[roomId].orEmpty()
-        if (history.size > 1) {
-            val barIndex = pinBarIndexByRoom.getOrDefault(roomId, 0)
-            pinBarIndexByRoom[roomId] = advancePinBarIndex(history, barIndex)
-            updatePinBarUi()
+        viewModelScope.launch {
+            val found = jumpToChatPinnedMessage(
+                messageId = targetId,
+                messageIdsNewestFirst = _state.value.messages.mapNotNull { it._id },
+                hasMoreOlder = { _state.value.hasMoreOlder },
+                isLoadingOlder = { _state.value.isLoadingOlder },
+                loadOlder = { loadOlderMessagesAwait() },
+                timelineIndexForMessageId = { id ->
+                    chatTimelineIndexForMessageId(
+                        _listDerived.value.timeline,
+                        _state.value.messages,
+                        id,
+                    )
+                },
+                onJumpToMessage = { id ->
+                    _state.update {
+                        it.copy(
+                            scrollToMessageId = id,
+                            highlightMessageId = id,
+                            transientNotice = null,
+                        )
+                    }
+                },
+            )
+            if (!found) {
+                _state.update {
+                    it.copy(
+                        transientNotice = res.getString(R.string.chat_jump_quote_not_found),
+                        scrollToMessageId = null,
+                        highlightMessageId = null,
+                    )
+                }
+                return@launch
+            }
+            if (history.size > 1) {
+                val barIndex = pinBarIndexByRoom.getOrDefault(roomId, 0)
+                pinBarIndexByRoom[roomId] = advancePinBarIndex(history, barIndex)
+                updatePinBarUi()
+            }
         }
     }
 
@@ -3373,12 +3441,23 @@ class ChatViewModel(
         if (messageId.isBlank()) return
         val trimmed = newText.trim()
         if (trimmed.isBlank()) return
+        val id = messageId.trim()
+        val previous = _state.value.messages.find { it._id?.trim() == id }
+        previous?.let { row ->
+            applyMessageReplaceSynchronously(
+                row.copy(
+                    text = trimmed,
+                    editedAt = java.time.Instant.now().toString(),
+                ).normalizeEditedAtForDisplay(),
+            )
+        }
         viewModelScope.launch {
-            repository.editMessage(messageId, trimmed)
+            repository.editMessage(id, trimmed)
                 .onSuccess { updated ->
-                    applyIncomingMessage(updated)
+                    applyMessageReplaceSynchronously(updated.normalizeEditedAtForDisplay())
                 }
                 .onFailure { e ->
+                    previous?.let { applyMessageReplaceSynchronously(it) }
                     _state.value = _state.value.copy(error = e.toUserMessageRu(res))
                 }
         }
@@ -3462,6 +3541,7 @@ class ChatViewModel(
                                 isDeletingSelection = true,
                             ),
                         )
+                        result.pinChanged?.let { applyRoomPinChangedEvent(it) }
                         persistMessageRemoved(messageId, result.roomId)
                     }
                     .onFailure { t ->
@@ -3507,6 +3587,7 @@ class ChatViewModel(
                             error = null,
                         ),
                     )
+                    result.pinChanged?.let { applyRoomPinChangedEvent(it) }
                     persistMessageRemoved(result.messageId, result.roomId)
                 }
                 .onFailure { throwable ->
@@ -3655,6 +3736,10 @@ class ChatViewModel(
                         },
                     ),
                 )
+            } else if (eventRoomId.isNotEmpty()) {
+                _state.update { st ->
+                    clearRoomPinAfterMessageRemoved(st, removedId, eventRoomId)
+                }
             }
             persistMessageRemoved(removedId, eventRoomId)
         }
@@ -3767,7 +3852,69 @@ class ChatViewModel(
         val nextMessages = scrubMessagesAfterRemove(state.messages, removedId, knownMessageIds)
         rebuildMessageIdIndex(nextMessages, messageIdIndex)
         publishMessagesDerived(nextMessages)
-        return state.copy(messages = nextMessages)
+        return clearRoomPinAfterMessageRemoved(
+            state = state.copy(messages = nextMessages),
+            removedId = removedId,
+            roomId = state.selectedRoomId.orEmpty(),
+        )
+    }
+
+    private fun clearRoomPinAfterMessageRemoved(
+        state: ChatState,
+        removedId: String,
+        roomId: String,
+    ): ChatState {
+        val rid = roomId.trim()
+        val removed = removedId.trim()
+        if (rid.isEmpty() || removed.isEmpty()) return state
+        pinHistoryByRoom[rid] = removePinFromHistory(
+            pinHistoryByRoom[rid].orEmpty(),
+            removed,
+        )
+        persistPinHistory(rid)
+        val room = state.rooms.find { it.id == rid } ?: return state
+        if (room.pinnedMessageId?.trim() != removed) return state
+        val cleared = room.withOptimisticUnpin()
+        return applyPinBarUi(state.copy(rooms = applyRoomPinToRooms(state.rooms, cleared)))
+    }
+
+    private fun applyRoomPinChangedEvent(event: ChatRoomPinChangedEvent) {
+        _state.update { st ->
+            val withRooms = st.copy(rooms = applyRoomPinEvent(st.rooms, event))
+            if (st.selectedRoomId == event.roomId) applyPinBarUi(withRooms) else withRooms
+        }
+        ChatSessionCache.update(_state.value.rooms)
+    }
+
+    private fun applyMessageReplaceSynchronously(updated: ChatMessage) {
+        val id = updated._id?.trim().orEmpty()
+        if (id.isEmpty()) return
+        synchronized(chatMutationLock) {
+            val idx = messageIdIndex[id] ?: _state.value.messages.indexOfFirst { it._id?.trim() == id }
+            if (idx < 0) return
+            val messages = _state.value.messages.toMutableList()
+            if (idx !in messages.indices) return
+            messages[idx] = updated.mergeIncomingChatUpdate(messages[idx])
+            rebuildMessageIdIndex(messages, messageIdIndex)
+            publishMessagesDerived(messages)
+            val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+            _state.value = syncSelections(_state.value.copy(messages = messages))
+            if (roomId.isNotEmpty()) {
+                val cached = roomMessageCache[roomId]
+                roomMessageCache[roomId] = RoomMessageCache(
+                    messages = messages,
+                    hasMoreOlder = cached?.hasMoreOlder ?: _state.value.hasMoreOlder,
+                )
+                ChatSessionCache.updateMessages(roomId, messages)
+            }
+            val room = _state.value.rooms.find { it.id == roomId }
+            if (room != null && room.pinnedMessageId?.trim() == id) {
+                updated.toPinnedPreview()?.let { preview ->
+                    val pinnedRoom = room.withOptimisticPin(id, preview, room.pinnedByUserId.orEmpty())
+                    publishRoomPin(pinnedRoom)
+                }
+            }
+        }
     }
 
     private fun stashIncomingMessageForRoom(message: ChatMessage) {

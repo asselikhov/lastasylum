@@ -158,14 +158,8 @@ fun TeamLeaderToolbar(
                 )
             }
         }
-        if (isLeader && pendingJoinRequests > 0) {
-            BadgedBox(
-                badge = {
-                    Badge {
-                        Text(if (pendingJoinRequests > 9) "9+" else "$pendingJoinRequests")
-                    }
-                },
-            ) {
+        if (isLeader) {
+            val inboxButton: @Composable () -> Unit = {
                 IconButton(
                     onClick = {
                         OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
@@ -178,6 +172,19 @@ fun TeamLeaderToolbar(
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
+            }
+            if (pendingJoinRequests > 0) {
+                BadgedBox(
+                    badge = {
+                        Badge {
+                            Text(if (pendingJoinRequests > 9) "9+" else "$pendingJoinRequests")
+                        }
+                    },
+                ) {
+                    inboxButton()
+                }
+            } else {
+                inboxButton()
             }
         }
     }

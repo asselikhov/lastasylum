@@ -176,6 +176,7 @@ data class ChatMessageDeletedEvent(
 data class ChatMessageDeleteResult(
     val messageId: String,
     val roomId: String,
+    val pinChanged: ChatRoomPinChangedEvent? = null,
 )
 
 data class ChatTypingEvent(

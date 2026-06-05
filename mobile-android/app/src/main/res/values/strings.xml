@@ -694,6 +694,8 @@
     <string name="overlay_online_section_recent">Недавно вышли</string>
     <string name="overlay_member_squad_rank_cd">Ранг в команде: %1$s</string>
     <string name="overlay_online_error">Не удалось загрузить список.</string>
+    <string name="overlay_panel_load_timeout">Не удалось загрузить данные. Проверьте сеть и попробуйте снова.</string>
+    <string name="overlay_panel_load_retry">Повторить</string>
     <string name="overlay_online_close_cd">Закрыть список</string>
     <string name="overlay_online_summary_ingame">В игре: %1$d</string>
     <string name="overlay_online_summary_recent">Недавно: %1$d</string>
