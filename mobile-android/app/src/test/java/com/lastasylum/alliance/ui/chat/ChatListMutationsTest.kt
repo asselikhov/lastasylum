@@ -160,6 +160,16 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun mergeLoadedPageWithExisting_dropsStaleDiskRowsOlderThanPageAnchor() {
+        val anchor = "507f1f77bcf86cd799439013"
+        val staleDisk = "507f1f77bcf86cd799439011"
+        val existing = listOf(msg(staleDisk, "ghost"))
+        val loaded = listOf(msg(anchor, "fresh"))
+        val merged = mergeLoadedPageWithExisting(existing, loaded)
+        assertEquals(listOf(anchor), merged.map { it._id })
+    }
+
+    @Test
     fun mergeLoadedPageWithExisting_honorsExcludedIds() {
         val stale = "507f1f77bcf86cd799439099"
         val anchor = "507f1f77bcf86cd799439011"

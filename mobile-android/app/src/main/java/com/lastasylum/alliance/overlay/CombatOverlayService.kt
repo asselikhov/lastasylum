@@ -1073,6 +1073,7 @@ class CombatOverlayService : Service() {
         refreshOverlayHubUnreadFromCache()
         refreshOverlayNewsBadgeOnly()
         refreshOverlayForumBadgeOnly()
+        refreshOverlayReactionLogUnreadBadge()
     }
 
     private var lastStripZOrderLiftMs: Long = 0L
@@ -1796,7 +1797,6 @@ class CombatOverlayService : Service() {
                     }
                 rooms?.let { list ->
                     cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
-                    com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
                     container.chatRepository.applyOverlayRoomsFromRooms(list)
                     mainHandler.post { syncOverlayRaidRoomSubscription() }
                 }
@@ -2429,8 +2429,8 @@ class CombatOverlayService : Service() {
 
     private fun forwardOverlaySocketMessageToViewModel(msg: ChatMessage) {
         val vm = resolveChatViewModel() ?: return
-        if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
         vm.stashOverlayRealtimeMessage(msg)
+        if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
         if (!overlayChatTeamPanelVisible) return
         if (activityChatViewModelHandlesUnread()) return
         vm.applyOverlayChatMessageFromSocket(msg)

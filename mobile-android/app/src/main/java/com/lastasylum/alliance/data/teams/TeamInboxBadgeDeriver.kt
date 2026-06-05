@@ -14,11 +14,19 @@ data class ForumUnreadCounts(
 
 /** Single source for team inbox badge counts (overlay HUD, Team tab, mark-read refresh). */
 object TeamInboxBadgeDeriver {
-    /** Client compute wins when topics are available; API is fallback only. */
+    /** Prefer client effective count; trust API when it reports more (stale topic cache). */
     fun resolveForumUnread(
         clientUnread: Int?,
         apiUnread: Int?,
-    ): Int = clientUnread ?: apiUnread?.coerceAtLeast(0) ?: 0
+    ): Int {
+        val client = clientUnread?.coerceAtLeast(0)
+        val api = apiUnread?.coerceAtLeast(0)
+        return when {
+            client == null -> api ?: 0
+            api == null -> client
+            else -> maxOf(client, api)
+        }
+    }
 
     fun computeForumRawUnread(topics: List<TeamForumTopicDto>): Int =
         topics.sumOf { it.unreadCount.coerceAtLeast(0) }

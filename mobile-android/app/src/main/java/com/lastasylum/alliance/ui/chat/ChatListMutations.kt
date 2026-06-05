@@ -185,9 +185,19 @@ internal fun mergeLoadedPageWithExisting(
     val index = mutableMapOf<String, Int>()
     rebuildMessageIdIndex(loaded, index)
     var messages = loaded
+    val pageAnchor = loaded.firstOrNull()?._id?.trim().orEmpty().takeIf { it.isNotEmpty() }
+    val pageOldest = loaded.lastOrNull()?._id?.trim().orEmpty().takeIf { it.isNotEmpty() }
     for (msg in scopedExisting) {
         val id = msg._id?.trim().orEmpty()
         if (id.isEmpty() || id in excludedMessageIds || id in loadedIds) continue
+        if (!id.startsWith("pending-") && pageAnchor != null) {
+            val aheadOfRest = isObjectIdNewer(id, pageAnchor)
+            val inRestGap = pageOldest != null &&
+                pageOldest != pageAnchor &&
+                isObjectIdNewer(id, pageOldest) &&
+                !isObjectIdNewer(id, pageAnchor)
+            if (!aheadOfRest && !inRestGap) continue
+        }
         val update = upsertMessage(
             current = messages,
             incoming = msg,

@@ -36,12 +36,20 @@ internal object OverlayGameStatusHudRefresh {
     private var cachedBadgeAtMs: Long = 0L
 
     @Volatile
+    private var cachedNewsAtMs: Long = 0L
+
+    @Volatile
+    private var cachedForumAtMs: Long = 0L
+
+    @Volatile
     private var diskSeedAtMs: Long = 0L
 
     private const val DISK_SEED_TTL_MS = 5 * 60_000L
 
     fun invalidateNewsForumCache() {
         cachedBadgeAtMs = 0L
+        cachedNewsAtMs = 0L
+        cachedForumAtMs = 0L
         diskSeedAtMs = 0L
     }
 
@@ -56,6 +64,8 @@ internal object OverlayGameStatusHudRefresh {
         cachedForumUnread = forumUnread.coerceAtLeast(0)
         val now = System.currentTimeMillis()
         cachedBadgeAtMs = now
+        cachedNewsAtMs = now
+        cachedForumAtMs = now
         diskSeedAtMs = now
     }
 
@@ -75,9 +85,13 @@ internal object OverlayGameStatusHudRefresh {
         )
     }
 
-    fun invalidateNewsCache() = invalidateNewsForumCache()
+    fun invalidateNewsCache() {
+        cachedNewsAtMs = 0L
+    }
 
-    fun invalidateForumCache() = invalidateNewsForumCache()
+    fun invalidateForumCache() {
+        cachedForumAtMs = 0L
+    }
 
     /**
      * @param preloadedRooms when non-null, skips [ChatRepository.listRooms] inside load.
@@ -111,29 +125,42 @@ internal object OverlayGameStatusHudRefresh {
 
         val teamId = profile?.playerTeamId?.trim().orEmpty()
         val now = System.currentTimeMillis()
-        val cacheFresh = !refreshNewsForum &&
+        val newsCacheFresh = !refreshNewsForum &&
             teamId.isNotEmpty() &&
             teamId == cachedBadgeTeamId &&
-            now - cachedBadgeAtMs < NEWS_FORUM_CACHE_TTL_MS
+            now - cachedNewsAtMs < NEWS_FORUM_CACHE_TTL_MS
+        val forumCacheFresh = !refreshNewsForum &&
+            teamId.isNotEmpty() &&
+            teamId == cachedBadgeTeamId &&
+            now - cachedForumAtMs < NEWS_FORUM_CACHE_TTL_MS
 
         val newsUnread: Int
         val forumUnread: Int
-        if (cacheFresh) {
-            newsUnread = cachedNewsUnread
-            forumUnread = cachedForumUnread
-        } else if (teamId.isEmpty()) {
+        if (teamId.isEmpty()) {
             newsUnread = 0
             forumUnread = 0
         } else {
-            val newsAfter = prefs.getLastSeenTeamNewsCreatedAt()
-            val badges = teamsRepository.getTeamInboxBadges(teamId, newsAfter).getOrNull()
-            newsUnread = badges?.newsUnread?.coerceAtLeast(0)
-                ?: teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
-                    .getOrNull()
-                    ?.items
-                    ?.let { TeamInboxUnread.countUnreadNews(it, prefs, profileUserId) }
-                    ?: 0
-            forumUnread = run {
+            if (newsCacheFresh) {
+                newsUnread = cachedNewsUnread
+            } else {
+                val newsAfter = prefs.getLastSeenTeamNewsCreatedAt()
+                val badges = teamsRepository.getTeamInboxBadges(teamId, newsAfter).getOrNull()
+                newsUnread = badges?.newsUnread?.coerceAtLeast(0)
+                    ?: teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
+                        .getOrNull()
+                        ?.items
+                        ?.let { TeamInboxUnread.countUnreadNews(it, prefs, profileUserId) }
+                        ?: 0
+                cachedNewsUnread = newsUnread
+                cachedNewsAtMs = now
+                cachedBadgeTeamId = teamId
+            }
+            if (forumCacheFresh) {
+                forumUnread = cachedForumUnread
+            } else {
+                val newsAfter = prefs.getLastSeenTeamNewsCreatedAt()
+                val badges = teamsRepository.getTeamInboxBadges(teamId, newsAfter).getOrNull()
+                forumUnread = run {
                     val forumPrefs = container.teamForumPreferences
                     val apiForumUnread = badges?.forumUnread?.coerceAtLeast(0)
                     val topics = teamsRepository.peekCachedForumTopics(teamId)
@@ -145,10 +172,11 @@ internal object OverlayGameStatusHudRefresh {
                     }
                     TeamInboxBadgeDeriver.resolveForumUnread(clientForumUnread, apiForumUnread)
                 }
-            cachedBadgeTeamId = teamId
-            cachedNewsUnread = newsUnread
-            cachedForumUnread = forumUnread
-            cachedBadgeAtMs = now
+                cachedForumUnread = forumUnread
+                cachedForumAtMs = now
+                cachedBadgeTeamId = teamId
+            }
+            cachedBadgeAtMs = maxOf(cachedNewsAtMs, cachedForumAtMs)
         }
 
         return OverlayGameStatusHudState(

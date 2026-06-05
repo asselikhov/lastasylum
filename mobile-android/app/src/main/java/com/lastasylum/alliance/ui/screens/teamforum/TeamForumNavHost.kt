@@ -383,6 +383,7 @@ fun TeamForumNavHost(
                     nav.popBackStack()
                     listRefreshNonce++
                 },
+                onInboxChanged = onForumInboxChanged,
                 onProvideMarkReadAction = registerMarkReadAction,
                 onTopicSnapshotUpdate = { topicSnapshots[topicId] = it },
             )
@@ -939,6 +940,7 @@ private fun TeamForumTopicChatRoute(
     enabledStickerPackKeys: Set<String> = emptySet(),
     onProvideMarkReadAction: (String, (() -> Unit)?) -> Unit = { _, _ -> },
     onTopicSnapshotUpdate: (TeamForumTopicDto) -> Unit = {},
+    onInboxChanged: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val res = context.resources
@@ -1271,12 +1273,18 @@ private fun TeamForumTopicChatRoute(
 
     var markForumReadJob by remember(teamId, topicId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
+    fun notifyForumInboxAfterRead() {
+        onInboxChanged()
+        com.lastasylum.alliance.overlay.CombatOverlayService.notifyOverlayTeamInboxChanged(forum = true)
+    }
+
     fun scheduleMarkForumTopicRead(messageId: String) {
         mergeReadCursor(messageId)
         markForumReadJob?.cancel()
         markForumReadJob = scope.launch {
             delay(320)
             teamsRepository.markForumTopicRead(teamId, topicId, messageId)
+                .onSuccess { notifyForumInboxAfterRead() }
         }
     }
 
@@ -1287,6 +1295,7 @@ private fun TeamForumTopicChatRoute(
         if (cursor.isBlank()) return
         scope.launch {
             teamsRepository.markForumTopicRead(teamId, topicId, cursor)
+                .onSuccess { notifyForumInboxAfterRead() }
         }
     }
 
@@ -1303,7 +1312,10 @@ private fun TeamForumTopicChatRoute(
         if (!forceSync && prev != null && !isObjectIdNewer(newestId, prev)) return
         scope.launch {
             teamsRepository.markForumTopicRead(teamId, topicId, newestId)
-                .onSuccess { mergeReadCursor(newestId) }
+                .onSuccess {
+                    mergeReadCursor(newestId)
+                    notifyForumInboxAfterRead()
+                }
         }
     }
 

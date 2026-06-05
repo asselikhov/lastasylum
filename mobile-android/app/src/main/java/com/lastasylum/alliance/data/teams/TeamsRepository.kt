@@ -277,6 +277,9 @@ class TeamsRepository(
                 topicId,
                 MarkTeamForumTopicReadBody(messageId = messageId),
             )
+            Unit
+        }.also { result ->
+            if (result.isSuccess) invalidateForumTopicsCache(teamId)
         }
 
     suspend fun getForumPeerReadCursor(
