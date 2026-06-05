@@ -485,7 +485,7 @@ fun TeamScreen(
                                             onForumTopicsSynced = { topics ->
                                                 teamViewModel.syncForumBadgeFromTopics(topics)
                                                 com.lastasylum.alliance.overlay.CombatOverlayService
-                                                    .notifyOverlayTeamInboxChanged(forum = true)
+                                                    .syncOverlayForumBadgeFromTopics(topics)
                                             },
                                             onForumInboxChanged = {
                                                 teamViewModel.refreshSectionBadges(force = true)

@@ -39,6 +39,17 @@ class OverlayInboxBadgeCoordinatorTest {
     }
 
     @Test
+    fun mergeForumDisplayed_suppressesStaleRawServerWhenEffectiveZero() {
+        val coordinator = OverlayInboxBadgeCoordinator()
+        val merged = coordinator.mergeForumDisplayed(
+            serverCount = 0,
+            previouslyDisplayed = 4,
+            rawServerCount = 3,
+        )
+        assertEquals(0, merged)
+    }
+
+    @Test
     fun mergeHudNews_authoritativeDoesNotUseForumFloor() {
         val coordinator = OverlayInboxBadgeCoordinator()
         coordinator.bumpForumOptimistic(5)

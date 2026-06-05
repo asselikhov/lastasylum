@@ -31,6 +31,22 @@ class TeamInboxBadgeDeriverTest {
     }
 
     @Test
+    fun resolveForumUnread_prefersClientOverApi() {
+        assertEquals(
+            0,
+            TeamInboxBadgeDeriver.resolveForumUnread(clientUnread = 0, apiUnread = 3),
+        )
+        assertEquals(
+            2,
+            TeamInboxBadgeDeriver.resolveForumUnread(clientUnread = 2, apiUnread = 5),
+        )
+        assertEquals(
+            4,
+            TeamInboxBadgeDeriver.resolveForumUnread(clientUnread = null, apiUnread = 4),
+        )
+    }
+
+    @Test
     fun mergeForDisplay_usesEffectiveWhenPositive() {
         assertEquals(
             4,

@@ -545,15 +545,23 @@ private fun TeamForumListRoute(
 
     LaunchedEffect(topicActivityPatch) {
         val event = topicActivityPatch ?: return@LaunchedEffect
+        val messageId = event.messageId.trim()
+        if (messageId.isBlank()) return@LaunchedEffect
         val idx = topics.indexOfFirst { it.id == event.topicId }
         if (idx >= 0) {
             val row = topics[idx]
-            topics[idx] = row.copy(
+            if (!isObjectIdNewer(messageId, lastReadByTopic[row.id])) return@LaunchedEffect
+            val bumped = row.copy(
                 unreadCount = row.unreadCount + 1,
                 messageCount = row.messageCount + 1,
                 lastMessageAt = java.time.Instant.now().toString(),
             )
-            onInboxChanged()
+            topics[idx] = if (effectiveTopicUnread(bumped) == 0) {
+                bumped.copy(unreadCount = 0)
+            } else {
+                bumped
+            }
+            onForumTopicsSynced(topics.toList())
         }
     }
 

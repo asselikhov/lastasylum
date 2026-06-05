@@ -155,12 +155,16 @@ class TeamViewModel(
         if (teamId.isEmpty()) return
         viewModelScope.launch {
             val localRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
-            val forumUnread = TeamInboxBadgeDeriver.computeForumUnread(topics, localRead)
-            _data.update {
-                it.copy(sectionBadges = it.sectionBadges.copy(forumUnread = forumUnread))
+            val counts = TeamInboxBadgeDeriver.computeForumUnreadCounts(topics, localRead)
+            _data.update { state ->
+                val merged = TeamInboxBadgeDeriver.mergeForDisplay(
+                    effectiveUnread = counts.effective,
+                    previouslyDisplayed = state.sectionBadges.forumUnread,
+                    rawServerUnread = counts.rawServer,
+                )
+                state.copy(sectionBadges = state.sectionBadges.copy(forumUnread = merged))
             }
-            OverlayGameStatusHudRefresh.invalidateNewsForumCache()
-            Log.d(PERF_TAG, "syncForumBadgeFromTopics teamId=$teamId unread=$forumUnread")
+            Log.d(PERF_TAG, "syncForumBadgeFromTopics teamId=$teamId unread=${counts.effective}")
         }
     }
 
@@ -191,16 +195,24 @@ class TeamViewModel(
                     badgesDeferred.await()
                         .onSuccess { badges ->
                             val topics = topicsDeferred.await().getOrNull()
-                            val clientForumUnread = topics?.let {
-                                TeamInboxBadgeDeriver.computeForumUnread(it, localForumRead)
+                            val forumCounts = topics?.let {
+                                TeamInboxBadgeDeriver.computeForumUnreadCounts(it, localForumRead)
                             }
-                            val forumUnread = clientForumUnread
-                                ?: badges.forumUnread.coerceAtLeast(0)
-                            _data.update {
-                                it.copy(
+                            val forumUnread = TeamInboxBadgeDeriver.resolveForumUnread(
+                                clientUnread = forumCounts?.effective,
+                                apiUnread = badges.forumUnread,
+                            )
+                            val forumRaw = forumCounts?.rawServer ?: badges.forumUnread.coerceAtLeast(0)
+                            _data.update { state ->
+                                val mergedForum = TeamInboxBadgeDeriver.mergeForDisplay(
+                                    effectiveUnread = forumUnread,
+                                    previouslyDisplayed = state.sectionBadges.forumUnread,
+                                    rawServerUnread = forumRaw,
+                                )
+                                state.copy(
                                     sectionBadges = TeamSectionBadges(
                                         newsUnread = badges.newsUnread.coerceAtLeast(0),
-                                        forumUnread = forumUnread,
+                                        forumUnread = mergedForum,
                                     ),
                                 )
                             }

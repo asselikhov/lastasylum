@@ -143,7 +143,7 @@ internal object OverlayGameStatusHudRefresh {
                     val clientForumUnread = topics?.let {
                         TeamInboxBadgeDeriver.computeForumUnread(it, localRead)
                     }
-                    apiForumUnread ?: clientForumUnread ?: 0
+                    TeamInboxBadgeDeriver.resolveForumUnread(clientForumUnread, apiForumUnread)
                 }
             cachedBadgeTeamId = teamId
             cachedNewsUnread = newsUnread

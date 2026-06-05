@@ -2045,17 +2045,24 @@ class CombatOverlayService : Service() {
 
     private fun refreshOverlayForumBadgeOnly() {
         if (!isInGameOverlayUiActive()) return
-        inboxBadgeCoordinator.clearForumOptimistic()
-        if (inboxBadgeCoordinator.shouldDeferForumReconcile()) return
+        if (inboxBadgeCoordinator.shouldDeferForumReconcile() ||
+            inboxBadgeCoordinator.isForumOptimisticActive()
+        ) {
+            return
+        }
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
             val teamId = container.usersRepository.resolveMyProfilePreferCache()?.playerTeamId?.trim().orEmpty()
             if (teamId.isEmpty()) return@launch
-            val count = inboxBadgeCoordinator.fetchForumUnread(this@CombatOverlayService, teamId)
+            val counts = inboxBadgeCoordinator.fetchForumUnreadCounts(this@CombatOverlayService, teamId)
             mainHandler.post {
                 if (!isInGameOverlayUiActive()) return@post
                 val prev = overlayStatusHudFlow.value
-                val merged = inboxBadgeCoordinator.mergeForumDisplayed(count, prev.forumUnread)
+                val merged = inboxBadgeCoordinator.mergeForumDisplayed(
+                    serverCount = counts.effective,
+                    previouslyDisplayed = prev.forumUnread,
+                    rawServerCount = counts.rawServer,
+                )
                 overlayStatusHudFlow.value = prev.copy(forumUnread = merged)
                 inboxBadgeCoordinator.cacheNewsForum(teamId, prev.teamNewsUnread, merged)
             }
@@ -2237,6 +2244,8 @@ class CombatOverlayService : Service() {
 
     private val hubUnreadBumpedMessageIds = LinkedHashSet<String>()
 
+    private val forumUnreadBumpedMessageIds = LinkedHashSet<String>()
+
     /** Realtime [rooms:unread] for any overlay chat room (hub HUD + overlay panel tabs). */
     private fun applyOverlayRoomUnreadFromSocket(event: com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) {
         val roomId = event.roomId.trim()
@@ -2344,6 +2353,35 @@ class CombatOverlayService : Service() {
         hubUnreadOptimisticFloor = next
         applyAllianceHubUnreadCount(next)
         scheduleDebouncedHubHudRefresh()
+    }
+
+    private fun shouldBumpOverlayForumUnread(event: TeamForumTopicActivityEvent): Boolean {
+        val messageId = event.messageId.trim()
+        if (messageId.isBlank()) return false
+        val teamId = event.teamId.trim()
+        val topicId = event.topicId.trim()
+        if (teamId.isEmpty() || topicId.isEmpty()) return false
+        val localLast = AppContainer.from(this)
+            .teamForumPreferences
+            .getLastReadMessageId(teamId, topicId)
+        if (!isObjectIdNewer(messageId, localLast)) return false
+        if (overlayChatTeamPanelVisible && currentOverlayHudPane == OverlayHudPane.Forum) {
+            return false
+        }
+        return true
+    }
+
+    private fun bumpForumUnreadLocally(messageId: String? = null) {
+        val mid = messageId?.trim().orEmpty()
+        if (mid.isNotEmpty() && !forumUnreadBumpedMessageIds.add(mid)) return
+        while (forumUnreadBumpedMessageIds.size > 512) {
+            forumUnreadBumpedMessageIds.remove(forumUnreadBumpedMessageIds.first())
+        }
+        val prev = overlayStatusHudFlow.value.forumUnread
+        val next = (prev + 1).coerceAtMost(999)
+        inboxBadgeCoordinator.bumpForumOptimistic(next)
+        overlayStatusHudFlow.value = overlayStatusHudFlow.value.copy(forumUnread = next)
+        scheduleDebouncedForumHudRefresh()
     }
 
     private fun shouldBumpOverlayHubUnread(msg: ChatMessage, hubId: String): Boolean {
@@ -3937,7 +3975,8 @@ class CombatOverlayService : Service() {
             if (selfId.isNotBlank() && event.senderUserId.trim() == selfId) return@listener
             mainHandler.post {
                 if (!isInGameOverlayUiActive()) return@post
-                if (overlayChatTeamPanelVisible && currentOverlayHudPane == OverlayHudPane.Forum) {
+                if (shouldBumpOverlayForumUnread(event)) {
+                    bumpForumUnreadLocally(event.messageId)
                     return@post
                 }
                 OverlayGameStatusHudRefresh.invalidateForumCache()
@@ -6638,6 +6677,32 @@ class CombatOverlayService : Service() {
                     OverlayGameStatusHudRefresh.invalidateForumCache()
                     service.inboxBadgeCoordinator.clearForumOptimistic()
                     service.refreshOverlayForumBadgeOnly()
+                }
+            }
+        }
+
+        /** Push client forum unread to overlay HUD without clearing optimistic floors (topic list sync). */
+        fun syncOverlayForumBadgeFromTopics(topics: List<com.lastasylum.alliance.data.teams.TeamForumTopicDto>) {
+            val service = runningInstance ?: return
+            service.serviceScope.launch(Dispatchers.IO) {
+                val container = AppContainer.from(service)
+                val teamId = container.usersRepository.resolveMyProfilePreferCache()
+                    ?.playerTeamId
+                    ?.trim()
+                    .orEmpty()
+                if (teamId.isEmpty()) return@launch
+                val localRead = container.teamForumPreferences.loadAllLastReadMessageIds(teamId)
+                val counts = TeamInboxBadgeDeriver.computeForumUnreadCounts(topics, localRead)
+                service.mainHandler.post {
+                    if (!service.isInGameOverlayUiActive()) return@post
+                    val prev = service.overlayStatusHudFlow.value
+                    val merged = service.inboxBadgeCoordinator.mergeForumDisplayed(
+                        serverCount = counts.effective,
+                        previouslyDisplayed = prev.forumUnread,
+                        rawServerCount = counts.rawServer,
+                    )
+                    service.overlayStatusHudFlow.value = prev.copy(forumUnread = merged)
+                    service.inboxBadgeCoordinator.cacheNewsForum(teamId, prev.teamNewsUnread, merged)
                 }
             }
         }

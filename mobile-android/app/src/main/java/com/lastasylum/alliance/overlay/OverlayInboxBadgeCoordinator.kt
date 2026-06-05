@@ -3,6 +3,7 @@ package com.lastasylum.alliance.overlay
 import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.data.teams.ForumUnreadCounts
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.teams.TeamInboxBadgeDeriver
 import com.lastasylum.alliance.di.AppContainer
@@ -103,9 +104,14 @@ internal class OverlayInboxBadgeCoordinator {
     suspend fun fetchForumUnread(
         context: android.content.Context,
         teamId: String,
-    ): Int = withContext(Dispatchers.IO) {
+    ): Int = fetchForumUnreadCounts(context, teamId).effective
+
+    suspend fun fetchForumUnreadCounts(
+        context: android.content.Context,
+        teamId: String,
+    ): ForumUnreadCounts = withContext(Dispatchers.IO) {
         val container = AppContainer.from(context)
-        TeamInboxBadgeDeriver.computeForumUnreadFromRepository(
+        TeamInboxBadgeDeriver.computeForumUnreadCountsFromRepository(
             teamsRepository = container.teamsRepository,
             forumPrefs = container.teamForumPreferences,
             teamId = teamId,
@@ -131,10 +137,11 @@ internal class OverlayInboxBadgeCoordinator {
     fun mergeForumDisplayed(
         serverCount: Int,
         previouslyDisplayed: Int,
+        rawServerCount: Int = serverCount,
     ): Int = displayedUnreadCount(
         effectiveUnread = serverCount.coerceAtLeast(0),
         previouslyDisplayed = previouslyDisplayed,
-        rawServerUnread = serverCount.coerceAtLeast(0),
+        rawServerUnread = rawServerCount.coerceAtLeast(0),
         optimisticFloor = forumOptimisticFloor,
     ).also { merged ->
         if (serverCount > 0 && merged >= serverCount) {
