@@ -158,6 +158,52 @@ describe('UsersService', () => {
     });
   });
 
+  describe('recordAppVersionFromUserAgent', () => {
+    it('writes when version changed', async () => {
+      const leanExec = jest.fn().mockResolvedValue({
+        lastAppVersionName: '1.0.0',
+        lastAppVersionCode: 1,
+      });
+      findById.mockReturnValueOnce({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({ exec: leanExec }),
+        }),
+      });
+      await usersService.recordAppVersionFromUserAgent(
+        'u1',
+        'SquadRelay-Android/1.4.2 (42)',
+      );
+      expect(updateOne).toHaveBeenCalledWith(
+        { _id: 'u1' },
+        {
+          $set: {
+            lastAppVersionName: '1.4.2',
+            lastAppVersionCode: 42,
+            lastAppVersionReportedAt: expect.any(Date),
+          },
+        },
+      );
+    });
+
+    it('skips write when version unchanged', async () => {
+      const leanExec = jest.fn().mockResolvedValue({
+        lastAppVersionName: '1.4.2',
+        lastAppVersionCode: 42,
+      });
+      findById.mockReturnValueOnce({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({ exec: leanExec }),
+        }),
+      });
+      updateOne.mockClear();
+      await usersService.recordAppVersionFromUserAgent(
+        'u1',
+        'SquadRelay-Android/1.4.2 (42)',
+      );
+      expect(updateOne).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updatePresence', () => {
     it('ingame updates overlay timestamp only', async () => {
       await usersService.updatePresence('u1', ' ingame ');

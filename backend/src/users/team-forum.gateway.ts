@@ -18,6 +18,7 @@ import {
   TeamForumTopicPinChangedPayload,
   TeamForumMessageReactionBroadcastPayload,
 } from './team-forum.service';
+import { TeamsService } from './teams.service';
 
 type GatewayUser = {
   userId: string;
@@ -50,6 +51,7 @@ export class TeamForumGateway {
 
   constructor(
     private readonly forumService: TeamForumService,
+    private readonly teams: TeamsService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
@@ -79,7 +81,7 @@ export class TeamForumGateway {
     if (!teamId) {
       throw new WsException('teamId is required');
     }
-    await this.forumService.listTopics(teamId, client.data.user.userId);
+    await this.teams.getTeamIfMemberOrThrow(teamId, client.data.user.userId);
 
     const key = this.teamInboxRoomKey(teamId);
     if (

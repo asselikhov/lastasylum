@@ -60,6 +60,8 @@ data class ChatState(
     val pinBarPreview: PinnedMessagePreviewDto? = null,
     /** Total pins in local history when > 1 (Telegram-style badge). */
     val pinHistoryCount: Int = 0,
+    /** Server-synced pin list for the active room (newest first). */
+    val pinnedMessages: List<com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto> = emptyList(),
     val sendFailure: ChatSendFailure? = null,
     /** Wire keys for sticker packs the user may send (e.g. zlobyaka). */
     val enabledStickerPackKeys: Set<String> = emptySet(),

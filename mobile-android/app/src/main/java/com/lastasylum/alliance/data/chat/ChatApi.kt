@@ -73,6 +73,12 @@ interface ChatApi {
         @Body body: PinRoomMessageRequest,
     ): ChatRoomDto
 
+    @DELETE("chat/rooms/{roomId}/pin/{messageId}")
+    suspend fun unpinOneRoomMessage(
+        @Path("roomId") roomId: String,
+        @Path("messageId") messageId: String,
+    ): ChatRoomDto
+
     @POST("chat/rooms/{roomId}/read")
     suspend fun markRoomRead(
         @Path("roomId") roomId: String,

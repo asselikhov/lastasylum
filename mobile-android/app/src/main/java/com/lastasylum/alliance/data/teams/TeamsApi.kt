@@ -147,7 +147,10 @@ interface TeamsApi {
     ): UploadedTeamNewsImageDto
 
     @GET("teams/{teamId}/forum/topics")
-    suspend fun listForumTopics(@Path("teamId") teamId: String): List<TeamForumTopicDto>
+    suspend fun listForumTopics(
+        @Path("teamId") teamId: String,
+        @Query("view") view: String = "list",
+    ): List<TeamForumTopicDto>
 
     @POST("teams/{teamId}/forum/topics")
     suspend fun createForumTopic(
@@ -160,6 +163,13 @@ interface TeamsApi {
         @Path("teamId") teamId: String,
         @Path("topicId") topicId: String,
         @Body body: PinTeamForumTopicRequest,
+    ): TeamForumTopicDto
+
+    @DELETE("teams/{teamId}/forum/topics/{topicId}/pin/{messageId}")
+    suspend fun unpinOneForumTopicMessage(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+        @Path("messageId") messageId: String,
     ): TeamForumTopicDto
 
     @PATCH("teams/{teamId}/forum/topics/{topicId}")
@@ -210,14 +220,14 @@ interface TeamsApi {
         @Path("teamId") teamId: String,
         @Path("topicId") topicId: String,
         @Path("messageId") messageId: String,
-    ): OkResponse
+    ): ForumMessageMutationResponse
 
     @POST("teams/{teamId}/forum/topics/{topicId}/messages/bulk-delete")
     suspend fun bulkDeleteForumMessages(
         @Path("teamId") teamId: String,
         @Path("topicId") topicId: String,
         @Body body: BulkDeleteForumMessagesBody,
-    ): OkResponse
+    ): ForumBulkDeleteResponse
 
     @POST("teams/{teamId}/forum/topics/{topicId}/messages/{messageId}/forward")
     suspend fun forwardForumMessage(

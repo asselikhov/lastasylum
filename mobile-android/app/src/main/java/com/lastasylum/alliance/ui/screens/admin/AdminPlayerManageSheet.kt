@@ -32,6 +32,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.util.accountRoleLabel
+import com.lastasylum.alliance.ui.util.adminAppVersionLine
+import com.lastasylum.alliance.ui.util.formatIsoDateShortRu
 import com.lastasylum.alliance.data.admin.AdminUserOnServerDto
 import com.lastasylum.alliance.ui.admin.AdminUiState
 import com.lastasylum.alliance.ui.util.formatServerLabel
@@ -145,6 +147,20 @@ fun AdminPlayerManageSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        Text(
+            adminAppVersionLine(player.appVersionName, player.appVersionCode),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        player.appVersionReportedAt?.let { reportedAt ->
+            val formatted = formatIsoDateShortRu(reportedAt)
+            if (formatted.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.admin_app_version_reported, formatted),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         HorizontalDivider()

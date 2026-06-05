@@ -42,6 +42,7 @@ fun ForumTopicTacticalCardShell(
     accent: ForumTopicCardTokens.Accent,
     activityLevel: ForumTopicCardTokens.ActivityLevel,
     modifier: Modifier = Modifier,
+    animationsEnabled: Boolean = true,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -56,43 +57,54 @@ fun ForumTopicTacticalCardShell(
         animationSpec = ForumTopicCardTokens.pressAnimSpec,
         label = "forumTacticalGlowBoost",
     )
-    val infinite = rememberInfiniteTransition(label = "forumTacticalAmbient")
-    val drift by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(14_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "forumTacticalDrift",
-    )
-    val pulse by infinite.animateFloat(
-        initialValue = 0.55f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2_800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "forumTacticalPulse",
-    )
-    val flicker by infinite.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(520, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "forumFireFlicker",
-    )
-    val heatPhase by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(9_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "forumFireHeatPhase",
-    )
+    val drift: Float
+    val pulse: Float
+    val flicker: Float
+    val heatPhase: Float
+    if (animationsEnabled) {
+        val infinite = rememberInfiniteTransition(label = "forumTacticalAmbient")
+        drift = infinite.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(14_000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "forumTacticalDrift",
+        ).value
+        pulse = infinite.animateFloat(
+            initialValue = 0.55f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2_800, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "forumTacticalPulse",
+        ).value
+        flicker = infinite.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(520, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "forumFireFlicker",
+        ).value
+        heatPhase = infinite.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(9_000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "forumFireHeatPhase",
+        ).value
+    } else {
+        drift = 0f
+        pulse = 0.75f
+        flicker = 0.5f
+        heatPhase = 0f
+    }
 
     val isHot = activityLevel == ForumTopicCardTokens.ActivityLevel.Hot
     val isWarm = activityLevel == ForumTopicCardTokens.ActivityLevel.Warm

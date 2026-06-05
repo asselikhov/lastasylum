@@ -1,5 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { PinHistoryEntrySchema } from '../../common/pin-history.schema';
+import type { PinHistoryEntry } from '../../common/pin-history.util';
 import { PlayerTeam } from './player-team.schema';
 
 export type TeamForumTopicDocument = HydratedDocument<TeamForumTopic>;
@@ -34,6 +36,9 @@ export class TeamForumTopic {
 
   @Prop({ type: String, default: null })
   pinnedByUserId: string | null;
+
+  @Prop({ type: [PinHistoryEntrySchema], default: [] })
+  pinHistory: PinHistoryEntry[];
 
   createdAt?: Date;
   updatedAt?: Date;

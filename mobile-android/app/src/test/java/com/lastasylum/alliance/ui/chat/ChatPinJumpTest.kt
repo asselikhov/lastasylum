@@ -40,14 +40,14 @@ class ChatPinJumpTest {
     }
 
     @Test
-    fun isPinnedPreviewLikelyDeleted_whenMessageRemovedFromFeed() {
+    fun isPinnedPreviewLikelyDeleted_notWhenMessageOutsideLoadedWindow() {
         val preview = PinnedMessagePreviewDto(
             id = "gone",
             text = "pin",
             senderUsername = "alice",
             createdAt = "2026-01-01T00:00:00Z",
         )
-        assertTrue(isPinnedPreviewLikelyDeleted(preview, emptyList()))
+        assertFalse(isPinnedPreviewLikelyDeleted(preview, emptyList(), preview, preview.id))
     }
 
     private fun assertEquals(expected: String, actual: String?) {

@@ -146,4 +146,7 @@ class ChatRestRepository(
         runCatching {
             chatApi.pinRoomMessage(roomId, PinRoomMessageRequest(messageId = messageId))
         }
+
+    suspend fun unpinOneRoomMessage(roomId: String, messageId: String): Result<ChatRoomDto> =
+        runCatching { chatApi.unpinOneRoomMessage(roomId, messageId) }
 }

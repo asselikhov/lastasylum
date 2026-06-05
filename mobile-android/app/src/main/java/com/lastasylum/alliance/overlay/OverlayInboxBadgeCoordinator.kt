@@ -104,6 +104,13 @@ internal class OverlayInboxBadgeCoordinator {
         teamId: String,
     ): Int = withContext(Dispatchers.IO) {
         val container = AppContainer.from(context)
+        val badgeCount = container.teamsRepository.getTeamInboxBadges(teamId, null)
+            .getOrNull()
+            ?.forumUnread
+            ?.coerceAtLeast(0)
+        if (badgeCount != null) {
+            return@withContext badgeCount
+        }
         val forumPrefs = container.teamForumPreferences
         val topics = container.teamsRepository.listForumTopics(teamId).getOrNull()
         if (topics != null) {
@@ -111,11 +118,7 @@ internal class OverlayInboxBadgeCoordinator {
             val hydratedLocal = forumPrefs.loadAllLastReadMessageIds(teamId)
             return@withContext TeamInboxUnread.sumForumUnread(topics, hydratedLocal)
         }
-        container.teamsRepository.getTeamInboxBadges(teamId, null)
-            .getOrNull()
-            ?.forumUnread
-            ?.coerceAtLeast(0)
-            ?: 0
+        0
     }
 
     fun mergeNewsDisplayed(

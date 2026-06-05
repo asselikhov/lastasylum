@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.chat
 
+import android.util.Log
 import com.lastasylum.alliance.data.chat.PinHistoryPreferences
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
@@ -20,22 +21,34 @@ class ForumPinCoordinator(
     var pinInFlight: Boolean = false
     var pinBarPreview: PinnedMessagePreviewDto? = null
     var pinHistoryCount: Int = 0
+    var pinnedMessages: List<PinnedMessagePreviewDto> = emptyList()
 
     private var pinHistory: List<PinnedMessagePreviewDto> = emptyList()
     private var pinBarIndex: Int = 0
     private var lastSyncedActivePinId: String? = null
 
-    fun onEnterTopic() {
-        pinHistory = pinHistoryPrefs.load(scopeKey)
+    fun onEnterTopic(initialTopic: TeamForumTopicDto? = null) {
+        pinHistory = initialTopic?.let { serverPinHistoryFromTopic(it) }.orEmpty()
+        pinnedMessages = pinHistory
         pinBarIndex = 0
         lastSyncedActivePinId = null
         applyPinBarUi(emptyList())
     }
 
-    fun applyTopicPin(event: TeamForumTopicPinChangedEvent) {
-        val merged = currentSnapshot().mergePinFromEvent(event)
-        applySnapshot(merged)
-        applyPinBarUi(emptyList())
+    fun applyTopicPin(event: TeamForumTopicPinChangedEvent, messages: List<TeamForumMessageDto>) {
+        val merged = currentSnapshot().mergePinFromEventWithHistory(event)
+        applySnapshot(merged.snapshot)
+        pinHistory = merged.pinnedMessages
+        pinnedMessages = merged.pinnedMessages
+        val newPinId = event.pinnedMessageId?.trim().orEmpty()
+        if (newPinId.isNotEmpty()) {
+            pinHistoryPrefs.clearDismissedPinBar(scopeKey)
+        }
+        Log.d(
+            TAG,
+            "topic pin-changed topicId=${event.topicId} history=${merged.pinnedMessages.size} active=$newPinId",
+        )
+        applyPinBarUi(messages)
     }
 
     fun applyTopicFromServer(topic: TeamForumTopicDto, messages: List<TeamForumMessageDto>) {
@@ -45,11 +58,18 @@ class ForumPinCoordinator(
         } else {
             applySnapshot(topic.toPinSnapshot())
         }
+        pinHistory = serverPinHistoryFromTopic(topic)
+        pinnedMessages = pinHistory
         applyPinBarUi(messages)
     }
 
     fun onPinSuccess(topic: TeamForumTopicDto, messages: List<TeamForumMessageDto>) {
         applySnapshot(topic.toPinSnapshot())
+        pinHistory = serverPinHistoryFromTopic(topic)
+        pinnedMessages = pinHistory
+        topic.pinnedMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            pinHistoryPrefs.clearDismissedPinBar(scopeKey)
+        }
         applyPinBarUi(messages)
     }
 
@@ -68,11 +88,6 @@ class ForumPinCoordinator(
         val msg = previewSource?.takeIf { it.id == trimmedId }
             ?: messages.find { it.id == trimmedId }
         val preview = msg?.toPinnedPreview()
-        preview?.let { p ->
-            pinHistory = pushPinHistory(pinHistory, p)
-            pinBarIndex = 0
-            pinHistoryPrefs.save(scopeKey, pinHistory)
-        }
         pinnedMessageId = trimmedId
         pinnedMessage = preview ?: pinnedMessage?.takeIf { it.id == trimmedId }
         pinnedAt = java.time.Instant.now().toString()
@@ -89,11 +104,32 @@ class ForumPinCoordinator(
     }
 
     fun clearPinIfMessageDeleted(messageId: String, messages: List<TeamForumMessageDto>) {
-        if (pinnedMessageId?.trim() == messageId.trim()) {
+        val removed = messageId.trim()
+        if (removed.isEmpty()) return
+        pinHistory = removePinFromHistory(pinHistory, removed)
+        pinnedMessages = pinHistory
+        if (pinnedMessageId?.trim() == removed) {
             pinnedMessageId = null
             pinnedMessage = null
             pinnedAt = null
             pinnedByUserId = null
+        }
+        applyPinBarUi(messages)
+    }
+
+    fun refreshPinAfterMessageEdit(
+        messageId: String,
+        messages: List<TeamForumMessageDto>,
+    ) {
+        val id = messageId.trim()
+        if (id.isEmpty()) return
+        if (pinnedMessageId?.trim() != id) return
+        messages.find { it.id.trim() == id }?.toPinnedPreview()?.let { preview ->
+            pinnedMessage = preview
+            pinHistory = pinHistory.map { entry ->
+                if (entry.id.trim() == id) preview else entry
+            }
+            pinnedMessages = pinHistory
             applyPinBarUi(messages)
         }
     }
@@ -122,29 +158,23 @@ class ForumPinCoordinator(
 
     private fun syncPinHistory(messages: List<TeamForumMessageDto>) {
         val pinId = pinnedMessageId?.trim().orEmpty()
-        if (pinId.isEmpty()) return
-        val serverPreview = resolveForumPinnedPreview(
-            pinnedMessageId,
-            pinnedMessage,
-            messages,
-        )
-        val existing = pinHistory.map { entry ->
+        if (pinId.isEmpty()) {
+            pinHistory = emptyList()
+            pinnedMessages = emptyList()
+            return
+        }
+        val baseHistory = if (pinnedMessages.isNotEmpty()) pinnedMessages else pinHistory
+        pinHistory = baseHistory.map { entry ->
             messages.find { it.id.trim() == entry.id.trim() }?.toPinnedPreview() ?: entry
         }
-        val (updated, resetIndex) = syncRoomPinHistory(
-            existing,
-            serverPreview,
-            pinnedMessageId,
-        )
-        pinHistory = updated
+        pinnedMessages = pinHistory
         val prevActivePin = lastSyncedActivePinId
         if (prevActivePin != pinId) {
             lastSyncedActivePinId = pinId
             pinBarIndex = 0
-        } else if (resetIndex || pinBarIndex !in pinHistory.indices) {
+        } else if (pinBarIndex !in pinHistory.indices) {
             pinBarIndex = 0
         }
-        pinHistoryPrefs.save(scopeKey, pinHistory)
     }
 
     fun applyPinBarUi(messages: List<TeamForumMessageDto>) {
@@ -152,6 +182,7 @@ class ForumPinCoordinator(
         if (pinId.isEmpty()) {
             pinBarPreview = null
             pinHistoryCount = 0
+            pinnedMessages = emptyList()
             return
         }
         syncPinHistory(messages)
@@ -190,4 +221,8 @@ class ForumPinCoordinator(
         pinnedByUserId = pinnedByUserId,
         pinnedMessage = pinnedMessage,
     )
+
+    private companion object {
+        const val TAG = "PinDiag"
+    }
 }

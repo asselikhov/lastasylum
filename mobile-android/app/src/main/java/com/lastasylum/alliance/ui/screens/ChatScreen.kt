@@ -183,8 +183,11 @@ import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.ChatListPaneState
 import com.lastasylum.alliance.ui.chat.ChatChromePaneState
 import com.lastasylum.alliance.ui.chat.PinnedMessageBar
+import com.lastasylum.alliance.ui.chat.PinnedMessagesSheet
+import com.lastasylum.alliance.ui.chat.chatPinPreviewDisplayState
 import com.lastasylum.alliance.ui.chat.formatPinnedMetaLine
 import com.lastasylum.alliance.ui.chat.isPinnedPreviewLikelyDeleted
+import com.lastasylum.alliance.ui.chat.isPinnedPreviewUnavailable
 import com.lastasylum.alliance.ui.chat.resolvedThumbnailUrl
 import com.lastasylum.alliance.ui.util.formatForumTopicTimeRu
 import com.lastasylum.alliance.ui.chat.canPinChatMessage
@@ -383,6 +386,9 @@ private fun ChatScreenMessagesHost(
     onPinMessage: (String, ChatMessage?) -> Unit = { id, _ -> },
     onUnpinRoom: () -> Unit = {},
     onPinnedBarTap: () -> Unit = {},
+    onJumpToPinnedMessage: (String) -> Unit = {},
+    onUnpinOnePinned: (String) -> Unit = {},
+    onDismissPinBar: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -403,8 +409,25 @@ private fun ChatScreenMessagesHost(
     }
     val pinnedPreview = chromePane.pinBarPreview
     val pinHistoryCount = chromePane.pinHistoryCount
-    val pinnedMessageDeleted = remember(pinnedPreview, messages) {
-        pinnedPreview?.let { isPinnedPreviewLikelyDeleted(it, messages) } == true
+    val pinnedMessageDeleted = remember(pinnedPreview, messages, selectedRoom) {
+        pinnedPreview?.let {
+            isPinnedPreviewLikelyDeleted(
+                preview = it,
+                messages = messages,
+                serverPreview = selectedRoom?.pinnedMessage,
+                pinnedMessageId = selectedRoom?.pinnedMessageId,
+            )
+        } == true
+    }
+    val pinnedMessageUnavailable = remember(pinnedPreview, messages, selectedRoom) {
+        pinnedPreview?.let {
+            isPinnedPreviewUnavailable(
+                preview = it,
+                messages = messages,
+                serverPreview = selectedRoom?.pinnedMessage,
+                pinnedMessageId = selectedRoom?.pinnedMessageId,
+            )
+        } == true
     }
     val pinnedYouLabel = stringResource(R.string.chat_pinned_meta_you)
     val pinnedMetaLine = remember(selectedRoom, pinnedPreview, pinnedYouLabel, listUiState.currentUserId) {
@@ -421,6 +444,12 @@ private fun ChatScreenMessagesHost(
     }
     val pinnedThumbnailUrl = remember(pinnedPreview) {
         pinnedPreview?.resolvedThumbnailUrl()
+    }
+    var showPinnedSheet by remember { mutableStateOf(false) }
+    val pinnedSheetItems = remember(chromePane.pinnedMessages, pinnedPreview) {
+        chromePane.pinnedMessages.ifEmpty {
+            pinnedPreview?.let { listOf(it) } ?: emptyList()
+        }
     }
     val canUnpinPinned = canPinChatMessage(
         selectedRoom?.allianceId,
@@ -718,12 +747,36 @@ private fun ChatScreenMessagesHost(
                         onUnpin = onUnpinRoom,
                         historyCount = pinHistoryCount,
                         messageDeleted = pinnedMessageDeleted,
+                        messageUnavailable = pinnedMessageUnavailable,
                         thumbnailUrl = pinnedThumbnailUrl,
                         pinnedMetaLine = pinnedMetaLine,
+                        onLongPress = { showPinnedSheet = true },
                         modifier = Modifier.padding(bottom = 4.dp),
                     )
                 }
             }
+            PinnedMessagesSheet(
+                visible = showPinnedSheet,
+                items = pinnedSheetItems,
+                canModerate = canUnpinPinned,
+                activePinId = selectedRoom?.pinnedMessageId,
+                onDismiss = { showPinnedSheet = false },
+                onJumpTo = onJumpToPinnedMessage,
+                onUnpinOne = onUnpinOnePinned,
+                onUnpinAll = onUnpinRoom,
+                onHideBar = {
+                    onDismissPinBar()
+                    showPinnedSheet = false
+                },
+                messageStateFor = { preview ->
+                    chatPinPreviewDisplayState(
+                        preview = preview,
+                        messages = messages,
+                        serverPreview = selectedRoom?.pinnedMessage,
+                        pinnedMessageId = selectedRoom?.pinnedMessageId,
+                    )
+                },
+            )
             if (inSelectionMode) {
                 ChatSelectionToolbar(
                     selectedCount = listPane.selectedMessageIds.size,
@@ -989,6 +1042,9 @@ fun ChatScreen(
     onPinMessage: (String, ChatMessage?) -> Unit = { id, _ -> },
     onUnpinRoom: () -> Unit = {},
     onPinnedBarTap: () -> Unit = {},
+    onJumpToPinnedMessage: (String) -> Unit = {},
+    onUnpinOnePinned: (String) -> Unit = {},
+    onDismissPinBar: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1109,6 +1165,9 @@ fun ChatScreen(
                 onPinMessage = onPinMessage,
                 onUnpinRoom = onUnpinRoom,
                 onPinnedBarTap = onPinnedBarTap,
+                onJumpToPinnedMessage = onJumpToPinnedMessage,
+                onUnpinOnePinned = onUnpinOnePinned,
+                onDismissPinBar = onDismissPinBar,
             )
             ChatScreenComposerSection(
                 composerPane = composerPane,
@@ -1474,6 +1533,13 @@ fun ChatScreen(
         msg._id?.trim()?.takeIf { it.isNotEmpty() } ?: chatMessageKey(msg)
     },
     compactOverlayMode: Boolean = false,
+    onClearRoomHistory: () -> Unit = {},
+    onPinMessage: (String, ChatMessage?) -> Unit = { _, _ -> },
+    onUnpinRoom: () -> Unit = {},
+    onPinnedBarTap: () -> Unit = {},
+    onJumpToPinnedMessage: (String) -> Unit = {},
+    onUnpinOnePinned: (String) -> Unit = {},
+    onDismissPinBar: () -> Unit = {},
 ) = ChatScreen(
     listPane = state.toListPane(),
     chromePane = state.toChromePane(),
@@ -1518,6 +1584,13 @@ fun ChatScreen(
     onMessageListScrollInProgress = onMessageListScrollInProgress,
     messageListKey = messageListKey,
     compactOverlayMode = compactOverlayMode,
+    onClearRoomHistory = onClearRoomHistory,
+    onPinMessage = onPinMessage,
+    onUnpinRoom = onUnpinRoom,
+    onPinnedBarTap = onPinnedBarTap,
+    onJumpToPinnedMessage = onJumpToPinnedMessage,
+    onUnpinOnePinned = onUnpinOnePinned,
+    onDismissPinBar = onDismissPinBar,
 )
 
 @Composable

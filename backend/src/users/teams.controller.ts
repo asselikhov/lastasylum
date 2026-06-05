@@ -363,8 +363,15 @@ export class TeamsController {
   listForumTopics(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
+    @Query('view') view?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.teamForum.listTopics(teamId, req.user.userId);
+    const normalizedView = view === 'full' ? 'full' : 'list';
+    const parsedLimit = limit != null ? Number.parseInt(limit, 10) : undefined;
+    return this.teamForum.listTopics(teamId, req.user.userId, {
+      view: normalizedView,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+    });
   }
 
   @Post(':teamId/forum/topics')
@@ -409,6 +416,24 @@ export class TeamsController {
           ? raw.trim()
           : null;
     const { topic, pinChanged } = await this.teamForum.setTopicPinnedMessage(
+      teamId,
+      topicId,
+      req.user.userId,
+      messageId,
+    );
+    this.teamForumGateway.broadcastTopicPinChanged(pinChanged);
+    return topic;
+  }
+
+  @Delete(':teamId/forum/topics/:topicId/pin/:messageId')
+  @Roles(AllianceRole.MEMBER)
+  async unpinOneForumTopicMessage(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+    @Param('messageId') messageId: string,
+  ) {
+    const { topic, pinChanged } = await this.teamForum.unpinOneTopicMessage(
       teamId,
       topicId,
       req.user.userId,
@@ -515,7 +540,7 @@ export class TeamsController {
     @Param('messageId') messageId: string,
     @Body() dto: UpdateTeamForumMessageDto,
   ) {
-    const message = await this.teamForum.patchMessage(
+    const { message, pinChanged } = await this.teamForum.patchMessage(
       teamId,
       topicId,
       messageId,
@@ -523,6 +548,9 @@ export class TeamsController {
       dto.text,
     );
     this.teamForumGateway.broadcastMessageEdited(teamId, topicId, message);
+    if (pinChanged) {
+      this.teamForumGateway.broadcastTopicPinChanged(pinChanged);
+    }
     return message;
   }
 
@@ -578,7 +606,7 @@ export class TeamsController {
     if (pinChanged) {
       this.teamForumGateway.broadcastTopicPinChanged(pinChanged);
     }
-    return { ok: true };
+    return { ok: true, pinChanged };
   }
 
   @Post(':teamId/forum/topics/:topicId/messages/bulk-delete')
@@ -613,7 +641,7 @@ export class TeamsController {
     if (pinChanged) {
       this.teamForumGateway.broadcastTopicPinChanged(pinChanged);
     }
-    return { ok: true };
+    return { ok: true, deletedIds, pinChanged };
   }
 
   @Get(':teamId')

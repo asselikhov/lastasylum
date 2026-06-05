@@ -62,16 +62,36 @@ class PinHistoryPreferences(context: Context) {
         val editor = prefs.edit()
         prefs.all.keys
             .filterIsInstance<String>()
-            .filter { it.startsWith(KEY_PREFIX) }
+            .filter { it.startsWith(KEY_PREFIX) || it.startsWith(DISMISS_PREFIX) }
             .forEach { editor.remove(it) }
         editor.apply()
     }
 
+    fun isPinBarDismissed(scopeKey: String, activePinId: String): Boolean {
+        val pin = activePinId.trim()
+        if (scopeKey.isBlank() || pin.isEmpty()) return false
+        return prefs.getString(dismissStorageKey(scopeKey), null)?.trim() == pin
+    }
+
+    fun setDismissedPinBar(scopeKey: String, activePinId: String) {
+        val pin = activePinId.trim()
+        if (scopeKey.isBlank() || pin.isEmpty()) return
+        prefs.edit().putString(dismissStorageKey(scopeKey), pin).apply()
+    }
+
+    fun clearDismissedPinBar(scopeKey: String) {
+        if (scopeKey.isBlank()) return
+        prefs.edit().remove(dismissStorageKey(scopeKey)).apply()
+    }
+
     private fun storageKey(scopeKey: String): String = KEY_PREFIX + scopeKey
+
+    private fun dismissStorageKey(scopeKey: String): String = DISMISS_PREFIX + scopeKey
 
     private companion object {
         const val PREFS_NAME = "squadrelay_pin_history"
         const val KEY_PREFIX = "pin_hist_"
+        const val DISMISS_PREFIX = "pin_dismiss_"
         const val PIN_HISTORY_MAX = 15
     }
 }

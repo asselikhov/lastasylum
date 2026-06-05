@@ -468,6 +468,9 @@ fun AppNavigation(
                     onPinMessage = chatViewModel::pinMessage,
                     onUnpinRoom = chatViewModel::unpinSelectedRoom,
                     onPinnedBarTap = chatViewModel::onPinnedBarTap,
+                    onJumpToPinnedMessage = chatViewModel::onJumpToPinnedMessage,
+                    onUnpinOnePinned = chatViewModel::unpinOnePinnedMessage,
+                    onDismissPinBar = chatViewModel::dismissPinBarForRoom,
                 )
                 }
                         }

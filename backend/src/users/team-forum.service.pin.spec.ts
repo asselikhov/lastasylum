@@ -54,6 +54,7 @@ describe('TeamForumService pin', () => {
       username: 'officer',
       email: 'officer@test',
     }),
+    findTelegramUsernamesByIds: jest.fn().mockResolvedValue(new Map()),
   };
 
   const teams = {
@@ -63,7 +64,22 @@ describe('TeamForumService pin', () => {
 
   const topicModel = {
     findOne: jest.fn().mockResolvedValue(topicDoc),
+    updateOne: jest.fn().mockResolvedValue({}),
   };
+
+  const pinnedTopicDoc = () => ({
+    ...topicDoc,
+    pinnedMessageId: new Types.ObjectId(messageId),
+    pinnedAt: new Date(),
+    pinnedByUserId: userId,
+    pinHistory: [
+      {
+        messageId: new Types.ObjectId(messageId),
+        pinnedAt: new Date(),
+        pinnedByUserId: userId,
+      },
+    ],
+  });
 
   const messageModel = {
     findOne: jest.fn().mockResolvedValue(msgDoc),
@@ -73,6 +89,20 @@ describe('TeamForumService pin', () => {
       }),
     }),
     deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+    deleteMany: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+  };
+
+  const userModel = {
+    findById: jest.fn().mockReturnValue({
+      exec: jest.fn().mockResolvedValue({
+        _id: new Types.ObjectId(userId),
+        username: 'officer',
+      }),
+    }),
+  };
+
+  const stickerAccess = {
+    assertUserMaySendStickerMessage: jest.fn().mockResolvedValue(undefined),
   };
 
   let service: TeamForumService;
@@ -91,10 +121,10 @@ describe('TeamForumService pin', () => {
           provide: getModelToken(TeamForumTopicReadState.name),
           useValue: { collection: { name: 'read' } },
         },
-        { provide: getModelToken(User.name), useValue: {} },
+        { provide: getModelToken(User.name), useValue: userModel },
         { provide: TeamsService, useValue: teams },
         { provide: TeamNewsAttachmentsService, useValue: {} },
-        { provide: StickerAccessService, useValue: {} },
+        { provide: StickerAccessService, useValue: stickerAccess },
         { provide: GameIdentitiesService, useValue: {} },
         { provide: UsersService, useValue: usersService },
       ],
@@ -138,5 +168,48 @@ describe('TeamForumService pin', () => {
       otherId,
     );
     expect(pinChanged.pinnedMessageId).toBe(otherId);
+  });
+
+  it('bulk delete clears pin when pinned message is removed', async () => {
+    teams.getSquadRoleForUser.mockReturnValue(PlayerTeamMemberRole.R5);
+    const pinned = pinnedTopicDoc();
+    topicModel.findOne.mockResolvedValue(pinned);
+    messageModel.find.mockResolvedValue([msgDoc]);
+    const { pinChanged } = await service.bulkDeleteMessages(
+      teamId,
+      topicId,
+      [messageId],
+      userId,
+    );
+    expect(pinChanged).not.toBeNull();
+    expect(pinChanged?.pinnedMessageId).toBeNull();
+    expect(topicDoc.save).toHaveBeenCalled();
+  });
+
+  it('patch message refreshes pin preview when edited message is pinned', async () => {
+    teams.getSquadRoleForUser.mockReturnValue(PlayerTeamMemberRole.R5);
+    const pinned = pinnedTopicDoc();
+    topicModel.findOne.mockResolvedValue(pinned);
+    const savedMsg = {
+      ...msgDoc,
+      text: 'edited pin',
+      editedAt: new Date(),
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    messageModel.findOne.mockResolvedValue(savedMsg);
+    messageModel.find.mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue([{ ...msgDoc, text: 'edited pin' }]),
+      }),
+    });
+    const { pinChanged } = await service.patchMessage(
+      teamId,
+      topicId,
+      messageId,
+      userId,
+      'edited pin',
+    );
+    expect(pinChanged).not.toBeNull();
+    expect(pinChanged?.pinnedMessage?.text).toBe('edited pin');
   });
 });

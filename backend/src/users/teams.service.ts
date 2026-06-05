@@ -82,6 +82,9 @@ export type AdminTeamMemberRow = TeamMemberRow & {
   gameNickname: string;
   accountUsername: string;
   identityId: string | null;
+  appVersionName: string | null;
+  appVersionCode: number | null;
+  appVersionReportedAt: string | null;
 };
 
 export type TeamJoinRequestRow = {
@@ -1417,6 +1420,10 @@ export class TeamsService {
         gameNickname: displayNick,
         accountUsername: u.username,
         identityId: this.gameIdentities.resolveIdentityIdForTeam(u, teamIdStr),
+        appVersionName: u.lastAppVersionName?.trim() || null,
+        appVersionCode:
+          typeof u.lastAppVersionCode === 'number' ? u.lastAppVersionCode : null,
+        appVersionReportedAt: toIso(u.lastAppVersionReportedAt),
       };
     });
     members.sort(

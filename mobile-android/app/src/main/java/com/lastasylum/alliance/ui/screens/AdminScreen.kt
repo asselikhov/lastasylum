@@ -65,6 +65,7 @@ import com.lastasylum.alliance.data.admin.AdminTeamMemberDto
 import com.lastasylum.alliance.data.admin.AdminUserOnServerDto
 import com.lastasylum.alliance.data.admin.AllianceAdminDto
 import com.lastasylum.alliance.data.admin.PlayerTeamAdminDto
+import com.lastasylum.alliance.ui.util.adminAppVersionLine
 import com.lastasylum.alliance.ui.util.formatServerLabel
 import com.lastasylum.alliance.ui.util.teamTagWithServerPrefix
 import com.lastasylum.alliance.data.chat.ChatRoomDto
@@ -639,6 +640,11 @@ private fun AdminPlayerListRow(
             Text(
                 stringResource(R.string.admin_game_servers_account, row.email),
                 style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                adminAppVersionLine(row.appVersionName, row.appVersionCode),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             val team = row.playerTeamTag?.let { tag ->
                 val prefix = teamTagWithServerPrefix(tag, row.serverNumber)

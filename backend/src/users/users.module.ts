@@ -1,4 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { AppVersionInterceptor } from '../common/app-version.interceptor';
 import { ChatModule } from '../chat/chat.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TeamForumSocketModule } from './team-forum-socket.module';
@@ -79,6 +81,10 @@ import { StickerAccessService } from './sticker-access.service';
     TeamNewsService,
     TeamNewsAttachmentsService,
     StickerAccessService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AppVersionInterceptor,
+    },
   ],
   exports: [
     UsersService,

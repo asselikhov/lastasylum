@@ -88,6 +88,30 @@ class ChatPinMergeTest {
     }
 
     @Test
+    fun mergePinFromEvent_usesPinnedMessagesFromServer() {
+        val historyPreview = preview.copy(text = "from history")
+        val room = roomWithIdOnly.copy(pinnedMessage = preview)
+        val event = ChatRoomPinChangedEvent(
+            roomId = "room1",
+            pinnedMessageId = preview.id,
+            pinnedMessage = null,
+            pinnedMessages = listOf(historyPreview),
+        )
+        val merged = room.mergePinFromEvent(event)
+        assertEquals(listOf(historyPreview), merged.pinnedMessages)
+        assertEquals(historyPreview, merged.pinnedMessage)
+    }
+
+    @Test
+    fun serverPinHistoryFromRoom_prefersPinnedMessagesList() {
+        val room = roomWithIdOnly.copy(
+            pinnedMessage = preview,
+            pinnedMessages = listOf(preview, preview.copy(id = "other")),
+        )
+        assertEquals(2, serverPinHistoryFromRoom(room).size)
+    }
+
+    @Test
     fun topicMergePinFromEvent_keepsExistingPreviewWhenEventPreviewNull() {
         val topic = TopicPinSnapshot(
             pinnedMessageId = preview.id,

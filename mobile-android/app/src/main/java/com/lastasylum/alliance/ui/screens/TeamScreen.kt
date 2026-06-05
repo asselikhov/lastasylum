@@ -139,6 +139,7 @@ fun TeamScreen(
     val res = context.resources
     val scope = rememberCoroutineScope()
     val teamViewModel: TeamViewModel = viewModel(
+        key = "team_hub",
         factory = TeamViewModelFactory(
             usersRepository,
             teamsRepository,
@@ -194,13 +195,13 @@ fun TeamScreen(
         }
     }
 
-    fun reloadProfileAndTeam() {
-        teamViewModel.reloadProfileAndTeam(res)
-        teamViewModel.refreshSectionBadges()
+    fun reloadProfileAndTeam(force: Boolean = false) {
+        teamViewModel.reloadProfileAndTeam(res, force = force)
+        teamViewModel.refreshSectionBadges(force = force)
     }
 
     LaunchedEffect(Unit) {
-        reloadProfileAndTeam()
+        reloadProfileAndTeam(force = true)
     }
 
     LaunchedEffect(currentUserId) {
@@ -231,7 +232,7 @@ fun TeamScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(profile?.playerTeamId, mainSectionOrdinal, mainTabActive) {
+    LaunchedEffect(profile?.playerTeamId, mainTabActive) {
         if (!mainTabActive) return@LaunchedEffect
         if (!profile?.playerTeamId.isNullOrBlank()) {
             teamViewModel.refreshSectionBadges()

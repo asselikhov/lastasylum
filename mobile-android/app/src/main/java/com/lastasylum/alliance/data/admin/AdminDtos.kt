@@ -130,6 +130,9 @@ data class AdminUserOnServerDto(
     val isActiveIdentity: Boolean = false,
     val accountRole: String = "MEMBER",
     val membershipStatus: String = "active",
+    val appVersionName: String? = null,
+    val appVersionCode: Int? = null,
+    val appVersionReportedAt: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -150,6 +153,9 @@ data class AdminTeamMemberDto(
     val presenceStatus: String? = null,
     val lastPresenceAt: String? = null,
     val lastAppActiveAt: String? = null,
+    val appVersionName: String? = null,
+    val appVersionCode: Int? = null,
+    val appVersionReportedAt: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

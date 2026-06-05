@@ -36,6 +36,9 @@ export type AdminUserOnServerRow = {
   isActiveIdentity: boolean;
   accountRole: string;
   membershipStatus: string;
+  appVersionName: string | null;
+  appVersionCode: number | null;
+  appVersionReportedAt: string | null;
 };
 
 export type SafeGameIdentity = {
@@ -848,6 +851,9 @@ export class GameIdentitiesService {
           ],
         },
         needsGameIdentity: { $eq: ['$gameIdentities', null] },
+        lastAppVersionName: 1,
+        lastAppVersionCode: 1,
+        lastAppVersionReportedAt: 1,
       },
     });
     pipeline.push({
@@ -874,10 +880,20 @@ export class GameIdentitiesService {
           playerTeamTag?: string | null;
           playerTeamDisplayName?: string | null;
           isActiveIdentity: boolean;
+          lastAppVersionName?: string | null;
+          lastAppVersionCode?: number | null;
+          lastAppVersionReportedAt?: Date | string | null;
         }>;
         meta: Array<{ total: number }>;
       }>(pipeline as unknown as PipelineStage[])
       .exec();
+
+    const toIso = (v: Date | string | null | undefined): string | null => {
+      if (v == null) return null;
+      if (v instanceof Date) return v.toISOString();
+      const trimmed = String(v).trim();
+      return trimmed.length > 0 ? trimmed : null;
+    };
 
     const total = facet?.meta?.[0]?.total ?? 0;
     const items: AdminUserOnServerRow[] = (facet?.data ?? []).map((row) => ({
@@ -893,6 +909,10 @@ export class GameIdentitiesService {
       isActiveIdentity: row.isActiveIdentity,
       accountRole: normalizeAllianceRole(row.role),
       membershipStatus: row.membershipStatus ?? 'active',
+      appVersionName: row.lastAppVersionName?.trim() || null,
+      appVersionCode:
+        typeof row.lastAppVersionCode === 'number' ? row.lastAppVersionCode : null,
+      appVersionReportedAt: toIso(row.lastAppVersionReportedAt),
     }));
 
     return {

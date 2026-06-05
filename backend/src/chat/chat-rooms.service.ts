@@ -27,6 +27,15 @@ import {
   playerTeamChatAllianceId,
 } from './chat-alliance-scope';
 import type { User } from '../users/schemas/user.schema';
+import {
+  activePinFromHistory,
+  clearAllPinHistory,
+  ensurePinHistoryMigrated,
+  normalizePinHistory,
+  pushPinHistoryEntry,
+  removePinHistoryEntry,
+  type PinHistoryEntry,
+} from '../common/pin-history.util';
 import { ChatRoom, ChatRoomDocument } from './schemas/chat-room.schema';
 import { Message, MessageDocument } from './schemas/message.schema';
 
@@ -184,6 +193,34 @@ export class ChatRoomsService {
     return this.roomModel.findById(roomId).exec();
   }
 
+  async setPinState(
+    roomId: string,
+    state: {
+      pinnedMessageId: Types.ObjectId | null;
+      pinnedAt: Date | null;
+      pinnedByUserId: string | null;
+      pinHistory: PinHistoryEntry[];
+    },
+  ): Promise<ChatRoomDocument | null> {
+    if (!Types.ObjectId.isValid(roomId)) {
+      return null;
+    }
+    return this.roomModel
+      .findByIdAndUpdate(
+        roomId,
+        {
+          $set: {
+            pinnedMessageId: state.pinnedMessageId,
+            pinnedAt: state.pinnedAt,
+            pinnedByUserId: state.pinnedByUserId,
+            pinHistory: state.pinHistory,
+          },
+        },
+        { new: true },
+      )
+      .exec();
+  }
+
   async setPinnedMessage(
     roomId: string,
     pin: {
@@ -195,22 +232,64 @@ export class ChatRoomsService {
     if (!Types.ObjectId.isValid(roomId)) {
       return null;
     }
-    return this.roomModel
-      .findByIdAndUpdate(
-        roomId,
-        {
-          $set: {
-            pinnedMessageId: pin.messageId,
-            pinnedAt: pin.pinnedAt,
-            pinnedByUserId: pin.pinnedByUserId,
-          },
-        },
-        { new: true },
-      )
-      .exec();
+    if (!pin.messageId) {
+      return this.setPinState(roomId, clearAllPinHistory());
+    }
+    const room = await this.roomModel.findById(roomId).exec();
+    if (!room) return null;
+    const history = ensurePinHistoryMigrated(room);
+    const entry: PinHistoryEntry = {
+      messageId: pin.messageId,
+      pinnedAt: pin.pinnedAt ?? new Date(),
+      pinnedByUserId: pin.pinnedByUserId?.trim() || '',
+    };
+    const nextHistory = pushPinHistoryEntry(history, entry);
+    const active = activePinFromHistory(nextHistory);
+    return this.setPinState(roomId, {
+      ...active,
+      pinHistory: nextHistory,
+    });
   }
 
-  /** Returns true when the room had this message pinned and pin fields were cleared. */
+  async unpinOneMessage(
+    roomId: string,
+    messageId: string,
+  ): Promise<ChatRoomDocument | null> {
+    if (!Types.ObjectId.isValid(roomId) || !Types.ObjectId.isValid(messageId)) {
+      return null;
+    }
+    const room = await this.roomModel.findById(roomId).exec();
+    if (!room) return null;
+    const history = removePinHistoryEntry(
+      ensurePinHistoryMigrated(room),
+      messageId,
+    );
+    const active = activePinFromHistory(history);
+    return this.setPinState(roomId, {
+      ...active,
+      pinHistory: history,
+    });
+  }
+
+  async clearAllRoomPins(roomId: string): Promise<number> {
+    if (!Types.ObjectId.isValid(roomId)) return 0;
+    const res = await this.roomModel
+      .updateMany(
+        { _id: new Types.ObjectId(roomId) },
+        { $set: clearAllPinHistory() },
+      )
+      .exec();
+    return res.modifiedCount ?? 0;
+  }
+
+  async clearAllPinsEverywhere(): Promise<number> {
+    const res = await this.roomModel
+      .updateMany({}, { $set: clearAllPinHistory() })
+      .exec();
+    return res.modifiedCount ?? 0;
+  }
+
+  /** Returns true when pin history or active pin referenced this message. */
   async clearPinnedMessageIfMatches(
     roomId: string,
     messageId: string,
@@ -218,22 +297,22 @@ export class ChatRoomsService {
     if (!Types.ObjectId.isValid(roomId) || !Types.ObjectId.isValid(messageId)) {
       return false;
     }
-    const res = await this.roomModel
-      .updateOne(
-        {
-          _id: new Types.ObjectId(roomId),
-          pinnedMessageId: new Types.ObjectId(messageId),
-        },
-        {
-          $set: {
-            pinnedMessageId: null,
-            pinnedAt: null,
-            pinnedByUserId: null,
-          },
-        },
-      )
-      .exec();
-    return (res.modifiedCount ?? 0) > 0;
+    const room = await this.roomModel.findById(roomId).exec();
+    if (!room) return false;
+    const history = ensurePinHistoryMigrated(room);
+    const hadPin = history.some((h) => h.messageId.toString() === messageId);
+    if (!hadPin) return false;
+    const nextHistory = removePinHistoryEntry(history, messageId);
+    const active = activePinFromHistory(nextHistory);
+    await this.setPinState(roomId, {
+      ...active,
+      pinHistory: nextHistory,
+    });
+    return true;
+  }
+
+  pinHistoryForRoom(room: ChatRoomDocument | ChatRoom): PinHistoryEntry[] {
+    return normalizePinHistory(ensurePinHistoryMigrated(room));
   }
 
   async createRoom(allianceId: string, title: string, sortOrder?: number) {

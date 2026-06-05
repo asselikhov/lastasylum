@@ -6,6 +6,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomPinChangedEvent
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
+import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
 import java.time.Instant
 
@@ -118,14 +119,18 @@ fun ChatRoomDto.mergePinFromEvent(event: ChatRoomPinChangedEvent): ChatRoomDto {
     val keptPreview = when {
         event.pinnedMessage != null -> event.pinnedMessage
         eventPinId.isEmpty() -> null
-        pinnedMessage?.id == eventPinId -> pinnedMessage
-        else -> null
+        else -> event.pinnedMessages.find { it.id.trim() == eventPinId }
+            ?: pinnedMessage?.takeIf { it.id.trim() == eventPinId }
+    }
+    val history = event.pinnedMessages.ifEmpty {
+        keptPreview?.let { listOf(it) } ?: emptyList()
     }
     return copy(
         pinnedMessageId = event.pinnedMessageId,
         pinnedAt = event.pinnedAt,
         pinnedByUserId = event.pinnedByUserId,
         pinnedMessage = keptPreview,
+        pinnedMessages = history,
     )
 }
 
@@ -148,10 +153,10 @@ fun resolveChatPinnedPreview(
     pinnedMessage: PinnedMessagePreviewDto?,
     messages: List<ChatMessage>,
 ): PinnedMessagePreviewDto? {
-    pinnedMessage?.let { return it }
     val id = pinnedMessageId?.trim().orEmpty()
     if (id.isEmpty()) return null
-    return messages.find { it._id == id }?.toPinnedPreview()
+    messages.find { it._id?.trim() == id }?.toPinnedPreview()?.let { return it }
+    return pinnedMessage?.takeIf { it.id.trim() == id }
 }
 
 fun resolveForumPinnedPreview(
@@ -159,10 +164,50 @@ fun resolveForumPinnedPreview(
     pinnedMessage: PinnedMessagePreviewDto?,
     messages: List<TeamForumMessageDto>,
 ): PinnedMessagePreviewDto? {
-    pinnedMessage?.let { return it }
     val id = pinnedMessageId?.trim().orEmpty()
     if (id.isEmpty()) return null
-    return messages.find { it.id == id }?.toPinnedPreview()
+    messages.find { it.id.trim() == id }?.toPinnedPreview()?.let { return it }
+    return pinnedMessage?.takeIf { it.id.trim() == id }
+}
+
+enum class PinPreviewDisplayState {
+    Ok,
+    Deleted,
+    Unavailable,
+}
+
+fun chatPinPreviewDisplayState(
+    preview: PinnedMessagePreviewDto,
+    messages: List<ChatMessage>,
+    serverPreview: PinnedMessagePreviewDto?,
+    pinnedMessageId: String?,
+): PinPreviewDisplayState {
+    val id = preview.id.trim()
+    if (id.isEmpty()) return PinPreviewDisplayState.Ok
+    val msg = messages.find { it._id?.trim() == id }
+    if (msg != null) {
+        return if (msg.deletedAt != null) PinPreviewDisplayState.Deleted else PinPreviewDisplayState.Ok
+    }
+    if (serverPreview?.id?.trim() == id) return PinPreviewDisplayState.Ok
+    if (pinnedMessageId?.trim() == id) return PinPreviewDisplayState.Unavailable
+    return PinPreviewDisplayState.Ok
+}
+
+fun forumPinPreviewDisplayState(
+    preview: PinnedMessagePreviewDto,
+    messages: List<TeamForumMessageDto>,
+    serverPreview: PinnedMessagePreviewDto?,
+    pinnedMessageId: String?,
+): PinPreviewDisplayState {
+    val id = preview.id.trim()
+    if (id.isEmpty()) return PinPreviewDisplayState.Ok
+    val msg = messages.find { it.id.trim() == id }
+    if (msg != null) {
+        return if (!msg.deletedAt.isNullOrBlank()) PinPreviewDisplayState.Deleted else PinPreviewDisplayState.Ok
+    }
+    if (serverPreview?.id?.trim() == id) return PinPreviewDisplayState.Ok
+    if (pinnedMessageId?.trim() == id) return PinPreviewDisplayState.Unavailable
+    return PinPreviewDisplayState.Ok
 }
 
 const val PIN_HISTORY_MAX = 15
@@ -252,38 +297,80 @@ fun refreshPinHistoryPreviews(
 fun isPinnedPreviewLikelyDeleted(
     preview: PinnedMessagePreviewDto,
     messages: List<ChatMessage>,
-): Boolean {
-    val id = preview.id.trim()
-    if (id.isEmpty()) return false
-    val msg = messages.find { it._id?.trim() == id } ?: return true
-    return msg.deletedAt != null
-}
+    serverPreview: PinnedMessagePreviewDto? = null,
+    pinnedMessageId: String? = null,
+): Boolean =
+    chatPinPreviewDisplayState(preview, messages, serverPreview, pinnedMessageId) ==
+        PinPreviewDisplayState.Deleted
 
 fun isForumPinnedPreviewLikelyDeleted(
     preview: PinnedMessagePreviewDto,
     messages: List<TeamForumMessageDto>,
-): Boolean {
-    val id = preview.id.trim()
-    if (id.isEmpty()) return false
-    val msg = messages.find { it.id.trim() == id } ?: return false
-    return !msg.deletedAt.isNullOrBlank()
-}
+    serverPreview: PinnedMessagePreviewDto? = null,
+    pinnedMessageId: String? = null,
+): Boolean =
+    forumPinPreviewDisplayState(preview, messages, serverPreview, pinnedMessageId) ==
+        PinPreviewDisplayState.Deleted
 
-fun TopicPinSnapshot.mergePinFromEvent(event: TeamForumTopicPinChangedEvent): TopicPinSnapshot {
+fun isPinnedPreviewUnavailable(
+    preview: PinnedMessagePreviewDto,
+    messages: List<ChatMessage>,
+    serverPreview: PinnedMessagePreviewDto?,
+    pinnedMessageId: String?,
+): Boolean =
+    chatPinPreviewDisplayState(preview, messages, serverPreview, pinnedMessageId) ==
+        PinPreviewDisplayState.Unavailable
+
+fun isForumPinnedPreviewUnavailable(
+    preview: PinnedMessagePreviewDto,
+    messages: List<TeamForumMessageDto>,
+    serverPreview: PinnedMessagePreviewDto?,
+    pinnedMessageId: String?,
+): Boolean =
+    forumPinPreviewDisplayState(preview, messages, serverPreview, pinnedMessageId) ==
+        PinPreviewDisplayState.Unavailable
+
+data class TopicPinSnapshotWithHistory(
+    val snapshot: TopicPinSnapshot,
+    val pinnedMessages: List<PinnedMessagePreviewDto>,
+)
+
+fun TopicPinSnapshot.mergePinFromEvent(event: TeamForumTopicPinChangedEvent): TopicPinSnapshot =
+    mergePinFromEventWithHistory(event).snapshot
+
+fun TopicPinSnapshot.mergePinFromEventWithHistory(
+    event: TeamForumTopicPinChangedEvent,
+): TopicPinSnapshotWithHistory {
     val eventPinId = event.pinnedMessageId?.trim().orEmpty()
     val keptPreview = when {
         event.pinnedMessage != null -> event.pinnedMessage
         eventPinId.isEmpty() -> null
-        pinnedMessage?.id == eventPinId -> pinnedMessage
-        else -> null
+        else -> event.pinnedMessages.find { it.id.trim() == eventPinId }
+            ?: pinnedMessage?.takeIf { it.id.trim() == eventPinId }
     }
-    return copy(
-        pinnedMessageId = event.pinnedMessageId,
-        pinnedAt = event.pinnedAt,
-        pinnedByUserId = event.pinnedByUserId,
-        pinnedMessage = keptPreview,
+    val history = event.pinnedMessages.ifEmpty {
+        keptPreview?.let { listOf(it) } ?: emptyList()
+    }
+    return TopicPinSnapshotWithHistory(
+        snapshot = copy(
+            pinnedMessageId = event.pinnedMessageId,
+            pinnedAt = event.pinnedAt,
+            pinnedByUserId = event.pinnedByUserId,
+            pinnedMessage = keptPreview,
+        ),
+        pinnedMessages = history,
     )
 }
+
+fun serverPinHistoryFromRoom(room: ChatRoomDto): List<PinnedMessagePreviewDto> =
+    room.pinnedMessages.ifEmpty {
+        room.pinnedMessage?.let { listOf(it) } ?: emptyList()
+    }
+
+fun serverPinHistoryFromTopic(topic: TeamForumTopicDto): List<PinnedMessagePreviewDto> =
+    topic.pinnedMessages.ifEmpty {
+        topic.pinnedMessage?.let { listOf(it) } ?: emptyList()
+    }
 
 fun TopicPinSnapshot.mergePinFromPrevious(
     previous: TopicPinSnapshot?,

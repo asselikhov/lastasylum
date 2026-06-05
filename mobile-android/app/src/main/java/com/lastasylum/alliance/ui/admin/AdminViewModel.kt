@@ -976,6 +976,9 @@ fun AdminTeamMemberDto.toAdminPlayerRow(team: PlayerTeamAdminDto?): AdminPlayerR
         isActiveIdentity = true,
         accountRole = accountRole,
         membershipStatus = membershipStatus,
+        appVersionName = appVersionName,
+        appVersionCode = appVersionCode,
+        appVersionReportedAt = appVersionReportedAt,
     )
 }
 

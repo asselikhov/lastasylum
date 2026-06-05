@@ -61,6 +61,7 @@ fun ForumTopicFeedCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     displayUnreadCount: Int? = null,
+    animationsEnabled: Boolean = true,
     menu: @Composable () -> Unit = {},
 ) {
     val accent = ForumTopicCardTokens.accentForIndex(listIndex)
@@ -80,6 +81,7 @@ fun ForumTopicFeedCard(
         onClick = onClick,
         accent = accent,
         activityLevel = activityLevel,
+        animationsEnabled = animationsEnabled,
         modifier = modifier.semantics { contentDescription = metaDesc },
     ) {
         Row(

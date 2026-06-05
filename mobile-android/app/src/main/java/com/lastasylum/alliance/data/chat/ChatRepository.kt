@@ -140,6 +140,9 @@ class ChatRepository(
     suspend fun pinRoomMessage(roomId: String, messageId: String?): Result<ChatRoomDto> =
         rest.pinRoomMessage(roomId, messageId)
 
+    suspend fun unpinOneRoomMessage(roomId: String, messageId: String): Result<ChatRoomDto> =
+        rest.unpinOneRoomMessage(roomId, messageId)
+
     fun connectRealtime(
         roomId: String,
         onMessage: (ChatMessage) -> Unit,

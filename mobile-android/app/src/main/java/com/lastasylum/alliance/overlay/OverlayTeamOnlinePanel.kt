@@ -165,13 +165,12 @@ fun OverlayTeamOnlinePanel(
         mutableStateOf(initialJoinRequestCount)
     }
     LaunchedEffect(isLeader, initialJoinRequestCount, profile?.pendingPlayerTeamJoinRequests) {
-        val leaderProfile = profile
-        if (!isLeader || leaderProfile == null) {
+        if (!isLeader) {
             joinRequestCount = 0
             return@LaunchedEffect
         }
         joinRequestCount = initialJoinRequestCount.coerceAtLeast(
-            leaderProfile.pendingPlayerTeamJoinRequests,
+            profile.pendingPlayerTeamJoinRequests,
         )
         val refreshed = withContext(Dispatchers.IO) {
             OverlayGameStatusHudRefresh.loadTeamJoinRequestCount(context)

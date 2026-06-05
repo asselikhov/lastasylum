@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.ui.team
 
 import android.content.res.Resources
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -25,6 +26,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class TeamSectionBadges(
     val newsUnread: Int = 0,
@@ -56,11 +59,20 @@ class TeamViewModel(
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TeamSectionBadges())
 
+    private val badgeRefreshMutex = Mutex()
+    private var lastBadgeRefreshAtMs = 0L
+    private var lastProfileReloadAtMs = 0L
+
     fun setError(message: String?) {
         _data.update { it.copy(error = message) }
     }
 
-    fun reloadProfileAndTeam(resources: Resources) {
+    fun reloadProfileAndTeam(resources: Resources, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastProfileReloadAtMs < PROFILE_RELOAD_TTL_MS) {
+            return
+        }
+        lastProfileReloadAtMs = now
         viewModelScope.launch {
             val cachedProfile = currentUserId.takeIf { it.isNotBlank() }
                 ?.let { launchDiskCache.loadProfile(it) }
@@ -134,68 +146,72 @@ class TeamViewModel(
         }
     }
 
-    fun refreshSectionBadges() {
+    fun refreshSectionBadges(force: Boolean = false) {
         val teamId = _data.value.profile?.playerTeamId?.trim().orEmpty()
         if (teamId.isEmpty()) {
             _data.update { it.copy(sectionBadges = TeamSectionBadges()) }
             return
         }
         viewModelScope.launch {
-            val newsAfter = userSettingsPreferences.getLastSeenTeamNewsCreatedAt()
-            val diskTopics = if (currentUserId.isNotBlank()) {
-                launchDiskCache.loadForumTopics(currentUserId, teamId)
-            } else {
-                null
-            }
-            val networkTopics = teamsRepository.listForumTopics(teamId).getOrNull()?.also { loaded ->
-                if (currentUserId.isNotBlank()) {
-                    launchDiskCache.saveForumTopics(currentUserId, teamId, loaded)
+            badgeRefreshMutex.withLock {
+                val now = System.currentTimeMillis()
+                if (!force && now - lastBadgeRefreshAtMs < BADGE_REFRESH_MIN_INTERVAL_MS) {
+                    return@withLock
                 }
-            }
-            val topics = networkTopics ?: diskTopics
-            topics?.let { topicList ->
-                InboxUnreadReconciler.hydrateForumPrefsFromTopics(teamForumPreferences, teamId, topicList)
-                if (networkTopics != null) {
-                    InboxUnreadReconciler.repairForumStaleUnread(
-                        teamsRepository = teamsRepository,
-                        forumPrefs = teamForumPreferences,
-                        teamId = teamId,
-                        topics = topicList,
-                    )
-                }
-            }
-            val localForumRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
-            val profileId = _data.value.profile?.id?.trim().orEmpty()
-            val forumUnread = topics?.let { TeamInboxUnread.sumForumUnread(it, localForumRead) }
-            val newsFallback = teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
-                .getOrNull()
-                ?.items
-                ?.let {
-                    TeamInboxUnread.countUnreadNews(it, userSettingsPreferences, profileId)
-                }
-            teamsRepository.getTeamInboxBadges(teamId, newsAfter)
-                .onSuccess { badges ->
-                    _data.update {
-                        it.copy(
-                            sectionBadges = TeamSectionBadges(
-                                newsUnread = badges.newsUnread.coerceAtLeast(0),
-                                forumUnread = forumUnread ?: badges.forumUnread.coerceAtLeast(0),
-                            ),
-                        )
+                lastBadgeRefreshAtMs = now
+                val newsAfter = userSettingsPreferences.getLastSeenTeamNewsCreatedAt()
+                teamsRepository.getTeamInboxBadges(teamId, newsAfter)
+                    .onSuccess { badges ->
+                        _data.update {
+                            it.copy(
+                                sectionBadges = TeamSectionBadges(
+                                    newsUnread = badges.newsUnread.coerceAtLeast(0),
+                                    forumUnread = badges.forumUnread.coerceAtLeast(0),
+                                ),
+                            )
+                        }
+                        OverlayGameStatusHudRefresh.invalidateNewsForumCache()
+                        Log.d(PERF_TAG, "refreshSectionBadges ok teamId=$teamId")
                     }
-                    OverlayGameStatusHudRefresh.invalidateNewsForumCache()
-                }
-                .onFailure {
-                    _data.update {
-                        it.copy(
-                            sectionBadges = TeamSectionBadges(
-                                newsUnread = newsFallback ?: it.sectionBadges.newsUnread,
-                                forumUnread = forumUnread ?: it.sectionBadges.forumUnread,
-                            ),
-                        )
+                    .onFailure {
+                        val diskTopics = if (currentUserId.isNotBlank()) {
+                            launchDiskCache.loadForumTopics(currentUserId, teamId)
+                        } else {
+                            null
+                        }
+                        val localForumRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
+                        val forumUnread = diskTopics?.let {
+                            TeamInboxUnread.sumForumUnread(it, localForumRead)
+                        }
+                        val profileId = _data.value.profile?.id?.trim().orEmpty()
+                        val newsFallback = teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
+                            .getOrNull()
+                            ?.items
+                            ?.let { items ->
+                                TeamInboxUnread.countUnreadNews(
+                                    items,
+                                    userSettingsPreferences,
+                                    profileId,
+                                )
+                            }
+                        _data.update { state ->
+                            state.copy(
+                                sectionBadges = TeamSectionBadges(
+                                    newsUnread = newsFallback ?: state.sectionBadges.newsUnread,
+                                    forumUnread = forumUnread ?: state.sectionBadges.forumUnread,
+                                ),
+                            )
+                        }
+                        Log.d(PERF_TAG, "refreshSectionBadges fallback teamId=$teamId")
                     }
-                }
+            }
         }
+    }
+
+    private companion object {
+        const val PERF_TAG = "PerfDiag"
+        const val BADGE_REFRESH_MIN_INTERVAL_MS = 2_500L
+        const val PROFILE_RELOAD_TTL_MS = 30_000L
     }
 }
 

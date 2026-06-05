@@ -46,6 +46,7 @@ import com.lastasylum.alliance.ui.components.team.ForumTopicCardTokens
 import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
+import com.lastasylum.alliance.ui.util.adminAppVersionLine
 import com.lastasylum.alliance.ui.util.chatSenderDisplayLine
 import com.lastasylum.alliance.ui.util.formatForumTopicTimeRu
 import com.lastasylum.alliance.ui.util.formatIsoDateShortRu
@@ -207,6 +208,11 @@ private fun AdminTeamMembersTab(
                         Text(
                             "${member.teamRole} · ${member.email}",
                             style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            adminAppVersionLine(member.appVersionName, member.appVersionCode),
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }

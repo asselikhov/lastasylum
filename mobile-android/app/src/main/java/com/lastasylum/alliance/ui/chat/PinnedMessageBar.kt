@@ -39,8 +39,10 @@ import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 fun pinnedPreviewLabel(
     preview: PinnedMessagePreviewDto,
     messageDeleted: Boolean = false,
+    messageUnavailable: Boolean = false,
 ): String {
     if (messageDeleted) return stringResource(R.string.chat_pinned_preview_deleted)
+    if (messageUnavailable) return stringResource(R.string.chat_pinned_preview_unavailable)
     return when {
         preview.isSticker -> stringResource(R.string.chat_pinned_preview_sticker)
         preview.hasImage && preview.text.isBlank() ->
@@ -61,8 +63,10 @@ fun PinnedMessageBar(
     modifier: Modifier = Modifier,
     historyCount: Int = 0,
     messageDeleted: Boolean = false,
+    messageUnavailable: Boolean = false,
     thumbnailUrl: String? = null,
     pinnedMetaLine: String? = null,
+    onLongPress: (() -> Unit)? = null,
 ) {
     AnimatedContent(
         targetState = preview.id,
@@ -76,8 +80,10 @@ fun PinnedMessageBar(
             onUnpin = onUnpin,
             historyCount = historyCount,
             messageDeleted = messageDeleted,
+            messageUnavailable = messageUnavailable,
             thumbnailUrl = thumbnailUrl,
             pinnedMetaLine = pinnedMetaLine,
+            onLongPress = onLongPress,
         )
     }
 }
@@ -91,22 +97,24 @@ private fun PinnedMessageBarContent(
     onUnpin: () -> Unit,
     historyCount: Int,
     messageDeleted: Boolean,
+    messageUnavailable: Boolean,
     thumbnailUrl: String?,
     pinnedMetaLine: String?,
+    onLongPress: (() -> Unit)?,
 ) {
     val senderLine = chatSenderDisplayWithTag(
         preview.senderTeamTag,
         preview.senderUsername,
         preview.senderServerNumber,
     )
-    val bodyLine = pinnedPreviewLabel(preview, messageDeleted)
+    val bodyLine = pinnedPreviewLabel(preview, messageDeleted, messageUnavailable)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .combinedClickable(
                 onClick = onTap,
-                onLongClick = if (canUnpin) onUnpin else null,
+                onLongClick = onLongPress ?: if (canUnpin) onUnpin else null,
             )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

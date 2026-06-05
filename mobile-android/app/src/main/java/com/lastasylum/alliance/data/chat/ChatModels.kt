@@ -33,6 +33,7 @@ data class ChatRoomDto(
     val pinnedAt: String? = null,
     val pinnedByUserId: String? = null,
     val pinnedMessage: PinnedMessagePreviewDto? = null,
+    val pinnedMessages: List<PinnedMessagePreviewDto> = emptyList(),
 )
 
 /** Realtime + REST pin state for a chat room. */
@@ -42,6 +43,7 @@ data class ChatRoomPinChangedEvent(
     val pinnedAt: String? = null,
     val pinnedByUserId: String? = null,
     val pinnedMessage: PinnedMessagePreviewDto? = null,
+    val pinnedMessages: List<PinnedMessagePreviewDto> = emptyList(),
 )
 
 data class PinRoomMessageRequest(

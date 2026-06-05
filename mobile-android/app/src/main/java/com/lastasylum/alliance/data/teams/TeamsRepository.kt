@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.data.teams
 
+import android.util.Log
 import com.lastasylum.alliance.data.chat.ToggleReactionRequest
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -8,6 +9,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 class TeamsRepository(
     private val teamsApi: TeamsApi,
 ) {
+    private val forumTopicsDedup = InFlightDedup<String, List<TeamForumTopicDto>>()
+    private val teamNewsDedup = InFlightDedup<String, TeamNewsListPageDto>()
     suspend fun createTeam(displayName: String, tag: String): Result<CreatePlayerTeamResponse> =
         runCatching {
             teamsApi.createTeam(CreatePlayerTeamBody(displayName = displayName, tag = tag))
@@ -101,8 +104,13 @@ class TeamsRepository(
         teamId: String,
         cursor: String? = null,
         limit: Int = 30,
-    ): Result<TeamNewsListPageDto> =
-        runCatching { teamsApi.listTeamNews(teamId, cursor, limit) }
+    ): Result<TeamNewsListPageDto> {
+        val key = "${teamId.trim()}|${cursor?.trim().orEmpty()}|$limit"
+        return teamNewsDedup.run(key) {
+            Log.d(PERF_TAG, "listTeamNews network key=$key")
+            runCatching { teamsApi.listTeamNews(teamId, cursor, limit) }
+        }
+    }
 
     suspend fun getTeamNews(teamId: String, newsId: String): Result<TeamNewsDetailDto> =
         runCatching { teamsApi.getTeamNews(teamId, newsId) }
@@ -172,8 +180,13 @@ class TeamsRepository(
             teamsApi.uploadForumFileAttachment(teamId, part)
         }
 
-    suspend fun listForumTopics(teamId: String): Result<List<TeamForumTopicDto>> =
-        runCatching { teamsApi.listForumTopics(teamId) }
+    suspend fun listForumTopics(teamId: String): Result<List<TeamForumTopicDto>> {
+        val key = teamId.trim()
+        return forumTopicsDedup.run(key) {
+            Log.d(PERF_TAG, "listForumTopics network teamId=$key")
+            runCatching { teamsApi.listForumTopics(key, view = "list") }
+        }
+    }
 
     suspend fun createForumTopic(teamId: String, title: String): Result<TeamForumTopicDto> =
         runCatching {
@@ -288,15 +301,27 @@ class TeamsRepository(
         teamId: String,
         topicId: String,
         messageIds: List<String>,
-    ): Result<Unit> =
+    ): Result<ForumBulkDeleteResponse> =
         runCatching {
             val ids = messageIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-            if (ids.isEmpty()) return@runCatching
-            teamsApi.bulkDeleteForumMessages(
-                teamId,
-                topicId,
-                BulkDeleteForumMessagesBody(messageIds = ids),
-            ).let { }
+            if (ids.isEmpty()) {
+                ForumBulkDeleteResponse(ok = true, deletedIds = emptyList(), pinChanged = null)
+            } else {
+                teamsApi.bulkDeleteForumMessages(
+                    teamId,
+                    topicId,
+                    BulkDeleteForumMessagesBody(messageIds = ids),
+                )
+            }
+        }
+
+    suspend fun unpinOneForumTopicMessage(
+        teamId: String,
+        topicId: String,
+        messageId: String,
+    ): Result<TeamForumTopicDto> =
+        runCatching {
+            teamsApi.unpinOneForumTopicMessage(teamId, topicId, messageId)
         }
 
     suspend fun forwardForumMessage(
@@ -326,4 +351,8 @@ class TeamsRepository(
                 ToggleReactionRequest(emoji = emoji),
             )
         }
+
+    private companion object {
+        const val PERF_TAG = "PerfDiag"
+    }
 }

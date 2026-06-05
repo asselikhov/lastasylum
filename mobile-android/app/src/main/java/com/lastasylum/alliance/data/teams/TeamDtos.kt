@@ -247,6 +247,7 @@ data class TeamForumTopicDto(
     val pinnedAt: String? = null,
     val pinnedByUserId: String? = null,
     val pinnedMessage: PinnedMessagePreviewDto? = null,
+    val pinnedMessages: List<PinnedMessagePreviewDto> = emptyList(),
 )
 
 @JsonClass(generateAdapter = true)
@@ -262,6 +263,20 @@ data class TeamForumTopicPinChangedEvent(
     val pinnedAt: String? = null,
     val pinnedByUserId: String? = null,
     val pinnedMessage: PinnedMessagePreviewDto? = null,
+    val pinnedMessages: List<PinnedMessagePreviewDto> = emptyList(),
+)
+
+@JsonClass(generateAdapter = true)
+data class ForumMessageMutationResponse(
+    val ok: Boolean? = null,
+    val pinChanged: TeamForumTopicPinChangedEvent? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class ForumBulkDeleteResponse(
+    val ok: Boolean? = null,
+    val deletedIds: List<String> = emptyList(),
+    val pinChanged: TeamForumTopicPinChangedEvent? = null,
 )
 
 @JsonClass(generateAdapter = true)

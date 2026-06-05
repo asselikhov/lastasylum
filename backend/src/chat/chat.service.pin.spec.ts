@@ -60,15 +60,43 @@ describe('ChatService pin (team rooms)', () => {
     effectiveMembership: jest.fn().mockReturnValue(TeamMembershipStatus.ACTIVE),
   };
 
+  const pinnedRoomAfterSet = () => ({
+    ...roomDoc,
+    pinnedMessageId: new Types.ObjectId(messageId),
+    pinnedAt: new Date(),
+    pinnedByUserId: userId,
+    pinHistory: [
+      {
+        messageId: new Types.ObjectId(messageId),
+        pinnedAt: new Date(),
+        pinnedByUserId: userId,
+      },
+    ],
+  });
+
   const chatRoomsService = {
     findById: jest.fn().mockResolvedValue(roomDoc),
-    setPinnedMessage: jest.fn().mockImplementation(async () => ({
-      ...roomDoc,
-      pinnedMessageId: new Types.ObjectId(messageId),
-      pinnedAt: new Date(),
-      pinnedByUserId: userId,
-    })),
+    setPinnedMessage: jest
+      .fn()
+      .mockImplementation(async () => pinnedRoomAfterSet()),
     clearPinnedMessageIfMatches: jest.fn().mockResolvedValue(true),
+    clearAllPinsEverywhere: jest.fn().mockResolvedValue(3),
+    pinHistoryForRoom: jest.fn().mockImplementation((room: {
+      pinHistory?: { messageId: Types.ObjectId }[];
+      pinnedMessageId?: Types.ObjectId | null;
+    }) => {
+      if (room.pinHistory?.length) return room.pinHistory;
+      if (room.pinnedMessageId) {
+        return [
+          {
+            messageId: room.pinnedMessageId,
+            pinnedAt: new Date(),
+            pinnedByUserId: userId,
+          },
+        ];
+      }
+      return [];
+    }),
   };
 
   const teamsService = {
@@ -93,6 +121,23 @@ describe('ChatService pin (team rooms)', () => {
     updateMany: jest.fn().mockReturnValue({
       exec: jest.fn().mockResolvedValue({}),
     }),
+    deleteMany: jest.fn().mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ deletedCount: 10 }),
+    }),
+  };
+
+  const chatReadStateModel = {
+    deleteMany: jest.fn().mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ deletedCount: 5 }),
+    }),
+  };
+
+  const chatAttachments = {
+    deleteAllMetadataForAdmin: jest.fn().mockResolvedValue(2),
+  };
+
+  const stickerAccess = {
+    assertUserMaySendStickerMessage: jest.fn().mockResolvedValue(undefined),
   };
 
   let service: ChatService;
@@ -113,14 +158,14 @@ describe('ChatService pin (team rooms)', () => {
         { provide: getModelToken(Message.name), useValue: messageModel },
         {
           provide: getModelToken(ChatRoomReadState.name),
-          useValue: {},
+          useValue: chatReadStateModel,
         },
-        { provide: ChatAttachmentsService, useValue: {} },
+        { provide: ChatAttachmentsService, useValue: chatAttachments },
         { provide: UsersService, useValue: usersService },
         { provide: GameIdentitiesService, useValue: {} },
         { provide: TeamsService, useValue: teamsService },
         { provide: ChatRoomsService, useValue: chatRoomsService },
-        { provide: StickerAccessService, useValue: {} },
+        { provide: StickerAccessService, useValue: stickerAccess },
       ],
     }).compile();
 
@@ -162,6 +207,13 @@ describe('ChatService pin (team rooms)', () => {
 
   it('clears pin when pinned message is deleted', async () => {
     teamsService.getSquadRoleForUser.mockReturnValue(PlayerTeamMemberRole.R5);
+    chatRoomsService.findById.mockResolvedValue({
+      ...roomDoc,
+      pinnedMessageId: null,
+      pinnedAt: null,
+      pinnedByUserId: null,
+      pinHistory: [],
+    });
     messageModel.findById.mockReturnValue({
       exec: jest.fn().mockResolvedValue({
         ...messageLean,
@@ -205,5 +257,47 @@ describe('ChatService pin (team rooms)', () => {
     await expect(
       service.setRoomPinnedMessage(userId, roomId, messageId),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('admin wipe clears all room pins', async () => {
+    const result = await service.clearAllChatHistoryForAdmin();
+    expect(chatRoomsService.clearAllPinsEverywhere).toHaveBeenCalled();
+    expect(result.pinsCleared).toBe(3);
+  });
+
+  it('edit refreshes pin preview when edited message is pinned', async () => {
+    teamsService.getSquadRoleForUser.mockReturnValue(PlayerTeamMemberRole.R5);
+    const pinnedRoom = pinnedRoomAfterSet();
+    chatRoomsService.findById.mockResolvedValue(pinnedRoom);
+    const savedLean = { ...messageLean, text: 'edited hello', editedAt: new Date() };
+    const messageDoc = {
+      ...messageLean,
+      text: 'hello',
+      editedAt: null,
+      toObject: jest.fn().mockReturnValue(messageLean),
+      save: jest.fn().mockImplementation(async function (this: typeof messageDoc) {
+        this.text = 'edited hello';
+        this.editedAt = new Date();
+        this.toObject.mockReturnValue(savedLean);
+        return this;
+      }),
+    };
+    messageModel.findById.mockReturnValue({
+      exec: jest.fn().mockResolvedValue(messageDoc),
+    });
+    messageModel.find.mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue([savedLean]),
+      }),
+    });
+    jest.spyOn(service, 'viewMessageForUser').mockResolvedValue({
+      _id: messageId,
+      text: 'edited hello',
+    } as never);
+    jest.spyOn(service, 'assertMayAccessMessageRoom').mockResolvedValue(undefined);
+    jest.spyOn(service, 'assertMayModerateOthersMessage').mockResolvedValue(undefined);
+    const { pinChanged } = await service.editMessage(userId, messageId, 'edited hello');
+    expect(pinChanged).not.toBeNull();
+    expect(pinChanged?.pinnedMessage?.text).toBe('edited hello');
   });
 });

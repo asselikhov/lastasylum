@@ -82,6 +82,16 @@ export class User {
   @Prop({ type: Date, default: null })
   lastAppActiveAt: Date | null;
 
+  /** Последняя известная версия Android-клиента (из User-Agent). */
+  @Prop({ type: String, default: null, trim: true })
+  lastAppVersionName: string | null;
+
+  @Prop({ type: Number, default: null })
+  lastAppVersionCode: number | null;
+
+  @Prop({ type: Date, default: null })
+  lastAppVersionReportedAt: Date | null;
+
   /** Throttle [UsersService.toSafeUser] squad reconcile (heavy DB). */
   @Prop({ type: Date, default: null })
   lastProfileReconcileAt: Date | null;

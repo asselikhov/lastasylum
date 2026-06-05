@@ -140,6 +140,22 @@ export class ChatController {
     return room;
   }
 
+  @Delete('rooms/:roomId/pin/:messageId')
+  @Roles(AllianceRole.MEMBER)
+  async unpinOneRoomMessage(
+    @Req() req: { user: RequestUser },
+    @Param('roomId') roomId: string,
+    @Param('messageId') messageId: string,
+  ) {
+    const { room, pinChanged } = await this.chatService.unpinOneRoomMessage(
+      req.user.userId,
+      roomId,
+      messageId,
+    );
+    this.chatGateway.broadcastRoomPinChanged(pinChanged);
+    return room;
+  }
+
   @Post('rooms')
   @Roles(AllianceRole.ADMIN)
   async createRoom(
@@ -422,7 +438,7 @@ export class ChatController {
     @Param('messageId') messageId: string,
     @Body() dto: EditMessageDto,
   ) {
-    const edited = await this.chatService.editMessage(
+    const { message: edited, pinChanged } = await this.chatService.editMessage(
       req.user.userId,
       messageId,
       dto?.text ?? '',
@@ -433,6 +449,9 @@ export class ChatController {
       edited,
       req.user.userId,
     );
+    if (pinChanged) {
+      this.chatGateway.broadcastRoomPinChanged(pinChanged);
+    }
     return edited;
   }
 

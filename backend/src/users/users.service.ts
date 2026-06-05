@@ -33,6 +33,7 @@ import {
   isServerChatScope,
   parsePlayerTeamIdFromChatScope,
 } from '../chat/chat-alliance-scope';
+import { parseAndroidUserAgent } from '../common/parse-android-user-agent';
 
 export type SafeUser = {
   id: string;
@@ -567,6 +568,41 @@ export class UsersService implements OnModuleInit {
   async touchAppActivity(userId: string): Promise<void> {
     await this.userModel
       .updateOne({ _id: userId }, { $set: { lastAppActiveAt: new Date() } })
+      .exec();
+  }
+
+  async recordAppVersionFromUserAgent(
+    userId: string,
+    userAgent: string,
+  ): Promise<void> {
+    const parsed = parseAndroidUserAgent(userAgent);
+    if (!parsed) return;
+    const row = await this.userModel
+      .findById(userId)
+      .select('lastAppVersionName lastAppVersionCode')
+      .lean<{
+        lastAppVersionName?: string | null;
+        lastAppVersionCode?: number | null;
+      }>()
+      .exec();
+    if (!row) return;
+    if (
+      row.lastAppVersionName === parsed.versionName &&
+      row.lastAppVersionCode === parsed.versionCode
+    ) {
+      return;
+    }
+    await this.userModel
+      .updateOne(
+        { _id: userId },
+        {
+          $set: {
+            lastAppVersionName: parsed.versionName,
+            lastAppVersionCode: parsed.versionCode,
+            lastAppVersionReportedAt: new Date(),
+          },
+        },
+      )
       .exec();
   }
 
