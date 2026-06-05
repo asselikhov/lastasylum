@@ -4,21 +4,51 @@ import androidx.compose.runtime.Immutable
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
-@JsonClass(generateAdapter = true)
 @Immutable
 data class PinnedMessagePreviewDto(
-    val id: String,
-    val text: String,
-    val senderUsername: String,
+    @Json(name = "_id") val mongoId: String? = null,
+    @Json(name = "id") val legacyId: String? = null,
+    val text: String = "",
+    val senderUsername: String = "",
     val senderTeamTag: String? = null,
     val senderServerNumber: Int? = null,
-    val createdAt: String,
+    val createdAt: String = "",
     val editedAt: String? = null,
     val hasImage: Boolean = false,
     val isSticker: Boolean = false,
     val imageThumbnailUrl: String? = null,
     val pinnedByUsername: String? = null,
-)
+) {
+    val id: String
+        get() = mongoId?.trim().orEmpty().ifEmpty { legacyId?.trim().orEmpty() }
+
+    constructor(
+        id: String,
+        text: String,
+        senderUsername: String,
+        senderTeamTag: String? = null,
+        senderServerNumber: Int? = null,
+        createdAt: String,
+        editedAt: String? = null,
+        hasImage: Boolean = false,
+        isSticker: Boolean = false,
+        imageThumbnailUrl: String? = null,
+        pinnedByUsername: String? = null,
+    ) : this(
+        mongoId = id,
+        legacyId = null,
+        text = text,
+        senderUsername = senderUsername,
+        senderTeamTag = senderTeamTag,
+        senderServerNumber = senderServerNumber,
+        createdAt = createdAt,
+        editedAt = editedAt,
+        hasImage = hasImage,
+        isSticker = isSticker,
+        imageThumbnailUrl = imageThumbnailUrl,
+        pinnedByUsername = pinnedByUsername,
+    )
+}
 
 @Immutable
 @JsonClass(generateAdapter = true)
@@ -35,10 +65,12 @@ data class ChatRoomDto(
     val pinnedAt: String? = null,
     val pinnedByUserId: String? = null,
     val pinnedMessage: PinnedMessagePreviewDto? = null,
-    val pinnedMessages: List<PinnedMessagePreviewDto> = emptyList(),
+    val pinnedMessages: List<PinnedMessagePreviewDto>? = null,
 ) {
     val id: String
         get() = mongoId?.trim().orEmpty().ifEmpty { legacyId?.trim().orEmpty() }
+
+    fun pinnedMessagesOrEmpty(): List<PinnedMessagePreviewDto> = pinnedMessages.orEmpty()
 
     constructor(
         id: String,
@@ -52,7 +84,7 @@ data class ChatRoomDto(
         pinnedAt: String? = null,
         pinnedByUserId: String? = null,
         pinnedMessage: PinnedMessagePreviewDto? = null,
-        pinnedMessages: List<PinnedMessagePreviewDto> = emptyList(),
+        pinnedMessages: List<PinnedMessagePreviewDto>? = null,
     ) : this(
         mongoId = id,
         legacyId = null,

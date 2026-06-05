@@ -46,6 +46,8 @@ import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import com.squareup.moshi.JsonDataException
+import com.squareup.moshi.JsonEncodingException
 import retrofit2.HttpException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
@@ -2713,7 +2715,7 @@ class ChatViewModel(
                 edited,
                 room.pinnedByUserId.orEmpty(),
             ).copy(
-                pinnedMessages = room.pinnedMessages.map { entry ->
+                pinnedMessages = room.pinnedMessagesOrEmpty().map { entry ->
                     if (entry.id.trim() == pinId) edited else entry
                 }.ifEmpty { listOf(edited) },
             )
@@ -3367,16 +3369,13 @@ class ChatViewModel(
                     }
                 }
                 .onFailure { e ->
-                    pinHistoryByRoom[roomId] = pinHistorySnapshot
-                    _state.update {
-                        applyPinBarUi(
-                            it.copy(
-                                rooms = roomsSnapshot,
-                                pinInFlight = false,
-                                transientNotice = e.toUserMessageRu(res),
-                            ),
-                        )
-                    }
+                    handlePinApiFailure(
+                        roomId = roomId,
+                        pinHistorySnapshot = pinHistorySnapshot,
+                        roomsSnapshot = roomsSnapshot,
+                        error = e,
+                        successNotice = res.getString(R.string.chat_pinned_toast_unpinned),
+                    )
                 }
         }
     }
@@ -3544,6 +3543,41 @@ class ChatViewModel(
         ChatSessionCache.update(_state.value.rooms)
     }
 
+    private fun isPinResponseParseError(error: Throwable): Boolean =
+        error is JsonDataException || error is JsonEncodingException
+
+    /**
+     * Pin/unpin REST may succeed while Moshi fails on the room payload; keep optimistic/socket
+     * state instead of rolling back to the pre-request snapshot.
+     */
+    private fun handlePinApiFailure(
+        roomId: String,
+        pinHistorySnapshot: List<com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto>,
+        roomsSnapshot: List<ChatRoomDto>,
+        error: Throwable,
+        successNotice: String,
+    ) {
+        val parseOnly = isPinResponseParseError(error)
+        if (!parseOnly) {
+            pinHistoryByRoom[roomId] = pinHistorySnapshot
+        }
+        _state.update { st ->
+            applyPinBarUi(
+                st.copy(
+                    rooms = if (parseOnly) st.rooms else roomsSnapshot,
+                    pinInFlight = false,
+                    transientNotice = if (parseOnly) successNotice else error.toUserMessageRu(res),
+                ),
+            )
+        }
+        if (parseOnly) {
+            viewModelScope.launch {
+                repository.listRooms()
+                    .onSuccess { rooms -> applyRoomsFromServer(rooms) }
+            }
+        }
+    }
+
     fun pinMessage(messageId: String, previewSource: ChatMessage? = null) {
         val roomId = _state.value.selectedRoomId?.trim().orEmpty()
         val trimmedId = messageId.trim()
@@ -3585,16 +3619,13 @@ class ChatViewModel(
                     }
                 }
                 .onFailure { e ->
-                    pinHistoryByRoom[roomId] = pinHistorySnapshot
-                    _state.update {
-                        applyPinBarUi(
-                            it.copy(
-                                rooms = roomsSnapshot,
-                                pinInFlight = false,
-                                transientNotice = e.toUserMessageRu(res),
-                            ),
-                        )
-                    }
+                    handlePinApiFailure(
+                        roomId = roomId,
+                        pinHistorySnapshot = pinHistorySnapshot,
+                        roomsSnapshot = roomsSnapshot,
+                        error = e,
+                        successNotice = res.getString(R.string.chat_pinned_toast_pinned),
+                    )
                 }
         }
     }
@@ -3623,16 +3654,13 @@ class ChatViewModel(
                     }
                 }
                 .onFailure { e ->
-                    pinHistoryByRoom[roomId] = pinHistorySnapshot
-                    _state.update {
-                        applyPinBarUi(
-                            it.copy(
-                                rooms = roomsSnapshot,
-                                pinInFlight = false,
-                                transientNotice = e.toUserMessageRu(res),
-                            ),
-                        )
-                    }
+                    handlePinApiFailure(
+                        roomId = roomId,
+                        pinHistorySnapshot = pinHistorySnapshot,
+                        roomsSnapshot = roomsSnapshot,
+                        error = e,
+                        successNotice = res.getString(R.string.chat_pinned_toast_unpinned),
+                    )
                 }
         }
     }

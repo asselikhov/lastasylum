@@ -107,14 +107,14 @@ class ChatPinMergeTest {
     fun serverPinHistoryFromRoom_prefersPinnedMessagesList() {
         val room = roomWithIdOnly.copy(
             pinnedMessage = preview,
-            pinnedMessages = listOf(preview, preview.copy(id = "other")),
+            pinnedMessages = listOf(preview, preview.copy(mongoId = "other")),
         )
         assertEquals(2, serverPinHistoryFromRoom(room).size)
     }
 
     @Test
     fun mergePinHistory_unionsServerAndLocalEntries() {
-        val localOnly = preview.copy(id = "local-only", text = "local")
+        val localOnly = preview.copy(mongoId = "local-only", text = "local")
         val merged = mergePinHistory(listOf(preview), listOf(preview, localOnly))
         assertEquals(2, merged.size)
         assertTrue(merged.any { it.id == preview.id })
@@ -135,7 +135,7 @@ class ChatPinMergeTest {
 
     @Test
     fun mergePinHistory_preservesLocalWhenServerOmitsDeletedPin() {
-        val hiddenPin = preview.copy(id = "hidden-pin", text = "cleared locally")
+        val hiddenPin = preview.copy(mongoId = "hidden-pin", text = "cleared locally")
         val server = listOf(preview)
         val local = listOf(preview, hiddenPin)
         val merged = mergePinHistory(server, local)

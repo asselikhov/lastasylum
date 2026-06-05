@@ -743,6 +743,15 @@ private fun JSONObject.toPinnedMessagePreviewDto(): PinnedMessagePreviewDto? {
     )
 }
 
+private fun JSONObject.parsePinnedMessagesArray(): List<PinnedMessagePreviewDto> {
+    val arr = optJSONArray("pinnedMessages") ?: return emptyList()
+    val out = ArrayList<PinnedMessagePreviewDto>(arr.length())
+    for (i in 0 until arr.length()) {
+        arr.optJSONObject(i)?.toPinnedMessagePreviewDto()?.let { out.add(it) }
+    }
+    return out
+}
+
 private fun JSONObject.toChatRoomPinChangedEvent(): ChatRoomPinChangedEvent? {
     val roomId = optString("roomId").ifBlank { return null }
     return ChatRoomPinChangedEvent(
@@ -751,5 +760,6 @@ private fun JSONObject.toChatRoomPinChangedEvent(): ChatRoomPinChangedEvent? {
         pinnedAt = optString("pinnedAt").takeIf { it.isNotBlank() },
         pinnedByUserId = optString("pinnedByUserId").takeIf { it.isNotBlank() },
         pinnedMessage = optJSONObject("pinnedMessage")?.toPinnedMessagePreviewDto(),
+        pinnedMessages = parsePinnedMessagesArray(),
     )
 }

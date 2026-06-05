@@ -10,8 +10,8 @@ import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamNewsListPageDto
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.squareup.moshi.JsonClass
+import com.lastasylum.alliance.data.chat.SquadRelayMoshi
 import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.io.File
 
 /**
@@ -19,9 +19,7 @@ import java.io.File
  */
 class LaunchDiskCache(private val context: Context) {
 
-    private val moshi: Moshi = Moshi.Builder()
-        .addLast(KotlinJsonAdapterFactory())
-        .build()
+    private val moshi: Moshi = SquadRelayMoshi.build()
 
     private val profileAdapter = moshi.adapter(CachedProfile::class.java)
     private val teamAdapter = moshi.adapter(CachedTeam::class.java)

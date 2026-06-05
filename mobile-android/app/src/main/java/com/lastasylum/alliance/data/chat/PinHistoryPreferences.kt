@@ -3,7 +3,6 @@ package com.lastasylum.alliance.data.chat
 import android.content.Context
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
 @JsonClass(generateAdapter = true)
 internal data class CachedPinHistory(val entries: List<PinnedMessagePreviewDto>)
@@ -13,9 +12,7 @@ class PinHistoryPreferences(context: Context) {
     private val prefs =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private val moshi: Moshi = Moshi.Builder()
-        .addLast(KotlinJsonAdapterFactory())
-        .build()
+    private val moshi: Moshi = SquadRelayMoshi.build()
 
     private val adapter =
         moshi.adapter(CachedPinHistory::class.java)

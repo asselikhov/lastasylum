@@ -363,7 +363,7 @@ fun TopicPinSnapshot.mergePinFromEventWithHistory(
 }
 
 fun serverPinHistoryFromRoom(room: ChatRoomDto): List<PinnedMessagePreviewDto> =
-    room.pinnedMessages.ifEmpty {
+    room.pinnedMessagesOrEmpty().ifEmpty {
         room.pinnedMessage?.let { listOf(it) } ?: emptyList()
     }
 

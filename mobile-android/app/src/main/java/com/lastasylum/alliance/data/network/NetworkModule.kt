@@ -7,8 +7,8 @@ import com.lastasylum.alliance.data.chat.ChatApi
 import com.lastasylum.alliance.data.admin.AdminApi
 import com.lastasylum.alliance.data.teams.TeamsApi
 import com.lastasylum.alliance.data.users.UsersApi
+import com.lastasylum.alliance.data.chat.SquadRelayMoshi
 import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.CertificatePinner
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -19,11 +19,7 @@ import java.util.concurrent.TimeUnit
 
 object NetworkModule {
     /** Ленивая инициализация: не блокируем главный поток при первом composition до реального сетевого вызова. */
-    private val moshi: Moshi by lazy {
-        Moshi.Builder()
-            .addLast(KotlinJsonAdapterFactory())
-            .build()
-    }
+    private val moshi: Moshi by lazy { SquadRelayMoshi.build() }
 
     private fun loggingInterceptorOrNull(): HttpLoggingInterceptor? {
         if (!BuildConfig.DEBUG) return null
