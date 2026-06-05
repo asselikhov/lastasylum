@@ -288,6 +288,23 @@ class OverlayTeamOnlinePresenceLogicTest {
     }
 
     @Test
+    fun filterFreshIngameRecipients_excludesSelfAndStale() {
+        val fresh = member("u1", "alice")
+        val stale = member(
+            "u2",
+            "bob",
+            lastPresenceAt = Instant.now()
+                .minusMillis(OVERLAY_INGAME_PRESENCE_STALE_MS + 1_000)
+                .toString(),
+        )
+        val result = filterFreshIngameRecipients(
+            members = listOf(fresh, stale, member(selfId, "me")),
+            selfUserId = selfId,
+        )
+        assertEquals(listOf("u1"), result.map { it.userId })
+    }
+
+    @Test
     fun overlayPresenceMemberListsEqual_sameMembers() {
         val a = listOf(member("u1", "alice"), member("u2", "bob"))
         val b = listOf(member("u1", "alice"), member("u2", "bob"))

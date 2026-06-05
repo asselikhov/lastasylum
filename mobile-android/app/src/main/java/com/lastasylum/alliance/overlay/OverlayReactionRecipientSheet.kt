@@ -87,18 +87,12 @@ internal suspend fun loadOverlayIngameReactionRecipients(
                 teamsRepository = teamsRepository,
             ).getOrThrow()
             val self = ctx.currentUserId
-            OverlayTeamPresenceCache.load(
+            val presence = OverlayTeamPresenceCache.load(
                 teamId = ctx.teamId,
                 teamsRepository = teamsRepository,
+                forceRefresh = true,
             ).getOrThrow()
-                .ingame
-                .filter { member ->
-                    member.userId != self &&
-                        com.lastasylum.alliance.ui.util.isOverlayIngameNow(
-                            member.presenceStatus,
-                            member.lastPresenceAt,
-                        )
-                }
+            filterFreshIngameRecipients(presence.ingame, selfUserId = self)
         }
     }
 
@@ -124,7 +118,7 @@ fun OverlayReactionRecipientSheet(
     }
     var searchQuery by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(reactionId) {
         loading = true
         error = null
         loadMembers()

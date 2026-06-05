@@ -209,6 +209,21 @@ fun ingameCountFromSections(sections: List<OverlayOnlinePresenceSection>): Int =
 fun countFreshIngameMembers(ingame: List<PlayerTeamMemberDto>): Int =
     ingame.count { isOverlayIngameNow(it.presenceStatus, it.lastPresenceAt) }
 
+/** Ingame allies with a fresh overlay ping — reaction recipients, broadcast filters, etc. */
+fun filterFreshIngameRecipients(
+    members: List<PlayerTeamMemberDto>,
+    selfUserId: String? = null,
+): List<PlayerTeamMemberDto> {
+    val selfId = selfUserId?.trim().orEmpty()
+    return sortIngameMembers(
+        members.filter { member ->
+            (selfId.isEmpty() || member.userId != selfId) &&
+                isOverlayIngameNow(member.presenceStatus, member.lastPresenceAt)
+        },
+        selfUserId = null,
+    )
+}
+
 fun rawIngameCount(ingame: List<PlayerTeamMemberDto>): Int =
     countFreshIngameMembers(ingame)
 
