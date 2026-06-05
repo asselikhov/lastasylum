@@ -5,6 +5,7 @@ import com.lastasylum.alliance.data.auth.AuthUser
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.teams.TeamDetailDto
+import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamNewsListPageDto
 import com.lastasylum.alliance.data.users.MyProfileDto
@@ -29,6 +30,7 @@ class LaunchDiskCache(private val context: Context) {
     private val removedMessageIdsAdapter = moshi.adapter(CachedRemovedMessageIds::class.java)
     private val newsAdapter = moshi.adapter(CachedTeamNews::class.java)
     private val forumTopicsAdapter = moshi.adapter(CachedForumTopics::class.java)
+    private val forumMessagesAdapter = moshi.adapter(CachedForumMessages::class.java)
     private val authUserAdapter = moshi.adapter(CachedAuthUser::class.java)
 
     fun saveAuthUser(userId: String, user: AuthUser) {
@@ -62,6 +64,11 @@ class LaunchDiskCache(private val context: Context) {
 
     fun loadChatRooms(userId: String): List<ChatRoomDto>? =
         readCached(userId, FILE_CHAT_ROOMS, roomsAdapter)?.rooms?.takeIf { it.isNotEmpty() }
+
+    fun clearChatRooms(userId: String) {
+        if (userId.isBlank()) return
+        File(userDir(userId), FILE_CHAT_ROOMS).delete()
+    }
 
     fun saveRoomMessages(
         userId: String,
@@ -147,6 +154,39 @@ class LaunchDiskCache(private val context: Context) {
         return cached.topics.takeIf { it.isNotEmpty() }
     }
 
+    fun saveForumMessages(
+        userId: String,
+        teamId: String,
+        topicId: String,
+        messages: List<TeamForumMessageDto>,
+        hasMoreOlder: Boolean,
+    ) {
+        if (userId.isBlank() || teamId.isBlank() || topicId.isBlank() || messages.isEmpty()) return
+        write(
+            userId,
+            forumMessagesFileName(teamId, topicId),
+            forumMessagesAdapter.toJson(
+                CachedForumMessages(messages, hasMoreOlder, nowMs()),
+            ),
+        )
+        trimForumMessageFiles(userId, keepFileName = forumMessagesFileName(teamId, topicId))
+    }
+
+    fun loadForumMessages(
+        userId: String,
+        teamId: String,
+        topicId: String,
+    ): CachedForumMessages? {
+        if (userId.isBlank() || teamId.isBlank() || topicId.isBlank()) return null
+        val cached = readCached(
+            userId,
+            forumMessagesFileName(teamId, topicId),
+            forumMessagesAdapter,
+        ) ?: return null
+        if (isStale(cached.savedAtMs)) return null
+        return cached.takeIf { it.messages.isNotEmpty() }
+    }
+
     fun clearUser(userId: String) {
         if (userId.isBlank()) return
         userDir(userId).deleteRecursively()
@@ -220,6 +260,24 @@ class LaunchDiskCache(private val context: Context) {
     private fun forumFileName(teamId: String): String =
         "forum_topics_${sanitizeUserId(teamId)}.json"
 
+    private fun forumMessagesFileName(teamId: String, topicId: String): String =
+        "forum_messages_${sanitizeUserId(teamId)}_${sanitizeUserId(topicId)}.json"
+
+    private fun trimForumMessageFiles(userId: String, keepFileName: String) {
+        val dir = userDir(userId)
+        if (!dir.isDirectory) return
+        val messageFiles = dir.listFiles { f ->
+            f.isFile &&
+                f.name.startsWith(FORUM_MESSAGES_FILE_PREFIX) &&
+                f.name.endsWith(".json")
+        }?.sortedByDescending { it.lastModified() }.orEmpty()
+        if (messageFiles.size <= MAX_FORUM_MESSAGE_FILES) return
+        messageFiles
+            .filter { it.name != keepFileName }
+            .drop(MAX_FORUM_MESSAGE_FILES - 1)
+            .forEach { it.delete() }
+    }
+
     private fun nowMs(): Long = System.currentTimeMillis()
 
     companion object {
@@ -230,7 +288,9 @@ class LaunchDiskCache(private val context: Context) {
         private const val FILE_CHAT_ROOMS = "chat_rooms.json"
         private const val FILE_REMOVED_MESSAGE_IDS = "chat_removed_message_ids.json"
         private const val MESSAGE_FILE_PREFIX = "messages_"
+        private const val FORUM_MESSAGES_FILE_PREFIX = "forum_messages_"
         private const val MAX_MESSAGE_ROOM_FILES = 3
+        private const val MAX_FORUM_MESSAGE_FILES = 5
         private const val MAX_REMOVED_MESSAGE_IDS = 512
 
         /** Soft TTL — stale data is still returned; callers refresh from network. */
@@ -287,5 +347,12 @@ data class CachedTeamNews(
 @JsonClass(generateAdapter = true)
 data class CachedForumTopics(
     val topics: List<TeamForumTopicDto>,
+    val savedAtMs: Long,
+)
+
+@JsonClass(generateAdapter = true)
+data class CachedForumMessages(
+    val messages: List<TeamForumMessageDto>,
+    val hasMoreOlder: Boolean,
     val savedAtMs: Long,
 )

@@ -35,6 +35,9 @@ describe('TeamForumService listTopics performance', () => {
       },
     ],
     lastMessageAt: new Date(),
+    lastMessageId: new Types.ObjectId(messageId),
+    lastMessageSenderUserId: userId,
+    lastMessageSenderUsername: 'u',
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -104,7 +107,18 @@ describe('TeamForumService listTopics performance', () => {
           provide: getModelToken(TeamForumTopicReadState.name),
           useValue: { collection: { name: 'read' } },
         },
-        { provide: getModelToken(User.name), useValue: {} },
+        {
+          provide: getModelToken(User.name),
+          useValue: {
+            find: jest.fn().mockReturnValue({
+              select: jest.fn().mockReturnValue({
+                lean: jest.fn().mockReturnValue({
+                  exec: jest.fn().mockResolvedValue([]),
+                }),
+              }),
+            }),
+          },
+        },
         { provide: TeamsService, useValue: teams },
         { provide: TeamNewsAttachmentsService, useValue: {} },
         { provide: StickerAccessService, useValue: {} },
@@ -118,6 +132,9 @@ describe('TeamForumService listTopics performance', () => {
     jest.spyOn(service as never, 'getLastReadMessageIdsByTopicIds' as never).mockResolvedValue(new Map() as never);
     jest.spyOn(service as never, 'lastMessageSendersByTopicIds' as never).mockResolvedValue(new Map() as never);
     jest.spyOn(service as never, 'enrichTopicsWithTelegram' as never).mockImplementation((rows) => rows as never);
+    jest.spyOn(service as never, 'buildPinnedPreviewsForTopics' as never).mockResolvedValue(
+      new Map([[topicId, { id: messageId, text: 'hello' }]]) as never,
+    );
   });
 
   it('list view=list omits pinnedMessages and skips full-team count aggregation', async () => {
@@ -126,7 +143,7 @@ describe('TeamForumService listTopics performance', () => {
     expect(rows[0].pinnedMessage?.text).toBe('hello');
     expect(rows[0].pinnedMessages).toEqual([]);
     expect(messageModel.aggregate).not.toHaveBeenCalled();
-    expect(messageFindMock).toHaveBeenCalledTimes(1);
+    expect(service['buildPinnedPreviewsForTopics']).toHaveBeenCalled();
   });
 
   it('list view=full includes pinnedMessages history', async () => {
@@ -134,5 +151,40 @@ describe('TeamForumService listTopics performance', () => {
     expect(rows[0].pinnedMessages).toHaveLength(1);
     expect(rows[0].pinnedMessages[0]?.text).toBe('hello');
     expect(messageModel.aggregate).toHaveBeenCalled();
+  });
+
+  it('list view=list skips lastMessageSendersByTopicIds when sender is denormalized', async () => {
+    await service.listTopics(teamId, userId, { view: 'list' });
+    expect(service['lastMessageSendersByTopicIds']).not.toHaveBeenCalled();
+  });
+
+  it('list view=list runs read-state and pin preview steps concurrently', async () => {
+    const readSpy = jest.spyOn(
+      service as never,
+      'getLastReadMessageIdsByTopicIds' as never,
+    );
+    const pinSpy = jest.spyOn(
+      service as never,
+      'buildPinnedPreviewsForTopics' as never,
+    );
+    let readStarted = 0;
+    let pinStarted = 0;
+    (readSpy as jest.SpyInstance).mockImplementation(async () => {
+      readStarted = Date.now();
+      await new Promise((r) => setTimeout(r, 30));
+      return new Map();
+    });
+    (pinSpy as jest.SpyInstance).mockImplementation(async () => {
+      pinStarted = Date.now();
+      await new Promise((r) => setTimeout(r, 30));
+      return new Map([[topicId, { id: messageId, text: 'hello' }]]);
+    });
+    const startedAt = Date.now();
+    await service.listTopics(teamId, userId, { view: 'list' });
+    const elapsed = Date.now() - startedAt;
+    expect(readStarted).toBeGreaterThan(0);
+    expect(pinStarted).toBeGreaterThan(0);
+    expect(Math.abs(readStarted - pinStarted)).toBeLessThan(15);
+    expect(elapsed).toBeLessThan(80);
   });
 });

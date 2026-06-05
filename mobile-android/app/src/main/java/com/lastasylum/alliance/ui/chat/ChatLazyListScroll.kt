@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Helpers for the main/overlay chat [androidx.compose.foundation.lazy.LazyColumn] with
@@ -77,12 +78,16 @@ internal suspend fun LazyListState.scrollReverseChatCompensateExpand(heightDelta
     scrollBy(heightDeltaPx.toFloat())
 }
 
+private const val SCROLL_TO_ITEM_VISIBLE_TIMEOUT_MS = 3_000L
+
 internal suspend fun LazyListState.scrollTimelineItemToViewportCenter(index: Int) {
     if (index < 0) return
     scrollToItem(index)
-    snapshotFlow { layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } }
-        .filter { it != null }
-        .first()
+    withTimeoutOrNull(SCROLL_TO_ITEM_VISIBLE_TIMEOUT_MS) {
+        snapshotFlow { layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } }
+            .filter { it != null }
+            .first()
+    } ?: return
     val item = layoutInfo.visibleItemsInfo.first { it.index == index }
     val viewportHeight = layoutInfo.viewportSize.height
     if (viewportHeight <= 0) return

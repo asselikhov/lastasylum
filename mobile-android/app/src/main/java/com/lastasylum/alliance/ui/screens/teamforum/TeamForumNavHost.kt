@@ -229,11 +229,13 @@ fun TeamForumNavHost(
     forumTabReselectSignal: Int = 0,
     /** Wire keys of sticker packs the current user may send. */
     enabledStickerPackKeys: Set<String> = emptySet(),
+    onForumTopicsSynced: (List<TeamForumTopicDto>) -> Unit = {},
     onForumInboxChanged: () -> Unit = {},
     onRegisterMarkReadAction: ((() -> Unit)?) -> Unit = {},
 ) {
     val nav = rememberNavController()
     val topicTitles = remember { mutableStateMapOf<String, String>() }
+    val topicSnapshots = remember { mutableStateMapOf<String, TeamForumTopicDto>() }
     var listRefreshNonce by remember { mutableIntStateOf(0) }
     var topicActivityPatch by remember {
         mutableStateOf<com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent?>(null)
@@ -297,6 +299,19 @@ fun TeamForumNavHost(
             nav.popBackStack(ForumRoutes.LIST, inclusive = false)
         }
     }
+    LaunchedEffect(topicPinPatch) {
+        val event = topicPinPatch ?: return@LaunchedEffect
+        val existing = topicSnapshots[event.topicId]
+        if (existing != null) {
+            topicSnapshots[event.topicId] = existing.copy(
+                pinnedMessageId = event.pinnedMessageId,
+                pinnedAt = event.pinnedAt,
+                pinnedByUserId = event.pinnedByUserId,
+                pinnedMessage = event.pinnedMessage,
+                pinnedMessages = event.pinnedMessages,
+            )
+        }
+    }
     NavHost(
         navController = nav,
         startDestination = ForumRoutes.LIST,
@@ -313,13 +328,16 @@ fun TeamForumNavHost(
                 canManageTopics = canManageTopics,
                 teamsRepository = teamsRepository,
                 topicTitles = topicTitles,
+                topicSnapshots = topicSnapshots,
                 refreshNonce = listRefreshNonce,
                 sectionActive = sectionActive,
                 topicActivityPatch = topicActivityPatch,
                 topicPinPatch = topicPinPatch,
                 onInboxChanged = onForumInboxChanged,
+                onForumTopicsSynced = onForumTopicsSynced,
                 onOpenTopic = { t ->
                     topicTitles[t.id] = t.title
+                    topicSnapshots[t.id] = t
                     nav.navigate(ForumRoutes.topic(t.id))
                 },
                 onBack = { },
@@ -343,10 +361,12 @@ fun TeamForumNavHost(
                 return@composable
             }
             val title = topicTitles[topicId].orEmpty()
+            val topicSnapshot = topicSnapshots[topicId]
             TeamForumTopicChatRoute(
                 teamId = teamId,
                 topicId = topicId,
                 topicTitle = title,
+                topicSnapshot = topicSnapshot,
                 currentUserId = currentUserId,
                 canModerateMessages = canModerateForumMessages,
                 teamsRepository = teamsRepository,
@@ -359,6 +379,7 @@ fun TeamForumNavHost(
                     listRefreshNonce++
                 },
                 onProvideMarkReadAction = registerMarkReadAction,
+                onTopicSnapshotUpdate = { topicSnapshots[topicId] = it },
             )
         }
     }
@@ -371,11 +392,13 @@ private fun TeamForumListRoute(
     canManageTopics: Boolean,
     teamsRepository: TeamsRepository,
     topicTitles: MutableMap<String, String>,
+    topicSnapshots: MutableMap<String, TeamForumTopicDto>,
     refreshNonce: Int,
     sectionActive: Boolean = true,
     topicActivityPatch: com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent? = null,
     topicPinPatch: TeamForumTopicPinChangedEvent? = null,
     onInboxChanged: () -> Unit = {},
+    onForumTopicsSynced: (List<TeamForumTopicDto>) -> Unit = {},
     onOpenTopic: (TeamForumTopicDto) -> Unit,
     @Suppress("UNUSED_PARAMETER") onBack: () -> Unit,
     onProvideMarkReadAction: (String, (() -> Unit)?) -> Unit = { _, _ -> },
@@ -433,7 +456,11 @@ private fun TeamForumListRoute(
             }
         }
         topics.addAll(patchedRows)
-        patchedRows.forEach { t -> topicTitles[t.id] = t.title }
+        patchedRows.forEach { t ->
+            topicTitles[t.id] = t.title
+            topicSnapshots[t.id] = t
+        }
+        onForumTopicsSynced(patchedRows)
         patchedRows.filter { topic ->
             topic.unreadCount > 0 && effectiveTopicUnread(topic) == 0
         }.forEach { topic ->
@@ -729,6 +756,7 @@ private fun TeamForumListRoute(
                             teamsRepository.createForumTopic(teamId, createTitle)
                                 .onSuccess {
                                     topicTitles[it.id] = it.title
+                                    topicSnapshots[it.id] = it
                                     showCreate = false
                                     reload()
                                 }
@@ -773,6 +801,7 @@ private fun TeamForumListRoute(
                             teamsRepository.updateForumTopic(teamId, topic.id, editTitle)
                                 .onSuccess {
                                     topicTitles[it.id] = it.title
+                                    topicSnapshots[it.id] = it
                                     editTopic = null
                                     reload()
                                 }
@@ -877,6 +906,7 @@ private fun TeamForumTopicChatRoute(
     teamId: String,
     topicId: String,
     @Suppress("UNUSED_PARAMETER") topicTitle: String,
+    topicSnapshot: TeamForumTopicDto?,
     currentUserId: String,
     canModerateMessages: Boolean,
     teamsRepository: TeamsRepository,
@@ -886,6 +916,7 @@ private fun TeamForumTopicChatRoute(
     onBack: () -> Unit,
     enabledStickerPackKeys: Set<String> = emptySet(),
     onProvideMarkReadAction: (String, (() -> Unit)?) -> Unit = { _, _ -> },
+    onTopicSnapshotUpdate: (TeamForumTopicDto) -> Unit = {},
 ) {
     val context = LocalContext.current
     val res = context.resources
@@ -936,7 +967,8 @@ private fun TeamForumTopicChatRoute(
         mutableStateOf<ForumScrollAnchor?>(null)
     }
     val timelineSize = listDerived.timeline.size
-    val forumPrefs = remember { AppContainer.from(context).teamForumPreferences }
+    val app = remember { AppContainer.from(context.applicationContext) }
+    val forumPrefs = remember { app.teamForumPreferences }
     var lastReadCursor by remember { mutableStateOf<String?>(null) }
 
     var editingForumMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
@@ -983,28 +1015,53 @@ private fun TeamForumTopicChatRoute(
         pendingApkLabel = null
     }
 
+    fun publishCoordinatorPinSnapshot() {
+        val base = topicSnapshot ?: return
+        onTopicSnapshotUpdate(
+            base.copy(
+                pinnedMessageId = pinCoordinator.pinnedMessageId,
+                pinnedAt = pinCoordinator.pinnedAt,
+                pinnedByUserId = pinCoordinator.pinnedByUserId,
+                pinnedMessage = pinCoordinator.pinnedMessage,
+                pinnedMessages = pinCoordinator.pinnedMessages,
+            ),
+        )
+    }
+
     fun applyTopicPin(event: TeamForumTopicPinChangedEvent) {
         if (event.teamId != teamId || event.topicId != topicId) return
         pinCoordinator.applyTopicPin(event, stableMessages)
+        publishCoordinatorPinSnapshot()
         bumpPinUi()
     }
 
     fun refreshTopicPinFromServer() {
         if (pinCoordinator.pinInFlight) return
         scope.launch {
-            teamsRepository.listForumTopics(teamId)
+            teamsRepository.listForumTopics(teamId, bypassCache = true, view = "full")
                 .onSuccess { topics ->
                     val topic = topics.find { it.id == topicId } ?: return@onSuccess
                     pinCoordinator.applyTopicFromServer(topic, stableMessages)
+                    onTopicSnapshotUpdate(topic)
                     bumpPinUi()
                 }
         }
     }
 
-    LaunchedEffect(teamId, topicId) {
-        pinCoordinator.onEnterTopic()
-        bumpPinUi()
+    LaunchedEffect(teamId, topicId, topicSnapshot?.pinnedMessageId) {
+        pinCoordinator.onEnterTopic(topicSnapshot)
+        topicSnapshot?.let { snapshot ->
+            pinCoordinator.applyTopicFromServer(snapshot, stableMessages)
+        }
         refreshTopicPinFromServer()
+        bumpPinUi()
+    }
+
+    LaunchedEffect(stableMessages.size, pinCoordinator.pinnedMessageId) {
+        if (pinCoordinator.pinnedMessageId != null) {
+            pinCoordinator.applyPinBarUi(stableMessages)
+            bumpPinUi()
+        }
     }
 
     fun pinForumMessage(messageId: String, previewSource: TeamForumMessageDto? = null) {
@@ -1024,6 +1081,7 @@ private fun TeamForumTopicChatRoute(
                 .onSuccess { topic ->
                     pinCoordinator.pinInFlight = false
                     pinCoordinator.onPinSuccess(topic, stableMessages)
+                    onTopicSnapshotUpdate(topic)
                     bumpPinUi()
                     pinNotice = res.getString(R.string.forum_pinned_toast_pinned)
                 }
@@ -1053,6 +1111,7 @@ private fun TeamForumTopicChatRoute(
                 .onSuccess { topic ->
                     pinCoordinator.pinInFlight = false
                     pinCoordinator.onPinSuccess(topic, stableMessages)
+                    onTopicSnapshotUpdate(topic)
                     bumpPinUi()
                     pinNotice = res.getString(R.string.forum_pinned_toast_unpinned)
                 }
@@ -1081,6 +1140,7 @@ private fun TeamForumTopicChatRoute(
                 .onSuccess { topic ->
                     pinCoordinator.pinInFlight = false
                     pinCoordinator.onUnpinSuccess(topic)
+                    onTopicSnapshotUpdate(topic)
                     bumpPinUi()
                     pinNotice = res.getString(R.string.forum_pinned_toast_unpinned)
                 }
@@ -1340,16 +1400,38 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
+    fun visibleForumMessages(page: List<TeamForumMessageDto>): List<TeamForumMessageDto> =
+        page.filter { m ->
+            m.deletedAt.isNullOrBlank() ||
+                m.deletedAt.equals("null", ignoreCase = true)
+        }
+
     fun loadForumMessages(before: String?, appendOlder: Boolean) {
         scope.launch {
-            if (appendOlder) loadingOlder = true else loading = true
-            if (!appendOlder) error = null
+            if (appendOlder) {
+                loadingOlder = true
+            } else {
+                error = null
+                val diskSnapshot = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    if (currentUserId.isNotBlank()) {
+                        app.launchDiskCache.loadForumMessages(currentUserId, teamId, topicId)
+                    } else {
+                        null
+                    }
+                }
+                if (diskSnapshot != null) {
+                    messages.clear()
+                    messages.addAll(visibleForumMessages(diskSnapshot.messages))
+                    trimForumMessagesInMemory()
+                    hasMoreOlder = diskSnapshot.hasMoreOlder
+                    loading = false
+                } else {
+                    loading = true
+                }
+            }
             teamsRepository.listForumMessages(teamId, topicId, before = before, limit = 50)
                 .onSuccess { page ->
-                    val visible = page.filter { m ->
-                        m.deletedAt.isNullOrBlank() ||
-                            m.deletedAt.equals("null", ignoreCase = true)
-                    }
+                    val visible = visibleForumMessages(page)
                     if (appendOlder) {
                         val existingIds = messages.asSequence().map { it.id }.toHashSet()
                         val older = visible.filter { it.id !in existingIds }
@@ -1361,9 +1443,20 @@ private fun TeamForumTopicChatRoute(
                         trimForumMessagesInMemory()
                     }
                     hasMoreOlder = page.size >= 50 && messages.isNotEmpty()
+                    if (!appendOlder && currentUserId.isNotBlank() && messages.isNotEmpty()) {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            app.launchDiskCache.saveForumMessages(
+                                currentUserId,
+                                teamId,
+                                topicId,
+                                messages.toList(),
+                                hasMoreOlder,
+                            )
+                        }
+                    }
                 }
                 .onFailure { e ->
-                    if (!appendOlder) error = e.toUserMessageRu(res)
+                    if (!appendOlder && messages.isEmpty()) error = e.toUserMessageRu(res)
                 }
             loading = false
             loadingOlder = false
@@ -1713,21 +1806,24 @@ private fun TeamForumTopicChatRoute(
             onDismiss = { showForumPinnedSheet = false },
             onJumpTo = { messageId ->
                 scope.launch {
-                        jumpToForumPinnedMessage(
-                            messageId = messageId,
-                            messageIdsOldestFirst = stableMessages.map { it.id },
-                            hasMoreOlder = { hasMoreOlder },
-                            isLoadingOlder = { loadingOlder },
-                            loadOlder = { loadOlderForumPage() },
-                            timelineIndexForMessageId = { mid ->
-                                listDerived.fullLazyIndexForMessageId(mid) ?: -1
-                            },
-                            scrollToTimelineIndex = { idx ->
-                                runCatching { listState.scrollTimelineItemToViewportCenter(idx) }
-                                    .onFailure { listState.scrollToItem(idx) }
-                            },
-                            onHighlight = { mid -> highlightMessageId = mid },
-                        )
+                    val jumped = jumpToForumPinnedMessage(
+                        messageId = messageId,
+                        messageIdsOldestFirst = stableMessages.map { it.id },
+                        hasMoreOlder = { hasMoreOlder },
+                        isLoadingOlder = { loadingOlder },
+                        loadOlder = { loadOlderForumPage() },
+                        timelineIndexForMessageId = { mid ->
+                            listDerived.fullLazyIndexForMessageId(mid) ?: -1
+                        },
+                        scrollToTimelineIndex = { idx ->
+                            runCatching { listState.scrollTimelineItemToViewportCenter(idx) }
+                                .onFailure { listState.scrollToItem(idx) }
+                        },
+                        onHighlight = { mid -> highlightMessageId = mid },
+                    )
+                    if (!jumped) {
+                        pinNotice = res.getString(R.string.chat_jump_quote_not_found)
+                    }
                 }
             },
             onUnpinOne = { unpinOneForumMessage(it) },

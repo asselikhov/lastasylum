@@ -31,6 +31,11 @@ internal object OverlayTeamPresenceCache {
         bumpRevision()
     }
 
+    fun peek(teamId: String): TeamOverlayPresenceDto? {
+        if (!isCacheValid(teamId)) return null
+        return cachedPresence
+    }
+
     fun findMember(userId: String): PlayerTeamMemberDto? {
         val id = userId.trim()
         if (id.isEmpty()) return null

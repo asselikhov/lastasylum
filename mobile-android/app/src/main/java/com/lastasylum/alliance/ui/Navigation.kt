@@ -465,6 +465,7 @@ fun AppNavigation(
                     onMessageListScrollInProgress = chatViewModel::setMessageListScrollInProgress,
                     messageListKey = chatViewModel::messageListCompositionKey,
                     onClearRoomHistory = chatViewModel::clearHistoryForSelectedRoom,
+                    onMarkAllRoomsRead = chatViewModel::markAllRoomsReadUpToLatest,
                     onPinMessage = chatViewModel::pinMessage,
                     onUnpinRoom = chatViewModel::unpinSelectedRoom,
                     onPinnedBarTap = chatViewModel::onPinnedBarTap,

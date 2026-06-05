@@ -128,3 +128,9 @@ export class TeamForumMessage {
 export const TeamForumMessageSchema =
   SchemaFactory.createForClass(TeamForumMessage);
 TeamForumMessageSchema.index({ teamId: 1, topicId: 1, createdAt: -1 });
+TeamForumMessageSchema.index({
+  teamId: 1,
+  topicId: 1,
+  deletedAt: 1,
+  createdAt: -1,
+});

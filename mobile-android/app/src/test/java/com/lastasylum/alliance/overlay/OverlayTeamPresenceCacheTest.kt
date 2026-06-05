@@ -39,6 +39,15 @@ class OverlayTeamPresenceCacheTest {
     }
 
     @Test
+    fun peek_returnsPresenceWhenCacheValid() {
+        val now = System.currentTimeMillis()
+        val presence = TeamOverlayPresenceDto(ingame = emptyList())
+        OverlayTeamPresenceCache.seedCacheForTest("team-1", presence, atMs = now)
+        assertEquals(presence, OverlayTeamPresenceCache.peek("team-1"))
+        assertEquals(null, OverlayTeamPresenceCache.peek("team-2"))
+    }
+
+    @Test
     fun invalidate_clearsCache() {
         OverlayTeamPresenceCache.seedCacheForTest(
             teamId = "team-1",

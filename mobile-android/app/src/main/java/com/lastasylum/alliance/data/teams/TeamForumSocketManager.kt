@@ -583,6 +583,15 @@ private fun JSONObject.toPinnedMessagePreviewDto(): PinnedMessagePreviewDto? {
     )
 }
 
+private fun JSONObject.parsePinnedMessagesArray(): List<PinnedMessagePreviewDto> {
+    val arr = optJSONArray("pinnedMessages") ?: return emptyList()
+    val out = ArrayList<PinnedMessagePreviewDto>(arr.length())
+    for (i in 0 until arr.length()) {
+        arr.optJSONObject(i)?.toPinnedMessagePreviewDto()?.let { out.add(it) }
+    }
+    return out
+}
+
 private fun JSONObject.toTeamForumTopicPinChangedEvent(): TeamForumTopicPinChangedEvent? {
     val teamId = optString("teamId").ifBlank { return null }
     val topicId = optString("topicId").ifBlank { return null }
@@ -593,5 +602,6 @@ private fun JSONObject.toTeamForumTopicPinChangedEvent(): TeamForumTopicPinChang
         pinnedAt = optionalStringField("pinnedAt"),
         pinnedByUserId = optionalStringField("pinnedByUserId"),
         pinnedMessage = optJSONObject("pinnedMessage")?.toPinnedMessagePreviewDto(),
+        pinnedMessages = parsePinnedMessagesArray(),
     )
 }

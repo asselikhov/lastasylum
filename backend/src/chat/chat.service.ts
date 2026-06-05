@@ -34,6 +34,7 @@ import { ChatAttachmentsService } from './chat-attachments.service';
 import { assertStickerPayload } from './sticker-payload.util';
 import {
   buildPinnedPreviewFromChatMessage,
+  buildStubPinnedPreview,
   enrichPinnedPreview,
   PinnedMessagePreview,
 } from '../common/pinned-message-preview';
@@ -344,8 +345,13 @@ export class ChatService {
     const actorNames = await this.resolvePinnedByUsernames(actorIds);
     const out: PinnedMessagePreview[] = [];
     for (const entry of history) {
-      const preview = byId.get(entry.messageId.toString());
-      if (!preview) continue;
+      const msgId = entry.messageId.toString();
+      const preview =
+        byId.get(msgId) ??
+        buildStubPinnedPreview(
+          msgId,
+          actorNames.get(entry.pinnedByUserId.trim()) ?? null,
+        );
       out.push(
         enrichPinnedPreview(
           preview,

@@ -26,6 +26,27 @@ class ChatPinJumpTest {
     }
 
     @Test
+    fun jumpToChatPinnedMessage_loadsOlderUntilFound() = runBlocking {
+        var loadCalls = 0
+        val found = jumpToChatPinnedMessage(
+            messageId = "msg-b",
+            messageIdsNewestFirst = listOf("msg-a"),
+            hasMoreOlder = { loadCalls < 1 },
+            isLoadingOlder = { false },
+            loadOlder = {
+                loadCalls++
+                true
+            },
+            timelineIndexForMessageId = { id ->
+                if (id == "msg-b" && loadCalls > 0) 2 else -1
+            },
+            onJumpToMessage = {},
+        )
+        assertTrue(found)
+        org.junit.Assert.assertEquals(1, loadCalls)
+    }
+
+    @Test
     fun jumpToChatPinnedMessage_notFoundWhenNoOlderPages() = runBlocking {
         val found = jumpToChatPinnedMessage(
             messageId = "missing",

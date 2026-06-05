@@ -970,6 +970,7 @@
     <string name="err_no_connection">Нет соединения с сервером. Проверьте интернет.</string>
     <string name="err_tls_handshake">Не удалось установить защищённое соединение (TLS). Проверьте дату и время на устройстве и сеть Wi‑Fi/мобильную передачу данных.</string>
     <string name="err_timeout">Превышено время ожидания ответа сервера. Проверьте интернет; если бэкенд на бесплатном хостинге, после простоя первый запрос может занять до минуты — нажмите «Войти» ещё раз.</string>
+    <string name="err_parse_response">Не удалось обработать ответ сервера. Попробуйте обновить экран.</string>
     <string name="err_unknown">Неизвестная ошибка.</string>
     <string name="err_validation_username">Имя пользователя: от 3 символов.</string>
     <string name="err_validation_email">Укажите корректный email.</string>

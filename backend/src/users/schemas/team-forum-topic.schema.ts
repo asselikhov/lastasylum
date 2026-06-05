@@ -25,6 +25,17 @@ export class TeamForumTopic {
   @Prop({ type: Date, default: null, index: true })
   lastMessageAt: Date | null;
 
+  /** Newest non-deleted message id (denormalized for fast unread checks). */
+  @Prop({ type: Types.ObjectId, default: null })
+  lastMessageId: Types.ObjectId | null;
+
+  /** Author snapshot of the newest non-deleted message (denormalized for list avatars). */
+  @Prop({ type: String, default: null })
+  lastMessageSenderUserId: string | null;
+
+  @Prop({ type: String, default: null, trim: true })
+  lastMessageSenderUsername: string | null;
+
   @Prop({ required: true, default: 0 })
   messageCount: number;
 

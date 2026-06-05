@@ -21,8 +21,10 @@ data class PinnedMessagePreviewDto(
 )
 
 @Immutable
+@JsonClass(generateAdapter = true)
 data class ChatRoomDto(
-    @Json(name = "_id") val id: String,
+    @Json(name = "_id") val mongoId: String? = null,
+    @Json(name = "id") val legacyId: String? = null,
     val allianceId: String? = null,
     val title: String,
     val sortOrder: Int = 0,
@@ -34,7 +36,39 @@ data class ChatRoomDto(
     val pinnedByUserId: String? = null,
     val pinnedMessage: PinnedMessagePreviewDto? = null,
     val pinnedMessages: List<PinnedMessagePreviewDto> = emptyList(),
-)
+) {
+    val id: String
+        get() = mongoId?.trim().orEmpty().ifEmpty { legacyId?.trim().orEmpty() }
+
+    constructor(
+        id: String,
+        allianceId: String? = null,
+        title: String,
+        sortOrder: Int = 0,
+        archivedAt: String? = null,
+        unreadCount: Int = 0,
+        lastReadMessageId: String? = null,
+        pinnedMessageId: String? = null,
+        pinnedAt: String? = null,
+        pinnedByUserId: String? = null,
+        pinnedMessage: PinnedMessagePreviewDto? = null,
+        pinnedMessages: List<PinnedMessagePreviewDto> = emptyList(),
+    ) : this(
+        mongoId = id,
+        legacyId = null,
+        allianceId = allianceId,
+        title = title,
+        sortOrder = sortOrder,
+        archivedAt = archivedAt,
+        unreadCount = unreadCount,
+        lastReadMessageId = lastReadMessageId,
+        pinnedMessageId = pinnedMessageId,
+        pinnedAt = pinnedAt,
+        pinnedByUserId = pinnedByUserId,
+        pinnedMessage = pinnedMessage,
+        pinnedMessages = pinnedMessages,
+    )
+}
 
 /** Realtime + REST pin state for a chat room. */
 data class ChatRoomPinChangedEvent(

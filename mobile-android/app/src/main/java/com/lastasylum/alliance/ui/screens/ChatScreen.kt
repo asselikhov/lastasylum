@@ -183,6 +183,8 @@ import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.ChatListPaneState
 import com.lastasylum.alliance.ui.chat.ChatChromePaneState
 import com.lastasylum.alliance.ui.chat.PinnedMessageBar
+import com.lastasylum.alliance.overlay.OverlayMarkAllReadConfirmDialog
+import com.lastasylum.alliance.overlay.OverlayMarkAsReadIconButton
 import com.lastasylum.alliance.ui.chat.PinnedMessagesSheet
 import com.lastasylum.alliance.ui.chat.chatPinPreviewDisplayState
 import com.lastasylum.alliance.ui.chat.formatPinnedMetaLine
@@ -384,6 +386,9 @@ private fun ChatScreenMessagesHost(
     messageListKey: (ChatMessage) -> String,
     onRequestClearRoomHistory: (() -> Unit)? = null,
     clearRoomHistoryEnabled: Boolean = true,
+    onRequestMarkAllRead: (() -> Unit)? = null,
+    markAllReadEnabled: Boolean = true,
+    markAllReadLoading: Boolean = false,
     onPinMessage: (String, ChatMessage?) -> Unit = { id, _ -> },
     onUnpinRoom: () -> Unit = {},
     onPinnedBarTap: () -> Unit = {},
@@ -732,14 +737,21 @@ private fun ChatScreenMessagesHost(
                 .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
         ) {
             if (!compactOverlayMode) {
+                if (!overlayUi && onRequestMarkAllRead != null) {
+                    ChatRoomActionsRow(
+                        onRequestMarkRead = onRequestMarkAllRead,
+                        markReadEnabled = markAllReadEnabled,
+                        markReadLoading = markAllReadLoading,
+                        onRequestClearHistory = onRequestClearRoomHistory,
+                        clearHistoryEnabled = clearRoomHistoryEnabled,
+                    )
+                }
                 ChatRoomsBar(
                     rooms = chromePane.rooms,
                     selectedRoomId = selectedRoomId,
                     onSelectRoom = onSelectRoom,
                     overlayUi = overlayUi,
                     isRoomsLoading = chromePane.isRoomsLoading,
-                    onRequestClearHistory = onRequestClearRoomHistory,
-                    clearHistoryEnabled = clearRoomHistoryEnabled,
                 )
             }
             AnimatedVisibility(
@@ -1047,6 +1059,7 @@ fun ChatScreen(
     /** Overlay panel: hide room bar, rely on cached session + narrow socket subscriptions. */
     compactOverlayMode: Boolean = false,
     onClearRoomHistory: () -> Unit = {},
+    onMarkAllRoomsRead: suspend () -> Unit = {},
     onPinMessage: (String, ChatMessage?) -> Unit = { id, _ -> },
     onUnpinRoom: () -> Unit = {},
     onPinnedBarTap: () -> Unit = {},
@@ -1058,6 +1071,8 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     val overlayUi = LocalOverlayUiMode.current
     var showClearRoomHistoryConfirm by remember { mutableStateOf(false) }
+    var showMarkAllReadConfirm by remember { mutableStateOf(false) }
+    var markAllReadBusy by remember { mutableStateOf(false) }
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
 
     val selectedRoomId = chromePane.selectedRoomId
@@ -1170,6 +1185,13 @@ fun ChatScreen(
                 },
                 clearRoomHistoryEnabled = !listPane.isLoading &&
                     !chromePane.selectedRoomId.isNullOrBlank(),
+                onRequestMarkAllRead = if (!overlayUi) {
+                    { showMarkAllReadConfirm = true }
+                } else {
+                    null
+                },
+                markAllReadEnabled = chromePane.rooms.isNotEmpty() && !listPane.isLoading,
+                markAllReadLoading = markAllReadBusy,
                 onPinMessage = onPinMessage,
                 onUnpinRoom = onUnpinRoom,
                 onPinnedBarTap = onPinnedBarTap,
@@ -1386,6 +1408,21 @@ fun ChatScreen(
         )
     }
 
+    if (showMarkAllReadConfirm && !overlayUi) {
+        OverlayMarkAllReadConfirmDialog(
+            title = stringResource(R.string.overlay_chat_mark_all_read_confirm_title),
+            message = stringResource(R.string.overlay_chat_mark_all_read_confirm_message),
+            onDismissRequest = { showMarkAllReadConfirm = false },
+            onConfirm = {
+                scope.launch {
+                    markAllReadBusy = true
+                    onMarkAllRoomsRead()
+                    markAllReadBusy = false
+                }
+            },
+        )
+    }
+
     confirmDeleteMessage?.let {
         OverlayModalScope(preparedByCaller = true) {
         OverlayAwareAlertDialog(
@@ -1550,6 +1587,7 @@ fun ChatScreen(
     },
     compactOverlayMode: Boolean = false,
     onClearRoomHistory: () -> Unit = {},
+    onMarkAllRoomsRead: suspend () -> Unit = {},
     onPinMessage: (String, ChatMessage?) -> Unit = { _, _ -> },
     onUnpinRoom: () -> Unit = {},
     onPinnedBarTap: () -> Unit = {},
@@ -1601,6 +1639,7 @@ fun ChatScreen(
     messageListKey = messageListKey,
     compactOverlayMode = compactOverlayMode,
     onClearRoomHistory = onClearRoomHistory,
+    onMarkAllRoomsRead = onMarkAllRoomsRead,
     onPinMessage = onPinMessage,
     onUnpinRoom = onUnpinRoom,
     onPinnedBarTap = onPinnedBarTap,
@@ -1608,6 +1647,41 @@ fun ChatScreen(
     onUnpinOnePinned = onUnpinOnePinned,
     onDismissPinBar = onDismissPinBar,
 )
+
+@Composable
+private fun ChatRoomActionsRow(
+    onRequestMarkRead: () -> Unit,
+    markReadEnabled: Boolean,
+    markReadLoading: Boolean,
+    onRequestClearHistory: (() -> Unit)?,
+    clearHistoryEnabled: Boolean,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 4.dp),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OverlayMarkAsReadIconButton(
+            onClick = onRequestMarkRead,
+            enabled = markReadEnabled,
+            loading = markReadLoading,
+        )
+        if (onRequestClearHistory != null) {
+            IconButton(
+                onClick = onRequestClearHistory,
+                enabled = clearHistoryEnabled,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.DeleteOutline,
+                    contentDescription = stringResource(R.string.chat_clear_room_history_cd),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun ChatSelectionToolbar(
@@ -2011,8 +2085,6 @@ private fun ChatRoomsBar(
     onSelectRoom: (String) -> Unit,
     overlayUi: Boolean = false,
     isRoomsLoading: Boolean = false,
-    onRequestClearHistory: (() -> Unit)? = null,
-    clearHistoryEnabled: Boolean = true,
 ) {
     if (rooms.isEmpty()) {
         if (overlayUi && isRoomsLoading) {
@@ -2061,31 +2133,14 @@ private fun ChatRoomsBar(
             )
         }
     }
-    Row(
+    ChatRoomsSwitcher(
+        tabs = tabs,
+        selectedId = selectedRoomId,
+        onSelect = onSelectRoom,
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = if (overlayUi) 4.dp else 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ChatRoomsSwitcher(
-            tabs = tabs,
-            selectedId = selectedRoomId,
-            onSelect = onSelectRoom,
-            modifier = Modifier.weight(1f),
-        )
-        if (onRequestClearHistory != null && !selectedRoomId.isNullOrBlank()) {
-            IconButton(
-                onClick = onRequestClearHistory,
-                enabled = clearHistoryEnabled,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.DeleteOutline,
-                    contentDescription = stringResource(R.string.chat_clear_room_history_cd),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-    }
+    )
 }
 
 

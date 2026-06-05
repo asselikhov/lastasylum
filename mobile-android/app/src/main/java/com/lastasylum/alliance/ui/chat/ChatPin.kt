@@ -367,6 +367,27 @@ fun serverPinHistoryFromRoom(room: ChatRoomDto): List<PinnedMessagePreviewDto> =
         room.pinnedMessage?.let { listOf(it) } ?: emptyList()
     }
 
+/** Union server and local pin history; server preview wins per id. */
+fun mergePinHistory(
+    server: List<PinnedMessagePreviewDto>,
+    local: List<PinnedMessagePreviewDto>,
+): List<PinnedMessagePreviewDto> {
+    if (server.isEmpty()) return local
+    if (local.isEmpty()) return server
+    val serverById = server.associateBy { it.id.trim() }
+    val merged = LinkedHashMap<String, PinnedMessagePreviewDto>()
+    for (entry in server) {
+        val id = entry.id.trim()
+        if (id.isNotEmpty()) merged[id] = entry
+    }
+    for (entry in local) {
+        val id = entry.id.trim()
+        if (id.isEmpty() || id in merged) continue
+        merged[id] = entry
+    }
+    return merged.values.toList()
+}
+
 fun serverPinHistoryFromTopic(topic: TeamForumTopicDto): List<PinnedMessagePreviewDto> =
     topic.pinnedMessages.ifEmpty {
         topic.pinnedMessage?.let { listOf(it) } ?: emptyList()

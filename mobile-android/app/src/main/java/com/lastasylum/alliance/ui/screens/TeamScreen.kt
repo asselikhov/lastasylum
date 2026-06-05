@@ -482,8 +482,12 @@ fun TeamScreen(
                                             forumTabReselectSignal = forumTabReselectSignal,
                                             enabledStickerPackKeys = enabledStickerPackKeys,
                                             modifier = Modifier.fillMaxSize(),
+                                            onForumTopicsSynced = { topics ->
+                                                teamViewModel.syncForumBadgeFromTopics(topics)
+                                                com.lastasylum.alliance.overlay.CombatOverlayService
+                                                    .notifyOverlayTeamInboxChanged(forum = true)
+                                            },
                                             onForumInboxChanged = {
-                                                teamViewModel.refreshSectionBadges()
                                                 com.lastasylum.alliance.overlay.CombatOverlayService
                                                     .notifyOverlayTeamInboxChanged(forum = true)
                                             },

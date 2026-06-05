@@ -17,10 +17,13 @@ import com.lastasylum.alliance.data.network.NetworkModule
 import com.lastasylum.alliance.data.network.RealtimeCoordinator
 import com.lastasylum.alliance.data.settings.OnboardingPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.teams.TeamForumSocketManager
+import com.lastasylum.alliance.data.teams.TeamMembershipNotifier
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketManager
 import com.lastasylum.alliance.data.teams.TeamsRepository
+import com.lastasylum.alliance.overlay.OverlayTeamContextCache
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.data.voice.VoiceChatSession
 import com.lastasylum.alliance.data.voice.VoiceSocketManager
@@ -96,6 +99,17 @@ class AppContainer private constructor(context: Context) {
     }
 
     val usersRepository: UsersRepository by lazy {
+        if (!teamMembershipHookInstalled) {
+            teamMembershipHookInstalled = true
+            TeamMembershipNotifier.setOnChanged {
+                ChatRoomsSessionCache.invalidate()
+                OverlayTeamContextCache.invalidate()
+                val uid = JwtAccessTokenClaims.sub(tokenStore.getAccessToken())?.trim().orEmpty()
+                if (uid.isNotEmpty()) {
+                    launchDiskCache.clearChatRooms(uid)
+                }
+            }
+        }
         UsersRepository(
             usersApi = authorizedClients.usersApi,
             launchDiskCache = launchDiskCache,
@@ -153,6 +167,9 @@ class AppContainer private constructor(context: Context) {
     )
 
     companion object {
+        @Volatile
+        private var teamMembershipHookInstalled = false
+
         @Volatile
         private var instance: AppContainer? = null
 

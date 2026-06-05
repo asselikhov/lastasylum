@@ -10,7 +10,9 @@ class TeamsRepository(
     private val teamsApi: TeamsApi,
 ) {
     private val forumTopicsDedup = InFlightDedup<String, List<TeamForumTopicDto>>()
+    private val forumMessagesDedup = InFlightDedup<String, List<TeamForumMessageDto>>()
     private val teamNewsDedup = InFlightDedup<String, TeamNewsListPageDto>()
+    private val forumTopicsResultCache = mutableMapOf<String, ForumTopicsCacheEntry>()
     suspend fun createTeam(displayName: String, tag: String): Result<CreatePlayerTeamResponse> =
         runCatching {
             teamsApi.createTeam(CreatePlayerTeamBody(displayName = displayName, tag = tag))
@@ -180,11 +182,43 @@ class TeamsRepository(
             teamsApi.uploadForumFileAttachment(teamId, part)
         }
 
-    suspend fun listForumTopics(teamId: String): Result<List<TeamForumTopicDto>> {
+    fun invalidateForumTopicsCache(teamId: String) {
         val key = teamId.trim()
-        return forumTopicsDedup.run(key) {
-            Log.d(PERF_TAG, "listForumTopics network teamId=$key")
-            runCatching { teamsApi.listForumTopics(key, view = "list") }
+        synchronized(forumTopicsResultCache) {
+            forumTopicsResultCache.remove(key)
+        }
+    }
+
+    suspend fun listForumTopics(
+        teamId: String,
+        bypassCache: Boolean = false,
+        view: String = "list",
+    ): Result<List<TeamForumTopicDto>> {
+        val key = teamId.trim()
+        val now = System.currentTimeMillis()
+        if (!bypassCache) {
+            synchronized(forumTopicsResultCache) {
+                forumTopicsResultCache[key]?.let { entry ->
+                    if (now - entry.fetchedAtMs < FORUM_TOPICS_TTL_MS) {
+                        Log.d(PERF_TAG, "listForumTopics cache hit teamId=$key")
+                        return Result.success(entry.topics)
+                    }
+                }
+            }
+        }
+        return forumTopicsDedup.run("$key|$view") {
+            Log.d(PERF_TAG, "listForumTopics network teamId=$key view=$view")
+            runCatching { teamsApi.listForumTopics(key, view = view) }
+                .also { result ->
+                    result.onSuccess { topics ->
+                        synchronized(forumTopicsResultCache) {
+                            forumTopicsResultCache[key] = ForumTopicsCacheEntry(
+                                topics = topics,
+                                fetchedAtMs = System.currentTimeMillis(),
+                            )
+                        }
+                    }
+                }
         }
     }
 
@@ -220,6 +254,8 @@ class TeamsRepository(
                 topicId,
                 PinTeamForumTopicRequest(messageId = messageId),
             )
+        }.also { result ->
+            if (result.isSuccess) invalidateForumTopicsCache(teamId)
         }
 
     suspend fun markForumTopicRead(
@@ -240,10 +276,13 @@ class TeamsRepository(
         topicId: String,
         before: String? = null,
         limit: Int = 50,
-    ): Result<List<TeamForumMessageDto>> =
-        runCatching {
-            teamsApi.listForumMessages(teamId, topicId, before, limit)
+    ): Result<List<TeamForumMessageDto>> {
+        val key = "${teamId.trim()}|${topicId.trim()}|${before?.trim().orEmpty()}|$limit"
+        return forumMessagesDedup.run(key) {
+            Log.d(PERF_TAG, "listForumMessages network key=$key")
+            runCatching { teamsApi.listForumMessages(teamId, topicId, before, limit) }
         }
+    }
 
     suspend fun postForumMessage(
         teamId: String,
@@ -322,6 +361,8 @@ class TeamsRepository(
     ): Result<TeamForumTopicDto> =
         runCatching {
             teamsApi.unpinOneForumTopicMessage(teamId, topicId, messageId)
+        }.also { result ->
+            if (result.isSuccess) invalidateForumTopicsCache(teamId)
         }
 
     suspend fun forwardForumMessage(
@@ -352,7 +393,13 @@ class TeamsRepository(
             )
         }
 
+    private data class ForumTopicsCacheEntry(
+        val topics: List<TeamForumTopicDto>,
+        val fetchedAtMs: Long,
+    )
+
     private companion object {
         const val PERF_TAG = "PerfDiag"
+        const val FORUM_TOPICS_TTL_MS = 15_000L
     }
 }

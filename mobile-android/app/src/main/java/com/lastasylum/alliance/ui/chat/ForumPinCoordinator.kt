@@ -28,6 +28,18 @@ class ForumPinCoordinator(
     private var lastSyncedActivePinId: String? = null
 
     fun onEnterTopic(initialTopic: TeamForumTopicDto? = null) {
+        if (initialTopic != null) {
+            applySnapshot(initialTopic.toPinSnapshot())
+        } else {
+            applySnapshot(
+                TopicPinSnapshot(
+                    pinnedMessageId = null,
+                    pinnedAt = null,
+                    pinnedByUserId = null,
+                    pinnedMessage = null,
+                ),
+            )
+        }
         pinHistory = initialTopic?.let { serverPinHistoryFromTopic(it) }.orEmpty()
         pinnedMessages = pinHistory
         pinBarIndex = 0
@@ -75,6 +87,13 @@ class ForumPinCoordinator(
 
     fun onUnpinSuccess(topic: TeamForumTopicDto) {
         applySnapshot(topic.toPinSnapshot())
+        pinHistory = serverPinHistoryFromTopic(topic)
+        pinnedMessages = pinHistory
+        if (pinnedMessageId.isNullOrBlank()) {
+            pinHistory = emptyList()
+            pinnedMessages = emptyList()
+            pinBarIndex = 0
+        }
         applyPinBarUi(emptyList())
     }
 

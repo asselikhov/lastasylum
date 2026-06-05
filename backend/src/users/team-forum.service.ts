@@ -28,6 +28,7 @@ import { StickerAccessService } from './sticker-access.service';
 import { UsersService } from './users.service';
 import {
   buildPinnedPreviewFromForumMessage,
+  buildStubPinnedPreview,
   enrichPinnedPreview,
   PinnedMessagePreview,
 } from '../common/pinned-message-preview';
@@ -125,6 +126,12 @@ export type TeamForumMessageReactionBroadcastPayload = {
 
 @Injectable()
 export class TeamForumService {
+  private readonly unreadSumCache = new Map<
+    string,
+    { sum: number; atMs: number }
+  >();
+  private static readonly UNREAD_SUM_CACHE_TTL_MS = 15_000;
+
   constructor(
     @InjectModel(TeamForumTopic.name)
     private readonly topicModel: Model<TeamForumTopicDocument>,
@@ -283,8 +290,13 @@ export class TeamForumService {
     const actorNames = await this.resolvePinnedByUsernames(actorIds);
     const out: PinnedMessagePreview[] = [];
     for (const entry of history) {
-      const preview = byId.get(entry.messageId.toString());
-      if (!preview) continue;
+      const msgId = entry.messageId.toString();
+      const preview =
+        byId.get(msgId) ??
+        buildStubPinnedPreview(
+          msgId,
+          actorNames.get(entry.pinnedByUserId.trim()) ?? null,
+        );
       out.push(
         enrichPinnedPreview(
           preview,
@@ -384,14 +396,39 @@ export class TeamForumService {
   ): Promise<Map<string, string>> {
     const out = new Map<string, string>();
     const unique = [...new Set(userIds.map((id) => id.trim()).filter(Boolean))];
-    await Promise.all(
-      unique.map(async (id) => {
-        const user = await this.usersService.findById(id);
-        const name = (user?.username ?? user?.email ?? '').trim();
-        if (name) out.set(id, name);
-      }),
-    );
+    if (unique.length === 0) return out;
+    const objectIds = unique
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (objectIds.length === 0) return out;
+    const users = await this.userModel
+      .find({ _id: { $in: objectIds } })
+      .select('username email')
+      .lean<Array<{ _id: Types.ObjectId; username?: string; email?: string }>>()
+      .exec();
+    for (const user of users) {
+      const name = (user.username ?? user.email ?? '').trim();
+      if (name) out.set(user._id.toString(), name);
+    }
     return out;
+  }
+
+  private lastSenderFromTopicDoc(doc: TeamForumTopicDocument): {
+    senderUserId: string | null;
+    senderUsername: string | null;
+  } {
+    const senderUserId = doc.lastMessageSenderUserId?.trim() ?? null;
+    if (!senderUserId) {
+      return { senderUserId: null, senderUsername: null };
+    }
+    return {
+      senderUserId,
+      senderUsername: doc.lastMessageSenderUsername?.trim() ?? null,
+    };
+  }
+
+  private invalidateUnreadSumCache(teamId: string, userId: string): void {
+    this.unreadSumCache.delete(`${teamId}:${userId}`);
   }
 
   private topicRow(
@@ -418,8 +455,14 @@ export class TeamForumService {
       unreadCount: extras?.unreadCount ?? 0,
       lastReadMessageId: extras?.lastReadMessageId ?? null,
       lastMessageAt: doc.lastMessageAt ? doc.lastMessageAt.toISOString() : null,
-      lastMessageSenderUserId: extras?.lastMessageSenderUserId ?? null,
-      lastMessageSenderUsername: extras?.lastMessageSenderUsername ?? null,
+      lastMessageSenderUserId:
+        extras?.lastMessageSenderUserId ??
+        doc.lastMessageSenderUserId?.trim() ??
+        null,
+      lastMessageSenderUsername:
+        extras?.lastMessageSenderUsername ??
+        doc.lastMessageSenderUsername?.trim() ??
+        null,
       lastMessageSenderTelegramUsername: null,
       pinnedMessageId: doc.pinnedMessageId?.toString() ?? null,
       pinnedAt: doc.pinnedAt?.toISOString() ?? null,
@@ -452,7 +495,7 @@ export class TeamForumService {
     return this.readStatesByTopicIds(userId, topicIds);
   }
 
-  private async countUnreadForumMessages(
+  private async countUnreadForumMessagesHeavy(
     teamId: Types.ObjectId,
     userId: string,
     topicIds: Types.ObjectId[],
@@ -530,6 +573,61 @@ export class TeamForumService {
     return out;
   }
 
+  private async countUnreadForumMessages(
+    teamId: Types.ObjectId,
+    userId: string,
+    topicIds: Types.ObjectId[],
+    topicDocs?: TeamForumTopicDocument[],
+    lastReadMap?: Map<string, string>,
+  ): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (topicIds.length === 0) return out;
+
+    const docById = new Map(
+      (topicDocs ?? []).map((doc) => [doc._id.toString(), doc]),
+    );
+    const readMap =
+      lastReadMap ?? (await this.readStatesByTopicIds(userId, topicIds));
+    const needsHeavy: Types.ObjectId[] = [];
+
+    for (const topicId of topicIds) {
+      const id = topicId.toString();
+      const doc = docById.get(id);
+      const lastMsgId = doc?.lastMessageId ?? null;
+      if (!lastMsgId) {
+        needsHeavy.push(topicId);
+        continue;
+      }
+      const senderId = doc?.lastMessageSenderUserId?.trim();
+      if (senderId === userId) {
+        out.set(id, 0);
+        continue;
+      }
+      const lastRead = readMap.get(id);
+      if (
+        lastRead &&
+        Types.ObjectId.isValid(lastRead) &&
+        new Types.ObjectId(lastRead) >= lastMsgId
+      ) {
+        out.set(id, 0);
+        continue;
+      }
+      needsHeavy.push(topicId);
+    }
+
+    if (needsHeavy.length > 0) {
+      const heavy = await this.countUnreadForumMessagesHeavy(
+        teamId,
+        userId,
+        needsHeavy,
+      );
+      for (const [topicId, count] of heavy) {
+        out.set(topicId, count);
+      }
+    }
+    return out;
+  }
+
   async markTopicRead(
     teamId: string,
     topicId: string,
@@ -571,6 +669,7 @@ export class TeamForumService {
           { upsert: true },
         )
         .exec();
+      this.invalidateUnreadSumCache(teamId, userId);
     }
     return { topicId, messageId: lastReadMessageId };
   }
@@ -835,19 +934,31 @@ export class TeamForumService {
       { $group: { _id: '$topicId', count: { $sum: 1 } } },
     ]);
     const countMap = new Map(countAgg.map((c) => [c._id.toString(), c.count]));
-    const lastSenderMap = await this.lastMessageSendersByTopicIds(tid, topicIds);
+    const topicDocs = rows.map((r) => r as unknown as TeamForumTopicDocument);
+    const needsSenderAgg = topicDocs.filter(
+      (doc) => doc.lastMessageAt && !doc.lastMessageSenderUserId?.trim(),
+    );
+    const lastSenderMap =
+      needsSenderAgg.length > 0
+        ? await this.lastMessageSendersByTopicIds(
+            tid,
+            needsSenderAgg.map((doc) => doc._id),
+          )
+        : new Map<string, { senderUserId: string; senderUsername: string }>();
     return this.enrichTopicsWithTelegram(
-      rows.map((r) => {
-        const doc = r as unknown as TeamForumTopicDocument;
+      topicDocs.map((doc) => {
         const id = doc._id.toString();
         const actualCount = countMap.get(id) ?? doc.messageCount ?? 0;
+        const denorm = this.lastSenderFromTopicDoc(doc);
         const last = lastSenderMap.get(id);
         return this.topicRow(doc, {
           messageCount: actualCount,
           unreadCount: 0,
           lastReadMessageId: null,
-          lastMessageSenderUserId: last?.senderUserId ?? null,
-          lastMessageSenderUsername: last?.senderUsername ?? null,
+          lastMessageSenderUserId:
+            denorm.senderUserId ?? last?.senderUserId ?? null,
+          lastMessageSenderUsername:
+            denorm.senderUsername ?? last?.senderUsername ?? null,
         });
       }),
     );
@@ -882,21 +993,38 @@ export class TeamForumService {
 
   /** Sum of per-topic unread message counts for the member (excludes own messages). */
   async sumUnreadMessages(teamId: string, userId: string): Promise<number> {
+    const cacheKey = `${teamId}:${userId}`;
+    const cached = this.unreadSumCache.get(cacheKey);
+    if (
+      cached &&
+      Date.now() - cached.atMs < TeamForumService.UNREAD_SUM_CACHE_TTL_MS
+    ) {
+      return cached.sum;
+    }
     await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const tid = new Types.ObjectId(teamId);
     const topicLimit = 100;
     const rows = await this.topicModel
       .find({ teamId: tid })
-      .select('_id')
+      .select(
+        '_id lastMessageId lastMessageSenderUserId lastMessageSenderUsername',
+      )
       .sort({ lastMessageAt: -1, updatedAt: -1 })
       .limit(topicLimit)
       .lean();
-    const topicIds = rows.map((r) => (r as { _id: Types.ObjectId })._id);
-    const unreadMap = await this.countUnreadForumMessages(tid, userId, topicIds);
+    const topicDocs = rows as unknown as TeamForumTopicDocument[];
+    const topicIds = topicDocs.map((r) => r._id);
+    const unreadMap = await this.countUnreadForumMessages(
+      tid,
+      userId,
+      topicIds,
+      topicDocs,
+    );
     let sum = 0;
     for (const count of unreadMap.values()) {
       sum += count;
     }
+    this.unreadSumCache.set(cacheKey, { sum, atMs: Date.now() });
     return sum;
   }
 
@@ -967,32 +1095,65 @@ export class TeamForumService {
       .sort({ lastMessageAt: -1, updatedAt: -1 })
       .limit(topicLimit)
       .lean();
-    const topicIds = rows.map((r) => (r as { _id: Types.ObjectId })._id);
-    let countMap = new Map<string, number>();
-    if (view === 'full') {
-      const countAgg = await this.messageModel.aggregate<{
-        _id: Types.ObjectId;
-        count: number;
-      }>([
-        { $match: { teamId: tid, deletedAt: null } },
-        { $group: { _id: '$topicId', count: { $sum: 1 } } },
-      ]);
-      countMap = new Map(countAgg.map((c) => [c._id.toString(), c.count]));
-    }
-    const unreadMap = await this.countUnreadForumMessages(tid, userId, topicIds);
-    const lastReadMap = await this.getLastReadMessageIdsByTopicIds(
+    const topicDocs = rows.map((r) => r as unknown as TeamForumTopicDocument);
+    const topicIds = topicDocs.map((doc) => doc._id);
+    const needsSenderAgg = topicDocs.filter(
+      (doc) => doc.lastMessageAt && !doc.lastMessageSenderUserId?.trim(),
+    );
+    const senderAggPromise =
+      needsSenderAgg.length > 0
+        ? this.lastMessageSendersByTopicIds(
+            tid,
+            needsSenderAgg.map((doc) => doc._id),
+          )
+        : Promise.resolve(
+            new Map<string, { senderUserId: string; senderUsername: string }>(),
+          );
+    const countAggPromise =
+      view === 'full'
+        ? this.messageModel.aggregate<{
+            _id: Types.ObjectId;
+            count: number;
+          }>([
+            { $match: { teamId: tid, deletedAt: null } },
+            { $group: { _id: '$topicId', count: { $sum: 1 } } },
+          ])
+        : Promise.resolve([]);
+    const [
+      lastReadMap,
+      pinPreviews,
+      pinnedMessagesMap,
+      lastSenderAggMap,
+      countAggRows,
+    ] = await Promise.all([
+      this.getLastReadMessageIdsByTopicIds(userId, topicIds),
+      this.buildPinnedPreviewsForTopics(
+        rows as Array<{
+          _id: Types.ObjectId;
+          pinnedMessageId?: Types.ObjectId | null;
+        }>,
+      ),
+      view === 'full'
+        ? this.buildPinnedMessagesForTopicsBatch(topicDocs)
+        : Promise.resolve(new Map<string, PinnedMessagePreview[]>()),
+      senderAggPromise,
+      countAggPromise,
+    ]);
+    const countMap: Map<string, number> =
+      view === 'full'
+        ? new Map(
+            (countAggRows as Array<{ _id: Types.ObjectId; count: number }>).map(
+              (c) => [c._id.toString(), c.count] as const,
+            ),
+          )
+        : new Map<string, number>();
+    const unreadMap = await this.countUnreadForumMessages(
+      tid,
       userId,
       topicIds,
+      topicDocs,
+      lastReadMap,
     );
-    const lastSenderMap = await this.lastMessageSendersByTopicIds(tid, topicIds);
-    const pinPreviews = await this.buildPinnedPreviewsForTopics(
-      rows as Array<{ _id: Types.ObjectId; pinnedMessageId?: Types.ObjectId | null }>,
-    );
-    const topicDocs = rows.map((r) => r as unknown as TeamForumTopicDocument);
-    const pinnedMessagesMap =
-      view === 'full'
-        ? await this.buildPinnedMessagesForTopicsBatch(topicDocs)
-        : new Map<string, PinnedMessagePreview[]>();
     const result = await this.enrichTopicsWithTelegram(
       topicDocs.map((doc) => {
         const id = doc._id.toString();
@@ -1000,7 +1161,8 @@ export class TeamForumService {
           view === 'full'
             ? (countMap.get(id) ?? doc.messageCount ?? 0)
             : (doc.messageCount ?? 0);
-        const last = lastSenderMap.get(id);
+        const denorm = this.lastSenderFromTopicDoc(doc);
+        const last = lastSenderAggMap.get(id);
         const pinnedMessages = pinnedMessagesMap.get(id) ?? [];
         const activePreview =
           pinPreviews.get(id) ??
@@ -1011,8 +1173,10 @@ export class TeamForumService {
           messageCount: actualCount,
           unreadCount: unreadMap.get(id) ?? 0,
           lastReadMessageId: lastReadMap.get(id) ?? null,
-          lastMessageSenderUserId: last?.senderUserId ?? null,
-          lastMessageSenderUsername: last?.senderUsername ?? null,
+          lastMessageSenderUserId:
+            denorm.senderUserId ?? last?.senderUserId ?? null,
+          lastMessageSenderUsername:
+            denorm.senderUsername ?? last?.senderUsername ?? null,
           pinnedMessage: activePreview,
           pinnedMessages: view === 'full' ? pinnedMessages : [],
         });
@@ -1213,6 +1377,7 @@ export class TeamForumService {
     before?: string,
     limitRaw?: number,
   ): Promise<TeamForumMessageRow[]> {
+    const startedAt = Date.now();
     const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const teamOid = new Types.ObjectId(teamId);
     const topOid = new Types.ObjectId(topicId);
@@ -1239,32 +1404,6 @@ export class TeamForumService {
       .lean();
     const docs = rows as unknown as TeamForumMessageDocument[];
 
-    // Backward compatibility: older forum messages may not have senderRole/senderTeamTag persisted.
-    // Fill missing values from team membership + sender user docs so UI role badges stay consistent.
-    const senderIds = [
-      ...new Set(docs.map((d) => d.senderUserId).filter((x) => Boolean(x))),
-    ];
-    const senderTeamTagMap = new Map(
-      (
-        await this.userModel
-          .find({ _id: { $in: senderIds.map((id) => new Types.ObjectId(id)) } })
-          .select('teamTag')
-          .lean<Array<{ _id: Types.ObjectId; teamTag?: string | null }>>()
-          .exec()
-      ).map((u) => [u._id.toString(), u.teamTag ?? null]),
-    );
-    for (const d of docs) {
-      const needRole = !(d as any).senderRole;
-      const needTag = (d as any).senderTeamTag == null;
-      if (needRole) {
-        (d as any).senderRole =
-          this.teams.getSquadRoleForUser(team, d.senderUserId) ??
-          PlayerTeamMemberRole.R1;
-      }
-      if (needTag) {
-        (d as any).senderTeamTag = senderTeamTagMap.get(d.senderUserId) ?? null;
-      }
-    }
     const replyIds = [
       ...new Set(
         docs
@@ -1282,53 +1421,60 @@ export class TeamForumService {
             })
             .lean()
         : [];
+    const replyDocList = replyDocs as unknown as TeamForumMessageDocument[];
 
-    // Same backward compatibility for reply documents (may be older and missing senderRole/senderTeamTag).
-    if (replyDocs.length > 0) {
-      const replySenderIds = [
-        ...new Set(
-          (replyDocs as unknown as TeamForumMessageDocument[]).map(
-            (d) => d.senderUserId,
-          ),
-        ),
-      ];
-      const replySenderTeamTagMap = new Map(
-        (
-          await this.userModel
-            .find({
-              _id: { $in: replySenderIds.map((id) => new Types.ObjectId(id)) },
-            })
-            .select('teamTag')
-            .lean<Array<{ _id: Types.ObjectId; teamTag?: string | null }>>()
-            .exec()
-        ).map((u) => [u._id.toString(), u.teamTag ?? null]),
-      );
-      for (const d of replyDocs as unknown as TeamForumMessageDocument[]) {
-        const needRole = !(d as any).senderRole;
-        const needTag = (d as any).senderTeamTag == null;
-        if (needRole) {
-          (d as any).senderRole =
-            this.teams.getSquadRoleForUser(team, d.senderUserId) ??
-            PlayerTeamMemberRole.R1;
-        }
-        if (needTag) {
-          (d as any).senderTeamTag =
-            replySenderTeamTagMap.get(d.senderUserId) ?? null;
-        }
-      }
-    }
-    const replyMap = new Map(
-      (replyDocs as unknown as TeamForumMessageDocument[]).map((d) => [
-        d._id.toString(),
-        d,
-      ]),
-    );
-    const allDocs = [
-      ...docs,
-      ...(replyDocs as unknown as TeamForumMessageDocument[]),
+    // Backward compatibility: older forum messages may not have senderRole/senderTeamTag persisted.
+    const senderIds = [
+      ...new Set(
+        [...docs, ...replyDocList]
+          .map((d) => d.senderUserId)
+          .filter((x) => Boolean(x)),
+      ),
     ];
-    await this.applySenderServerNumbersToForumDocs(allDocs);
-    return this.enrichMessagesWithTelegram(
+    const senderTeamTagMap = new Map(
+      (
+        await this.userModel
+          .find({
+            _id: {
+              $in: senderIds
+                .filter((id) => Types.ObjectId.isValid(id))
+                .map((id) => new Types.ObjectId(id)),
+            },
+          })
+          .select('teamTag')
+          .lean<Array<{ _id: Types.ObjectId; teamTag?: string | null }>>()
+          .exec()
+      ).map((u) => [u._id.toString(), u.teamTag ?? null]),
+    );
+    const fillSenderSnapshots = (d: TeamForumMessageDocument) => {
+      const needRole = !(d as any).senderRole;
+      const needTag = (d as any).senderTeamTag == null;
+      if (needRole) {
+        (d as any).senderRole =
+          this.teams.getSquadRoleForUser(team, d.senderUserId) ??
+          PlayerTeamMemberRole.R1;
+      }
+      if (needTag) {
+        (d as any).senderTeamTag = senderTeamTagMap.get(d.senderUserId) ?? null;
+      }
+    };
+    for (const d of docs) fillSenderSnapshots(d);
+    for (const d of replyDocList) fillSenderSnapshots(d);
+
+    const replyMap = new Map(replyDocList.map((d) => [d._id.toString(), d]));
+    const allDocs = [...docs, ...replyDocList];
+    const needsServerNumbers = allDocs.some(
+      (d) =>
+        d.senderServerNumber == null ||
+        d.senderServerNumber < 1 ||
+        (d.forwardedFrom != null &&
+          (d.forwardedFrom.senderServerNumber == null ||
+            d.forwardedFrom.senderServerNumber < 1)),
+    );
+    if (needsServerNumbers) {
+      await this.applySenderServerNumbersToForumDocs(allDocs);
+    }
+    const result = await this.enrichMessagesWithTelegram(
       docs
         .map((d) => {
           const rid = this.asIdString(d.replyToMessageId);
@@ -1336,6 +1482,13 @@ export class TeamForumService {
         })
         .reverse(),
     );
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs > 250) {
+      console.log(
+        `[PerfDiag] listMessages teamId=${teamId} topicId=${topicId} messages=${result.length} ms=${elapsedMs}`,
+      );
+    }
+    return result;
   }
 
   async postMessage(
@@ -1476,6 +1629,9 @@ export class TeamForumService {
     }
     topic.lastMessageAt = doc.createdAt ?? new Date();
     topic.messageCount = (topic.messageCount ?? 0) + 1;
+    topic.lastMessageId = doc._id;
+    topic.lastMessageSenderUserId = doc.senderUserId;
+    topic.lastMessageSenderUsername = doc.senderUsername;
     await topic.save();
     const row = this.messageRow(doc, replyTarget, userId);
     return {
@@ -1578,6 +1734,9 @@ export class TeamForumService {
     if (topic) {
       topic.lastMessageAt = doc.createdAt ?? new Date();
       topic.messageCount = (topic.messageCount ?? 0) + 1;
+      topic.lastMessageId = doc._id;
+      topic.lastMessageSenderUserId = doc.senderUserId;
+      topic.lastMessageSenderUsername = doc.senderUsername;
       await topic.save();
     }
 

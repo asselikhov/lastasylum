@@ -118,6 +118,22 @@ class LaunchDiskCacheTest {
         )
         cache.saveForumTopics(userId, teamId, topics)
         assertEquals(1, cache.loadForumTopics(userId, teamId)?.size)
+
+        val forumMessages = listOf(
+            com.lastasylum.alliance.data.teams.TeamForumMessageDto(
+                id = "m1",
+                topicId = "t1",
+                teamId = teamId,
+                senderUserId = "u1",
+                senderUsername = "user",
+                senderRole = "R1",
+                text = "hi",
+                createdAt = "2025-01-01T00:00:00Z",
+                updatedAt = "2025-01-01T00:00:00Z",
+            ),
+        )
+        cache.saveForumMessages(userId, teamId, "t1", forumMessages, hasMoreOlder = false)
+        assertEquals(1, cache.loadForumMessages(userId, teamId, "t1")?.messages?.size)
     }
 
     @Test

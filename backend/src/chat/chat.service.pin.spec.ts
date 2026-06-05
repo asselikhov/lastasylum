@@ -187,6 +187,33 @@ describe('ChatService pin (team rooms)', () => {
     expect(chatRoomsService.setPinnedMessage).toHaveBeenCalled();
   });
 
+  it('returns room document with _id when pinning', async () => {
+    teamsService.getSquadRoleForUser.mockReturnValue(PlayerTeamMemberRole.R5);
+    const { room } = await service.setRoomPinnedMessage(
+      userId,
+      roomId,
+      messageId,
+    );
+    expect(String(room._id)).toBe(roomId);
+  });
+
+  it('keeps pin history entry when message doc is missing from preview query', async () => {
+    teamsService.getSquadRoleForUser.mockReturnValue(PlayerTeamMemberRole.R5);
+    messageModel.find.mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue([]),
+      }),
+    });
+    const { pinChanged } = await service.setRoomPinnedMessage(
+      userId,
+      roomId,
+      messageId,
+    );
+    expect(pinChanged.pinnedMessages).toHaveLength(1);
+    expect(pinChanged.pinnedMessages[0]?.id).toBe(messageId);
+    expect(pinChanged.pinnedMessage?.id).toBe(messageId);
+  });
+
   it('rejects R3 from pinning', async () => {
     teamsService.getSquadRoleForUser.mockReturnValue(PlayerTeamMemberRole.R3);
     await expect(

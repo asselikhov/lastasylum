@@ -45,6 +45,27 @@ function firstForumImageThumbnailUrl(msg: {
   return null;
 }
 
+/** Placeholder when the pinned message row is missing (deleted / not loaded). */
+export function buildStubPinnedPreview(
+  messageId: string,
+  pinnedByUsername: string | null = null,
+): PinnedMessagePreview {
+  const id = messageId.trim();
+  return {
+    id,
+    text: '',
+    senderUsername: '',
+    senderTeamTag: null,
+    senderServerNumber: null,
+    createdAt: new Date(0).toISOString(),
+    editedAt: null,
+    hasImage: false,
+    isSticker: false,
+    imageThumbnailUrl: null,
+    pinnedByUsername: pinnedByUsername?.trim() || null,
+  };
+}
+
 export function enrichPinnedPreview(
   preview: PinnedMessagePreview,
   pinnedByUsername: string | null | undefined,

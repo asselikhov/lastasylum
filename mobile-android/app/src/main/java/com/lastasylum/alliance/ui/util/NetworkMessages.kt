@@ -2,6 +2,8 @@ package com.lastasylum.alliance.ui.util
 
 import android.content.res.Resources
 import com.lastasylum.alliance.R
+import com.squareup.moshi.JsonDataException
+import com.squareup.moshi.JsonEncodingException
 import org.json.JSONArray
 import org.json.JSONObject
 import retrofit2.HttpException
@@ -55,6 +57,9 @@ fun Throwable.toUserMessageRu(resources: Resources): String {
     }
     if (this is SSLHandshakeException) {
         return resources.getString(R.string.err_tls_handshake)
+    }
+    if (this is JsonDataException || this is JsonEncodingException) {
+        return resources.getString(R.string.err_parse_response)
     }
     if (this is java.io.IOException) {
         val m = message.orEmpty().lowercase(Locale.ROOT)

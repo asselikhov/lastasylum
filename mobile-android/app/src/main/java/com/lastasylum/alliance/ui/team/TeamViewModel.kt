@@ -11,6 +11,7 @@ import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
+import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.MyProfileDto
@@ -143,6 +144,20 @@ class TeamViewModel(
                         _data.update { it.copy(loading = false) }
                     }
                 }
+        }
+    }
+
+    fun syncForumBadgeFromTopics(topics: List<TeamForumTopicDto>) {
+        val teamId = _data.value.profile?.playerTeamId?.trim().orEmpty()
+        if (teamId.isEmpty()) return
+        viewModelScope.launch {
+            val localRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
+            val forumUnread = TeamInboxUnread.sumForumUnread(topics, localRead)
+            _data.update {
+                it.copy(sectionBadges = it.sectionBadges.copy(forumUnread = forumUnread))
+            }
+            OverlayGameStatusHudRefresh.invalidateNewsForumCache()
+            Log.d(PERF_TAG, "syncForumBadgeFromTopics teamId=$teamId unread=$forumUnread")
         }
     }
 

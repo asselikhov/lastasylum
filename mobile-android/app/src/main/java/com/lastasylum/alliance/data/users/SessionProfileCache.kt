@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.data.users
 
 import com.lastasylum.alliance.data.cache.LaunchDiskCache
+import com.lastasylum.alliance.data.teams.TeamMembershipNotifier
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.sync.Mutex
@@ -42,34 +43,67 @@ class SessionProfileCache(
         if (!forceRefresh) {
             peekFresh()?.let { return Result.success(it) }
         }
-        return mutex.withLock {
+
+        var deferred: CompletableDeferred<Result<MyProfileDto>>? = null
+        var isLeader = false
+        mutex.withLock {
             if (!forceRefresh) {
-                peekFresh()?.let { return@withLock Result.success(it) }
+                peekFresh()?.let {
+                    deferred = CompletableDeferred(Result.success(it))
+                    isLeader = false
+                    return@withLock
+                }
             }
             val existing = inFlight
             if (existing != null && !existing.isCompleted) {
-                return@withLock existing.await()
+                @Suppress("UNCHECKED_CAST")
+                deferred = existing as CompletableDeferred<Result<MyProfileDto>>
+                isLeader = false
+                return@withLock
             }
-            val deferred = CompletableDeferred<Result<MyProfileDto>>()
-            inFlight = deferred
-            val diskProfile = if (!forceRefresh) peekDisk() else null
-            if (diskProfile != null) {
-                put(diskProfile)
-            }
-            val result = runCatching { fetchFromNetwork() }
-            result.onSuccess { put(it) }
-            deferred.complete(result)
-            inFlight = null
-            result
+            val leader = CompletableDeferred<Result<MyProfileDto>>()
+            deferred = leader
+            inFlight = leader
+            isLeader = true
         }
+        val waitDeferred = deferred ?: return Result.failure(IllegalStateException("profile_fetch_unavailable"))
+
+        if (isLeader) {
+            try {
+                if (!forceRefresh) {
+                    peekDisk()?.let { put(it) }
+                }
+                val result = runCatching { fetchFromNetwork() }
+                result.onSuccess { put(it) }
+                waitDeferred.complete(result)
+            } catch (e: Throwable) {
+                if (!waitDeferred.isCompleted) {
+                    waitDeferred.complete(Result.failure(e))
+                }
+                throw e
+            } finally {
+                mutex.withLock {
+                    if (inFlight === waitDeferred) {
+                        inFlight = null
+                    }
+                }
+            }
+        }
+
+        return waitDeferred.await()
     }
 
     fun put(profile: MyProfileDto) {
+        val prevTeamId = memoryProfile?.playerTeamId?.trim().orEmpty()
+        val nextTeamId = profile.playerTeamId?.trim().orEmpty()
         memoryProfile = profile
         memoryAtMs = System.currentTimeMillis()
         val userId = resolveUserId()?.trim().orEmpty()
         if (userId.isNotEmpty()) {
             launchDiskCache.saveProfile(userId, profile)
+        }
+        if (prevTeamId != nextTeamId) {
+            TeamMembershipNotifier.notifyChanged(profile.playerTeamId)
         }
     }
 

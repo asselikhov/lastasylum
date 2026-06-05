@@ -7,6 +7,7 @@ import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatPinMergeTest {
@@ -109,6 +110,37 @@ class ChatPinMergeTest {
             pinnedMessages = listOf(preview, preview.copy(id = "other")),
         )
         assertEquals(2, serverPinHistoryFromRoom(room).size)
+    }
+
+    @Test
+    fun mergePinHistory_unionsServerAndLocalEntries() {
+        val localOnly = preview.copy(id = "local-only", text = "local")
+        val merged = mergePinHistory(listOf(preview), listOf(preview, localOnly))
+        assertEquals(2, merged.size)
+        assertTrue(merged.any { it.id == preview.id })
+        assertTrue(merged.any { it.id == "local-only" })
+    }
+
+    @Test
+    fun mergePinHistory_serverPreviewWinsOnConflict() {
+        val server = listOf(preview.copy(text = "server"))
+        val local = listOf(preview.copy(text = "local"))
+        assertEquals("server", mergePinHistory(server, local).first().text)
+    }
+
+    @Test
+    fun mergePinHistory_returnsLocalWhenServerEmpty() {
+        assertEquals(listOf(preview), mergePinHistory(emptyList(), listOf(preview)))
+    }
+
+    @Test
+    fun mergePinHistory_preservesLocalWhenServerOmitsDeletedPin() {
+        val hiddenPin = preview.copy(id = "hidden-pin", text = "cleared locally")
+        val server = listOf(preview)
+        val local = listOf(preview, hiddenPin)
+        val merged = mergePinHistory(server, local)
+        assertEquals(2, merged.size)
+        assertTrue(merged.any { it.id == "hidden-pin" })
     }
 
     @Test

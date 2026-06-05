@@ -32,7 +32,10 @@ import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatRaidRoomSync
 import com.lastasylum.alliance.data.chat.ChatRoomKind
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
+import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
+import com.lastasylum.alliance.data.chat.ChatTeamRoomsMembership
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
+import com.lastasylum.alliance.data.teams.TeamMembershipNotifier
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayRaidChatForwardPolicy
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
@@ -214,6 +217,13 @@ class ChatViewModel(
     private var bootstrapJob: Job? = null
     private var persistSnapshotJob: Job? = null
 
+    private val onTeamMembershipChanged: () -> Unit = {
+        viewModelScope.launch {
+            if (!isChatTabActive && !overlayChatPanelVisible) return@launch
+            bootstrap(preferAllianceHubRoom = true, force = true)
+        }
+    }
+
     @Volatile
     private var launchWarmupNeedsMessages = false
 
@@ -240,6 +250,7 @@ class ChatViewModel(
         capNewestFirst(messages, messageMemoryCap)
 
     init {
+        TeamMembershipNotifier.addListener(onTeamMembershipChanged)
         hydrateReadCursorsFromPreferences()
         if (currentUserId.isNotBlank()) {
             locallyRemovedMessageIds.addAll(launchDiskCache.loadRemovedMessageIds(currentUserId))
@@ -1350,9 +1361,19 @@ class ChatViewModel(
         preferAllianceHubRoom: Boolean,
         preferOverlayRaidRoom: Boolean = false,
     ): Result<List<ChatRoomDto>> {
-        ChatSessionCache.getFreshRooms()?.let { return Result.success(it) }
+        val teamId = usersRepository.peekMyProfile()?.playerTeamId
+            ?: usersRepository.resolveMyProfilePreferCache()?.playerTeamId
+        ChatSessionCache.getFreshRooms()?.let { cached ->
+            if (ChatTeamRoomsMembership.cacheMatchesProfile(cached, teamId)) {
+                return Result.success(cached)
+            }
+            ChatRoomsSessionCache.invalidate()
+        }
         if ((preferAllianceHubRoom || preferOverlayRaidRoom) && _state.value.rooms.isNotEmpty()) {
-            return Result.success(_state.value.rooms)
+            val current = _state.value.rooms
+            if (ChatTeamRoomsMembership.cacheMatchesProfile(current, teamId)) {
+                return Result.success(current)
+            }
         }
         return repository.listRooms()
     }
@@ -1360,11 +1381,17 @@ class ChatViewModel(
     /** Refresh profile gate when returning from profile or opening chat. */
     fun refreshTeamProfileGate() {
         viewModelScope.launch {
+            usersRepository.getMyProfile()
+            val teamId = usersRepository.peekMyProfile()?.playerTeamId
             val hasTeam = loadTeamProfileGate()
             val cached = ChatSessionCache.getFreshRooms()
-            val roomsResult = if (cached != null) {
+            val roomsResult = if (
+                cached != null &&
+                ChatTeamRoomsMembership.cacheMatchesProfile(cached, teamId)
+            ) {
                 Result.success(cached)
             } else {
+                if (cached != null) ChatRoomsSessionCache.invalidate()
                 repository.listRooms()
             }
             _state.value = if (roomsResult.isSuccess) {
@@ -1492,7 +1519,19 @@ class ChatViewModel(
      */
     fun refreshTeamProfileGateLight() {
         viewModelScope.launch {
+            usersRepository.getMyProfile()
+            val teamId = usersRepository.peekMyProfile()?.playerTeamId
+            val cached = ChatSessionCache.getFreshRooms()
+            val staleRooms = cached != null &&
+                !ChatTeamRoomsMembership.cacheMatchesProfile(cached, teamId)
+            if (staleRooms) {
+                ChatRoomsSessionCache.invalidate()
+            }
             val hasTeam = loadTeamProfileGate()
+            if (staleRooms && (isChatTabActive || overlayChatPanelVisible)) {
+                bootstrap(preferAllianceHubRoom = true, force = true)
+                return@launch
+            }
             _state.value = _state.value.copy(hasTeamProfileForGlobalChat = hasTeam)
         }
     }
@@ -1846,8 +1885,10 @@ class ChatViewModel(
             ),
         )
         val roomForPin = _state.value.rooms.find { it.id == roomId }
-        pinHistoryByRoom[roomId] = roomForPin?.let { serverPinHistoryFromRoom(it) }
-            ?: pinHistoryPreferences.load(pinHistoryPreferences.chatScopeKey(roomId))
+        val serverHistory = roomForPin?.let { serverPinHistoryFromRoom(it) }.orEmpty()
+        val localHistory =
+            pinHistoryPreferences.load(pinHistoryPreferences.chatScopeKey(roomId)).orEmpty()
+        pinHistoryByRoom[roomId] = mergePinHistory(serverHistory, localHistory)
         pinBarIndexByRoom[roomId] = 0
         updatePinBarUi()
         if (hasCachedMessages) {
@@ -2773,10 +2814,13 @@ class ChatViewModel(
     }
 
     /** Loads one older page; returns whether any messages were appended. */
-    private suspend fun loadOlderMessagesAwait(): Boolean {
+    private suspend fun loadOlderMessagesAwait(ignoreHiddenWatermark: Boolean = false): Boolean {
         val roomId = _state.value.selectedRoomId ?: return false
         val oldestId = _state.value.messages.lastOrNull()?._id ?: return false
-        if (!_state.value.hasMoreOlder || _state.value.isLoadingOlder || _state.value.isLoading) {
+        if (!_state.value.hasMoreOlder || _state.value.isLoadingOlder) {
+            return false
+        }
+        if (!ignoreHiddenWatermark && _state.value.isLoading) {
             return false
         }
         _state.value = _state.value.copy(isLoadingOlder = true)
@@ -2793,7 +2837,12 @@ class ChatViewModel(
                         hasMoreOlder = false,
                     )
                 } else {
-                    val merged = mergeOlderPage(_state.value.messages, older, knownMessageIds)
+                    val visibleOlder = if (ignoreHiddenWatermark) {
+                        older
+                    } else {
+                        filterMessagesForRoom(older, roomId)
+                    }
+                    val merged = mergeOlderPage(_state.value.messages, visibleOlder, knownMessageIds)
                     rebuildMessageIdIndex(merged, messageIdIndex)
                     _state.value = _state.value.copy(
                         messages = merged,
@@ -2806,7 +2855,7 @@ class ChatViewModel(
             .onFailure { e ->
                 _state.value = _state.value.copy(
                     isLoadingOlder = false,
-                    error = e.toUserMessageRu(res),
+                    transientNotice = e.toUserMessageRu(res),
                 )
             }
         return result.isSuccess && result.getOrNull()?.isNotEmpty() == true
@@ -3249,12 +3298,10 @@ class ChatViewModel(
             return
         }
         val serverHistory = serverPinHistoryFromRoom(room)
+        val localHistory = pinHistoryByRoom[roomId].orEmpty()
+        val merged = mergePinHistory(serverHistory, localHistory)
         val refreshed = refreshPinHistoryPreviews(
-            if (serverHistory.isNotEmpty()) {
-                serverHistory
-            } else {
-                pinHistoryByRoom[roomId].orEmpty()
-            },
+            if (merged.isNotEmpty()) merged else localHistory,
             messages,
         )
         pinHistoryByRoom[roomId] = refreshed
@@ -3305,6 +3352,7 @@ class ChatViewModel(
         val trimmedId = messageId.trim()
         if (roomId.isEmpty() || trimmedId.isEmpty() || _state.value.pinInFlight) return
         val roomsSnapshot = _state.value.rooms
+        val pinHistorySnapshot = pinHistoryByRoom[roomId]?.toList().orEmpty()
         _state.update { it.copy(pinInFlight = true) }
         viewModelScope.launch {
             repository.unpinOneRoomMessage(roomId, trimmedId)
@@ -3319,6 +3367,7 @@ class ChatViewModel(
                     }
                 }
                 .onFailure { e ->
+                    pinHistoryByRoom[roomId] = pinHistorySnapshot
                     _state.update {
                         applyPinBarUi(
                             it.copy(
@@ -3366,7 +3415,7 @@ class ChatViewModel(
                 messageIdsNewestFirst = _state.value.messages.mapNotNull { it._id },
                 hasMoreOlder = { _state.value.hasMoreOlder },
                 isLoadingOlder = { _state.value.isLoadingOlder },
-                loadOlder = { loadOlderMessagesAwait() },
+                loadOlder = { loadOlderMessagesAwait(ignoreHiddenWatermark = true) },
                 timelineIndexForMessageId = { id ->
                     chatTimelineIndexForMessageId(
                         _listDerived.value.timeline,
@@ -3418,7 +3467,7 @@ class ChatViewModel(
                 messageIdsNewestFirst = _state.value.messages.mapNotNull { it._id },
                 hasMoreOlder = { _state.value.hasMoreOlder },
                 isLoadingOlder = { _state.value.isLoadingOlder },
-                loadOlder = { loadOlderMessagesAwait() },
+                loadOlder = { loadOlderMessagesAwait(ignoreHiddenWatermark = true) },
                 timelineIndexForMessageId = { id ->
                     chatTimelineIndexForMessageId(
                         _listDerived.value.timeline,
@@ -3469,14 +3518,16 @@ class ChatViewModel(
     }
 
     fun onRoomPinChanged(event: ChatRoomPinChangedEvent) {
-        val history = event.pinnedMessages.ifEmpty {
+        val serverHistory = event.pinnedMessages.ifEmpty {
             event.pinnedMessage?.let { listOf(it) } ?: emptyList()
         }
-        if (history.isNotEmpty()) {
-            pinHistoryByRoom[event.roomId] = history
-        } else if (event.pinnedMessageId.isNullOrBlank()) {
+        if (event.pinnedMessageId.isNullOrBlank()) {
             pinHistoryByRoom.remove(event.roomId)
+        } else {
+            val localHistory = pinHistoryByRoom[event.roomId].orEmpty()
+            pinHistoryByRoom[event.roomId] = mergePinHistory(serverHistory, localHistory)
         }
+        val history = pinHistoryByRoom[event.roomId].orEmpty()
         val scopeKey = pinHistoryPreferences.chatScopeKey(event.roomId)
         val newPinId = event.pinnedMessageId?.trim().orEmpty()
         if (newPinId.isNotEmpty()) {
@@ -3498,6 +3549,7 @@ class ChatViewModel(
         val trimmedId = messageId.trim()
         if (roomId.isEmpty() || trimmedId.isEmpty() || _state.value.pinInFlight) return
         val roomsSnapshot = _state.value.rooms
+        val pinHistorySnapshot = pinHistoryByRoom[roomId]?.toList().orEmpty()
         val roomBefore = roomsSnapshot.find { it.id == roomId }
         val message = previewSource?.takeIf { it._id == trimmedId }
             ?: _state.value.messages.find { it._id == trimmedId }
@@ -3533,6 +3585,7 @@ class ChatViewModel(
                     }
                 }
                 .onFailure { e ->
+                    pinHistoryByRoom[roomId] = pinHistorySnapshot
                     _state.update {
                         applyPinBarUi(
                             it.copy(
@@ -3550,6 +3603,7 @@ class ChatViewModel(
         val roomId = _state.value.selectedRoomId?.trim().orEmpty()
         if (roomId.isEmpty() || _state.value.pinInFlight) return
         val roomsSnapshot = _state.value.rooms
+        val pinHistorySnapshot = pinHistoryByRoom[roomId]?.toList().orEmpty()
         val optimisticRoom = roomsSnapshot.find { it.id == roomId }?.withOptimisticUnpin()
         if (optimisticRoom != null) {
             publishRoomPin(optimisticRoom)
@@ -3569,6 +3623,7 @@ class ChatViewModel(
                     }
                 }
                 .onFailure { e ->
+                    pinHistoryByRoom[roomId] = pinHistorySnapshot
                     _state.update {
                         applyPinBarUi(
                             it.copy(
@@ -4586,6 +4641,7 @@ class ChatViewModel(
     }
 
     override fun onCleared() {
+        TeamMembershipNotifier.removeListener(onTeamMembershipChanged)
         chatVoiceRecognizer?.destroy()
         chatVoiceRecognizer = null
         typingEmitJob?.cancel()
