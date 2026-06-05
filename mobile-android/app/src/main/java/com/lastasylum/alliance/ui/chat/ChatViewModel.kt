@@ -221,7 +221,27 @@ class ChatViewModel(
     private var overlayAutoMarkReadJob: kotlinx.coroutines.Job? = null
     private val bootstrapMutex = Mutex()
     private var bootstrapJob: Job? = null
+    private var openRoomJob: Job? = null
     private var persistSnapshotJob: Job? = null
+
+    private fun isActiveSelectedRoom(roomId: String): Boolean =
+        _state.value.selectedRoomId?.trim() == roomId.trim()
+
+    /** Update room cache without touching visible feed when another room is selected. */
+    private fun persistRoomMessagesToCache(
+        roomId: String,
+        messages: List<ChatMessage>,
+        hasMoreOlder: Boolean,
+    ) {
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return
+        val capped = capMessagesForMemory(messages)
+        roomMessageCache[rid] = RoomMessageCache(
+            messages = capped,
+            hasMoreOlder = hasMoreOlder,
+        )
+        ChatSessionCache.updateMessages(rid, capped)
+    }
 
     private val onTeamMembershipChanged: () -> Unit = {
         viewModelScope.launch {
@@ -859,7 +879,9 @@ class ChatViewModel(
     ) {
         if (preferOverlayRaidRoom && overlayRaidAlreadyReady(_state.value.rooms)) {
             allianceRaidRoomId(_state.value.rooms)?.let { raidId ->
-                rehydrateRoomMessagesFromCache(raidId)
+                if (isActiveSelectedRoom(raidId)) {
+                    rehydrateRoomMessagesFromCache(raidId)
+                }
                 scheduleOverlayRoomHistorySync(raidId)
             }
             _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
@@ -867,7 +889,11 @@ class ChatViewModel(
             return
         }
         if (preferAllianceHubRoom && !preferOverlayRaidRoom) {
-            allianceHubRoomId(_state.value.rooms)?.let { rehydrateRoomMessagesFromCache(it) }
+            allianceHubRoomId(_state.value.rooms)?.let { hubId ->
+                if (isActiveSelectedRoom(hubId)) {
+                    rehydrateRoomMessagesFromCache(hubId)
+                }
+            }
             if (overlayHubAlreadyReady(_state.value.rooms)) {
                 _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
                 refreshPinBarForSelectedRoom()
@@ -917,15 +943,21 @@ class ChatViewModel(
                 messageIdIndex.clear()
                 _listDerived.value = ChatMessagesListDerived.Empty
             }
-            _state.update { st ->
-                st.copy(
-                    isLoading = true,
-                    isRoomsLoading = false,
-                    selectedRoomId = roomId,
-                    messages = if (switchingRoom) emptyList() else st.messages,
-                    rooms = if (st.rooms.isEmpty()) rooms else st.rooms,
-                )
+            if (isActiveSelectedRoom(roomId) || _state.value.selectedRoomId.isNullOrBlank()) {
+                _state.update { st ->
+                    st.copy(
+                        isLoading = true,
+                        isRoomsLoading = false,
+                        selectedRoomId = roomId,
+                        messages = if (switchingRoom) emptyList() else st.messages,
+                        rooms = if (st.rooms.isEmpty()) rooms else st.rooms,
+                    )
+                }
             }
+            return
+        }
+        if (!isActiveSelectedRoom(roomId) && !_state.value.selectedRoomId.isNullOrBlank()) {
+            persistRoomMessagesToCache(roomId, cached.messages, cached.hasMoreOlder)
             return
         }
         knownMessageIds.clear()
@@ -1793,6 +1825,13 @@ class ChatViewModel(
             preferOverlayRaidRoom = preferOverlayRaidRoom,
         )
         chatRoomPreferences.setSelectedRoomId(selected)
+        _state.update { st ->
+            st.copy(
+                rooms = if (st.rooms.isEmpty()) rooms else st.rooms,
+                selectedRoomId = selected,
+                isRoomsLoading = false,
+            )
+        }
         reconcileStaleServerUnread(rooms, roomsRaw)
         val cachedOverlayMessages = ChatSessionCache.getFreshMessages(selected)
             ?: roomMessageCache[selected]?.messages
@@ -1885,6 +1924,8 @@ class ChatViewModel(
 
     fun selectRoom(roomId: String) {
         if (roomId == _state.value.selectedRoomId) return
+        bootstrapJob?.cancel()
+        openRoomJob?.cancel()
         if (isGlobalChatRoom(roomId)) {
             refreshTeamProfileGateLight()
         }
@@ -1962,13 +2003,14 @@ class ChatViewModel(
         }
         repository.ensureRoomJoined(roomId)
         _otherReadUptoMessageId.value = otherReadUptoByRoom[roomId]
-        viewModelScope.launch {
+        openRoomJob = viewModelScope.launch {
             chatRoomPreferences.setSelectedRoomId(roomId)
             if (previousRoomId != null && !previousNewestId.isNullOrBlank()) {
                 launch(Dispatchers.IO) {
                     markRoomReadUpTo(previousRoomId, previousNewestId)
                 }
             }
+            if (!isActiveSelectedRoom(roomId)) return@launch
             openRoom(
                 roomId = roomId,
                 rooms = _state.value.rooms,
@@ -2216,17 +2258,18 @@ class ChatViewModel(
             excludedMessageIds = locallyRemovedMessageIds,
             hiddenBeforeMessageId = hiddenBeforeForRoom(rid),
         )
-        if (chatMessagesListContentEqual(visible, merged)) return false
+        if (chatMessagesListContentEqual(cached, merged) &&
+            chatMessagesListContentEqual(visible, merged)
+        ) {
+            return false
+        }
+        val hasMoreOlder = cachedEntry.hasMoreOlder
+        persistRoomMessagesToCache(rid, merged, hasMoreOlder)
+        if (!isActiveSelectedRoom(rid)) return true
         knownMessageIds.clear()
         messageIdIndex.clear()
         knownMessageIds.addAll(merged.mapNotNull { it._id })
         rebuildMessageIdIndex(merged, messageIdIndex)
-        val hasMoreOlder = cachedEntry.hasMoreOlder
-        roomMessageCache[rid] = RoomMessageCache(
-            messages = merged,
-            hasMoreOlder = hasMoreOlder,
-        )
-        ChatSessionCache.updateMessages(rid, merged)
         _state.update { st ->
             st.copy(
                 messages = merged,
@@ -2471,7 +2514,10 @@ class ChatViewModel(
         messagesAlreadyInState: Boolean = false,
         deferNetworkMessages: Boolean = false,
     ) {
-        hydratePeerReadCursor(roomId)
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return
+        if (!isActiveSelectedRoom(rid)) return
+        hydratePeerReadCursor(rid)
         typingEmitJob?.cancel()
         typingEmitJob = null
         synchronized(typingPeerJobsLock) {
@@ -2485,9 +2531,11 @@ class ChatViewModel(
             _typingPeers.value = emptyMap()
         }
         _state.update { st ->
-            st.copy(rooms = clearUnreadForRoomIfViewing(st.rooms.ifEmpty { rooms }, roomId, treatAsViewing = true))
+            if (!isActiveSelectedRoom(rid)) st
+            else st.copy(rooms = clearUnreadForRoomIfViewing(st.rooms.ifEmpty { rooms }, rid, treatAsViewing = true))
         }
-        val isGlobalRoom = isGlobalChatRoom(roomId, rooms)
+        if (!isActiveSelectedRoom(rid)) return
+        val isGlobalRoom = isGlobalChatRoom(rid, rooms)
         val hasTeam = when {
             isGlobalRoom -> loadTeamProfileGate()
             hadCachedMessages && cachedTeamProfileGate != null -> cachedTeamProfileGate == true
@@ -2495,11 +2543,12 @@ class ChatViewModel(
             else -> loadTeamProfileGate()
         }
         if (!hadCachedMessages) {
+            if (!isActiveSelectedRoom(rid)) return
             _state.value = _state.value.copy(
                 isLoading = true,
                 isRoomsLoading = false,
-                rooms = clearUnreadForRoomIfViewing(rooms, roomId, treatAsViewing = true),
-                selectedRoomId = roomId,
+                rooms = clearUnreadForRoomIfViewing(rooms, rid, treatAsViewing = true),
+                selectedRoomId = rid,
                 hasTeamProfileForGlobalChat = hasTeam,
                 error = null,
                 messages = emptyList(),
@@ -2522,14 +2571,15 @@ class ChatViewModel(
                 transientNotice = null,
                 sendFailure = null,
             )
-            _otherReadUptoMessageId.value = otherReadUptoByRoom[roomId]
+            _otherReadUptoMessageId.value = otherReadUptoByRoom[rid]
             _listDerived.value = ChatMessagesListDerived.Empty
         } else {
-            _otherReadUptoMessageId.value = otherReadUptoByRoom[roomId]
+            if (!isActiveSelectedRoom(rid)) return
+            _otherReadUptoMessageId.value = otherReadUptoByRoom[rid]
             _state.value = _state.value.copy(
                 isRoomsLoading = false,
-                rooms = clearUnreadForRoomIfViewing(rooms, roomId, treatAsViewing = true),
-                selectedRoomId = roomId,
+                rooms = clearUnreadForRoomIfViewing(rooms, rid, treatAsViewing = true),
+                selectedRoomId = rid,
                 hasTeamProfileForGlobalChat = hasTeam,
             )
         }
@@ -2543,15 +2593,16 @@ class ChatViewModel(
             onRoomPinChanged = ::onRoomPinChanged,
             onHistoryCleared = ::onChatHistoryClearedFromServer,
         )
-        val cached = roomMessageCache[roomId]
+        val cached = roomMessageCache[rid]
         if (hadCachedMessages && cached != null && cached.messages.isNotEmpty()) {
-            rehydrateRoomMessagesFromCache(roomId)
+            rehydrateRoomMessagesFromCache(rid)
+            if (!isActiveSelectedRoom(rid)) return
             val filteredCache = messagesWithoutLocallyRemoved(
-                filterMessagesForRoom(roomMessageCache[roomId]?.messages.orEmpty(), roomId),
+                filterMessagesForRoom(roomMessageCache[rid]?.messages.orEmpty(), rid),
             )
-            if (roomMessageCache[roomId]?.messages?.size != filteredCache.size) {
-                roomMessageCache[roomId] = cached.copy(messages = capMessagesForMemory(filteredCache))
-                ChatSessionCache.updateMessages(roomId, roomMessageCache[roomId]!!.messages)
+            if (roomMessageCache[rid]?.messages?.size != filteredCache.size) {
+                roomMessageCache[rid] = cached.copy(messages = capMessagesForMemory(filteredCache))
+                ChatSessionCache.updateMessages(rid, roomMessageCache[rid]!!.messages)
             }
             if (!messagesAlreadyInState) {
                 knownMessageIds.clear()
@@ -2561,27 +2612,27 @@ class ChatViewModel(
                 _state.value = _state.value.copy(
                     isLoading = false,
                     messages = filteredCache,
-                    selectedRoomId = roomId,
+                    selectedRoomId = rid,
                     hasMoreOlder = cached.hasMoreOlder,
-                    rooms = clearUnreadForRoomIfViewing(_state.value.rooms, roomId, treatAsViewing = true),
+                    rooms = clearUnreadForRoomIfViewing(_state.value.rooms, rid, treatAsViewing = true),
                 )
                 publishMessagesDerived(filteredCache)
             } else {
                 _state.update {
                     it.copy(
                         isLoading = false,
-                        selectedRoomId = roomId,
+                        selectedRoomId = rid,
                         hasMoreOlder = cached.hasMoreOlder,
-                        rooms = clearUnreadForRoomIfViewing(it.rooms, roomId, treatAsViewing = true),
+                        rooms = clearUnreadForRoomIfViewing(it.rooms, rid, treatAsViewing = true),
                     )
                 }
             }
             if (shouldAutoMarkReadSelectedRoom()) {
                 _state.value.messages.firstOrNull()?._id?.let { newestId ->
-                    markRoomReadUpTo(roomId, newestId)
+                    markRoomReadUpTo(rid, newestId)
                 }
             }
-            refreshMessagesInBackground(roomId, force = true)
+            refreshMessagesInBackground(rid, force = true)
             schedulePersistChatSnapshot()
             return
         }
@@ -2590,16 +2641,16 @@ class ChatViewModel(
             schedulePersistChatSnapshot()
             return
         }
-        repository.loadRecentMessages(roomId, beforeMessageId = null, limit = INITIAL_PAGE_SIZE)
+        repository.loadRecentMessages(rid, beforeMessageId = null, limit = INITIAL_PAGE_SIZE)
             .onSuccess { loaded ->
                 applyLoadedMessagePage(
-                    roomId = roomId,
+                    roomId = rid,
                     loaded = loaded,
                     pageSizeForHasMore = INITIAL_PAGE_SIZE,
                 )
             }
             .onFailure { e ->
-                if (!hadCachedMessages) {
+                if (!hadCachedMessages && isActiveSelectedRoom(rid)) {
                     _state.value = _state.value.copy(
                         isLoading = false,
                         error = e.toUserMessageRu(res),
@@ -2715,10 +2766,11 @@ class ChatViewModel(
         val capped = capMessagesForMemory(merged)
         rebuildMessageIdIndex(capped, messageIdIndex)
         val hasMoreOlder = loaded.size >= pageSizeForHasMore
-        roomMessageCache[roomId] = RoomMessageCache(
-            messages = capped,
-            hasMoreOlder = hasMoreOlder,
-        )
+        persistRoomMessagesToCache(roomId, capped, hasMoreOlder)
+        if (!isActiveSelectedRoom(roomId)) {
+            schedulePersistChatSnapshot()
+            return
+        }
         _state.value = _state.value.copy(
             isLoading = false,
             messages = capped,
