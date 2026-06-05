@@ -866,12 +866,14 @@ class ChatViewModel(
         if (preferOverlayRaidRoom && overlayRaidAlreadyReady(_state.value.rooms)) {
             allianceRaidRoomId(_state.value.rooms)?.let { rehydrateRoomMessagesFromCache(it) }
             _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
+            refreshPinBarForSelectedRoom()
             return
         }
         if (preferAllianceHubRoom && !preferOverlayRaidRoom) {
             allianceHubRoomId(_state.value.rooms)?.let { rehydrateRoomMessagesFromCache(it) }
             if (overlayHubAlreadyReady(_state.value.rooms)) {
                 _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
+                refreshPinBarForSelectedRoom()
                 return
             }
         }
@@ -894,6 +896,7 @@ class ChatViewModel(
         ) {
             rehydrateRoomMessagesFromCache(roomId)
             _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
+            refreshPinBarForSelectedRoom()
             return
         }
         val cached = roomMessageCache[roomId]
@@ -942,6 +945,7 @@ class ChatViewModel(
             error = null,
             scrollToLatestNonce = _state.value.scrollToLatestNonce + 1L,
         )
+        refreshPinBarForSelectedRoom()
         publishMessagesDerived(cached.messages)
     }
 
@@ -959,6 +963,7 @@ class ChatViewModel(
         } else if (!hubReady) {
             syncOverlayRoomsQuietly()
         }
+        refreshPinBarForSelectedRoom()
     }
 
     /** Список комнат в фоне — без сброса уже показанной ленты hub. */
@@ -1011,12 +1016,14 @@ class ChatViewModel(
                 _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
             }
             rehydrateSelectedRoomMessagesFromCache()
+            refreshPinBarForSelectedRoom()
             reconnectRealtimeIfNeeded()
             viewModelScope.launch {
                 if (!overlayChatPanelVisible) return@launch
                 delay(32)
                 if (!overlayChatPanelVisible) return@launch
                 rehydrateSelectedRoomMessagesFromCache()
+                refreshPinBarForSelectedRoom()
                 if (_state.value.selectedRoomId.isNullOrBlank()) {
                     ensureAllianceHubRoomSelected()
                 }
@@ -1483,6 +1490,7 @@ class ChatViewModel(
             val roomId = _state.value.selectedRoomId?.trim().orEmpty()
             if (roomId.isEmpty()) return@launch
             rehydrateSelectedRoomMessagesFromCache()
+            refreshPinBarForSelectedRoom()
             refreshMessagesInBackground(roomId, force = false)
             if (_state.value.selectedRoomId.isNullOrBlank()) {
                 ensureAllianceHubRoomSelected()
@@ -1892,13 +1900,7 @@ class ChatViewModel(
                     (overlayChatPanelVisible && CombatOverlayService.isOverlayChatTabActive()),
             ),
         )
-        val roomForPin = _state.value.rooms.find { it.id == roomId }
-        val serverHistory = roomForPin?.let { serverPinHistoryFromRoom(it) }.orEmpty()
-        val localHistory =
-            pinHistoryPreferences.load(pinHistoryPreferences.chatScopeKey(roomId)).orEmpty()
-        pinHistoryByRoom[roomId] = mergePinHistory(serverHistory, localHistory)
-        pinBarIndexByRoom[roomId] = 0
-        updatePinBarUi()
+        refreshPinBarForSelectedRoom(resetBarIndex = true)
         if (hasCachedMessages) {
             knownMessageIds.addAll(cachedMessages.mapNotNull { it._id })
             rebuildMessageIdIndex(cachedMessages, messageIdIndex)
@@ -3426,6 +3428,24 @@ class ChatViewModel(
 
     private fun updatePinBarUi() {
         _state.update { applyPinBarUi(it) }
+    }
+
+    /**
+     * Reload pin history and emit pin bar into [chromePaneState].
+     * Needed when overlay/tab UI resubscribes after [SharingStarted.WhileSubscribed] idle.
+     */
+    private fun refreshPinBarForSelectedRoom(resetBarIndex: Boolean = false) {
+        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty()) return
+        val room = _state.value.rooms.find { it.id == roomId } ?: return
+        val serverHistory = serverPinHistoryFromRoom(room)
+        val localHistory =
+            pinHistoryPreferences.load(pinHistoryPreferences.chatScopeKey(roomId)).orEmpty()
+        pinHistoryByRoom[roomId] = mergePinHistory(serverHistory, localHistory)
+        if (resetBarIndex) {
+            pinBarIndexByRoom[roomId] = 0
+        }
+        updatePinBarUi()
     }
 
     fun onJumpToPinnedMessage(messageId: String) {
