@@ -154,6 +154,7 @@
     <string name="chat_pinned_bar_cd">Закреплённое сообщение</string>
     <string name="chat_pinned_preview_sticker">Стикер</string>
     <string name="chat_pinned_preview_photo">Фото</string>
+    <string name="chat_pinned_preview_deleted">Сообщение удалено</string>
     <string name="chat_pinned_toast_pinned">Сообщение закреплено</string>
     <string name="chat_pinned_toast_unpinned">Закрепление снято</string>
     <string name="chat_pin_replace_title">Заменить закрепление?</string>

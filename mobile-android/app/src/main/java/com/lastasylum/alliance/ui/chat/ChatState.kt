@@ -2,6 +2,7 @@ package com.lastasylum.alliance.ui.chat
 
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
+import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 
 enum class ChatVoicePhase {
     Idle,
@@ -55,6 +56,10 @@ data class ChatState(
     val transientNotice: String? = null,
     /** Pin/unpin REST in flight — disables sheet actions. */
     val pinInFlight: Boolean = false,
+    /** Pinned bar preview (may cycle through local pin history). */
+    val pinBarPreview: PinnedMessagePreviewDto? = null,
+    /** Total pins in local history when > 1 (Telegram-style badge). */
+    val pinHistoryCount: Int = 0,
     val sendFailure: ChatSendFailure? = null,
     /** Wire keys for sticker packs the user may send (e.g. zlobyaka). */
     val enabledStickerPackKeys: Set<String> = emptySet(),

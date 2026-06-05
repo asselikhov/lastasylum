@@ -184,7 +184,7 @@ import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.ChatListPaneState
 import com.lastasylum.alliance.ui.chat.ChatChromePaneState
 import com.lastasylum.alliance.ui.chat.PinnedMessageBar
-import com.lastasylum.alliance.ui.chat.resolveChatPinnedPreview
+import com.lastasylum.alliance.ui.chat.isPinnedPreviewLikelyDeleted
 import com.lastasylum.alliance.ui.chat.canPinChatMessage
 import com.lastasylum.alliance.ui.chat.ChatComposerPaneState
 import com.lastasylum.alliance.ui.chat.toListPane
@@ -277,7 +277,9 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.chatRoomTabLabelForServer
-import com.lastasylum.alliance.ui.util.chatMessageHasCopyableContent
+import com.lastasylum.alliance.ui.util.appendTextToDraft
+import com.lastasylum.alliance.ui.util.chatMessageHasMenuCopyAction
+import com.lastasylum.alliance.ui.util.chatMessageTextForComposer
 import com.lastasylum.alliance.ui.util.chatMessageTextForComposer
 import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
 import com.lastasylum.alliance.ui.util.ComposerPasteChipRow
@@ -296,10 +298,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-
-private fun resolvedChatAttachmentImageUrl(raw: String): String =
-    if (raw.startsWith("http", ignoreCase = true)) raw.trim()
-    else BuildConfig.API_BASE_URL.trimEnd('/') + "/" + raw.trimStart('/')
+import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
 
 private fun openPickedImageInExternalViewer(context: Context, uri: Uri): Boolean {
     val viewIntent = Intent(Intent.ACTION_VIEW).apply {
@@ -387,6 +386,7 @@ private fun ChatScreenMessagesHost(
     clearRoomHistoryEnabled: Boolean = true,
     onPinMessage: (String, ChatMessage?) -> Unit = { id, _ -> },
     onUnpinRoom: () -> Unit = {},
+    onPinnedBarTap: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -405,12 +405,10 @@ private fun ChatScreenMessagesHost(
     val selectedRoom = remember(selectedRoomId, chromePane.rooms) {
         selectedRoomId?.let { id -> chromePane.rooms.find { it.id == id } }
     }
-    val pinnedPreview = remember(selectedRoom, messages) {
-        resolveChatPinnedPreview(
-            pinnedMessageId = selectedRoom?.pinnedMessageId,
-            pinnedMessage = selectedRoom?.pinnedMessage,
-            messages = messages,
-        )
+    val pinnedPreview = chromePane.pinBarPreview
+    val pinHistoryCount = chromePane.pinHistoryCount
+    val pinnedMessageDeleted = remember(pinnedPreview, messages) {
+        pinnedPreview?.let { isPinnedPreviewLikelyDeleted(it, messages) } == true
     }
     val canUnpinPinned = canPinChatMessage(
         selectedRoom?.allianceId,
@@ -696,7 +694,7 @@ private fun ChatScreenMessagesHost(
                 )
             }
             AnimatedVisibility(
-                visible = pinnedPreview != null,
+                visible = pinnedPreview != null && selectedRoom?.pinnedMessageId != null,
                 enter = expandVertically(),
                 exit = shrinkVertically(),
             ) {
@@ -704,8 +702,10 @@ private fun ChatScreenMessagesHost(
                     PinnedMessageBar(
                         preview = preview,
                         canUnpin = canUnpinPinned,
-                        onTap = { onJumpToQuotedMessage(preview.id) },
+                        onTap = onPinnedBarTap,
                         onUnpin = onUnpinRoom,
+                        historyCount = pinHistoryCount,
+                        messageDeleted = pinnedMessageDeleted,
                         modifier = Modifier.padding(bottom = 4.dp),
                     )
                 }
@@ -974,6 +974,7 @@ fun ChatScreen(
     onClearRoomHistory: () -> Unit = {},
     onPinMessage: (String, ChatMessage?) -> Unit = { id, _ -> },
     onUnpinRoom: () -> Unit = {},
+    onPinnedBarTap: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1093,6 +1094,7 @@ fun ChatScreen(
                     !chromePane.selectedRoomId.isNullOrBlank(),
                 onPinMessage = onPinMessage,
                 onUnpinRoom = onUnpinRoom,
+                onPinnedBarTap = onPinnedBarTap,
             )
             ChatScreenComposerSection(
                 composerPane = composerPane,
@@ -1128,6 +1130,7 @@ fun ChatScreen(
                         onClick = {
                             onPinMessage(pinTargetId, pinTarget)
                             pendingPinReplaceMessage = null
+                            dismissMessageActions()
                         },
                     ) {
                         Text(stringResource(R.string.chat_pin_replace_confirm))
@@ -1151,7 +1154,7 @@ fun ChatScreen(
                 playerTeamSquadRole = chromePane.playerTeamSquadRole,
             )
             val menuCanPin = canPinChatMessage(
-                message.allianceId,
+                selectedRoom?.allianceId,
                 chromePane.playerTeamSquadRole,
             )
             val roomPinnedId = selectedRoom?.pinnedMessageId
@@ -1169,7 +1172,7 @@ fun ChatScreen(
                     MessageContextMenuScrim(onDismiss = dismissMessageActions)
                     MessageContextMenuPopup(
                         showReactions = true,
-                        canCopy = chatMessageHasCopyableContent(message),
+                        canCopy = chatMessageHasMenuCopyAction(message),
                         canPin = menuCanPin && message.deletedAt == null,
                         isPinned = isRoomPinnedMessage,
                         pinActionsEnabled = !chromePane.pinInFlight,
@@ -1187,6 +1190,9 @@ fun ChatScreen(
                             },
                             onCopy = {
                                 copyChatMessageToClipboard(context, message)
+                                chatMessageTextForComposer(message)?.let { text ->
+                                    onDraftChange(appendTextToDraft(draftMessage, text))
+                                }
                                 dismissMessageActions()
                             },
                             onPin = {
@@ -1196,6 +1202,7 @@ fun ChatScreen(
                                     pendingPinReplaceMessage = message
                                 } else {
                                     onPinMessage(msgId, message)
+                                    dismissMessageActions()
                                 }
                             },
                             onUnpin = {
@@ -1241,7 +1248,7 @@ fun ChatScreen(
                                             else ->
                                                 context.getString(toastRes)
                                         }
-                                        Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context.applicationContext, text, Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             } else {

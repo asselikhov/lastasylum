@@ -142,6 +142,7 @@ internal fun ChatComposer(
     var selectedStickerPackKey by remember { mutableStateOf<String?>(null) }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
     var showOverlayGalleryPicker by remember { mutableStateOf(false) }
+    var composerFieldFocused by remember { mutableStateOf(false) }
     val composerLocked = readOnly || isSending || isUploadingFile
     val isEditing = editingMessage != null
     val effectiveAllowMedia = allowMediaAttachments && !isEditing
@@ -656,6 +657,7 @@ internal fun ChatComposer(
                             .composerLongPressPaste(
                                 enabled = !composerLocked,
                                 onLongPress = pasteState.onLongPress,
+                                interceptLongPress = !composerFieldFocused,
                             ),
                     ) {
                         Row(
@@ -717,6 +719,7 @@ internal fun ChatComposer(
                                     .composerLongPressPaste(
                                         enabled = !readOnly,
                                         onLongPress = pasteState.onLongPress,
+                                        interceptLongPress = !composerFieldFocused,
                                     ),
                             ) {
                                 TextField(
@@ -727,9 +730,11 @@ internal fun ChatComposer(
                                         .composerLongPressPaste(
                                             enabled = !readOnly,
                                             onLongPress = pasteState.onLongPress,
+                                            interceptLongPress = !composerFieldFocused,
                                         )
                                         .focusRequester(focusRequester)
                                         .onFocusChanged { fc ->
+                                            composerFieldFocused = fc.isFocused
                                             if (!readOnly && fc.isFocused) {
                                                 if (showMediaPanel) {
                                                     showMediaPanel = false

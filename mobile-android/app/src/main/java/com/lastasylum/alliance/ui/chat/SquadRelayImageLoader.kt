@@ -11,11 +11,8 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.allowHardware
 import coil3.request.crossfade
 import coil3.serviceLoaderEnabled
-import com.lastasylum.alliance.data.network.AuthInterceptor
-import com.lastasylum.alliance.di.AppContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import okhttp3.OkHttpClient
 import okio.Path.Companion.toPath
 
 /**
@@ -26,10 +23,7 @@ object SquadRelayImageLoader {
     @OptIn(ExperimentalCoroutinesApi::class)
     fun create(context: Context): ImageLoader {
         val appContext = context.applicationContext
-        val tokenStore = AppContainer.from(appContext).tokenStore
-        val client = OkHttpClient.Builder()
-            .addInterceptor(AuthInterceptor(tokenStore))
-            .build()
+        val client = authenticatedOkHttpClient(appContext)
         return ImageLoader.Builder(appContext)
             .serviceLoaderEnabled(false)
             .components {

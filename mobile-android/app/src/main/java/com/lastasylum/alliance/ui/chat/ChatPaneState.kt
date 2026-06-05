@@ -3,6 +3,7 @@ package com.lastasylum.alliance.ui.chat
 import androidx.compose.runtime.Immutable
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
+import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 
 @Immutable
 data class ChatListPaneState(
@@ -35,6 +36,8 @@ data class ChatChromePaneState(
     val confirmBulkDelete: Boolean = false,
     val isDeletingSelection: Boolean = false,
     val pinInFlight: Boolean = false,
+    val pinBarPreview: PinnedMessagePreviewDto? = null,
+    val pinHistoryCount: Int = 0,
 )
 
 @Immutable
@@ -77,6 +80,8 @@ fun ChatState.toChromePane(): ChatChromePaneState =
         confirmBulkDelete = confirmBulkDelete,
         isDeletingSelection = isDeletingSelection,
         pinInFlight = pinInFlight,
+        pinBarPreview = pinBarPreview,
+        pinHistoryCount = pinHistoryCount,
     )
 
 fun ChatState.toComposerPane(): ChatComposerPaneState =

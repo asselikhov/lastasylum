@@ -32,12 +32,10 @@ fun rememberComposerPasteState(
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
     val currentDraft by rememberUpdatedState(draft)
-    val hasClipboard = remember(showMenu) {
-        readClipboardPlainText(context) != null
-    }
+    val clipboardHasText = rememberClipboardHasTextState()
     return ComposerPasteState(
         showMenu = showMenu,
-        hasClipboard = hasClipboard,
+        hasClipboard = clipboardHasText,
         onLongPress = {
             if (!readOnly) showMenu = true
         },

@@ -164,6 +164,9 @@ class ChatViewModel(
     val otherReadUptoMessageId: StateFlow<String?> = _otherReadUptoMessageId.asStateFlow()
     /** Per-room peer read cursor — survives room switches (overlay + main app). */
     private val otherReadUptoByRoom = mutableMapOf<String, String>()
+    /** Client-side pin history per room (Telegram-style bar cycling). */
+    private val pinHistoryByRoom = mutableMapOf<String, List<com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto>>()
+    private val pinBarIndexByRoom = mutableMapOf<String, Int>()
 
     private val knownMessageIds = LinkedHashSet<String>()
   /** messageId → index in [ChatState.messages] (newest-first); cleared on room switch. */
@@ -275,6 +278,8 @@ class ChatViewModel(
         optimisticUnreadFloorByRoom.clear()
         otherReadUptoByRoom.clear()
         lastMarkedReadByRoom.clear()
+        pinHistoryByRoom.clear()
+        pinBarIndexByRoom.clear()
 
         val selected = _state.value.selectedRoomId
         _state.update { st ->
@@ -290,8 +295,11 @@ class ChatViewModel(
                 isDeletingSelection = false,
                 activeActionMessageId = null,
                 rooms = st.rooms.map { it.copy(unreadCount = 0, lastReadMessageId = null) },
+                pinBarPreview = null,
+                pinHistoryCount = 0,
             )
         }
+        updatePinBarUi()
         _otherReadUptoMessageId.value = null
         _listDerived.value = ChatMessagesListDerived.Empty
         publishMessagesDerived(emptyList())
@@ -1797,6 +1805,7 @@ class ChatViewModel(
                     (overlayChatPanelVisible && CombatOverlayService.isOverlayChatTabActive()),
             ),
         )
+        updatePinBarUi()
         if (hasCachedMessages) {
             knownMessageIds.addAll(cachedMessages.mapNotNull { it._id })
             rebuildMessageIdIndex(cachedMessages, messageIdIndex)
@@ -1903,7 +1912,7 @@ class ChatViewModel(
             room.copy(
                 unreadCount = unread,
                 lastReadMessageId = resolvedLast ?: room.lastReadMessageId,
-            )
+            ).mergePinFromPrevious(previousById[room.id])
         }
     }
 
@@ -2559,9 +2568,21 @@ class ChatViewModel(
                 val derived = buildChatMessagesListDerived(expected)
                 if (chatMessagesListContentEqual(expected, _state.value.messages)) {
                     _listDerived.value = derived
+                    withContext(Dispatchers.Main) {
+                        maybeRefreshPinBarUi()
+                    }
                 }
             }
         }
+    }
+
+    private fun maybeRefreshPinBarUi() {
+        val st = _state.value
+        val roomId = st.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty()) return
+        val room = st.rooms.find { it.id == roomId } ?: return
+        if (room.pinnedMessageId.isNullOrBlank()) return
+        updatePinBarUi()
     }
 
     /** Reactions / single-row edits: keep timeline shape, patch one row off the UI thread. */
@@ -3131,24 +3152,102 @@ class ChatViewModel(
     private fun applyRoomPinToRooms(rooms: List<ChatRoomDto>, room: ChatRoomDto): List<ChatRoomDto> =
         rooms.map { if (it.id == room.id) room else it }
 
+    private fun syncPinHistoryForRoom(
+        roomId: String,
+        room: ChatRoomDto,
+        messages: List<ChatMessage>,
+    ) {
+        val pinId = room.pinnedMessageId?.trim().orEmpty()
+        if (pinId.isEmpty()) return
+        val serverPreview = resolveChatPinnedPreview(
+            room.pinnedMessageId,
+            room.pinnedMessage,
+            messages,
+        )
+        val existing = refreshPinHistoryPreviews(
+            pinHistoryByRoom[roomId].orEmpty(),
+            messages,
+        )
+        val (updated, resetIndex) = syncRoomPinHistory(
+            existing,
+            serverPreview,
+            room.pinnedMessageId,
+        )
+        pinHistoryByRoom[roomId] = updated
+        if (resetIndex || !pinBarIndexByRoom.containsKey(roomId)) {
+            pinBarIndexByRoom[roomId] = 0
+        }
+    }
+
+    private fun applyPinBarUi(state: ChatState): ChatState {
+        val roomId = state.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty()) return state.copy(pinBarPreview = null, pinHistoryCount = 0)
+        val room = state.rooms.find { it.id == roomId }
+            ?: return state.copy(pinBarPreview = null, pinHistoryCount = 0)
+        val pinId = room.pinnedMessageId?.trim().orEmpty()
+        if (pinId.isEmpty()) return state.copy(pinBarPreview = null, pinHistoryCount = 0)
+        syncPinHistoryForRoom(roomId, room, state.messages)
+        val history = pinHistoryByRoom[roomId].orEmpty()
+        val barIndex = pinBarIndexByRoom.getOrDefault(roomId, 0)
+            .coerceIn(0, (history.size - 1).coerceAtLeast(0))
+        pinBarIndexByRoom[roomId] = barIndex
+        val serverPreview = resolveChatPinnedPreview(
+            room.pinnedMessageId,
+            room.pinnedMessage,
+            state.messages,
+        )
+        val preview = pinBarPreviewAtIndex(history, barIndex, serverPreview)
+        return state.copy(
+            pinBarPreview = preview,
+            pinHistoryCount = pinHistoryDisplayCount(history),
+        )
+    }
+
+    private fun updatePinBarUi() {
+        _state.update { applyPinBarUi(it) }
+    }
+
+    fun onPinnedBarTap() {
+        val st = _state.value
+        val roomId = st.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty()) return
+        val room = st.rooms.find { it.id == roomId } ?: return
+        if (room.pinnedMessageId.isNullOrBlank()) return
+        syncPinHistoryForRoom(roomId, room, st.messages)
+        val history = pinHistoryByRoom[roomId].orEmpty()
+        val barIndex = pinBarIndexByRoom.getOrDefault(roomId, 0)
+        val serverPreview = resolveChatPinnedPreview(
+            room.pinnedMessageId,
+            room.pinnedMessage,
+            st.messages,
+        )
+        val target = pinBarPreviewAtIndex(history, barIndex, serverPreview) ?: return
+        jumpToQuotedMessage(target.id)
+        if (history.size > 1) {
+            pinBarIndexByRoom[roomId] = advancePinBarIndex(history, barIndex)
+            updatePinBarUi()
+        }
+    }
+
     private fun applyRoomPinEvent(rooms: List<ChatRoomDto>, event: ChatRoomPinChangedEvent): List<ChatRoomDto> =
         rooms.map { room ->
             if (room.id != event.roomId) room
-            else room.copy(
-                pinnedMessageId = event.pinnedMessageId,
-                pinnedAt = event.pinnedAt,
-                pinnedByUserId = event.pinnedByUserId,
-                pinnedMessage = event.pinnedMessage,
-            )
+            else room.mergePinFromEvent(event)
         }
 
     private fun publishRoomPin(room: ChatRoomDto) {
-        _state.update { st -> st.copy(rooms = applyRoomPinToRooms(st.rooms, room)) }
+        _state.update { st ->
+            val withRooms = st.copy(rooms = applyRoomPinToRooms(st.rooms, room))
+            if (st.selectedRoomId == room.id) applyPinBarUi(withRooms) else withRooms
+        }
         ChatSessionCache.update(_state.value.rooms)
     }
 
     fun onRoomPinChanged(event: ChatRoomPinChangedEvent) {
-        _state.update { st -> st.copy(rooms = applyRoomPinEvent(st.rooms, event)) }
+        _state.update { st ->
+            val withRooms = st.copy(rooms = applyRoomPinEvent(st.rooms, event))
+            if (st.selectedRoomId == event.roomId) applyPinBarUi(withRooms) else withRooms
+        }
         ChatSessionCache.update(_state.value.rooms)
     }
 
@@ -3161,6 +3260,10 @@ class ChatViewModel(
         val message = previewSource?.takeIf { it._id == trimmedId }
             ?: _state.value.messages.find { it._id == trimmedId }
         val preview = message?.toPinnedPreview()
+        preview?.let { p ->
+            pinHistoryByRoom[roomId] = pushPinHistory(pinHistoryByRoom[roomId].orEmpty(), p)
+            pinBarIndexByRoom[roomId] = 0
+        }
         val optimisticRoom = roomBefore?.let { room ->
             preview?.let { room.withOptimisticPin(trimmedId, it, _state.value.currentUserId) }
                 ?: room.copy(
@@ -3176,7 +3279,12 @@ class ChatViewModel(
         viewModelScope.launch {
             repository.pinRoomMessage(roomId, trimmedId)
                 .onSuccess { room ->
-                    publishRoomPin(room)
+                    val merged = ensureRoomPinPreview(
+                        room = room,
+                        preview = preview,
+                        pinnedByUserId = _state.value.currentUserId,
+                    )
+                    publishRoomPin(merged)
                     _state.update {
                         it.copy(
                             pinInFlight = false,

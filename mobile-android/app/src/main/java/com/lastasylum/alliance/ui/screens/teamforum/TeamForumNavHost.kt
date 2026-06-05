@@ -161,7 +161,9 @@ import com.lastasylum.alliance.ui.chat.MessageContextMenuScrim
 import com.lastasylum.alliance.ui.chat.saveChatImagesToGallery
 import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
 import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
-import com.lastasylum.alliance.ui.util.forumMessageHasCopyableContent
+import com.lastasylum.alliance.ui.util.appendTextToDraft
+import com.lastasylum.alliance.ui.util.forumMessageHasMenuCopyAction
+import com.lastasylum.alliance.ui.util.forumMessageTextForComposer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayReactionLogJumpToUnreadFab
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
@@ -1927,7 +1929,7 @@ private fun TeamForumTopicChatRoute(
                     MessageContextMenuScrim(onDismiss = dismissMessageActions)
                     MessageContextMenuPopup(
                         showReactions = true,
-                        canCopy = forumMessageHasCopyableContent(msg),
+                        canCopy = forumMessageHasMenuCopyAction(msg),
                         canPin = menuCanPin,
                         isPinned = isTopicPinnedMessage,
                         pinActionsEnabled = !pinInFlight,
@@ -1943,6 +1945,9 @@ private fun TeamForumTopicChatRoute(
                             },
                             onCopy = {
                                 copyForumMessageToClipboard(context, msg)
+                                forumMessageTextForComposer(msg)?.let { text ->
+                                    draft = appendTextToDraft(draft, text)
+                                }
                                 dismissMessageActions()
                             },
                             onPin = {
@@ -1994,7 +1999,7 @@ private fun TeamForumTopicChatRoute(
                                             else ->
                                                 context.getString(toastRes)
                                         }
-                                        android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(context.applicationContext, text, android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             } else {

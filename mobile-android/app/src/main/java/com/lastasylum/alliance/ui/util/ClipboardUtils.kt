@@ -53,6 +53,28 @@ fun chatMessageTextForComposer(message: ChatMessage): String? {
 fun chatMessageHasPasteableText(message: ChatMessage): Boolean =
     chatMessageTextForComposer(message) != null
 
+/** Context menu «Копировать»: текст/подпись или стикер, но не фото без текста. */
+fun chatMessageHasMenuCopyAction(message: ChatMessage): Boolean {
+    if (!message.deletedAt.isNullOrBlank()) return false
+    if (StickerPacks.parse(message.text) != null) return true
+    return chatMessageHasPasteableText(message)
+}
+
+fun forumMessageTextForComposer(message: TeamForumMessageDto): String? {
+    if (!message.deletedAt.isNullOrBlank()) return null
+    if (StickerPacks.parse(message.text) != null) return null
+    return message.text.trim().takeIf { it.isNotEmpty() }
+}
+
+fun forumMessageHasPasteableText(message: TeamForumMessageDto): Boolean =
+    forumMessageTextForComposer(message) != null
+
+fun forumMessageHasMenuCopyAction(message: TeamForumMessageDto): Boolean {
+    if (!message.deletedAt.isNullOrBlank()) return false
+    if (StickerPacks.parse(message.text) != null) return true
+    return forumMessageHasPasteableText(message)
+}
+
 private fun ClipData.Item.extractPlainText(context: Context): String? {
     text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
     coerceToText(context)?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }

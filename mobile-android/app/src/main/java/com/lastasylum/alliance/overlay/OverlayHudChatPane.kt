@@ -73,5 +73,6 @@ internal fun OverlayHudChatPane(
         messageListKey = vm::messageListCompositionKey,
         onPinMessage = vm::pinMessage,
         onUnpinRoom = vm::unpinSelectedRoom,
+        onPinnedBarTap = vm::onPinnedBarTap,
     )
 }

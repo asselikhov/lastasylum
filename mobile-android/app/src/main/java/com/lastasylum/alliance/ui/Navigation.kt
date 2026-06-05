@@ -467,6 +467,7 @@ fun AppNavigation(
                     onClearRoomHistory = chatViewModel::clearHistoryForSelectedRoom,
                     onPinMessage = chatViewModel::pinMessage,
                     onUnpinRoom = chatViewModel::unpinSelectedRoom,
+                    onPinnedBarTap = chatViewModel::onPinnedBarTap,
                 )
                 }
                         }

@@ -2,6 +2,7 @@ package com.lastasylum.alliance.ui.chat
 
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
+import com.lastasylum.alliance.data.chat.ChatRoomPinChangedEvent
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
@@ -55,6 +56,52 @@ fun ChatRoomDto.withOptimisticUnpin(): ChatRoomDto = copy(
     pinnedMessage = null,
 )
 
+fun ChatRoomDto.mergePinFromPrevious(previous: ChatRoomDto?): ChatRoomDto {
+    if (previous == null) return this
+    val pinId = pinnedMessageId?.trim().orEmpty()
+    if (pinId.isEmpty()) return this
+    if (pinnedMessage != null) return this
+    val prevId = previous.pinnedMessageId?.trim().orEmpty()
+    if (pinId == prevId && previous.pinnedMessage != null) {
+        return copy(
+            pinnedMessage = previous.pinnedMessage,
+            pinnedAt = pinnedAt ?: previous.pinnedAt,
+            pinnedByUserId = pinnedByUserId ?: previous.pinnedByUserId,
+        )
+    }
+    return this
+}
+
+fun ChatRoomDto.mergePinFromEvent(event: ChatRoomPinChangedEvent): ChatRoomDto {
+    val eventPinId = event.pinnedMessageId?.trim().orEmpty()
+    val keptPreview = when {
+        event.pinnedMessage != null -> event.pinnedMessage
+        eventPinId.isEmpty() -> null
+        pinnedMessage?.id == eventPinId -> pinnedMessage
+        else -> null
+    }
+    return copy(
+        pinnedMessageId = event.pinnedMessageId,
+        pinnedAt = event.pinnedAt,
+        pinnedByUserId = event.pinnedByUserId,
+        pinnedMessage = keptPreview,
+    )
+}
+
+fun ensureRoomPinPreview(
+    room: ChatRoomDto,
+    preview: PinnedMessagePreviewDto?,
+    pinnedByUserId: String,
+): ChatRoomDto {
+    val pinId = room.pinnedMessageId?.trim().orEmpty()
+    if (pinId.isEmpty()) return room
+    if (room.pinnedMessage != null) return room
+    if (preview != null && preview.id == pinId) {
+        return room.withOptimisticPin(pinId, preview, pinnedByUserId)
+    }
+    return room
+}
+
 fun resolveChatPinnedPreview(
     pinnedMessageId: String?,
     pinnedMessage: PinnedMessagePreviewDto?,
@@ -75,4 +122,82 @@ fun resolveForumPinnedPreview(
     val id = pinnedMessageId?.trim().orEmpty()
     if (id.isEmpty()) return null
     return messages.find { it.id == id }?.toPinnedPreview()
+}
+
+const val PIN_HISTORY_MAX = 15
+
+/** Most recent pin first; dedupes by message id and caps length. */
+fun pushPinHistory(
+    history: List<PinnedMessagePreviewDto>,
+    preview: PinnedMessagePreviewDto,
+): List<PinnedMessagePreviewDto> {
+    val id = preview.id.trim()
+    if (id.isEmpty()) return history
+    return (listOf(preview) + history.filter { it.id.trim() != id }).take(PIN_HISTORY_MAX)
+}
+
+/** Preview shown in the pinned bar for the current cycle index. */
+fun pinBarPreviewAtIndex(
+    history: List<PinnedMessagePreviewDto>,
+    barIndex: Int,
+    serverPreview: PinnedMessagePreviewDto?,
+): PinnedMessagePreviewDto? {
+    if (history.isNotEmpty() && barIndex in history.indices) return history[barIndex]
+    return serverPreview ?: history.firstOrNull()
+}
+
+/** Advance to the next pin in Telegram-style history cycling. */
+fun advancePinBarIndex(
+    history: List<PinnedMessagePreviewDto>,
+    currentIndex: Int,
+): Int {
+    if (history.size <= 1) return currentIndex.coerceAtLeast(0)
+    return (currentIndex + 1) % history.size
+}
+
+/** Badge count when multiple pins are in local history (0 hides badge). */
+fun pinHistoryDisplayCount(history: List<PinnedMessagePreviewDto>): Int =
+    if (history.size > 1) history.size else 0
+
+/**
+ * Merge server pin into local history.
+ * Returns updated history and whether the bar index should reset to 0 (new active pin).
+ */
+fun syncRoomPinHistory(
+    history: List<PinnedMessagePreviewDto>,
+    serverPreview: PinnedMessagePreviewDto?,
+    pinnedMessageId: String?,
+): Pair<List<PinnedMessagePreviewDto>, Boolean> {
+    val pinId = pinnedMessageId?.trim().orEmpty()
+    if (pinId.isEmpty()) return history to false
+    val preview = serverPreview ?: history.find { it.id.trim() == pinId } ?: return history to false
+    val headId = history.firstOrNull()?.id?.trim().orEmpty()
+    if (headId == pinId) {
+        val refreshed = if (history.isNotEmpty()) {
+            history.toMutableList().apply { this[0] = preview }
+        } else {
+            listOf(preview)
+        }
+        return refreshed to false
+    }
+    return pushPinHistory(history, preview) to true
+}
+
+/** Refresh cached previews from loaded messages when available. */
+fun refreshPinHistoryPreviews(
+    history: List<PinnedMessagePreviewDto>,
+    messages: List<ChatMessage>,
+): List<PinnedMessagePreviewDto> =
+    history.map { entry ->
+        messages.find { it._id?.trim() == entry.id.trim() }?.toPinnedPreview() ?: entry
+    }
+
+fun isPinnedPreviewLikelyDeleted(
+    preview: PinnedMessagePreviewDto,
+    messages: List<ChatMessage>,
+): Boolean {
+    val id = preview.id.trim()
+    if (id.isEmpty()) return false
+    val msg = messages.find { it._id?.trim() == id } ?: return false
+    return msg.deletedAt != null
 }
