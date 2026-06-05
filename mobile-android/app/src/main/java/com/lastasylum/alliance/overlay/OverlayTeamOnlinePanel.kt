@@ -24,6 +24,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
@@ -85,18 +87,27 @@ fun OverlayTeamOnlinePanel(
         )
     }
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     LaunchedEffect(controller) {
         controller.start()
     }
     DisposableEffect(controller) {
         onDispose { controller.stop() }
     }
+    DisposableEffect(lifecycleOwner, controller) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                controller.refresh(force = false)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     DisposableEffect(voiceRosterSync) {
         voiceRosterSync.acquire()
         onDispose { voiceRosterSync.release() }
     }
-
-    val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by controller.state.collectAsStateWithLifecycle(lifecycleOwner)
     var longPressMember by remember { mutableStateOf<OverlayOnlineMemberUiModel?>(null) }
     val voicePeers by TeamVoicePresenceStore.peers.collectAsStateWithLifecycle(lifecycleOwner)

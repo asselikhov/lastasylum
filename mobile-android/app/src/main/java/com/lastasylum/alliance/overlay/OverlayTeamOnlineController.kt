@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -58,27 +60,30 @@ class OverlayTeamOnlineController(
     private var freshnessJob: Job? = null
     private var teamId: String? = null
     private var started = false
+    private val presenceMergeMutex = Mutex()
 
     private val presenceSocketListener: (TeamPresenceSocketEvent) -> Unit = { event ->
         scope.launch {
-            val current = _state.value
-            val fallback = current.team?.members?.firstOrNull { it.userId == event.userId }
-            val merged = mergePresenceSocketEvent(
-                lists = OverlayOnlinePresenceLists(current.ingameRaw, current.recentRaw),
-                event = event,
-                fallbackMember = fallback,
-            )
-            val knownUserIds = buildSet {
-                merged.ingame.forEach { add(it.userId) }
-                merged.recentlyActive.forEach { add(it.userId) }
-            }
-            val needsFullRefresh = event.userId !in knownUserIds &&
-                fallback == null &&
-                isOverlayIngameNow(event.presenceStatus, event.lastPresenceAt)
-            if (needsFullRefresh) {
-                refreshPresenceOnly(showRefreshing = false)
-            } else {
-                applyPresenceLists(merged.ingame, merged.recentlyActive)
+            presenceMergeMutex.withLock {
+                val current = _state.value
+                val fallback = current.team?.members?.firstOrNull { it.userId == event.userId }
+                val merged = mergePresenceSocketEvent(
+                    lists = OverlayOnlinePresenceLists(current.ingameRaw, current.recentRaw),
+                    event = event,
+                    fallbackMember = fallback,
+                )
+                val knownUserIds = buildSet {
+                    merged.ingame.forEach { add(it.userId) }
+                    merged.recentlyActive.forEach { add(it.userId) }
+                }
+                val needsFullRefresh = event.userId !in knownUserIds &&
+                    fallback == null &&
+                    isOverlayIngameNow(event.presenceStatus, event.lastPresenceAt)
+                if (needsFullRefresh) {
+                    refreshPresenceOnly(showRefreshing = false)
+                } else {
+                    applyPresenceLists(merged.ingame, merged.recentlyActive)
+                }
             }
         }
     }
@@ -112,7 +117,6 @@ class OverlayTeamOnlineController(
         freshnessJob?.cancel()
         freshnessJob = null
         teamPresenceSocket.removePresenceListener(presenceSocketListener)
-        teamPresenceSocket.disconnect()
     }
 
     fun refresh(force: Boolean = false) {
@@ -274,7 +278,8 @@ class OverlayTeamOnlineController(
     private fun refreshPresenceFreshness() {
         val s = _state.value
         if (s.ingameRaw.isEmpty() && s.recentRaw.isEmpty()) return
-        applyPresenceLists(s.ingameRaw, s.recentRaw, forceRebuild = true)
+        val reconciled = reconcilePresenceLists(s.ingameRaw, s.recentRaw)
+        applyPresenceLists(reconciled.ingame, reconciled.recentlyActive, forceRebuild = true)
     }
 
     private fun applyPresenceLists(

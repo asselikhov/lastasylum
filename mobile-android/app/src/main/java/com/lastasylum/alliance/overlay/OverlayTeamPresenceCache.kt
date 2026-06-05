@@ -67,7 +67,7 @@ internal object OverlayTeamPresenceCache {
     ): Int = load(teamId, teamsRepository, forceRefresh)
         .getOrNull()
         ?.ingame
-        ?.size
+        ?.let(::countFreshIngameMembers)
         ?: 0
 
     suspend fun load(
@@ -78,11 +78,8 @@ internal object OverlayTeamPresenceCache {
         val tid = teamId.trim()
         if (tid.isEmpty()) error("no_team")
         val now = System.currentTimeMillis()
-        if (!forceRefresh) {
-            val hit = cachedPresence
-            if (hit != null && cachedTeamId == tid) {
-                return@runCatching hit
-            }
+        if (!forceRefresh && isCacheValid(tid, now)) {
+            return@runCatching cachedPresence!!
         }
         teamsRepository.getTeamOverlayPresence(tid).getOrThrow().also { presence ->
             cachedTeamId = tid

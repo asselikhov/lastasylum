@@ -192,8 +192,31 @@ fun applyOnlinePanelFilters(
 fun ingameCountFromSections(sections: List<OverlayOnlinePresenceSection>): Int =
     sections.firstOrNull { it.kind == PresenceSectionKind.Ingame }?.items?.size ?: 0
 
-fun rawIngameCount(ingame: List<PlayerTeamMemberDto>): Int =
+fun countFreshIngameMembers(ingame: List<PlayerTeamMemberDto>): Int =
     ingame.count { isOverlayIngameNow(it.presenceStatus, it.lastPresenceAt) }
+
+fun rawIngameCount(ingame: List<PlayerTeamMemberDto>): Int =
+    countFreshIngameMembers(ingame)
+
+/** Drop stale ingame rows and mirror display buckets without an extra API call. */
+fun reconcilePresenceLists(
+    ingame: List<PlayerTeamMemberDto>,
+    recentlyActive: List<PlayerTeamMemberDto>,
+): OverlayOnlinePresenceLists {
+    val freshIngame = ingame.filter { isOverlayIngameNow(it.presenceStatus, it.lastPresenceAt) }
+    val ingameIds = freshIngame.map { it.userId }.toSet()
+    val recentById = recentlyActive.associateBy { it.userId }.toMutableMap()
+    ingame.forEach { member ->
+        if (member.userId !in ingameIds) {
+            recentById[member.userId] = member
+        }
+    }
+    val freshRecent = recentById.values.filter { member ->
+        member.userId !in ingameIds &&
+            !isOverlayIngameNow(member.presenceStatus, member.lastPresenceAt)
+    }
+    return OverlayOnlinePresenceLists(ingame = freshIngame, recentlyActive = freshRecent)
+}
 
 fun rawRecentCount(
     ingame: List<PlayerTeamMemberDto>,

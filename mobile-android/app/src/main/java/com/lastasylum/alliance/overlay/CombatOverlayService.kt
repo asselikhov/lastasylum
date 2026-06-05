@@ -3584,6 +3584,7 @@ class CombatOverlayService : Service() {
         mainHandler.removeCallbacks(statusHudRefreshRunnable)
         mainHandler.removeCallbacks(overlayCloseHudBadgeRefreshRunnable)
         statusHudRefreshPosted = false
+        runCatching { AppContainer.from(this).teamPresenceSocket.disconnect() }
         serviceScope.cancel()
         unregisterScreenOnReceiver()
         unregisterVoiceMicPermissionReceiver()

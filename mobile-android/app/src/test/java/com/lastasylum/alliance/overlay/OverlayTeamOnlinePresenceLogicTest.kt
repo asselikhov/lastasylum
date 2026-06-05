@@ -125,6 +125,32 @@ class OverlayTeamOnlinePresenceLogicTest {
     }
 
     @Test
+    fun reconcilePresenceLists_movesStaleIngameToRecent() {
+        val staleAt = Instant.now()
+            .minusMillis(OVERLAY_INGAME_PRESENCE_STALE_MS + 1_000)
+            .toString()
+        val stale = member("u1", "alice", lastPresenceAt = staleAt)
+        val reconciled = reconcilePresenceLists(
+            ingame = listOf(stale),
+            recentlyActive = emptyList(),
+        )
+        assertTrue(reconciled.ingame.isEmpty())
+        assertEquals(1, reconciled.recentlyActive.size)
+        assertEquals("u1", reconciled.recentlyActive.first().userId)
+    }
+
+    @Test
+    fun reconcilePresenceLists_keepsFreshIngame() {
+        val fresh = member("u1", "alice")
+        val reconciled = reconcilePresenceLists(
+            ingame = listOf(fresh),
+            recentlyActive = emptyList(),
+        )
+        assertEquals(1, reconciled.ingame.size)
+        assertTrue(reconciled.recentlyActive.isEmpty())
+    }
+
+    @Test
     fun ingameCount_extraction_for_hud() {
         val ingame = listOf(
             member("u1", "a"),

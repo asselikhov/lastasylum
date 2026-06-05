@@ -1,10 +1,14 @@
 package com.lastasylum.alliance.overlay
 
+import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamOverlayPresenceDto
+import com.lastasylum.alliance.ui.util.OVERLAY_INGAME_PRESENCE_STALE_MS
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 
 class OverlayTeamPresenceCacheTest {
     @After
@@ -42,5 +46,43 @@ class OverlayTeamPresenceCacheTest {
         )
         OverlayTeamPresenceCache.invalidate()
         assertFalse(OverlayTeamPresenceCache.isCacheValid("team-1"))
+    }
+
+    @Test
+    fun isCacheValid_missWhenTeamChanges() {
+        val now = System.currentTimeMillis()
+        OverlayTeamPresenceCache.seedCacheForTest(
+            teamId = "team-1",
+            presence = TeamOverlayPresenceDto(ingame = emptyList()),
+            atMs = now,
+        )
+        assertFalse(OverlayTeamPresenceCache.isCacheValid("team-2", nowMs = now + 1_000L))
+    }
+
+    @Test
+    fun countFreshIngameMembers_excludesStalePing() {
+        val freshAt = Instant.now().minusSeconds(30).toString()
+        val staleAt = Instant.now()
+            .minusMillis(OVERLAY_INGAME_PRESENCE_STALE_MS + 1_000)
+            .toString()
+        val members = listOf(
+            PlayerTeamMemberDto(
+                userId = "u1",
+                username = "alice",
+                isLeader = false,
+                telegramUsername = null,
+                presenceStatus = "ingame",
+                lastPresenceAt = freshAt,
+            ),
+            PlayerTeamMemberDto(
+                userId = "u2",
+                username = "bob",
+                isLeader = false,
+                telegramUsername = null,
+                presenceStatus = "ingame",
+                lastPresenceAt = staleAt,
+            ),
+        )
+        assertEquals(1, countFreshIngameMembers(members))
     }
 }
