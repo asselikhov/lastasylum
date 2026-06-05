@@ -993,7 +993,7 @@ export class TeamForumService {
       view === 'full'
         ? await this.buildPinnedMessagesForTopicsBatch(topicDocs)
         : new Map<string, PinnedMessagePreview[]>();
-    const result = this.enrichTopicsWithTelegram(
+    const result = await this.enrichTopicsWithTelegram(
       topicDocs.map((doc) => {
         const id = doc._id.toString();
         const actualCount =

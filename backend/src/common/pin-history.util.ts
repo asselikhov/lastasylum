@@ -66,9 +66,13 @@ export function removePinHistoryEntry(
   return history.filter((h) => h.messageId.toString() !== id);
 }
 
-export function activePinFromHistory(
-  history: PinHistoryEntry[],
-): Pick<PinHistoryCarrier, 'pinnedMessageId' | 'pinnedAt' | 'pinnedByUserId'> {
+export type ActivePinState = {
+  pinnedMessageId: Types.ObjectId | null;
+  pinnedAt: Date | null;
+  pinnedByUserId: string | null;
+};
+
+export function activePinFromHistory(history: PinHistoryEntry[]): ActivePinState {
   const head = history[0];
   if (!head) {
     return {
