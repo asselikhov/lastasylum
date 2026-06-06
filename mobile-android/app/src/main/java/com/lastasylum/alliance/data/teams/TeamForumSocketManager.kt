@@ -383,8 +383,20 @@ class TeamForumSocketManager {
                 on("message:new") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val msg = payload.toForumMessageDto() ?: return@on
-                    val activeTopic = this@TeamForumSocketManager.activeSubscribedTopicId() ?: return@on
-                    if (msg.teamId != teamId || msg.topicId != activeTopic) return@on
+                    if (msg.teamId != teamId) return@on
+                    val activeTopic = this@TeamForumSocketManager.activeSubscribedTopicId()
+                    if (activeTopic == null) {
+                        if (msg.topicId.isNotBlank()) {
+                            ForumMessageStash.stash(msg)
+                            com.lastasylum.alliance.ui.chat.ForumDeliveryMetrics.logStash(
+                                msg.teamId,
+                                msg.topicId,
+                                msg.id,
+                            )
+                        }
+                        return@on
+                    }
+                    if (msg.topicId != activeTopic) return@on
                     dispatchMain {
                         messageListeners.forEach { l -> runCatching { l(msg) } }
                     }
@@ -573,6 +585,7 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
             )
         },
         reactions = optJSONArray("reactions").toForumReactions(),
+        clientMessageId = optionalStringField("clientMessageId"),
         createdAt = optString("createdAt"),
         updatedAt = optionalStringField("updatedAt").orEmpty()
             .ifBlank { optString("createdAt") },

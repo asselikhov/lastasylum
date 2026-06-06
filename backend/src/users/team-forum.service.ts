@@ -116,6 +116,7 @@ export type TeamForumMessageRow = {
     senderServerNumber: number | null;
   } | null;
   reactions: { emoji: string; count: number; reactedByMe: boolean }[];
+  clientMessageId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -864,6 +865,7 @@ export class TeamForumService {
           }
         : null,
       reactions: this.mapReactionsForViewer(doc, viewerUserId),
+      clientMessageId: doc.clientMessageId ?? null,
       createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
       updatedAt: doc.updatedAt?.toISOString() ?? new Date().toISOString(),
     };
@@ -1577,6 +1579,7 @@ export class TeamForumService {
     imageFileIds?: string[],
     imageFileId?: string | null,
     fileFileId?: string | null,
+    clientMessageId?: string | null,
   ): Promise<TeamForumMessageRow> {
     const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const teamOid = new Types.ObjectId(teamId);
@@ -1587,6 +1590,33 @@ export class TeamForumService {
     });
     if (!topic) {
       throw new NotFoundException('Topic not found');
+    }
+    const normalizedClientMessageId =
+      typeof clientMessageId === 'string' && clientMessageId.trim()
+        ? clientMessageId.trim().slice(0, 64)
+        : null;
+    if (normalizedClientMessageId) {
+      const existing = await this.messageModel
+        .findOne({
+          senderUserId: userId,
+          clientMessageId: normalizedClientMessageId,
+          deletedAt: null,
+        })
+        .exec();
+      if (existing) {
+        let replyTarget: TeamForumMessageDocument | null = null;
+        if (existing.replyToMessageId) {
+          replyTarget = await this.messageModel
+            .findById(existing.replyToMessageId)
+            .exec();
+        }
+        const senderDoc = await this.userModel.findById(userId).exec();
+        const row = this.messageRow(existing, replyTarget, userId);
+        return {
+          ...row,
+          senderTelegramUsername: senderDoc?.telegramUsername ?? null,
+        };
+      }
     }
     const trimmed = text.trim();
     const replyIdRaw =
@@ -1700,6 +1730,7 @@ export class TeamForumService {
         deletedAt: null,
         deletedByUserId: null,
         forwardedFrom: null,
+        clientMessageId: normalizedClientMessageId,
       });
     } catch (err) {
       this.rethrowMongooseValidation(err);

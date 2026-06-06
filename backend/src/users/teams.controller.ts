@@ -530,8 +530,14 @@ export class TeamsController {
         .filter(Boolean),
       dto.imageFileId?.trim() || null,
       dto.fileFileId?.trim() || null,
+      dto.clientMessageId?.trim() || null,
     );
-    this.teamForumGateway.broadcastNewMessage(teamId, topicId, message);
+    this.teamForumGateway.broadcastNewMessageWithFanout(
+      teamId,
+      topicId,
+      message,
+      req.user.userId,
+    );
     return message;
   }
 
@@ -549,7 +555,12 @@ export class TeamsController {
       req.user.userId,
       messageId,
     );
-    this.teamForumGateway.broadcastNewMessage(teamId, topicId, message);
+    this.teamForumGateway.broadcastNewMessageWithFanout(
+      teamId,
+      topicId,
+      message,
+      req.user.userId,
+    );
     return message;
   }
 

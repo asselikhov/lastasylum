@@ -42,4 +42,21 @@ class ForumListMutationsTest {
         assertEquals("507f1f77bcf86cd799439011", messages.first().id)
         assertTrue(messages.last().id.endsWith("3"))
     }
+
+    @Test
+    fun replaceMatchingPendingForumOutgoing_replacesByClientMessageId() {
+        val clientId = "uuid-123"
+        val messages = mutableListOf(
+            msg("pending-$clientId", "hello").copy(clientMessageId = clientId),
+        )
+        val confirmed = msg("507f1f77bcf86cd799439099", "hello").copy(
+            clientMessageId = clientId,
+            senderUserId = "u1",
+        )
+        val replaced = replaceMatchingPendingForumOutgoing(messages, confirmed, "u1")
+        assertTrue(replaced)
+        assertEquals(1, messages.size)
+        assertEquals("507f1f77bcf86cd799439099", messages.single().id)
+        assertEquals(clientId, messages.single().clientMessageId)
+    }
 }

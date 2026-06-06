@@ -322,6 +322,7 @@ data class TeamForumMessageDto(
     val fileFilename: String? = null,
     val forwardedFrom: TeamForumForwardedFromDto? = null,
     val reactions: List<ChatReaction> = emptyList(),
+    val clientMessageId: String? = null,
     val createdAt: String,
     val updatedAt: String,
 )
@@ -353,6 +354,7 @@ data class CreateTeamForumMessageBody(
     val imageFileIds: List<String>? = null,
     val imageFileId: String? = null,
     val fileFileId: String? = null,
+    val clientMessageId: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

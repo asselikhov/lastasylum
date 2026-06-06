@@ -49,6 +49,110 @@ internal fun mergeForumMessagesPage(
 internal fun TeamForumMessageDto.hasForumImages(): Boolean =
     imageRelativeUrls.isNotEmpty() || !imageRelativeUrl.isNullOrBlank()
 
+/** Periodic REST reconcile while forum topic screen is active. */
+internal const val ACTIVE_FORUM_RECONCILE_INTERVAL_MS = 60_000L
+
+internal fun isForumPendingId(id: String): Boolean =
+    id.trim().startsWith("pending-")
+
+internal fun buildOptimisticForumMessage(
+    teamId: String,
+    topicId: String,
+    senderUserId: String,
+    senderUsername: String,
+    text: String,
+    clientMessageId: String,
+    replyToMessageId: String? = null,
+    nowIso: String,
+): TeamForumMessageDto =
+    TeamForumMessageDto(
+        id = "pending-$clientMessageId",
+        topicId = topicId,
+        teamId = teamId,
+        senderUserId = senderUserId,
+        senderUsername = senderUsername,
+        text = text,
+        replyToMessageId = replyToMessageId,
+        clientMessageId = clientMessageId,
+        createdAt = nowIso,
+        updatedAt = nowIso,
+    )
+
+internal fun hasMatchingPendingForumOutgoing(
+    messages: List<TeamForumMessageDto>,
+    incoming: TeamForumMessageDto,
+    currentUserId: String,
+): Boolean {
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty() || incoming.senderUserId.trim() != selfId) return false
+    val incomingClientId = incoming.clientMessageId?.trim().orEmpty()
+    if (incomingClientId.isNotEmpty()) {
+        return messages.any {
+            it.clientMessageId?.trim() == incomingClientId && isForumPendingId(it.id)
+        }
+    }
+    return messages.any {
+        isForumPendingId(it.id) &&
+            it.senderUserId.trim() == selfId &&
+            it.text.trim() == incoming.text.trim()
+    }
+}
+
+internal fun shouldBlockOwnForumOutgoingRealtime(
+    messages: List<TeamForumMessageDto>,
+    incoming: TeamForumMessageDto,
+    currentUserId: String,
+    inFlightClientMessageIds: Set<String>,
+): Boolean {
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty() || incoming.senderUserId.trim() != selfId) return false
+    if (hasMatchingPendingForumOutgoing(messages, incoming, currentUserId)) return true
+    val incomingClientId = incoming.clientMessageId?.trim().orEmpty()
+    if (incomingClientId.isNotEmpty() && incomingClientId in inFlightClientMessageIds) return true
+    return messages.any { it.id == incoming.id && !isForumPendingId(it.id) }
+}
+
+/** Replace optimistic pending row with confirmed server row; returns true when replaced. */
+internal fun replaceMatchingPendingForumOutgoing(
+    messages: MutableList<TeamForumMessageDto>,
+    confirmed: TeamForumMessageDto,
+    currentUserId: String,
+): Boolean {
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty() || confirmed.senderUserId.trim() != selfId) return false
+    val clientId = confirmed.clientMessageId?.trim().orEmpty()
+    if (clientId.isNotEmpty()) {
+        val idx = messages.indexOfFirst {
+            it.clientMessageId?.trim() == clientId && isForumPendingId(it.id)
+        }
+        if (idx >= 0) {
+            messages[idx] = messages[idx].mergePreservingForumMedia(confirmed)
+            return true
+        }
+    }
+    val idx = messages.indexOfFirst {
+        isForumPendingId(it.id) &&
+            it.senderUserId.trim() == selfId &&
+            it.text.trim() == confirmed.text.trim()
+    }
+    if (idx >= 0) {
+        messages[idx] = messages[idx].mergePreservingForumMedia(confirmed)
+        return true
+    }
+    return false
+}
+
+internal fun removePendingForumOutgoing(
+    messages: MutableList<TeamForumMessageDto>,
+    clientMessageId: String,
+): Boolean {
+    val clientId = clientMessageId.trim()
+    if (clientId.isEmpty()) return false
+    return messages.removeAll {
+        it.clientMessageId?.trim() == clientId && isForumPendingId(it.id)
+    }
+}
+
 /** Socket/REST races must not drop attachments already shown in the thread. */
 internal fun TeamForumMessageDto.mergePreservingForumMedia(incoming: TeamForumMessageDto): TeamForumMessageDto {
     if (incoming.hasForumImages()) return incoming

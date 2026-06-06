@@ -8,10 +8,11 @@ import {
 } from '@nestjs/websockets';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Server, Socket } from 'socket.io';
+import { Socket, Namespace } from 'socket.io';
 import { authenticateSocketConnection } from '../common/socket-auth.util';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
+import { filterPersonalChatFanoutUserIds } from '../chat/chat-realtime-broadcast.util';
 import {
   TeamForumService,
   TeamForumMessageRow,
@@ -47,7 +48,7 @@ type AuthSocket = Socket<
 })
 export class TeamForumGateway {
   @WebSocketServer()
-  server: Server;
+  server: Namespace;
 
   constructor(
     private readonly forumService: TeamForumService,
@@ -57,7 +58,12 @@ export class TeamForumGateway {
   ) {}
 
   handleConnection(client: AuthSocket) {
-    authenticateSocketConnection(client, this.jwtService, this.configService);
+    const user = authenticateSocketConnection(
+      client,
+      this.jwtService,
+      this.configService,
+    );
+    void client.join(`user:${user.userId}`);
   }
 
   private roomKey(teamId: string, topicId: string): string {
@@ -139,6 +145,7 @@ export class TeamForumGateway {
       imageFileId?: string;
       replyToMessageId?: string;
       imageFileIds?: string[];
+      clientMessageId?: string;
     },
   ) {
     if (!client.data.user) {
@@ -162,6 +169,10 @@ export class TeamForumGateway {
       typeof payload?.replyToMessageId === 'string'
         ? payload.replyToMessageId.trim()
         : undefined;
+    const clientMessageId =
+      typeof payload?.clientMessageId === 'string'
+        ? payload.clientMessageId.trim()
+        : undefined;
     if (!teamId || !topicId) {
       throw new WsException('teamId and topicId are required');
     }
@@ -173,9 +184,16 @@ export class TeamForumGateway {
       replyToMessageId || null,
       imageFileIds,
       imageFileId || null,
+      null,
+      clientMessageId || null,
     );
 
-    this.broadcastNewMessage(teamId, topicId, message);
+    this.broadcastNewMessageWithFanout(
+      teamId,
+      topicId,
+      message,
+      client.data.user.userId,
+    );
     return { event: 'message:sent', data: message };
   }
 
@@ -202,6 +220,57 @@ export class TeamForumGateway {
         userId: client.data.user.userId,
         username: client.data.user.username,
       });
+  }
+
+  broadcastNewMessageWithFanout(
+    teamId: string,
+    topicId: string,
+    message: TeamForumMessageRow,
+    senderUserId: string,
+  ): void {
+    this.broadcastNewMessage(teamId, topicId, message);
+    void this.fanOutNewMessageToEligibleUsersNotInTopicRoom(
+      teamId,
+      topicId,
+      message,
+      senderUserId,
+    );
+  }
+
+  /** Path C: personal `user:{id}` for squad members not in `forum:{teamId}:{topicId}`. */
+  private async fanOutNewMessageToEligibleUsersNotInTopicRoom(
+    teamId: string,
+    topicId: string,
+    message: TeamForumMessageRow,
+    senderUserId: string,
+  ): Promise<void> {
+    const tid = teamId.trim();
+    const topId = topicId.trim();
+    const uid = senderUserId.trim();
+    if (!tid || !topId) return;
+    const inRoom = this.userIdsInForumTopicRoom(tid, topId);
+    const eligible = await this.teams.listSquadMemberUserIds(tid);
+    const targets = filterPersonalChatFanoutUserIds(eligible, inRoom, uid);
+    const payload = { ...message, teamId: tid, topicId: topId };
+    for (const userId of targets) {
+      this.server?.to(`user:${userId}`).emit('message:new', payload);
+    }
+  }
+
+  private userIdsInForumTopicRoom(teamId: string, topicId: string): Set<string> {
+    const out = new Set<string>();
+    const adapterRoom = this.server?.adapter.rooms.get(
+      this.roomKey(teamId, topicId),
+    );
+    if (!adapterRoom) return out;
+    for (const socketId of adapterRoom) {
+      const client = this.server.sockets.get(socketId) as
+        | AuthSocket
+        | undefined;
+      const userId = client?.data?.user?.userId?.trim();
+      if (userId) out.add(userId);
+    }
+    return out;
   }
 
   broadcastNewMessage(

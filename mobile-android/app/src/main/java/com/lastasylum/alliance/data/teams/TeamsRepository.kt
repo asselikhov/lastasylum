@@ -2,6 +2,7 @@ package com.lastasylum.alliance.data.teams
 
 import android.util.Log
 import com.lastasylum.alliance.data.chat.ToggleReactionRequest
+import kotlinx.coroutines.delay
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -348,27 +349,61 @@ class TeamsRepository(
         imageFileId: String? = null,
         imageFileIds: List<String>? = null,
         fileFileId: String? = null,
+        clientMessageId: String? = null,
     ): Result<TeamForumMessageDto> =
-        runCatching {
-            val trimmed = text.trim()
-            val img = imageFileId?.trim()?.takeIf { it.isNotEmpty() }
-            val replyId = replyToMessageId?.trim()?.takeIf { it.isNotEmpty() }
-            val imgs = imageFileIds?.map { it.trim() }?.filter { it.isNotEmpty() }?.distinct()
-            val fileId = fileFileId?.trim()?.takeIf { it.isNotEmpty() }
-            teamsApi.postForumMessage(
-                teamId,
-                topicId,
-                CreateTeamForumMessageBody(
-                    text = trimmed,
-                    replyToMessageId = replyId,
-                    imageFileIds = imgs?.takeIf { it.isNotEmpty() },
-                    imageFileId = img,
-                    fileFileId = fileId,
-                ),
-            )
-        }.also { result ->
-            if (result.isSuccess) invalidateForumMessagesCache(teamId, topicId)
+        postForumMessageWithRetries(
+            teamId = teamId,
+            topicId = topicId,
+            text = text,
+            replyToMessageId = replyToMessageId,
+            imageFileId = imageFileId,
+            imageFileIds = imageFileIds,
+            fileFileId = fileFileId,
+            clientMessageId = clientMessageId ?: java.util.UUID.randomUUID().toString(),
+        )
+
+    suspend fun postForumMessageWithRetries(
+        teamId: String,
+        topicId: String,
+        text: String,
+        replyToMessageId: String? = null,
+        imageFileId: String? = null,
+        imageFileIds: List<String>? = null,
+        fileFileId: String? = null,
+        clientMessageId: String = java.util.UUID.randomUUID().toString(),
+    ): Result<TeamForumMessageDto> {
+        var last: Throwable? = null
+        repeat(3) { attempt ->
+            val result = runCatching {
+                val trimmed = text.trim()
+                val img = imageFileId?.trim()?.takeIf { it.isNotEmpty() }
+                val replyId = replyToMessageId?.trim()?.takeIf { it.isNotEmpty() }
+                val imgs = imageFileIds?.map { it.trim() }?.filter { it.isNotEmpty() }?.distinct()
+                val fileId = fileFileId?.trim()?.takeIf { it.isNotEmpty() }
+                teamsApi.postForumMessage(
+                    teamId,
+                    topicId,
+                    CreateTeamForumMessageBody(
+                        text = trimmed,
+                        replyToMessageId = replyId,
+                        imageFileIds = imgs?.takeIf { it.isNotEmpty() },
+                        imageFileId = img,
+                        fileFileId = fileId,
+                        clientMessageId = clientMessageId,
+                    ),
+                )
+            }
+            if (result.isSuccess) {
+                invalidateForumMessagesCache(teamId, topicId)
+                return result
+            }
+            last = result.exceptionOrNull()
+            if (attempt < 2) {
+                delay(listOf(120L, 350L)[attempt])
+            }
         }
+        return Result.failure(last ?: IllegalStateException("forum_send_failed"))
+    }
 
     suspend fun patchForumMessage(
         teamId: String,

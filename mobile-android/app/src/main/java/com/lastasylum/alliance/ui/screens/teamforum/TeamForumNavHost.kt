@@ -41,6 +41,14 @@ import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
 import com.lastasylum.alliance.ui.chat.capForumMessagesTrimNewestOnly
 import com.lastasylum.alliance.ui.chat.mergeForumMessagesPage
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
+import com.lastasylum.alliance.ui.chat.ACTIVE_FORUM_RECONCILE_INTERVAL_MS
+import com.lastasylum.alliance.ui.chat.buildOptimisticForumMessage
+import com.lastasylum.alliance.ui.chat.ForumDeliveryMetrics
+import com.lastasylum.alliance.ui.chat.removePendingForumOutgoing
+import com.lastasylum.alliance.ui.chat.replaceMatchingPendingForumOutgoing
+import com.lastasylum.alliance.ui.chat.shouldBlockOwnForumOutgoingRealtime
+import com.lastasylum.alliance.ui.chat.shouldTriggerGapReconcile
+import com.lastasylum.alliance.data.teams.ForumMessageStash
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthCap
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
@@ -104,6 +112,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -188,7 +197,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.lastasylum.alliance.ui.chat.ChatStickerFormat
+import java.time.Instant
+import java.util.UUID
 import androidx.compose.ui.geometry.Rect
 import com.lastasylum.alliance.ui.chat.chatDayKey
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
@@ -210,7 +220,7 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import java.io.File
 import java.io.InputStream
-import java.util.UUID
+import com.lastasylum.alliance.ui.chat.ChatStickerFormat
 import android.content.ContentResolver
 import android.os.ParcelFileDescriptor
 import java.util.Locale
@@ -1033,8 +1043,18 @@ private fun TeamForumTopicChatRoute(
     var downloadingForumFileUrl by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
     var typingHint by remember { mutableStateOf<String?>(null) }
+    var knownForumMessageIds by remember(teamId, topicId) { mutableStateOf(setOf<String>()) }
+    var inFlightForumClientMessageIds by remember { mutableStateOf(setOf<String>()) }
+    var lastForumBackgroundSyncAtMs by remember(teamId, topicId) { mutableLongStateOf(0L) }
+    var forceForumRefreshAfterReconnect by remember(teamId, topicId) { mutableStateOf(false) }
     // messages is maintained oldest-first; avoid per-update sorting allocations (jank/GC).
     val stableMessages = messages
+    val selfForumUsername by remember(stableMessages, currentUserId) {
+        derivedStateOf {
+            val self = currentUserId.trim()
+            stableMessages.lastOrNull { it.senderUserId.trim() == self }?.senderUsername.orEmpty()
+        }
+    }
     var messagesGeneration by remember(teamId, topicId) { mutableIntStateOf(0) }
     fun bumpMessagesGeneration() {
         messagesGeneration++
@@ -1439,21 +1459,6 @@ private fun TeamForumTopicChatRoute(
         onDispose { onProvideMarkReadAction(markReadTopicKey, null) }
     }
 
-    fun mergeNew(msg: TeamForumMessageDto) {
-        teamsRepository.invalidateForumMessagesCache(teamId, topicId)
-        val i = messages.indexOfFirst { it.id == msg.id }
-        if (i >= 0) {
-            messages[i] = messages[i].mergePreservingForumMedia(msg)
-        } else {
-            messages.add(msg)
-            trimForumMessagesInMemory()
-        }
-        persistForumMessagesToDisk()
-        if (!overlayUi || isNearBottom) {
-            markTopicReadToLatest()
-        }
-    }
-
     fun canDeleteForumMessage(msg: TeamForumMessageDto): Boolean {
         val deleted = !msg.deletedAt.isNullOrBlank() &&
             !msg.deletedAt.equals("null", ignoreCase = true)
@@ -1550,13 +1555,14 @@ private fun TeamForumTopicChatRoute(
                 m.deletedAt.equals("null", ignoreCase = true)
         }
 
-    fun loadForumMessages(before: String?, appendOlder: Boolean) {
+    fun loadForumMessages(before: String?, appendOlder: Boolean, forceRefresh: Boolean = false) {
         scope.launch {
             if (appendOlder) {
                 loadingOlder = true
             } else {
                 error = null
                 val knownEmpty = (topicSnapshot?.messageCount ?: -1) == 0
+                val stashed = ForumMessageStash.drain(teamId, topicId)
                 val diskSnapshot = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     if (currentUserId.isNotBlank()) {
                         app.launchDiskCache.loadForumMessages(currentUserId, teamId, topicId)
@@ -1567,23 +1573,32 @@ private fun TeamForumTopicChatRoute(
                 if (diskSnapshot != null) {
                     messages.clear()
                     messages.addAll(visibleForumMessages(diskSnapshot.messages))
+                    if (stashed.isNotEmpty()) {
+                        val merged = mergeForumMessagesPage(messages.toList(), stashed)
+                        messages.clear()
+                        messages.addAll(merged)
+                    }
                     trimForumMessagesInMemory()
                     hasMoreOlder = diskSnapshot.hasMoreOlder
                     loading = false
                 } else if (knownEmpty) {
                     messages.clear()
+                    if (stashed.isNotEmpty()) {
+                        messages.addAll(stashed.sortedBy { it.id })
+                    }
                     hasMoreOlder = false
                     loading = false
                 } else {
                     loading = true
                 }
             }
+            val bypassCache = forceRefresh || forceForumRefreshAfterReconnect || !appendOlder
             teamsRepository.listForumMessages(
                 teamId,
                 topicId,
                 before = before,
                 limit = 50,
-                bypassCache = !appendOlder,
+                bypassCache = bypassCache,
             )
                 .onSuccess { page ->
                     val visible = visibleForumMessages(page)
@@ -1594,15 +1609,26 @@ private fun TeamForumTopicChatRoute(
                         capForumMessagesTrimNewestOnly(messages)
                         bumpMessagesGeneration()
                     } else {
-                        val merged = mergeForumMessagesPage(messages.toList(), visible)
+                        val stashed = if (messages.isEmpty()) {
+                            ForumMessageStash.drain(teamId, topicId)
+                        } else {
+                            emptyList()
+                        }
+                        val merged = mergeForumMessagesPage(
+                            mergeForumMessagesPage(messages.toList(), stashed),
+                            visible,
+                        )
                         messages.clear()
                         messages.addAll(merged)
                         capForumMessagesOldestFirst(messages)
                         bumpMessagesGeneration()
+                        knownForumMessageIds = messages.map { it.id.trim() }.filter { it.isNotEmpty() }.toSet()
                     }
                     hasMoreOlder = page.size >= 50 && messages.isNotEmpty()
                     if (!appendOlder) {
                         persistForumMessagesToDisk()
+                        lastForumBackgroundSyncAtMs = System.currentTimeMillis()
+                        forceForumRefreshAfterReconnect = false
                     }
                 }
                 .onFailure { e ->
@@ -1610,6 +1636,56 @@ private fun TeamForumTopicChatRoute(
                 }
             loading = false
             loadingOlder = false
+        }
+    }
+
+    fun mergeNew(msg: TeamForumMessageDto, source: String = "socket") {
+        if (shouldBlockOwnForumOutgoingRealtime(
+                messages,
+                msg,
+                currentUserId,
+                inFlightForumClientMessageIds,
+            )
+        ) {
+            ForumDeliveryMetrics.logDrop(teamId, topicId, msg.id, "own_echo")
+            return
+        }
+        if (source == "socket") {
+            val visibleNewestId = messages.lastOrNull()?.id
+            if (shouldTriggerGapReconcile(visibleNewestId, msg.id, knownForumMessageIds)) {
+                ForumDeliveryMetrics.logGapReconcile(teamId, topicId, "socket_jump")
+                loadForumMessages(before = null, appendOlder = false, forceRefresh = true)
+                return
+            }
+        }
+        teamsRepository.invalidateForumMessagesCache(teamId, topicId)
+        val replaced = replaceMatchingPendingForumOutgoing(messages, msg, currentUserId)
+        if (!replaced) {
+            val clientId = msg.clientMessageId?.trim().orEmpty()
+            val i = messages.indexOfFirst { existing ->
+                existing.id == msg.id ||
+                    (clientId.isNotEmpty() && existing.clientMessageId?.trim() == clientId)
+            }
+            if (i >= 0) {
+                messages[i] = messages[i].mergePreservingForumMedia(msg)
+            } else {
+                messages.add(msg)
+                trimForumMessagesInMemory()
+            }
+        } else {
+            bumpMessagesGeneration()
+        }
+        val msgId = msg.id.trim()
+        if (msgId.isNotEmpty()) {
+            knownForumMessageIds = knownForumMessageIds + msgId
+        }
+        msg.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { clientId ->
+            inFlightForumClientMessageIds = inFlightForumClientMessageIds - clientId
+        }
+        ForumDeliveryMetrics.logMerge(teamId, topicId, 1, source)
+        persistForumMessagesToDisk()
+        if (!overlayUi || isNearBottom) {
+            markTopicReadToLatest()
         }
     }
 
@@ -1647,10 +1723,34 @@ private fun TeamForumTopicChatRoute(
         forumSocket.connectionState.collect { state ->
             if (state == com.lastasylum.alliance.data.teams.TeamForumSocketState.Connected) {
                 if (forumSocketHadConnected) {
+                    forceForumRefreshAfterReconnect = true
                     teamsRepository.invalidateForumMessagesCache(teamId, topicId)
-                    loadForumMessages(before = null, appendOlder = false)
+                    loadForumMessages(before = null, appendOlder = false, forceRefresh = true)
+                    teamsRepository.getForumPeerReadCursor(teamId, topicId)
+                        .onSuccess { peerUpto ->
+                            val published = ForumPeerReadCursorLogic.hydratePeerRead(
+                                otherReadUptoByTopic = otherReadUptoByTopic,
+                                topicId = topicId,
+                                peerUptoMessageId = peerUpto,
+                            )
+                            if (published != null) {
+                                otherReadUptoMessageId = published
+                            }
+                        }
                 }
                 forumSocketHadConnected = true
+            }
+        }
+    }
+
+    LaunchedEffect(teamId, topicId, sectionActive) {
+        if (!sectionActive) return@LaunchedEffect
+        while (true) {
+            delay(ACTIVE_FORUM_RECONCILE_INTERVAL_MS)
+            if (!sectionActive) break
+            val elapsed = System.currentTimeMillis() - lastForumBackgroundSyncAtMs
+            if (elapsed >= ACTIVE_FORUM_RECONCILE_INTERVAL_MS) {
+                loadForumMessages(before = null, appendOlder = false, forceRefresh = false)
             }
         }
     }
@@ -2280,22 +2380,44 @@ private fun TeamForumTopicChatRoute(
                             }
                         uploadingImage = false
                     }
-                    teamsRepository.postForumMessage(
+                    val clientMessageId = UUID.randomUUID().toString()
+                    val replyId = replyToMessage?.id
+                    val nowIso = Instant.now().toString()
+                    val optimistic = buildOptimisticForumMessage(
+                        teamId = teamId,
+                        topicId = topicId,
+                        senderUserId = currentUserId,
+                        senderUsername = selfForumUsername,
+                        text = trimmed,
+                        clientMessageId = clientMessageId,
+                        replyToMessageId = replyId,
+                        nowIso = nowIso,
+                    )
+                    inFlightForumClientMessageIds = inFlightForumClientMessageIds + clientMessageId
+                    mergeNew(optimistic, source = "optimistic")
+                    teamsRepository.postForumMessageWithRetries(
                         teamId,
                         topicId,
                         trimmed,
-                        replyToMessageId = replyToMessage?.id,
+                        replyToMessageId = replyId,
                         imageFileId = null,
                         imageFileIds = imageFileIds,
                         fileFileId = pendingApkFileId,
+                        clientMessageId = clientMessageId,
                     )
                         .onSuccess {
-                            mergeNew(it)
+                            mergeNew(it, source = "http")
                             draft = ""
                             replyToMessage = null
                             clearPendingAttachment()
                         }
-                        .onFailure { e -> error = e.toUserMessageRu(res) }
+                        .onFailure { e ->
+                            removePendingForumOutgoing(messages, clientMessageId)
+                            inFlightForumClientMessageIds =
+                                inFlightForumClientMessageIds - clientMessageId
+                            bumpMessagesGeneration()
+                            error = e.toUserMessageRu(res)
+                        }
                     sending = false
                 }
             },
@@ -2303,16 +2425,37 @@ private fun TeamForumTopicChatRoute(
                 scope.launch {
                     sending = true
                     clearPendingAttachment()
-                    teamsRepository.postForumMessage(
+                    val clientMessageId = UUID.randomUUID().toString()
+                    val nowIso = Instant.now().toString()
+                    val optimistic = buildOptimisticForumMessage(
+                        teamId = teamId,
+                        topicId = topicId,
+                        senderUserId = currentUserId,
+                        senderUsername = selfForumUsername,
+                        text = payload,
+                        clientMessageId = clientMessageId,
+                        replyToMessageId = replyToMessage?.id,
+                        nowIso = nowIso,
+                    )
+                    inFlightForumClientMessageIds = inFlightForumClientMessageIds + clientMessageId
+                    mergeNew(optimistic, source = "optimistic")
+                    teamsRepository.postForumMessageWithRetries(
                         teamId = teamId,
                         topicId = topicId,
                         text = payload,
                         replyToMessageId = replyToMessage?.id,
                         imageFileId = null,
                         imageFileIds = null,
+                        clientMessageId = clientMessageId,
                     )
-                        .onSuccess { mergeNew(it) }
-                        .onFailure { e -> error = e.toUserMessageRu(res) }
+                        .onSuccess { mergeNew(it, source = "http") }
+                        .onFailure { e ->
+                            removePendingForumOutgoing(messages, clientMessageId)
+                            inFlightForumClientMessageIds =
+                                inFlightForumClientMessageIds - clientMessageId
+                            bumpMessagesGeneration()
+                            error = e.toUserMessageRu(res)
+                        }
                     sending = false
                     replyToMessage = null
                 }

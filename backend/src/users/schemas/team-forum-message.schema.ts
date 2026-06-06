@@ -109,6 +109,10 @@ export class TeamForumMessage {
     senderServerNumber: number | null;
   } | null;
 
+  /** Client-generated idempotency key (REST retry / optimistic UI). */
+  @Prop({ type: String, default: null, trim: true })
+  clientMessageId: string | null;
+
   /** Emoji reactions with explicit user lists for toggling. */
   @Prop({
     type: [
@@ -134,3 +138,7 @@ TeamForumMessageSchema.index({
   deletedAt: 1,
   createdAt: -1,
 });
+TeamForumMessageSchema.index(
+  { senderUserId: 1, clientMessageId: 1 },
+  { unique: true, sparse: true },
+);

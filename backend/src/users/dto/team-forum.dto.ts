@@ -45,6 +45,12 @@ export class CreateTeamForumMessageDto {
   @IsOptional()
   @IsString()
   fileFileId?: string;
+
+  /** Client idempotency key for retry-safe sends (max 64 chars). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  clientMessageId?: string;
 }
 
 export class UpdateTeamForumMessageDto {
