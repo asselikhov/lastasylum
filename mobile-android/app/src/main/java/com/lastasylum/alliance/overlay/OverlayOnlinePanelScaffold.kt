@@ -5,50 +5,29 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.voice.VoicePeerState
+import com.lastasylum.alliance.ui.components.CompactSearchBar
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OverlayOnlinePanelScaffold(
     displaySections: List<OverlayOnlinePresenceSection>,
@@ -94,7 +73,10 @@ fun OverlayOnlinePanelScaffold(
             onSearchQuery = onSearchQuery,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+                .padding(
+                    horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                    vertical = OverlayHudFilterFields.SectionVerticalPadding,
+                ),
         )
         when {
             loading && totalVisible == 0 && error == null -> {
@@ -184,7 +166,6 @@ fun OverlayOnlinePanelScaffold(
 
 private val OnlinePanelSectionSpacing = 8.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun OnlinePanelFilterSearchRow(
     activeChip: OverlayOnlineFilterChip,
@@ -193,88 +174,25 @@ private fun OnlinePanelFilterSearchRow(
     onSearchQuery: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val tokens = OverlayOnlineMemberTokens
-    var filterExpanded by remember { mutableStateOf(false) }
-    val filterLabel = stringResource(filterLabelRes(activeChip))
-    val fieldColors = OverlayHudFilterFields.onlineFieldColors(
-        textColor = tokens.titleColor,
-        focusedBorder = tokens.borderLive.copy(alpha = 0.5f),
-        unfocusedBorder = tokens.borderDefault,
-        cursorColor = tokens.borderLive,
-    )
-    val fieldShape = OverlayHudFilterFields.FieldShape
-    val fieldTextStyle = OverlayHudFilterFields.textStyle()
-
-    Row(
+    Column(
         modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(OverlayHudFilterFields.FieldSpacing),
+        verticalArrangement = Arrangement.spacedBy(OverlayHudFilterFields.SectionVerticalSpacing),
     ) {
-        ExposedDropdownMenuBox(
-            expanded = filterExpanded,
-            onExpandedChange = { filterExpanded = it },
-            modifier = Modifier.widthIn(min = 118.dp, max = 136.dp),
-        ) {
-            OutlinedTextField(
-                value = filterLabel,
-                onValueChange = {},
-                readOnly = true,
-                singleLine = true,
-                modifier = Modifier
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                    .fillMaxWidth()
-                    .heightIn(min = OverlayHudFilterFields.FieldHeight)
-                    .defaultMinSize(minHeight = OverlayHudFilterFields.FieldHeight),
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = filterExpanded)
-                },
-                prefix = { Spacer(modifier = Modifier.width(OverlayHudFilterFields.DropdownPrefixWidth)) },
-                suffix = { Spacer(modifier = Modifier.width(OverlayHudFilterFields.DropdownSuffixWidth)) },
-                colors = fieldColors,
-                shape = fieldShape,
-                textStyle = fieldTextStyle,
-            )
-            ExposedDropdownMenu(
-                expanded = filterExpanded,
-                onDismissRequest = { filterExpanded = false },
-            ) {
-                OverlayOnlineFilterChip.entries.forEach { chip ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                stringResource(filterLabelRes(chip)),
-                                style = OverlayHudFilterFields.menuItemTextStyle(),
-                            )
-                        },
-                        onClick = {
-                            filterExpanded = false
-                            onFilterChip(chip)
-                        },
-                    )
-                }
+        CompactSearchBar(
+            query = searchQuery,
+            onQueryChange = onSearchQuery,
+            hint = stringResource(R.string.overlay_online_search_hint),
+            clearContentDescription = stringResource(R.string.team_members_search_clear_cd),
+        )
+        OverlayHudFilterChipRow {
+            OverlayOnlineFilterChip.entries.forEach { chip ->
+                OverlayHudFilterChip(
+                    label = stringResource(filterLabelRes(chip)),
+                    selected = activeChip == chip,
+                    onClick = { onFilterChip(chip) },
+                )
             }
         }
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = onSearchQuery,
-            modifier = Modifier
-                .weight(1f)
-                .then(OverlayHudFilterFields.baseFieldModifier()),
-            singleLine = true,
-            leadingIcon = {
-                Icon(
-                    Icons.Default.Search,
-                    contentDescription = null,
-                    tint = tokens.mutedColor,
-                    modifier = Modifier.size(OverlayHudFilterFields.SearchIconSize),
-                )
-            },
-            prefix = { Spacer(modifier = Modifier.width(OverlayHudFilterFields.SearchPrefixWidth)) },
-            suffix = { Spacer(modifier = Modifier.width(OverlayHudFilterFields.SearchSuffixWidth)) },
-            colors = fieldColors,
-            shape = fieldShape,
-            textStyle = fieldTextStyle,
-        )
     }
 }
 

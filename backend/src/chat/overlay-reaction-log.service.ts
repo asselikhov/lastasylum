@@ -6,6 +6,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
+import { GameIdentitiesService } from '../users/game-identities.service';
 import { UsersService } from '../users/users.service';
 import { ChatService } from './chat.service';
 import {
@@ -89,9 +90,13 @@ export class OverlayReactionLogService {
     private readonly readStateModel: Model<OverlayReactionLogReadStateDocument>,
     private readonly usersService: UsersService,
     private readonly chatService: ChatService,
+    private readonly gameIdentities: GameIdentitiesService,
   ) {}
 
-  private replyToLogFromRow(row: ReplyToLogRowFields): OverlayReactionLogReplyToView | null {
+  private replyToLogFromRow(
+    row: ReplyToLogRowFields,
+    displayNameMap?: Map<string, string>,
+  ): OverlayReactionLogReplyToView | null {
     const snap = row.replyToLog;
     if (!snap?._id) return null;
     return {
@@ -99,9 +104,17 @@ export class OverlayReactionLogService {
       reaction: snap.reaction,
       visibility: snap.visibility,
       senderUserId: snap.senderUserId,
-      senderUsername: snap.senderUsername,
+      senderUsername: this.gameIdentities.coalesceDisplayName(
+        snap.senderUsername,
+        displayNameMap?.get(snap.senderUserId),
+      ),
       targetUserId: snap.targetUserId ?? null,
-      targetUsername: snap.targetUsername ?? null,
+      targetUsername: snap.targetUserId
+        ? this.gameIdentities.coalesceDisplayName(
+            snap.targetUsername,
+            displayNameMap?.get(snap.targetUserId),
+          )
+        : (snap.targetUsername ?? null),
     };
   }
 
@@ -120,6 +133,7 @@ export class OverlayReactionLogService {
       replyToLog?: ReplyToLogEmbedded | null;
     },
     viewerUserId?: string,
+    displayNameMap?: Map<string, string>,
   ): OverlayReactionLogView {
     const reactions = (row.reactions ?? []).map((r) => {
       const userIds = r.userIds ?? [];
@@ -134,16 +148,31 @@ export class OverlayReactionLogService {
     return {
       _id: row._id.toString(),
       senderUserId: row.senderUserId,
-      senderUsername: row.senderUsername,
+      senderUsername: this.gameIdentities.coalesceDisplayName(
+        row.senderUsername,
+        displayNameMap?.get(row.senderUserId),
+      ),
       targetUserId: row.targetUserId ?? null,
-      targetUsername: row.targetUsername ?? null,
+      targetUsername: row.targetUserId
+        ? this.gameIdentities.coalesceDisplayName(
+            row.targetUsername,
+            displayNameMap?.get(row.targetUserId),
+          )
+        : (row.targetUsername ?? null),
       reaction: row.reaction,
       visibility: row.visibility,
       createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
       reactions,
       replyToLogId: row.replyToLogId?.toString() ?? null,
-      replyToLog: this.replyToLogFromRow(row),
+      replyToLog: this.replyToLogFromRow(row, displayNameMap),
     };
+  }
+
+  private reactionDisplayName(user: UserLean, teamId: string): string {
+    return this.gameIdentities.resolvePublicDisplayName(
+      user as import('../users/schemas/user.schema').UserDocument,
+      teamId,
+    );
   }
 
   private buildReplyToSnapshot(parent: ReplyToLogParentRow): ReplyToLogEmbedded {

@@ -1,9 +1,8 @@
 package com.lastasylum.alliance.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,8 +11,11 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -23,9 +25,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -37,17 +39,17 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.GameForegroundGate
 import com.lastasylum.alliance.overlay.OverlayGamePackageSuggestions
 import com.lastasylum.alliance.overlay.OverlayPermissions
-import com.lastasylum.alliance.ui.components.SettingsDivider
+import com.lastasylum.alliance.ui.components.SettingsNavigationRow
 import com.lastasylum.alliance.ui.components.SettingsToggleRow
 import com.lastasylum.alliance.ui.util.AppBuildInfo
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -56,15 +58,23 @@ fun OverlayControlScreen() {
     val appContext = context.applicationContext
     val appContainer = remember(appContext) { AppContainer.from(appContext) }
     val prefs = remember(appContext) { appContainer.userSettingsPreferences }
-    val scope = rememberCoroutineScope()
+    val totalGameEvents = remember { GameEventCatalog.all.size }
 
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
     var overlayEnabled by remember { mutableStateOf(prefs.isOverlayPanelEnabled()) }
     var detectedGamePackages by remember {
         mutableStateOf<List<OverlayGamePackageSuggestions.DetectedGamePackage>>(emptyList())
     }
+    var showGameEventsSheet by remember { mutableStateOf(false) }
+    var enabledGameEventsCount by remember {
+        mutableIntStateOf(countEnabledGameEventPushes(prefs))
+    }
     val undetectedGamePackages = remember(detectedGamePackages) {
         detectedGamePackages.filter { !it.alreadyInFilter }
+    }
+
+    fun refreshGameEventsSummary() {
+        enabledGameEventsCount = countEnabledGameEventPushes(prefs)
     }
 
     fun overlayOk(): Boolean = OverlayPermissions.canDrawOverlays(context)
@@ -81,6 +91,7 @@ fun OverlayControlScreen() {
     LaunchedEffect(Unit) {
         appContainer.usersRepository.getMyProfile().getOrNull()?.let { profile ->
             prefs.applyGameEventPushEnabledFromServer(profile.gameEventPushEnabled)
+            refreshGameEventsSummary()
         }
     }
 
@@ -90,6 +101,7 @@ fun OverlayControlScreen() {
             if (event == Lifecycle.Event.ON_RESUME) {
                 overlayEnabled = prefs.isOverlayPanelEnabled()
                 refreshOverlayRuntime()
+                refreshGameEventsSummary()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -113,6 +125,17 @@ fun OverlayControlScreen() {
         )
     }
 
+    if (showGameEventsSheet) {
+        GameEventPushSettingsSheet(
+            prefs = prefs,
+            onDismiss = {
+                showGameEventsSheet = false
+                refreshGameEventsSummary()
+            },
+            onEnabledCountChanged = ::refreshGameEventsSummary,
+        )
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -124,7 +147,7 @@ fun OverlayControlScreen() {
             top = SquadRelayDimens.screenTopPadding,
             bottom = SquadRelayDimens.bottomNavigationBarHeight + SquadRelayDimens.sectionGap,
         ),
-        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.sectionGap),
+        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
     ) {
         item {
             Column(
@@ -140,19 +163,20 @@ fun OverlayControlScreen() {
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = AppBuildInfo.authStyleBuildFooter(context),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
                     text = stringResource(R.string.settings_screen_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = AppBuildInfo.authStyleBuildFooter(context),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                 )
             }
         }
 
         item {
+            SettingsSectionLabel(stringResource(R.string.settings_section_overlay))
             SettingsPanelCard {
                 SettingsToggleRow(
                     title = stringResource(R.string.overlay_switch_panel),
@@ -188,38 +212,17 @@ fun OverlayControlScreen() {
                 )
             }
         }
-        item {
-            SettingsPanelCard {
-                GameEventPushSettingsSection(prefs = prefs)
-            }
-        }
 
         item {
+            SettingsSectionLabel(stringResource(R.string.settings_section_game_filter))
             SettingsPanelCard {
-                Text(
-                    text = stringResource(R.string.settings_section_game_filter),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(
-                        horizontal = SquadRelayDimens.listRowHorizontalPadding,
-                        vertical = SquadRelayDimens.listRowVerticalPadding,
-                    ),
-                )
-                Text(
-                    text = stringResource(R.string.settings_game_filter_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(
-                        start = SquadRelayDimens.listRowHorizontalPadding,
-                        end = SquadRelayDimens.listRowHorizontalPadding,
-                        bottom = SquadRelayDimens.itemGap,
-                    ),
-                )
                 OutlinedTextField(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = SquadRelayDimens.listRowHorizontalPadding),
+                        .padding(
+                            horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                            vertical = SquadRelayDimens.listRowVerticalPadding,
+                        ),
                     value = targetPkg,
                     onValueChange = { targetPkg = it },
                     singleLine = false,
@@ -241,7 +244,7 @@ fun OverlayControlScreen() {
                         modifier = Modifier.padding(
                             start = SquadRelayDimens.listRowHorizontalPadding,
                             end = SquadRelayDimens.listRowHorizontalPadding,
-                            top = SquadRelayDimens.blockGap,
+                            top = SquadRelayDimens.itemGap,
                         ),
                     )
                     FlowRow(
@@ -294,7 +297,44 @@ fun OverlayControlScreen() {
                 )
             }
         }
+
+        item {
+            SettingsSectionLabel(stringResource(R.string.settings_section_notifications))
+            SettingsPanelCard {
+                SettingsNavigationRow(
+                    title = stringResource(R.string.settings_game_events_push_section),
+                    subtitle = stringResource(
+                        R.string.settings_game_events_summary,
+                        enabledGameEventsCount,
+                        totalGameEvents,
+                    ),
+                    onClick = { showGameEventsSheet = true },
+                    trailing = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
+            }
+        }
     }
+}
+
+@Composable
+private fun SettingsSectionLabel(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(
+            start = SquadRelayDimens.listRowHorizontalPadding,
+            end = SquadRelayDimens.listRowHorizontalPadding,
+            top = SquadRelayDimens.sectionGap,
+            bottom = SquadRelayDimens.sectionTitlePaddingVertical,
+        ),
+    )
 }
 
 @Composable
@@ -306,7 +346,7 @@ private fun SettingsPanelCard(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = SquadRelaySurfaces.panelColor(0.48f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+        border = SquadRelaySurfaces.panelBorder(alpha = 0.15f),
     ) {
         Column(
             modifier = Modifier

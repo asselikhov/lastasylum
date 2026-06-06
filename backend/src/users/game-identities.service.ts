@@ -240,7 +240,75 @@ export class GameIdentitiesService {
 
   resolveSenderUsername(user: UserDocument): string {
     const active = this.getActiveIdentity(user);
-    return active?.gameNickname?.trim() || user.username;
+    const activeNick = active?.gameNickname?.trim();
+    if (activeNick && !this.looksLikeAccountEmail(activeNick)) {
+      return activeNick;
+    }
+    for (const identity of user.gameIdentities ?? []) {
+      const nick = identity.gameNickname?.trim();
+      if (nick && !this.looksLikeAccountEmail(nick)) {
+        return nick;
+      }
+    }
+    const legacy = user.username?.trim() ?? '';
+    if (legacy && !this.looksLikeAccountEmail(legacy)) {
+      return legacy;
+    }
+    return '';
+  }
+
+  /** Account login is stored in username/email — never show it as a public nickname. */
+  looksLikeAccountEmail(value: string): boolean {
+    const v = value.trim().toLowerCase();
+    if (!v.includes('@')) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  }
+
+  resolvePublicDisplayName(
+    user: UserDocument,
+    teamId?: string | null,
+  ): string {
+    const team = teamId?.trim();
+    const resolved = team
+      ? this.resolveMemberDisplayNickname(user, team)
+      : this.resolveSenderUsername(user);
+    if (resolved && !this.looksLikeAccountEmail(resolved)) {
+      return resolved;
+    }
+    return 'Союзник';
+  }
+
+  coalesceDisplayName(
+    stored: string | null | undefined,
+    resolved: string | null | undefined,
+  ): string {
+    const storedTrim = stored?.trim() ?? '';
+    if (storedTrim && !this.looksLikeAccountEmail(storedTrim)) {
+      return storedTrim;
+    }
+    const resolvedTrim = resolved?.trim() ?? '';
+    if (resolvedTrim && !this.looksLikeAccountEmail(resolvedTrim)) {
+      return resolvedTrim;
+    }
+    return 'Союзник';
+  }
+
+  async buildSenderDisplayNameMap(
+    userIds: string[],
+  ): Promise<Map<string, string>> {
+    const unique = [...new Set(userIds.filter(Boolean))];
+    const out = new Map<string, string>();
+    if (!unique.length) return out;
+    const users = await this.userModel
+      .find({
+        _id: { $in: unique.map((id) => new Types.ObjectId(id)) },
+      })
+      .exec();
+    for (const user of users) {
+      const teamId = user.playerTeamId?.toString() ?? null;
+      out.set(user._id.toString(), this.resolvePublicDisplayName(user, teamId));
+    }
+    return out;
   }
 
   resolveSenderServerNumber(user: UserDocument): number | null {

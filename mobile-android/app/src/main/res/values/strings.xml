@@ -217,7 +217,9 @@
     <string name="settings_screen_title">Настройки</string>
     <string name="settings_screen_subtitle">Панель в игре, уведомления и привязка к вашей сборке</string>
     <string name="settings_section_game_filter">Фильтр игры</string>
-    <string name="settings_game_filter_hint">Укажите пакет игры из «Сведения о приложении». У клона или второй копии — свой пакет.</string>
+    <string name="settings_section_overlay">Оверлей</string>
+    <string name="settings_section_notifications">Уведомления</string>
+    <string name="settings_game_events_summary">%1$d из %2$d включено</string>
     <string name="overlay_title">Оверлей</string>
     <string name="overlay_activity_filter_label">Activity фильтр (опционально)</string>
     <string name="overlay_activity_filter_hint">Через запятую: части имени Activity. Оставьте пустым на старых телефонах и клонах игры — иначе кнопки могут не появиться.</string>
@@ -778,8 +780,10 @@
     <string name="overlay_coord_invalid">Введите координаты (целые числа)</string>
     <string name="overlay_cmd_attack_city">Атака по городу</string>
     <string name="overlay_cmd_attack_player">Атака по игроку</string>
+    <string name="overlay_cmd_attack_monster">Атака по монстру</string>
     <string name="overlay_cmd_storm_city">Штурм по городу</string>
     <string name="overlay_cmd_storm_player">Штурм по игроку</string>
+    <string name="overlay_cmd_storm_monster">Штурм по монстру</string>
     <string name="overlay_cmd_reinf_city">Подкрепление в город</string>
     <string name="overlay_cmd_reinf_player">Подкрепление игроку</string>
     <string name="overlay_cmd_column_attack">Атака</string>
@@ -924,6 +928,7 @@
     <string name="overlay_reactions_stickers_empty">Стикеры скоро появятся. Нажмите ☆, чтобы сохранить в избранное.</string>
     <string name="overlay_cmd_spinner_by_city">По городу</string>
     <string name="overlay_cmd_spinner_by_player">По игроку</string>
+    <string name="overlay_cmd_spinner_by_monster">По монстру</string>
     <string name="overlay_cmd_spinner_reinf_to_city">В город</string>
     <string name="overlay_cmd_spinner_reinf_to_player">Игроку</string>
     <string name="overlay_cmd_column_open_coords">Координаты</string>

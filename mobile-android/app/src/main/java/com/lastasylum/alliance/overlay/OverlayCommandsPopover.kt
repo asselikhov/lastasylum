@@ -1,4 +1,4 @@
-﻿package com.lastasylum.alliance.overlay
+package com.lastasylum.alliance.overlay
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
@@ -715,8 +715,9 @@ class OverlayCommandsPopover(
                 iconRes = R.drawable.ic_overlay_cmd_attack,
                 accentColor = Color.parseColor("#FFE53935"),
                 options = listOf(
-                    CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_attack_city),
                     CommandOption(R.string.overlay_cmd_spinner_by_player, R.string.overlay_cmd_attack_player),
+                    CommandOption(R.string.overlay_cmd_spinner_by_monster, R.string.overlay_cmd_attack_monster),
+                    CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_attack_city),
                 ),
             ),
             CommandCategory(
@@ -725,8 +726,9 @@ class OverlayCommandsPopover(
                 iconRes = R.drawable.ic_overlay_cmd_storm,
                 accentColor = Color.parseColor("#FFFF9800"),
                 options = listOf(
-                    CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_storm_city),
                     CommandOption(R.string.overlay_cmd_spinner_by_player, R.string.overlay_cmd_storm_player),
+                    CommandOption(R.string.overlay_cmd_spinner_by_monster, R.string.overlay_cmd_storm_monster),
+                    CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_storm_city),
                 ),
             ),
             CommandCategory(
@@ -735,8 +737,8 @@ class OverlayCommandsPopover(
                 iconRes = R.drawable.ic_overlay_cmd_reinf,
                 accentColor = Color.parseColor("#FF43A047"),
                 options = listOf(
-                    CommandOption(R.string.overlay_cmd_spinner_reinf_to_city, R.string.overlay_cmd_reinf_city),
                     CommandOption(R.string.overlay_cmd_spinner_reinf_to_player, R.string.overlay_cmd_reinf_player),
+                    CommandOption(R.string.overlay_cmd_spinner_reinf_to_city, R.string.overlay_cmd_reinf_city),
                 ),
             ),
             CommandCategory(

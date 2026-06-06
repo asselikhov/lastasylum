@@ -1,71 +1,61 @@
 package com.lastasylum.alliance.overlay
 
-import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.TextFieldColors
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
-/** Shared filter + search fields in overlay «Уведомления» and «Участники онлайн». */
+/** Shared filter + search styling in overlay «Уведомления» and «Участники онлайн». */
 object OverlayHudFilterFields {
-    /** Single-line row height for dropdowns and search (fits [textStyle] without clipping). */
-    val FieldHeight = 34.dp
-    val FieldShape = RoundedCornerShape(8.dp)
-    val FieldSpacing = 6.dp
-    val SearchIconSize = 16.dp
-    val RowVerticalPadding = 2.dp
-    val DropdownPrefixWidth = 6.dp
-    val DropdownSuffixWidth = 2.dp
-    val SearchPrefixWidth = 2.dp
-    val SearchSuffixWidth = 4.dp
+    val SectionVerticalSpacing = 8.dp
+    val FilterChipSpacing = 6.dp
+    val SectionVerticalPadding = 6.dp
 
     @Composable
-    fun textStyle(): TextStyle =
-        MaterialTheme.typography.labelLarge.copy(
-            fontSize = 13.sp,
-            lineHeight = 16.sp,
-        )
+    fun filterChipColors() = FilterChipDefaults.filterChipColors(
+        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+        selectedLabelColor = MaterialTheme.colorScheme.primary,
+    )
+}
 
-    @Composable
-    fun menuItemTextStyle(): TextStyle = textStyle()
+@Composable
+fun OverlayHudFilterChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier,
+        label = {
+            Text(
+                text = label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        colors = OverlayHudFilterFields.filterChipColors(),
+    )
+}
 
-    fun baseFieldModifier(): Modifier =
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = FieldHeight)
-            .defaultMinSize(minHeight = FieldHeight)
-
-    @Composable
-    fun notificationsFieldColors(): TextFieldColors =
-        OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = Color(0xFF3A4555),
-            focusedContainerColor = Color(0xFF1A2836),
-            unfocusedContainerColor = Color(0xFF141C28),
-        )
-
-    @Composable
-    fun onlineFieldColors(
-        textColor: Color,
-        focusedBorder: Color,
-        unfocusedBorder: Color,
-        cursorColor: Color,
-    ): TextFieldColors =
-        OutlinedTextFieldDefaults.colors(
-            focusedTextColor = textColor,
-            unfocusedTextColor = textColor,
-            focusedBorderColor = focusedBorder,
-            unfocusedBorderColor = unfocusedBorder,
-            cursorColor = cursorColor,
-            focusedContainerColor = Color(0xFF1A2836),
-            unfocusedContainerColor = Color(0xFF141C28),
-        )
+@Composable
+fun OverlayHudFilterChipRow(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(OverlayHudFilterFields.FilterChipSpacing),
+    ) {
+        content()
+    }
 }
