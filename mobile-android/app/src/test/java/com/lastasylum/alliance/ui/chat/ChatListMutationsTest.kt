@@ -441,6 +441,23 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun replaceMatchingPendingOutgoing_matchesByClientMessageIdWhenTextDiffers() {
+        val pending = msg("pending-1", "hello").copy(clientMessageId = "client-abc")
+        val server = msg("server-1", "hello (normalized)").copy(clientMessageId = "client-abc")
+        val replacement = replaceMatchingPendingOutgoing(listOf(pending), server, "u1")
+        requireNotNull(replacement)
+        assertEquals("server-1", replacement.messages.single()._id)
+        assertEquals("client-abc", replacement.messages.single().clientMessageId)
+    }
+
+    @Test
+    fun hasMatchingPendingOutgoing_matchesByClientMessageId() {
+        val pending = msg("pending-1", "hello").copy(clientMessageId = "client-abc")
+        val server = msg("server-1", "different text").copy(clientMessageId = "client-abc")
+        assertTrue(hasMatchingPendingOutgoing(listOf(pending), server, "u1"))
+    }
+
+    @Test
     fun dedupeMessagesByIdNewestFirst_keepsFirstOccurrence() {
         val server = msg("same", "hello")
         val dup = server.copy(text = "hello (server)")

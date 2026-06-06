@@ -82,7 +82,6 @@ class OverlayHudBadgeBus(
                 allianceChatUnread = event.allianceChatUnread.coerceIn(0, 999),
                 teamNewsUnread = event.teamNewsUnread.coerceAtLeast(0),
                 forumUnread = event.forumUnread.coerceAtLeast(0),
-                appUpdateDownloadUrl = event.appUpdateDownloadUrl,
             )
         is OverlayHudBadgeEvent.SeedFromLocal ->
             prev.copy(

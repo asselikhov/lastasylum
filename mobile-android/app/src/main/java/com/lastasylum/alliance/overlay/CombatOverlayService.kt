@@ -152,7 +152,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import com.lastasylum.alliance.ui.OVERLAY_WARMUP_MAX_MS
 import com.lastasylum.alliance.push.FcmTokenManager
 import com.lastasylum.alliance.update.downloadAndInstallAppUpdate
-import com.lastasylum.alliance.update.fetchNewerApkDownloadUrl
+import com.lastasylum.alliance.update.checkAppUpdate
+import com.lastasylum.alliance.update.AppUpdateCheckResult
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -406,6 +407,7 @@ class CombatOverlayService : Service() {
     private val statusHudRefreshRunnable = Runnable {
         statusHudRefreshPosted = false
         refreshOverlayStatusHudData()
+        scheduleOverlayAppUpdateCheck()
         scheduleOverlayStatusHudRefresh()
     }
 
@@ -967,6 +969,9 @@ class CombatOverlayService : Service() {
     /** Paired with [overlayTeardownGeneration] — stale async attach posts skip after dismiss. */
     @Volatile
     private var overlayHudAttachGeneration: Long = 0L
+    /** Edge-trigger: dismiss HUD panes once when update gate becomes active. */
+    @Volatile
+    private var overlayAppUpdateGateChromeApplied: Boolean = false
     @Volatile
     private var overlaySessionPresenceBootstrapped: Boolean = false
     /** Не вызывать [NotificationManager.notify] с тем же текстом подряд (лишние всплытия на части OEM). */
@@ -1100,6 +1105,10 @@ class CombatOverlayService : Service() {
     private var lastHudPresenceCountRefreshAtMs: Long = 0L
 
     private var lastOverlayAppUpdateCheckAtMs: Long = 0L
+
+    private var lastOverlayAppUpdateCheckFailedAtMs: Long = 0L
+
+    private var overlayAppUpdateCheckJob: Job? = null
 
     @Volatile
     private var overlayAppUpdateDownloadInFlight: Boolean = false
@@ -1329,30 +1338,89 @@ class CombatOverlayService : Service() {
 
     private fun syncOverlayHudWindowLayout() {
         val mgr = windowManager ?: systemWindowManager() ?: return
-        fun update(
-            host: FrameLayout?,
-            params: WindowManager.LayoutParams?,
-            gravity: Int,
-            xDp: Int,
-        ) {
-            if (host == null || params == null || !host.isAttachedToWindow) return
-            params.gravity = gravity
-            params.x = dp(xDp)
-            params.y = dp(OVERLAY_HUD_WINDOW_Y_DP)
+        val screenWidth = resources.displayMetrics.widthPixels
+        val gateActive = isOverlayAppUpdateGateActive()
+
+        overlayStatusHudHost?.let { host ->
+            val params = overlayStatusHudParams ?: return@let
+            if (!host.isAttachedToWindow) return@let
+            if (gateActive) {
+                OverlayHudLayout.applyAppUpdateGateBarPosition(params, screenWidth) { dp(it) }
+            } else {
+                OverlayHudLayout.applyStatusHudWrapContent(params) { dp(it) }
+            }
             runCatching { mgr.updateViewLayout(host, params) }
         }
-        update(
-            overlayStatusHudHost,
-            overlayStatusHudParams,
-            Gravity.TOP or Gravity.START,
-            OVERLAY_HUD_LEFT_WINDOW_X_DP,
-        )
-        update(
-            overlayTopRightHudHost,
-            overlayTopRightHudParams,
-            Gravity.TOP or Gravity.END,
-            OVERLAY_HUD_WINDOW_X_DP,
-        )
+
+        if (!gateActive) {
+            overlayTopRightHudHost?.let { host ->
+                val params = overlayTopRightHudParams ?: return@let
+                if (!host.isAttachedToWindow) return@let
+                OverlayHudLayout.applyTopRightHudPosition(params) { dp(it) }
+                params.width = WindowManager.LayoutParams.WRAP_CONTENT
+                params.height = WindowManager.LayoutParams.WRAP_CONTENT
+                runCatching { mgr.updateViewLayout(host, params) }
+            }
+        }
+    }
+
+    private fun isOverlayAppUpdateGateActive(): Boolean =
+        !overlayStatusHudFlow.value.appUpdateDownloadUrl.isNullOrBlank()
+
+    private fun dismissOverlayHudForUpdateGate() {
+        overlayCommandsPopover.hide()
+        if (overlayChatTeamPanelVisible || overlayChatTeamRoot?.visibility == View.VISIBLE) {
+            hideOverlayChatTeamPanel()
+        }
+        val cur = overlayTopRightHudFlow.value
+        if (cur.voiceExpanded || cur.voiceSettingsVisible) {
+            overlayTopRightHudFlow.value = cur.copy(
+                voiceExpanded = false,
+                voiceSettingsVisible = false,
+            )
+        }
+    }
+
+    private fun applyOverlayAppUpdateGateChrome() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { applyOverlayAppUpdateGateChrome() }
+            return
+        }
+        val gateActive = isOverlayAppUpdateGateActive()
+        if (gateActive && !overlayAppUpdateGateChromeApplied) {
+            overlayAppUpdateGateChromeApplied = true
+            dismissOverlayHudForUpdateGate()
+        } else if (!gateActive) {
+            overlayAppUpdateGateChromeApplied = false
+        }
+        if (!isOverlayHudAttachAllowed()) return
+        syncOverlayHudWindowLayout()
+        val statusCompose = overlayStatusHudCompose
+        if (statusCompose != null) {
+            val lp = statusCompose.layoutParams as? FrameLayout.LayoutParams
+            if (lp != null) {
+                lp.width = if (gateActive) {
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                } else {
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                }
+                statusCompose.layoutParams = lp
+            }
+        }
+        if (!isInGameOverlayUiActive()) return
+        if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
+        if (gateActive) {
+            overlayStatusHudHost?.visibility = View.VISIBLE
+            overlayTopRightHudHost?.visibility = View.GONE
+            return
+        }
+        // Normal HUD: both corners stay VISIBLE (also under fullscreen chat — NOT_TOUCHABLE only).
+        if (overlayStatusHudHost?.visibility != View.VISIBLE) {
+            overlayStatusHudHost?.visibility = View.VISIBLE
+        }
+        if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
+            overlayTopRightHudHost?.visibility = View.VISIBLE
+        }
     }
 
     private fun isOverlayHudOnlyMode(): Boolean =
@@ -1453,6 +1521,7 @@ class CombatOverlayService : Service() {
 
     private fun bumpOverlayTeardownGeneration() {
         overlayTeardownGeneration++
+        overlayAppUpdateGateChromeApplied = false
     }
 
     private fun markOverlayHudAttachAllowed() {
@@ -1939,14 +2008,6 @@ class CombatOverlayService : Service() {
                     else -> maxOf(hubDisplayed, hubUnreadOptimisticFloor)
                 }
                 val nowMs = System.currentTimeMillis()
-                val refreshAppUpdate = force ||
-                    nowMs - lastOverlayAppUpdateCheckAtMs >= APP_UPDATE_CHECK_MS
-                val appUpdateUrl = if (refreshAppUpdate) {
-                    lastOverlayAppUpdateCheckAtMs = nowMs
-                    runCatching { fetchNewerApkDownloadUrl() }.getOrNull()
-                } else {
-                    prevHud.appUpdateDownloadUrl
-                }
                 val mergedState = state.copy(
                     allianceChatUnread = hubMerged,
                     forumUnread = inboxBadgeCoordinator.mergeHudForum(
@@ -1959,7 +2020,6 @@ class CombatOverlayService : Service() {
                         prevDisplayed = prevHud.teamNewsUnread,
                         useAuthoritative = refreshTeamInboxBadges,
                     ),
-                    appUpdateDownloadUrl = appUpdateUrl,
                 )
                 val refreshPresenceCounts = force ||
                     nowMs - lastHudPresenceCountRefreshAtMs >= HUD_PRESENCE_COUNT_REFRESH_MS
@@ -1989,7 +2049,6 @@ class CombatOverlayService : Service() {
                             allianceChatUnread = mergedState.allianceChatUnread,
                             teamNewsUnread = mergedState.teamNewsUnread,
                             forumUnread = mergedState.forumUnread,
-                            appUpdateDownloadUrl = mergedState.appUpdateDownloadUrl,
                         ),
                     )
                     val durationMs = android.os.SystemClock.elapsedRealtime() - startedAt
@@ -2896,12 +2955,7 @@ class CombatOverlayService : Service() {
         repairDetachedOverlayShellIfNeeded()
         if (!isOverlayFullscreenPanelObscuringHud()) {
             applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = false)
-            if (overlayStatusHudHost?.visibility != View.VISIBLE) {
-                overlayStatusHudHost?.visibility = View.VISIBLE
-            }
-            if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
-                overlayTopRightHudHost?.visibility = View.VISIBLE
-            }
+            applyOverlayAppUpdateGateChrome()
         }
         applyOverlayStripVisibility()
     }
@@ -2996,25 +3050,14 @@ class CombatOverlayService : Service() {
         if (isOverlayFullscreenPanelObscuringHud()) {
             ensureOverlayStatusHudWindow(allowDuringFullscreenPanel = true)
             ensureOverlayTopRightHudWindow(allowDuringFullscreenPanel = true)
-            if (overlayStatusHudHost?.visibility != View.VISIBLE) {
-                overlayStatusHudHost?.visibility = View.VISIBLE
-            }
-            if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
-                overlayTopRightHudHost?.visibility = View.VISIBLE
-            }
+            applyOverlayAppUpdateGateChrome()
             hideOverlayHudChromeForFullscreenPanel()
             applyOverlayStripVisibility()
             return
         }
         ensureOverlayStatusHudWindow()
         ensureOverlayTopRightHudWindow()
-        if (overlayStatusHudHost?.visibility != View.VISIBLE) {
-            overlayStatusHudHost?.visibility = View.VISIBLE
-        }
-        if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
-            overlayTopRightHudHost?.visibility = View.VISIBLE
-        }
-        syncOverlayHudWindowLayout()
+        applyOverlayAppUpdateGateChrome()
         refreshOverlayTopRightHudState()
         applyOverlayStripVisibility()
         ensureOverlayRaidRealtimeIfNeeded()
@@ -3062,8 +3105,14 @@ class CombatOverlayService : Service() {
             overlayTopRightHudHost?.visibility = View.GONE
             return
         }
+        if (isOverlayAppUpdateGateActive()) {
+            overlayTopRightHudHost?.visibility = View.GONE
+            return
+        }
         if (isOverlayFullscreenPanelObscuringHud()) {
-            if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
+            if (overlayTopRightHudHost?.visibility != View.VISIBLE &&
+                !isOverlayAppUpdateGateActive()
+            ) {
                 overlayTopRightHudHost?.visibility = View.VISIBLE
             }
             hideOverlayHudChromeForFullscreenPanel()
@@ -3084,14 +3133,42 @@ class CombatOverlayService : Service() {
     }
 
     private fun scheduleOverlayAppUpdateCheck(force: Boolean = false) {
+        if (overlayAppUpdateCheckJob?.isActive == true) return
         val now = System.currentTimeMillis()
-        if (!force && now - lastOverlayAppUpdateCheckAtMs < APP_UPDATE_CHECK_MS) return
-        lastOverlayAppUpdateCheckAtMs = now
-        serviceScope.launch(Dispatchers.IO) {
-            val url = runCatching { fetchNewerApkDownloadUrl() }.getOrNull()
-            mainHandler.post {
-                if (!isInGameOverlayUiActive()) return@post
-                overlayHudBadgeBus.emit(OverlayHudBadgeEvent.AppUpdateUrl(url))
+        if (!force) {
+            if (lastOverlayAppUpdateCheckFailedAtMs > lastOverlayAppUpdateCheckAtMs) {
+                if (now - lastOverlayAppUpdateCheckFailedAtMs < APP_UPDATE_RETRY_ON_FAILURE_MS) return
+            } else if (lastOverlayAppUpdateCheckAtMs > 0L &&
+                now - lastOverlayAppUpdateCheckAtMs < APP_UPDATE_CHECK_MS
+            ) {
+                return
+            }
+        }
+        overlayAppUpdateCheckJob = serviceScope.launch(Dispatchers.IO) {
+            when (val result = checkAppUpdate()) {
+                AppUpdateCheckResult.Failed -> {
+                    lastOverlayAppUpdateCheckFailedAtMs = System.currentTimeMillis()
+                }
+                AppUpdateCheckResult.UpToDate -> {
+                    lastOverlayAppUpdateCheckAtMs = System.currentTimeMillis()
+                    lastOverlayAppUpdateCheckFailedAtMs = 0L
+                    mainHandler.post {
+                        if (!isInGameOverlayUiActive()) return@post
+                        overlayHudBadgeBus.emit(OverlayHudBadgeEvent.AppUpdateUrl(null))
+                        mainHandler.post { applyOverlayAppUpdateGateChrome() }
+                    }
+                }
+                is AppUpdateCheckResult.Available -> {
+                    lastOverlayAppUpdateCheckAtMs = System.currentTimeMillis()
+                    lastOverlayAppUpdateCheckFailedAtMs = 0L
+                    mainHandler.post {
+                        if (!isInGameOverlayUiActive()) return@post
+                        overlayHudBadgeBus.emit(
+                            OverlayHudBadgeEvent.AppUpdateUrl(result.downloadUrl),
+                        )
+                        mainHandler.post { applyOverlayAppUpdateGateChrome() }
+                    }
+                }
             }
         }
     }
@@ -3159,6 +3236,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun openOverlayQuickCommandsFromHud() {
+        if (isOverlayAppUpdateGateActive()) return
         OverlayChatInteractionHold.prepareOverlayModalInteraction(isOverlayUi = true)
         extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
         ensureOverlayIfPermitted()
@@ -3235,6 +3313,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun showOverlayHudPane(pane: OverlayHudPane) {
+        if (isOverlayAppUpdateGateActive()) return
         extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
         if (overlayChatTeamPanelVisible && currentOverlayHudPane == pane) return
         if (overlayChatTeamPanelVisible) {
@@ -3256,15 +3335,7 @@ class CombatOverlayService : Service() {
         if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
         if (isOverlayFullscreenPanelObscuringHud()) return
         applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = false)
-        ensureOverlayStatusHudWindow()
-        ensureOverlayTopRightHudWindow()
-        if (overlayStatusHudHost?.visibility != View.VISIBLE) {
-            overlayStatusHudHost?.visibility = View.VISIBLE
-        }
-        if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
-            overlayTopRightHudHost?.visibility = View.VISIBLE
-        }
-        syncOverlayHudWindowLayout()
+        applyOverlayAppUpdateGateChrome()
         applyOverlayStripVisibility(rebalanceZOrder = false)
     }
 
@@ -3634,6 +3705,7 @@ class CombatOverlayService : Service() {
             prefetchOverlayRaidRoomForStrip()
             scheduleOverlayChatWarmup()
             stripSessionNeedsRestart = false
+            scheduleOverlayAppUpdateCheck(force = true)
         } else if (shouldShow && stripSessionNeedsRestart) {
             ensureOverlayStripVisibleSession()
             resetOverlayVoiceForGameEntry()
@@ -7208,6 +7280,7 @@ class CombatOverlayService : Service() {
         private const val STATUS_HUD_REFRESH_MS = 20_000L
         private const val HUD_PRESENCE_COUNT_REFRESH_MS = 60_000L
         private const val APP_UPDATE_CHECK_MS = 120_000L
+        private const val APP_UPDATE_RETRY_ON_FAILURE_MS = 15_000L
         private const val USAGE_ACCESS_CACHE_MS = 30_000L
         private const val GAME_GATE_RECENT_INGAME_WINDOW_MS = 45_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */

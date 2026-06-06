@@ -45,6 +45,24 @@ class OverlayHudBadgeBusTest {
     }
 
     @Test
+    fun emit_appUpdateUrl_setsAndClearsDownloadUrl() {
+        val flow = MutableStateFlow(OverlayGameStatusHudState())
+        val reducer = OverlayHudBadgeReducer(flow)
+        val bus = OverlayHudBadgeBus(
+            reducer = reducer,
+            mergeNews = { auth, prev, _ -> maxOf(auth, prev) },
+            mergeForum = { auth, prev, _, _ -> maxOf(auth, prev) },
+        )
+        bus.emit(OverlayHudBadgeEvent.AppUpdateUrl("https://example.com/app.apk"))
+        ShadowLooper.idleMainLooper()
+        assertEquals("https://example.com/app.apk", flow.value.appUpdateDownloadUrl)
+
+        bus.emit(OverlayHudBadgeEvent.AppUpdateUrl(null))
+        ShadowLooper.idleMainLooper()
+        assertEquals(null, flow.value.appUpdateDownloadUrl)
+    }
+
+    @Test
     fun emit_clearHub_resetsAllianceUnread() {
         val flow = MutableStateFlow(OverlayGameStatusHudState(allianceChatUnread = 9))
         val reducer = OverlayHudBadgeReducer(flow)

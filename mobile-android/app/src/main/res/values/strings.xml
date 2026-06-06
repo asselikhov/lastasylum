@@ -722,6 +722,7 @@
     <string name="overlay_online_summary_ingame">В игре: %1$d</string>
     <string name="overlay_online_summary_recent">Недавно: %1$d</string>
     <string name="overlay_online_search_hint">Поиск по нику</string>
+    <string name="overlay_hud_filter_cd">Фильтр</string>
     <string name="overlay_online_leader_badge">лидер</string>
     <string name="overlay_online_status_ingame">В игре</string>
     <string name="overlay_online_status_recent">Недавно</string>
@@ -739,6 +740,9 @@
     <string name="overlay_hud_online_cd">Участники в игре: %1$d</string>
     <string name="overlay_hud_join_requests_cd">Заявки в команду: %1$d</string>
     <string name="overlay_hud_app_update_cd">Обновить приложение</string>
+    <string name="overlay_app_update_gate_message">Доступна новая версия приложения. Обновите, чтобы продолжить пользоваться всеми функциями оверлея.</string>
+    <string name="overlay_app_update_gate_action">Обновить</string>
+    <string name="overlay_app_update_gate_cd">Доступно обновление приложения</string>
     <string name="overlay_app_update_downloading">Загрузка обновления…</string>
     <string name="overlay_hud_alliance_chat_cd">Чат альянса, непрочитанные: %1$d</string>
     <string name="overlay_hud_news_cd">Новости команды: %1$d</string>

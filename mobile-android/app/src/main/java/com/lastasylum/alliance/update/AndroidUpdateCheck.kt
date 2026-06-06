@@ -14,16 +14,28 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 
-/** Returns download URL if server reports a newer [versionCode] and URL is non-empty. */
-suspend fun fetchNewerApkDownloadUrl(): String? = runCatching {
+sealed class AppUpdateCheckResult {
+    data class Available(val downloadUrl: String) : AppUpdateCheckResult()
+    data object UpToDate : AppUpdateCheckResult()
+    data object Failed : AppUpdateCheckResult()
+}
+
+/** Distinguishes network/API failure from «already on latest build». */
+suspend fun checkAppUpdate(): AppUpdateCheckResult = runCatching {
     val info = NetworkModule.mobileApi.getAndroidUpdate()
     val url = info.downloadUrl?.trim().orEmpty()
     if (info.versionCode > BuildConfig.VERSION_CODE && url.isNotEmpty()) {
-        url
+        AppUpdateCheckResult.Available(url)
     } else {
-        null
+        AppUpdateCheckResult.UpToDate
     }
-}.getOrNull()
+}.getOrElse { AppUpdateCheckResult.Failed }
+
+/** Returns download URL if server reports a newer [versionCode] and URL is non-empty. */
+suspend fun fetchNewerApkDownloadUrl(): String? = when (val result = checkAppUpdate()) {
+    is AppUpdateCheckResult.Available -> result.downloadUrl
+    else -> null
+}
 
 fun Context.openApkDownload(url: String) {
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))

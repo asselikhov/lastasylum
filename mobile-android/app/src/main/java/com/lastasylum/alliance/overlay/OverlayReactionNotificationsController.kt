@@ -150,11 +150,6 @@ class OverlayReactionNotificationsController(
         rebuildFromRepositorySnapshot()
     }
 
-    fun onScopeFilter(filter: OverlayReactionLogScopeFilter) {
-        _uiState.update { it.copy(scopeFilter = filter) }
-        rebuildFromRepositorySnapshot()
-    }
-
     fun onSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
         searchDebounceJob?.cancel()

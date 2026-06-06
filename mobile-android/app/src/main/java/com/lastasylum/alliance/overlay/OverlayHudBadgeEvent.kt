@@ -15,7 +15,6 @@ sealed class OverlayHudBadgeEvent {
         val allianceChatUnread: Int,
         val teamNewsUnread: Int,
         val forumUnread: Int,
-        val appUpdateDownloadUrl: String? = null,
     ) : OverlayHudBadgeEvent()
 
     data class SeedFromLocal(

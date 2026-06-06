@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -26,6 +27,16 @@ fun OverlayGameStatusHud(
     onAppUpdateClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (!state.appUpdateDownloadUrl.isNullOrBlank()) {
+        OverlayAppUpdateGateBar(
+            onUpdateClick = onAppUpdateClick,
+            modifier = modifier.padding(
+                top = HudBadgeOverflowPaddingTop,
+                end = HudBadgeOverflowPaddingEnd,
+            ),
+        )
+        return
+    }
     OverlayGameHudBar(modifier = modifier) {
         OverlayGameHudChipRow {
             OverlayGameHudChip(
@@ -52,12 +63,6 @@ fun OverlayGameStatusHud(
                 ),
                 onClick = onMailClick,
             )
-            if (!state.appUpdateDownloadUrl.isNullOrBlank()) {
-                OverlayGameHudUpdateChip(
-                    contentDescription = stringResource(R.string.overlay_hud_app_update_cd),
-                    onClick = onAppUpdateClick,
-                )
-            }
         }
     }
 }

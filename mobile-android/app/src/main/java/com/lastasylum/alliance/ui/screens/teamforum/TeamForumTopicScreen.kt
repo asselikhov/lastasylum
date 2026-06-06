@@ -114,6 +114,7 @@ import com.lastasylum.alliance.ui.chat.forumLazyIndexForMessageId
 import com.lastasylum.alliance.ui.chat.forumPinPreviewDisplayState
 import com.lastasylum.alliance.ui.chat.formatPinnedMetaLine
 import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
+import com.lastasylum.alliance.ui.chat.isForumPendingId
 import com.lastasylum.alliance.ui.chat.isForumPinnedPreviewLikelyDeleted
 import com.lastasylum.alliance.ui.chat.isForumPinnedPreviewUnavailable
 import com.lastasylum.alliance.ui.chat.jumpToForumPinnedMessage
@@ -870,12 +871,22 @@ fun TeamForumTopicScreen(
             if (i >= 0) {
                 messages[i] = messages[i].mergePreservingForumMedia(msg)
             } else {
+                if (msg.senderUserId.trim() == currentUserId.trim()) {
+                    if (clientId.isNotEmpty()) {
+                        removePendingForumOutgoing(messages, clientId)
+                    } else {
+                        messages.removeAll {
+                            isForumPendingId(it.id) &&
+                                it.senderUserId.trim() == currentUserId.trim() &&
+                                it.text.trim() == msg.text.trim()
+                        }
+                    }
+                }
                 messages.add(msg)
                 trimForumMessagesInMemory()
             }
-        } else {
-            bumpMessagesGeneration()
         }
+        bumpMessagesGeneration()
         val msgId = msg.id.trim()
         if (msgId.isNotEmpty()) {
             knownForumMessageIds = knownForumMessageIds + msgId

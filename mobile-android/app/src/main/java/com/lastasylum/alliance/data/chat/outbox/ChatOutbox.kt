@@ -56,6 +56,7 @@ class ChatOutbox(
             replyToMessageId = replyToMessageId?.trim()?.takeIf { it.isNotEmpty() },
             attachments = emptyList(),
             createdAt = java.time.Instant.now().toString(),
+            clientMessageId = clientMessageId,
         )
         messageStore.upsertMessages(userId, roomId, listOf(optimistic))
         dao.upsert(

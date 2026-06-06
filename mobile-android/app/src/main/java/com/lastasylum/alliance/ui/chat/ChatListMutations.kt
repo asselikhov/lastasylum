@@ -110,6 +110,18 @@ internal fun hasMatchingPendingOutgoing(
 ): Boolean {
     val selfId = currentUserId.trim()
     if (selfId.isEmpty() || incoming.senderId.trim() != selfId) return false
+    val incomingClientId = incoming.clientMessageId?.trim().orEmpty()
+    if (incomingClientId.isNotEmpty()) {
+        if (messages.any { msg ->
+                val pendingId = msg._id?.trim().orEmpty()
+                pendingId.startsWith("pending-") &&
+                    msg.senderId.trim() == selfId &&
+                    msg.clientMessageId?.trim() == incomingClientId
+            }
+        ) {
+            return true
+        }
+    }
     return messages.any { msg ->
         val pendingId = msg._id?.trim().orEmpty()
         pendingId.startsWith("pending-") && outgoingTextsMatch(msg, incoming)
@@ -325,6 +337,28 @@ internal fun replaceMatchingPendingOutgoing(
     val serverId = incoming._id?.trim().orEmpty()
     if (selfId.isEmpty() || serverId.isEmpty() || serverId.startsWith("pending-")) return null
     if (incoming.senderId.trim() != selfId) return null
+    val incomingClientId = incoming.clientMessageId?.trim().orEmpty()
+    if (incomingClientId.isNotEmpty()) {
+        val byClientId = current.indexOfFirst { msg ->
+            val pendingId = msg._id?.trim().orEmpty()
+            pendingId.startsWith("pending-") &&
+                msg.senderId.trim() == selfId &&
+                msg.clientMessageId?.trim() == incomingClientId
+        }
+        if (byClientId >= 0) {
+            val pendingId = current[byClientId]._id?.trim().orEmpty()
+            if (pendingId.isNotEmpty()) {
+                val updated = current.toMutableList()
+                updated[byClientId] = mergeOutgoingConfirmation(current[byClientId], incoming)
+                return PendingOutgoingReplacement(
+                    messages = updated,
+                    pendingId = pendingId,
+                    serverId = serverId,
+                    replacedIndex = byClientId,
+                )
+            }
+        }
+    }
     val idx = current.indexOfFirst { msg ->
         val pendingId = msg._id?.trim().orEmpty()
         pendingId.startsWith("pending-") &&

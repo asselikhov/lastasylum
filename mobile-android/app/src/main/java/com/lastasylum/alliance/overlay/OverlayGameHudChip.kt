@@ -54,8 +54,8 @@ internal val HudRowSpacing = 8.dp
 internal val HudTopRightMinWidth = 280.dp
 private val HudChipCorner = 6.dp
 private val HudChipBorderWidth = 1.dp
-private val HudBadgeOverflowPaddingTop = 10.dp
-private val HudBadgeOverflowPaddingEnd = 10.dp
+internal val HudBadgeOverflowPaddingTop = 10.dp
+internal val HudBadgeOverflowPaddingEnd = 10.dp
 private val HudBadgeColor = Color(0xFFE53935)
 
 /** Гармоничная палитра HUD-кнопок: свой оттенок фона, обводки и иконки. */

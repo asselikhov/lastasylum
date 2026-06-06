@@ -24,7 +24,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.voice.VoicePeerState
-import com.lastasylum.alliance.ui.components.CompactSearchBar
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -174,26 +173,17 @@ private fun OnlinePanelFilterSearchRow(
     onSearchQuery: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(OverlayHudFilterFields.SectionVerticalSpacing),
-    ) {
-        CompactSearchBar(
-            query = searchQuery,
-            onQueryChange = onSearchQuery,
-            hint = stringResource(R.string.overlay_online_search_hint),
-            clearContentDescription = stringResource(R.string.team_members_search_clear_cd),
-        )
-        OverlayHudFilterChipRow {
-            OverlayOnlineFilterChip.entries.forEach { chip ->
-                OverlayHudFilterChip(
-                    label = stringResource(filterLabelRes(chip)),
-                    selected = activeChip == chip,
-                    onClick = { onFilterChip(chip) },
-                )
-            }
-        }
-    }
+    OverlayHudFilterSearchRow(
+        selectedFilter = activeChip,
+        filterOptions = OverlayOnlineFilterChip.entries,
+        filterLabelFor = { chip -> stringResource(filterLabelRes(chip)) },
+        onFilterSelect = onFilterChip,
+        searchQuery = searchQuery,
+        onSearchQuery = onSearchQuery,
+        searchHint = stringResource(R.string.overlay_online_search_hint),
+        searchClearContentDescription = stringResource(R.string.team_members_search_clear_cd),
+        modifier = modifier,
+    )
 }
 
 private fun filterLabelRes(chip: OverlayOnlineFilterChip): Int = when (chip) {

@@ -28,4 +28,23 @@ internal object OverlayHudLayout {
         params.x = dp(WINDOW_X_DP)
         params.y = dp(WINDOW_Y_DP)
     }
+
+    fun applyAppUpdateGateBarPosition(
+        params: WindowManager.LayoutParams,
+        screenWidthPx: Int,
+        dp: (Int) -> Int,
+    ) {
+        val marginPx = dp(WINDOW_X_DP)
+        params.gravity = Gravity.TOP or Gravity.START
+        params.x = marginPx
+        params.y = dp(WINDOW_Y_DP)
+        params.width = (screenWidthPx - marginPx * 2).coerceAtLeast(marginPx)
+        params.height = WindowManager.LayoutParams.WRAP_CONTENT
+    }
+
+    fun applyStatusHudWrapContent(params: WindowManager.LayoutParams, dp: (Int) -> Int) {
+        applyStatusHudPosition(params, dp)
+        params.width = WindowManager.LayoutParams.WRAP_CONTENT
+        params.height = WindowManager.LayoutParams.WRAP_CONTENT
+    }
 }

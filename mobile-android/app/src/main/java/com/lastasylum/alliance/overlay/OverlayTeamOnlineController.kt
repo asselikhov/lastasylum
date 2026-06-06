@@ -42,7 +42,7 @@ data class OverlayTeamOnlineUiState(
     val ingameRaw: List<PlayerTeamMemberDto> = emptyList(),
     val recentRaw: List<PlayerTeamMemberDto> = emptyList(),
     val searchQuery: String = "",
-    val activeFilterChip: OverlayOnlineFilterChip = OverlayOnlineFilterChip.All,
+    val activeFilterChip: OverlayOnlineFilterChip = OverlayOnlineFilterChip.IngameOnly,
     val ingameCount: Int = 0,
     val recentCount: Int = 0,
 )

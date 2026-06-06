@@ -70,7 +70,6 @@ import com.lastasylum.alliance.data.chat.OverlayReactionLogFeedItem
 import com.lastasylum.alliance.data.chat.OverlayReactionLogFilter
 import com.lastasylum.alliance.data.chat.OverlayReactionLogReplyEnricher
 import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
-import com.lastasylum.alliance.data.chat.OverlayReactionLogScopeFilter
 import com.lastasylum.alliance.data.chat.maxOverlayReactionLogId
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
@@ -247,8 +246,6 @@ fun OverlayReactionNotificationsPanel(
             OverlayReactionLogFiltersBar(
                 directionFilter = uiState.directionFilter,
                 onDirectionFilter = controller::onDirectionFilter,
-                scopeFilter = uiState.scopeFilter,
-                onScopeFilter = controller::onScopeFilter,
                 searchQuery = uiState.searchQuery,
                 onSearchQuery = controller::onSearchQuery,
             )
