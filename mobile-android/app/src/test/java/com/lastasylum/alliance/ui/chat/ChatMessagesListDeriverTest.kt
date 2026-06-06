@@ -103,12 +103,35 @@ class ChatMessagesListDeriverTest {
     }
 
     @Test
-    fun chatTimelineMessageItemKey_usesIndexWhenDuplicateIds() {
+    fun chatTimelineMessageItemKey_usesTimelineIndexWhenDuplicateIds() {
         val id = "6a24a23e4a984f6da85136db"
         val message = msg(id)
-        val key0 = chatTimelineMessageItemKey(0, message, { it._id!! }, setOf(id))
-        val key1 = chatTimelineMessageItemKey(1, message, { it._id!! }, setOf(id))
-        assertEquals("msg:0:$id", key0)
-        assertEquals("msg:1:$id", key1)
+        val key0 = chatTimelineMessageItemKey(
+            timelineIndex = 0,
+            messageIndex = 0,
+            message = message,
+            messageListKey = { it._id!! },
+            duplicateIds = setOf(id),
+        )
+        val key1 = chatTimelineMessageItemKey(
+            timelineIndex = 1,
+            messageIndex = 1,
+            message = message,
+            messageListKey = { it._id!! },
+            duplicateIds = setOf(id),
+        )
+        assertEquals("t:0:$id", key0)
+        assertEquals("t:1:$id", key1)
+    }
+
+    @Test
+    fun reconcileDerivedWithMessages_rebuildsWhenTimelineHasExtraRow() {
+        val messages = listOf(msg("server-1", text = "hello"))
+        val staleDerived = buildChatMessagesListDerived(
+            listOf(msg("server-1", text = "hello"), msg("server-1", text = "hello")),
+        )
+        val reconciled = reconcileDerivedWithMessages(staleDerived, messages)
+        assertEquals(1, reconciled.timeline.count { it is ChatTimelineEntry.ChatMessageItem })
+        assertTrue(derivedMatchesMessages(reconciled, messages))
     }
 }

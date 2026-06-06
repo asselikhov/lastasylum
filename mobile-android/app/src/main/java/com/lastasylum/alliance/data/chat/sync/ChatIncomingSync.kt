@@ -7,7 +7,9 @@ import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
 import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.RAID_GAP_RECONCILE_THRESHOLD_MS
 import com.lastasylum.alliance.ui.chat.buildChatMessagesListDerivedAfterReplaceNewest
+import com.lastasylum.alliance.ui.chat.buildChatMessagesListDerived
 import com.lastasylum.alliance.ui.chat.chatMessagesListContentEqual
+import com.lastasylum.alliance.ui.chat.reconcileDerivedWithMessages
 import com.lastasylum.alliance.ui.chat.dedupeOwnOutgoingByClientMessageId
 import com.lastasylum.alliance.ui.chat.dedupeMessagesByIdNewestFirst
 import com.lastasylum.alliance.ui.chat.dropMatchingPendingOutgoing
@@ -249,6 +251,7 @@ class ChatIncomingSync(
         messages = dedupeOwnOutgoingByClientMessageId(messages, host.currentUserId)
         messages = dedupeMessagesByIdNewestFirst(messages)
         rebuildMessageIdIndex(messages, messageIdIndex)
+        listDerived = reconcileDerivedWithMessages(listDerived, messages)
         if (stillFresh.isEmpty()) {
             return IncomingBatchWork(
                 previousMessages = snapshot.messages,
@@ -276,6 +279,7 @@ class ChatIncomingSync(
             )
         }.let { dedupeMessagesByIdNewestFirst(it) }
         rebuildMessageIdIndex(cappedAfterUpsert, messageIdIndex)
+        listDerived = reconcileDerivedWithMessages(listDerived, cappedAfterUpsert)
         return IncomingBatchWork(
             previousMessages = messages,
             cappedMessages = cappedAfterUpsert,

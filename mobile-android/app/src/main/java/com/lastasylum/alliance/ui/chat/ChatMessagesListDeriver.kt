@@ -42,18 +42,84 @@ fun duplicateMessageIdsIn(messages: List<ChatMessage>): Set<String> {
 }
 
 fun chatTimelineMessageItemKey(
+    timelineIndex: Int,
     messageIndex: Int,
     message: ChatMessage,
     messageListKey: (ChatMessage) -> String,
     duplicateIds: Set<String> = emptySet(),
+    duplicateLazyKeys: Set<String> = emptySet(),
 ): String {
     val base = messageListKey(message)
     val id = message._id?.trim().orEmpty()
-    return if (id.isNotEmpty() && id in duplicateIds) {
-        "msg:$messageIndex:$base"
+    val needsIndex = (id.isNotEmpty() && id in duplicateIds) || base in duplicateLazyKeys
+    return if (needsIndex) {
+        "t:$timelineIndex:$base"
     } else {
         base
     }
+}
+
+/** LazyColumn keys that appear more than once in [timeline] (stale incremental derive). */
+fun duplicateLazyKeysInTimeline(
+    timeline: List<ChatTimelineEntry>,
+    messageListKey: (ChatMessage) -> String,
+): Set<String> {
+    if (timeline.size <= 1) return emptySet()
+    val seen = HashSet<String>()
+    val dupes = HashSet<String>()
+    timeline.forEachIndexed { idx, entry ->
+        val key = when (entry) {
+            is ChatTimelineEntry.DaySeparator -> chatTimelineDaySeparatorKey(idx, entry.label)
+            is ChatTimelineEntry.ChatMessageItem -> messageListKey(entry.message)
+            is ChatTimelineEntry.ChatAlbumItem ->
+                "album:${messageListKey(entry.representativeMessage)}:" +
+                    "${entry.messageIndices.firstOrNull() ?: -1}:" +
+                    "${entry.messageIndices.lastOrNull() ?: -1}"
+        }
+        if (!seen.add(key)) {
+            dupes.add(key)
+        }
+    }
+    return dupes
+}
+
+fun derivedMatchesMessages(
+    derived: ChatMessagesListDerived,
+    messages: List<ChatMessage>,
+): Boolean {
+    if (messages.isEmpty()) return derived.timeline.isEmpty()
+    var coveredIndices = 0
+    val seenIds = HashSet<String>()
+    for (entry in derived.timeline) {
+        when (entry) {
+            is ChatTimelineEntry.DaySeparator -> Unit
+            is ChatTimelineEntry.ChatMessageItem -> {
+                coveredIndices++
+                if (entry.messageIndex !in messages.indices) return false
+                val live = messages[entry.messageIndex]
+                val id = live._id?.trim().orEmpty()
+                if (id.isNotEmpty() && !seenIds.add(id)) return false
+                if (id != entry.message._id?.trim()) return false
+            }
+            is ChatTimelineEntry.ChatAlbumItem -> {
+                coveredIndices += entry.messageIndices.size
+                if (entry.messageIndices.any { it !in messages.indices }) return false
+                for (idx in entry.messageIndices) {
+                    val id = messages[idx]._id?.trim().orEmpty()
+                    if (id.isNotEmpty() && !seenIds.add(id)) return false
+                }
+            }
+        }
+    }
+    return coveredIndices == messages.size
+}
+
+fun reconcileDerivedWithMessages(
+    derived: ChatMessagesListDerived,
+    messages: List<ChatMessage>,
+): ChatMessagesListDerived {
+    if (derivedMatchesMessages(derived, messages)) return derived
+    return buildChatMessagesListDerived(messages)
 }
 
 fun resolveChatListDerivedAfterMessagesUpdate(
@@ -62,7 +128,9 @@ fun resolveChatListDerivedAfterMessagesUpdate(
     nextMessages: List<ChatMessage>,
     precomputedDerived: ChatMessagesListDerived? = null,
 ): ChatMessagesListDerived {
-    if (precomputedDerived != null) return precomputedDerived
+    if (precomputedDerived != null) {
+        return reconcileDerivedWithMessages(precomputedDerived, nextMessages)
+    }
     findSingleChangedMessageIndex(previousMessages, nextMessages)?.let { patchIndex ->
         return buildChatMessagesListDerivedAfterPatchMessage(
             previousDerived = previousDerived,

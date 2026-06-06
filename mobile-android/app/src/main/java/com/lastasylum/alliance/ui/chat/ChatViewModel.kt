@@ -410,11 +410,14 @@ class ChatViewModel(
             if (hasDuplicateMessageIds(safeMessages) && !hasDuplicateMessageIds(snapshot.messages)) {
                 return
             }
-            val safeDerived = if (safeMessages == cappedMessages) {
-                derived
-            } else {
-                buildChatMessagesListDerived(safeMessages)
-            }
+            val safeDerived = reconcileDerivedWithMessages(
+                derived = if (safeMessages == cappedMessages) {
+                    derived
+                } else {
+                    buildChatMessagesListDerived(safeMessages)
+                },
+                messages = safeMessages,
+            )
             var nextState = snapshot.copy(
                 messages = safeMessages,
                 newestMessageKey = work.newestMessageKey ?: snapshot.newestMessageKey,

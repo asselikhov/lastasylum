@@ -241,6 +241,7 @@ import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
 import com.lastasylum.alliance.ui.chat.clusterTopSpacingAt
 import com.lastasylum.alliance.ui.chat.chatTimelineDaySeparatorKey
 import com.lastasylum.alliance.ui.chat.chatTimelineMessageItemKey
+import com.lastasylum.alliance.ui.chat.duplicateLazyKeysInTimeline
 import com.lastasylum.alliance.ui.chat.duplicateMessageIdsIn
 import com.lastasylum.alliance.ui.chat.toChatListUiState
 import com.lastasylum.alliance.ui.chat.ChatListUiState
@@ -1789,6 +1790,9 @@ private fun ChatMessagesLazyList(
     val timeline = listDerived.timeline
     val messageClusterFlags = listDerived.clusterFlags
     val duplicateMessageIds = remember(messages) { duplicateMessageIdsIn(messages) }
+    val duplicateLazyKeys = remember(timeline, messageListKey) {
+        duplicateLazyKeysInTimeline(timeline, messageListKey)
+    }
     val configuration = LocalConfiguration.current
     val listBubbleMaxWidth = remember(configuration.screenWidthDp, overlayUi) {
         val rowWidth = configuration.screenWidthDp.dp
@@ -1934,12 +1938,19 @@ private fun ChatMessagesLazyList(
                         when (val e = timeline[idx]) {
                             is ChatTimelineEntry.DaySeparator -> chatTimelineDaySeparatorKey(idx, e.label)
                             is ChatTimelineEntry.ChatMessageItem -> chatTimelineMessageItemKey(
+                                timelineIndex = idx,
                                 messageIndex = e.messageIndex,
                                 message = e.message,
                                 messageListKey = messageListKey,
                                 duplicateIds = duplicateMessageIds,
+                                duplicateLazyKeys = duplicateLazyKeys,
                             )
-                            is ChatTimelineEntry.ChatAlbumItem -> "album:${messageListKey(e.representativeMessage)}:${e.messageIndices.firstOrNull() ?: -1}:${e.messageIndices.lastOrNull() ?: -1}"
+                            is ChatTimelineEntry.ChatAlbumItem -> {
+                                val base = "album:${messageListKey(e.representativeMessage)}:" +
+                                    "${e.messageIndices.firstOrNull() ?: -1}:" +
+                                    "${e.messageIndices.lastOrNull() ?: -1}"
+                                if (base in duplicateLazyKeys) "t:$idx:$base" else base
+                            }
                         }
                     },
                     contentType = { idx ->

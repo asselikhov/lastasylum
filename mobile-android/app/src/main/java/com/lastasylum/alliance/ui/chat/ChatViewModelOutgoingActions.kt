@@ -740,15 +740,18 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
             work.previousMessages.isNotEmpty() &&
             work.cappedMessages.drop(1) == work.previousMessages.drop(1) &&
             work.cappedMessages[0] != work.previousMessages[0]
-        val derived = if (isInPlaceConfirm) {
-            buildChatMessagesListDerivedAfterReplaceNewest(
-                previousDerived = work.previousDerived,
-                previousMessages = work.previousMessages,
-                messages = work.cappedMessages,
-            )
-        } else {
-            buildChatMessagesListDerived(work.cappedMessages)
-        }
+        val derived = reconcileDerivedWithMessages(
+            derived = if (isInPlaceConfirm) {
+                buildChatMessagesListDerivedAfterReplaceNewest(
+                    previousDerived = work.previousDerived,
+                    previousMessages = work.previousMessages,
+                    messages = work.cappedMessages,
+                )
+            } else {
+                buildChatMessagesListDerived(work.cappedMessages)
+            },
+            messages = work.cappedMessages,
+        )
         deriveJob?.cancel()
         deriveDebounceJob?.cancel()
         synchronized(chatMutationLock) {
