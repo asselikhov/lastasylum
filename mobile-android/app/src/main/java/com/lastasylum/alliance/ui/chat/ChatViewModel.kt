@@ -601,7 +601,7 @@ class ChatViewModel(
                             it.copy(
                                 rooms = rooms,
                                 isRoomsLoading = false,
-                                selectedRoomId = selected ?: it.selectedRoomId,
+                                selectedRoomId = selected,
                             ),
                         )
                     }
