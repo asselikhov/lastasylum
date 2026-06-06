@@ -80,7 +80,6 @@ import com.lastasylum.alliance.data.voice.VoicePeerState
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.ui.team.TeamVoiceRosterPresenceBinding
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import com.lastasylum.alliance.ui.util.formatPresenceTimestampRu
 import com.lastasylum.alliance.ui.util.isOverlayIngameNow
@@ -158,8 +157,7 @@ fun SquadTeamRoster(
             members
         } else {
             members.filter { m ->
-                m.username.lowercase().contains(q) ||
-                    (m.telegramUsername?.lowercase()?.contains(q) == true)
+                m.username.lowercase().contains(q)
             }
         }
     }
@@ -183,7 +181,7 @@ fun SquadTeamRoster(
             onQueryChange = { searchQuery = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 8.dp),
+                .padding(top = 6.dp, bottom = 8.dp),
         )
         LazyColumn(
             modifier = Modifier
@@ -409,7 +407,7 @@ private fun SquadMemberCard(
 
     TeamMemberPresenceCard(
         username = member.username,
-        telegramUsername = member.telegramUsername,
+        avatarRelativeUrl = member.avatarRelativeUrl,
         squadRole = squadRole,
         displayName = member.username,
         presenceSubtitle = lastInGameLine,

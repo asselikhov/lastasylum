@@ -13,6 +13,7 @@ import {
 } from '../common/enums/player-team-member-role.enum';
 import { User, type UserDocument } from './schemas/user.schema';
 import { GameIdentitiesService } from './game-identities.service';
+import { buildAvatarRelativeUrl } from './user-avatar.util';
 import { TeamNews, TeamNewsDocument } from './schemas/team-news.schema';
 import {
   TeamNewsReadState,
@@ -31,7 +32,7 @@ export type TeamNewsListRow = {
   excerpt: string;
   authorUserId: string;
   authorUsername: string;
-  authorTelegramUsername: string | null;
+  authorAvatarRelativeUrl: string | null;
   createdAt: string;
   updatedAt: string;
   hasPoll: boolean;
@@ -52,7 +53,7 @@ export type TeamNewsDetail = TeamNewsListRow & {
     votes: Array<{
       userId: string;
       username: string;
-      telegramUsername: string | null;
+      avatarRelativeUrl: string | null;
       optionId: string;
     }>;
     tallies: Array<{ optionId: string; count: number }>;
@@ -212,26 +213,35 @@ export class TeamNewsService {
     ids: string[],
     teamId: string,
   ): Promise<
-    Map<string, { username: string; telegramUsername: string | null }>
+    Map<string, { username: string; avatarRelativeUrl: string | null }>
   > {
     const unique = [...new Set(ids)].filter((id) => Types.ObjectId.isValid(id));
     if (unique.length === 0) return new Map();
     const users = await this.userModel
       .find({ _id: { $in: unique.map((i) => new Types.ObjectId(i)) } })
-      .select('username telegramUsername gameIdentities activeGameIdentityId')
+      .select(
+        'username avatarKey avatarUpdatedAt gameIdentities activeGameIdentityId',
+      )
       .lean()
       .exec();
     return new Map(
-      users.map((u) => [
-        u._id.toString(),
-        {
-          username: this.gameIdentities.resolveMemberDisplayNickname(
-            u as UserDocument,
-            teamId,
-          ),
-          telegramUsername: u.telegramUsername ?? null,
-        },
-      ]),
+      users.map((u) => {
+        const userId = u._id.toString();
+        return [
+          userId,
+          {
+            username: this.gameIdentities.resolveMemberDisplayNickname(
+              u as UserDocument,
+              teamId,
+            ),
+            avatarRelativeUrl: buildAvatarRelativeUrl(
+              userId,
+              u.avatarKey,
+              u.avatarUpdatedAt,
+            ),
+          },
+        ];
+      }),
     );
   }
 
@@ -239,7 +249,7 @@ export class TeamNewsService {
     doc: TeamNews,
     profilesById: Map<
       string,
-      { username: string; telegramUsername: string | null }
+      { username: string; avatarRelativeUrl: string | null }
     >,
     viewerUserId: string,
   ): TeamNewsListRow {
@@ -266,7 +276,7 @@ export class TeamNewsService {
       excerpt,
       authorUserId: doc.authorUserId,
       authorUsername: authorProfile?.username ?? '?',
-      authorTelegramUsername: authorProfile?.telegramUsername ?? null,
+      authorAvatarRelativeUrl: authorProfile?.avatarRelativeUrl ?? null,
       createdAt: created?.toISOString() ?? new Date(0).toISOString(),
       updatedAt: updated?.toISOString() ?? new Date(0).toISOString(),
       hasPoll: !!poll,
@@ -475,7 +485,7 @@ export class TeamNewsService {
           votes: doc.poll.votes.map((v) => ({
             userId: v.userId,
             username: profiles.get(v.userId)?.username ?? '—',
-            telegramUsername: profiles.get(v.userId)?.telegramUsername ?? null,
+            avatarRelativeUrl: profiles.get(v.userId)?.avatarRelativeUrl ?? null,
             optionId: v.optionId,
           })),
           tallies: this.pollTallies(doc.poll),

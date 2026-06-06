@@ -104,6 +104,14 @@ export class User {
   @Prop({ type: String, default: null, trim: true, lowercase: true })
   telegramUsername: string | null;
 
+  /** R2 object key for profile avatar (`profiles/{userId}/…`). */
+  @Prop({ type: String, default: null, trim: true })
+  avatarKey: string | null;
+
+  /** Bumped on avatar upload/delete (cache-bust for clients). */
+  @Prop({ type: Date, default: null })
+  avatarUpdatedAt: Date | null;
+
   /** @deprecated Synced with gameEventPushEnabled.hq_excavation */
   @Prop({ type: Boolean, default: true })
   excavationPushEnabled: boolean;

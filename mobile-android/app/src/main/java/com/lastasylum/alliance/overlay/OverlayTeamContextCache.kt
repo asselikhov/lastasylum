@@ -119,13 +119,13 @@ internal object OverlayTeamContextCache {
             ?.takeIf { it.isNotEmpty() }
     }
 
-    /** Cached telegram for overlay avatar (team roster). */
-    fun memberTelegramUsername(userId: String): String? {
+    /** Cached profile avatar URL (team roster). */
+    fun memberAvatarRelativeUrl(userId: String): String? {
         val id = userId.trim()
         if (id.isEmpty()) return null
         return cachedTeam?.members
             ?.firstOrNull { it.userId == id }
-            ?.telegramUsername
+            ?.avatarRelativeUrl
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
     }

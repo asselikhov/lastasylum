@@ -44,7 +44,7 @@ import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.pinnedPreviewLabel
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
+import com.lastasylum.alliance.ui.util.sanitizePublicDisplayName
 
 @Composable
 fun ForumTopicFeedCard(
@@ -280,15 +280,17 @@ private fun ForumTopicCompactAvatar(
     accent: ForumTopicCardTokens.Accent,
     activityLevel: ForumTopicCardTokens.ActivityLevel,
 ) {
-    val creatorAvatarUrl = telegramAvatarUrl(topic.createdByTelegramUsername)
+    val creatorAvatarUrl = topic.createdByAvatarRelativeUrl?.trim()?.takeIf { it.isNotEmpty() }
     val showLastSenderAvatar = topic.messageCount > 0
     val avatarUrl = if (showLastSenderAvatar) {
-        telegramAvatarUrl(topic.lastMessageSenderTelegramUsername)
+        topic.lastMessageSenderAvatarRelativeUrl?.trim()?.takeIf { it.isNotEmpty() }
     } else {
         creatorAvatarUrl
     }
     val avatarFallbackName = if (showLastSenderAvatar) {
-        topic.lastMessageSenderUsername?.trim()?.takeIf { it.isNotEmpty() } ?: topic.title
+        topic.lastMessageSenderUsername?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            sanitizePublicDisplayName(it, fallback = topic.title)
+        } ?: topic.title
     } else {
         topic.title
     }
@@ -321,7 +323,7 @@ private fun ForumTopicCompactAvatar(
         ) {
             if (showLastSenderAvatar || avatarUrl != null) {
                 ChatSenderAvatar(
-                    telegramUrl = avatarUrl,
+                    avatarRelativeUrl = avatarUrl,
                     size = ForumTopicCardTokens.avatarInner,
                     fallbackName = avatarFallbackName,
                 )

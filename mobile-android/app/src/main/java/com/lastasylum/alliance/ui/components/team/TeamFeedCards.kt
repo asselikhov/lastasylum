@@ -447,7 +447,7 @@ fun TeamNewsFeedCard(
                         }
                         FeedCardMetaRow(
                             username = item.authorUsername,
-                            telegramUsername = item.authorTelegramUsername,
+                            avatarRelativeUrl = item.authorAvatarRelativeUrl,
                             trailingMeta = formattedCreatedAt,
                         )
                     }

@@ -34,14 +34,14 @@ import { formatGameEventPushSenderLine } from '../game-events/game-event-push.ut
 
 function gameEventPushSenderFromMessage(message: unknown): {
   senderName: string;
-  senderTelegramUsername: string;
+  senderAvatarRelativeUrl: string;
   senderSquadRole: string;
   senderTeamTag: string;
   senderServerNumber: number | null;
 } {
   const m = message as {
     senderUsername?: string;
-    senderTelegramUsername?: string | null;
+    senderAvatarRelativeUrl?: string | null;
     senderRole?: string;
     senderTeamTag?: string | null;
     senderServerNumber?: number | null;
@@ -51,7 +51,7 @@ function gameEventPushSenderFromMessage(message: unknown): {
     typeof serverRaw === 'number' && serverRaw >= 1 ? serverRaw : null;
   return {
     senderName: (m.senderUsername ?? '').trim(),
-    senderTelegramUsername: (m.senderTelegramUsername ?? '').trim(),
+    senderAvatarRelativeUrl: (m.senderAvatarRelativeUrl ?? '').trim(),
     senderSquadRole: (m.senderRole ?? '').trim().toUpperCase(),
     senderTeamTag: (m.senderTeamTag ?? '').trim(),
     senderServerNumber: server,
@@ -702,11 +702,11 @@ export class ChatGateway {
           senderUserId,
           input.messageAllianceId,
         );
-      let senderTelegramUsername = pushSender.senderTelegramUsername;
-      if (!senderTelegramUsername) {
-        const telegramMap =
-          await this.usersService.findTelegramUsernamesByIds([senderUserId]);
-        senderTelegramUsername = (telegramMap.get(senderUserId) ?? '').trim();
+      let senderAvatarRelativeUrl = pushSender.senderAvatarRelativeUrl;
+      if (!senderAvatarRelativeUrl) {
+        const avatarMap =
+          await this.usersService.findAvatarRelativeUrlsByIds([senderUserId]);
+        senderAvatarRelativeUrl = (avatarMap.get(senderUserId) ?? '').trim();
       }
       void this.pushNotifications
         .notifyGameEventAlert({
@@ -715,7 +715,7 @@ export class ChatGateway {
           eventId,
           senderName,
           senderLine,
-          senderTelegramUsername,
+          senderAvatarRelativeUrl,
           senderSquadRole: pushSender.senderSquadRole,
           senderTeamTag: pushSender.senderTeamTag,
           senderServerNumber: pushSender.senderServerNumber,

@@ -550,7 +550,7 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
         teamId = optString("teamId"),
         senderUserId = optString("senderUserId"),
         senderUsername = optString("senderUsername"),
-        senderTelegramUsername = optionalStringField("senderTelegramUsername"),
+        senderAvatarRelativeUrl = optionalStringField("senderAvatarRelativeUrl"),
         senderRole = optString("senderRole").takeIf { it.isNotBlank() } ?: "R1",
         senderTeamTag = optionalStringField("senderTeamTag"),
         senderServerNumber = optInt("senderServerNumber").takeIf { it > 0 },

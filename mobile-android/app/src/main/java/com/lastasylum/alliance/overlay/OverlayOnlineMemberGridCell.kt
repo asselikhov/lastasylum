@@ -46,7 +46,6 @@ import kotlinx.coroutines.flow.map
 import com.lastasylum.alliance.ui.components.OverlayMemberVoiceBadges
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.formatOverlayPresenceAgeRu
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 
 enum class OverlayOnlineMemberCellMode {
     Presence,
@@ -194,7 +193,7 @@ fun OverlayOnlineMemberGridCell(
                     Box(contentAlignment = Alignment.BottomCenter) {
                         MemberAvatar(
                             username = member.username,
-                            telegramUsername = member.telegramUsername,
+                            avatarRelativeUrl = member.avatarRelativeUrl,
                             inGameNow = member.inGameNow,
                             freshness = member.freshness,
                         )
@@ -293,7 +292,7 @@ fun OverlayOnlineMemberGridCellFromDto(
         OverlayOnlineMemberUiModel(
             userId = member.userId,
             username = member.username,
-            telegramUsername = member.telegramUsername,
+            avatarRelativeUrl = member.avatarRelativeUrl,
             teamRole = member.teamRole.trim().uppercase().ifBlank { "R1" },
             isLeader = member.isLeader,
             presenceStatus = member.presenceStatus,
@@ -317,12 +316,14 @@ fun OverlayOnlineMemberGridCellFromDto(
 @Composable
 private fun MemberAvatar(
     username: String,
-    telegramUsername: String?,
+    avatarRelativeUrl: String?,
     inGameNow: Boolean,
     freshness: PresenceFreshness,
 ) {
     val tokens = OverlayOnlineMemberTokens
-    val avatarUrl = telegramAvatarUrl(telegramUsername)
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val avatarModel = avatarRelativeUrl?.trim()?.takeIf { it.isNotEmpty() }
+        ?.let { com.lastasylum.alliance.ui.util.profileAvatarImageRequestOrChatFallback(ctx, it) }
     val letter = username.trim().take(1).uppercase().ifBlank { "?" }
     val ringColor = when {
         inGameNow && freshness == PresenceFreshness.StaleSoon -> tokens.borderStaleSoon
@@ -351,9 +352,9 @@ private fun MemberAvatar(
                 .background(Color(0xFF1E2A3A)),
             contentAlignment = Alignment.Center,
         ) {
-            if (avatarUrl != null) {
+            if (avatarModel != null) {
                 AsyncImage(
-                    model = avatarUrl,
+                    model = avatarModel,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,

@@ -18,6 +18,7 @@ data class TeamMemberDto(
     val lastPresenceAt: String? = null,
     val lastAppActiveAt: String? = null,
     val telegramUsername: String? = null,
+    val avatarRelativeUrl: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -63,6 +64,7 @@ data class MyProfileDto(
     val lastPresenceAt: String? = null,
     val lastAppActiveAt: String? = null,
     val telegramUsername: String? = null,
+    val avatarRelativeUrl: String? = null,
     val playerTeamId: String? = null,
     val playerTeamTag: String? = null,
     val playerTeamDisplayName: String? = null,
@@ -78,6 +80,12 @@ data class MyProfileDto(
     val activeGameIdentityId: String? = null,
     val activeGameNickname: String? = null,
     val activeServerNumber: Int? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class UploadedUserAvatarDto(
+    val avatarRelativeUrl: String,
+    val avatarUpdatedAt: String,
 )
 
 @JsonClass(generateAdapter = true)

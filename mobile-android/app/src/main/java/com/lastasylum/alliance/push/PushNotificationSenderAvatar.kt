@@ -18,7 +18,7 @@ import androidx.compose.ui.graphics.toArgb
 import com.lastasylum.alliance.ui.chat.SquadRelayImageRequests
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.theme.roleOnAccentColor
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
+import com.lastasylum.alliance.ui.util.resolvedProfileAvatarUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -28,20 +28,20 @@ object PushNotificationSenderAvatar {
 
     suspend fun loadLargeIcon(
         context: Context,
-        telegramUsername: String?,
+        avatarRelativeUrl: String?,
         squadRole: String?,
         fallbackName: String?,
     ): Bitmap = withContext(Dispatchers.IO) {
-        val avatar = loadAvatarBitmapWithRetry(context, telegramUsername, fallbackName)
+        val avatar = loadAvatarBitmapWithRetry(context, avatarRelativeUrl, fallbackName)
         composeWithRank(avatar, squadRole, fallbackName)
     }
 
     private suspend fun loadAvatarBitmapWithRetry(
         context: Context,
-        telegramUsername: String?,
+        avatarRelativeUrl: String?,
         fallbackName: String?,
     ): Bitmap? {
-        val url = telegramAvatarUrl(telegramUsername)
+        val url = resolvedProfileAvatarUrl(avatarRelativeUrl)
         if (url.isNullOrBlank()) {
             return null
         }

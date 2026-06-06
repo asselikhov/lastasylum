@@ -45,6 +45,7 @@ import {
   AllianceStickerUserGrantSchema,
 } from './schemas/alliance-sticker-user-grant.schema';
 import { StickerAccessService } from './sticker-access.service';
+import { UserAvatarService } from './user-avatar.service';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { StickerAccessService } from './sticker-access.service';
     TeamNewsService,
     TeamNewsAttachmentsService,
     StickerAccessService,
+    UserAvatarService,
     {
       provide: APP_INTERCEPTOR,
       useClass: AppVersionInterceptor,

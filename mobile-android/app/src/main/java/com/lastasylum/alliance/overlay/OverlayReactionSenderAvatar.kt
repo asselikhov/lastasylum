@@ -18,7 +18,7 @@ import coil3.load
 import coil3.request.ErrorResult
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
+import com.lastasylum.alliance.ui.util.resolvedProfileAvatarUrl
 
 internal object OverlayReactionSenderAvatar {
     private const val AVATAR_DP = 22
@@ -37,8 +37,9 @@ internal object OverlayReactionSenderAvatar {
             ColorUtils.blendARGB(accent, Color.BLACK, 0.35f),
             accent,
         )
-        val telegram = OverlayTeamContextCache.memberTelegramUsername(fromUserId)
-        val avatarUrl = telegramAvatarUrl(telegram)
+        val avatarUrl = resolvedProfileAvatarUrl(
+            OverlayTeamContextCache.memberAvatarRelativeUrl(fromUserId),
+        )
 
         val image = ImageView(context).apply {
             layoutParams = FrameLayout.LayoutParams(
@@ -81,8 +82,7 @@ internal object OverlayReactionSenderAvatar {
             addView(image)
             addView(initialView)
             if (avatarUrl != null) {
-                image.load(avatarUrl) {
-                    size(96)
+                image.load(overlayAuthedImageRequest(context, avatarUrl) { size(96) }) {
                     listener(
                         object : ImageRequest.Listener {
                             override fun onSuccess(request: ImageRequest, result: SuccessResult) {

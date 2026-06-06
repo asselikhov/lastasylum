@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  Header,
   Logger,
   NotFoundException,
   Param,
@@ -10,10 +12,21 @@ import {
   Post,
   Query,
   Req,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DEFAULT_ALLIANCE_ID } from '../common/constants/default-alliance-id';
+import {
+  assertUploadSizeWithinLimit,
+  FREE_TIER_MAX_UPLOAD_BYTES,
+  withUploadSlot,
+} from '../common/upload-concurrency';
 import { Roles } from '../common/decorators/roles.decorator';
 import { isAppAdminRole } from '../common/alliance-role.util';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
@@ -37,6 +50,7 @@ import { GameIdentitiesService } from './game-identities.service';
 import { UserDocument } from './schemas/user.schema';
 import { TeamPresenceGateway } from './team-presence.gateway';
 import { UsersService } from './users.service';
+import { UserAvatarService } from './user-avatar.service';
 
 type RequestUser = {
   userId: string;
@@ -51,6 +65,7 @@ export class UsersController {
     private readonly usersService: UsersService,
     private readonly gameIdentities: GameIdentitiesService,
     private readonly teamPresenceGateway: TeamPresenceGateway,
+    private readonly userAvatarService: UserAvatarService,
   ) {}
 
   @Get('me')
@@ -62,6 +77,57 @@ export class UsersController {
     }
 
     return await this.usersService.toSafeUser(user);
+  }
+
+  @Post('me/avatar')
+  @Roles(AllianceRole.MEMBER)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 2 * 1024 * 1024 },
+    }),
+  )
+  async uploadMyAvatar(
+    @Req() req: { user: RequestUser },
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('file is required');
+    }
+    return withUploadSlot(async () => {
+      assertUploadSizeWithinLimit(file.size, FREE_TIER_MAX_UPLOAD_BYTES);
+      const result = await this.userAvatarService.upload({
+        userId: req.user.userId,
+        buffer: file.buffer,
+        mimeType: file.mimetype,
+        size: file.size,
+      });
+      this.usersService.invalidateSafeUserCache(req.user.userId);
+      return result;
+    });
+  }
+
+  @Delete('me/avatar')
+  @Roles(AllianceRole.MEMBER)
+  async deleteMyAvatar(@Req() req: { user: RequestUser }) {
+    await this.userAvatarService.delete(req.user.userId);
+    this.usersService.invalidateSafeUserCache(req.user.userId);
+    return { success: true };
+  }
+
+  @Get('avatars/:userId')
+  @Roles(AllianceRole.MEMBER)
+  @Header('Cache-Control', 'private, max-age=3600')
+  async getUserAvatar(
+    @Req() req: { user: RequestUser },
+    @Param('userId') userId: string,
+    @Res() res: Response,
+  ) {
+    await this.userAvatarService.assertMayViewAvatar(req.user.userId, userId);
+    const dl = await this.userAvatarService.openDownload(userId);
+    res.setHeader('Content-Type', dl.mimeType);
+    dl.stream.on('error', () => res.status(404).end());
+    dl.stream.pipe(res);
   }
 
   @Post('me/push-token')

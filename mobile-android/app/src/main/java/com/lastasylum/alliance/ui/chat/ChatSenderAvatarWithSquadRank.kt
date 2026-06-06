@@ -28,7 +28,7 @@ import com.lastasylum.alliance.ui.theme.roleAccentColor
  */
 @Composable
 fun ChatSenderAvatarWithSquadRank(
-    telegramUrl: String?,
+    avatarRelativeUrl: String?,
     squadRole: String,
     modifier: Modifier = Modifier,
     size: Dp = ChatIncomingAvatarSize,
@@ -46,7 +46,7 @@ fun ChatSenderAvatarWithSquadRank(
         contentAlignment = Alignment.BottomCenter,
     ) {
         ChatSenderAvatar(
-            telegramUrl = telegramUrl,
+            avatarRelativeUrl = avatarRelativeUrl,
             size = size,
             fallbackName = fallbackName,
         )

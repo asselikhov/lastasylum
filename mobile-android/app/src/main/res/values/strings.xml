@@ -309,6 +309,15 @@
     <string name="profile_action_save">Сохранить</string>
     <string name="profile_action_cancel">Отмена</string>
     <string name="profile_action_clear_link">Убрать привязку</string>
+    <string name="profile_avatar_cd">Фото профиля</string>
+    <string name="profile_avatar_tap_hint">Нажмите, чтобы изменить фото</string>
+    <string name="profile_avatar_sheet_title">Фото профиля</string>
+    <string name="profile_avatar_change">Изменить фото</string>
+    <string name="profile_avatar_delete">Удалить фото</string>
+    <string name="profile_avatar_delete_confirm_title">Удалить фото?</string>
+    <string name="profile_avatar_delete_confirm_message">Аватар будет удалён с сервера. Вместо него снова отобразится буква ника.</string>
+    <string name="profile_avatar_upload_error">Не удалось загрузить фото. Проверьте формат (JPEG, PNG, WebP) и размер до 2 МБ.</string>
+    <string name="profile_avatar_delete_error">Не удалось удалить фото.</string>
     <string name="profile_telegram_avatar_cd">Аватар Telegram</string>
     <string name="profile_load_error">Не удалось загрузить профиль</string>
     <string name="profile_save_error_generic">Не удалось сохранить. Проверьте данные и сеть.</string>

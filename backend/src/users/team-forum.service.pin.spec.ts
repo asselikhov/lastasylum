@@ -54,7 +54,7 @@ describe('TeamForumService pin', () => {
       username: 'officer',
       email: 'officer@test',
     }),
-    findTelegramUsernamesByIds: jest.fn().mockResolvedValue(new Map()),
+    findAvatarRelativeUrlsByIds: jest.fn().mockResolvedValue(new Map()),
   };
 
   const teams = {

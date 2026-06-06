@@ -3,6 +3,9 @@ package com.lastasylum.alliance.data.users
 import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
 import com.lastasylum.alliance.data.auth.TokenStore
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class UsersRepository(
     private val usersApi: UsersApi,
@@ -85,6 +88,24 @@ class UsersRepository(
                 SwitchActiveGameIdentityBody(gameIdentityId = identityId),
             )
         }
+
+    suspend fun uploadMyAvatar(
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String,
+    ): Result<MyProfileDto> = runCatching {
+        val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
+        val part = MultipartBody.Part.createFormData("file", fileName, body)
+        usersApi.uploadMyAvatar(part)
+        invalidateProfileCache()
+        usersApi.getMyProfile().also { sessionProfileCache.put(it) }
+    }
+
+    suspend fun deleteMyAvatar(): Result<MyProfileDto> = runCatching {
+        usersApi.deleteMyAvatar()
+        invalidateProfileCache()
+        usersApi.getMyProfile().also { sessionProfileCache.put(it) }
+    }
 
     suspend fun updateExcavationPushEnabled(enabled: Boolean): Result<MyProfileDto> =
         updateGameEventPushEnabled("hq_excavation", enabled)

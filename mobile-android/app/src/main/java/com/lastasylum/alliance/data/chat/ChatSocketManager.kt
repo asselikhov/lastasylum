@@ -394,7 +394,7 @@ class ChatSocketManager(
                             .takeIf { it.isNotBlank() },
                         senderServerNumber = payload.optInt("senderServerNumber")
                             .takeIf { it > 0 },
-                        senderTelegramUsername = payload.optString("senderTelegramUsername")
+                        senderAvatarRelativeUrl = payload.optString("senderAvatarRelativeUrl")
                             .takeIf { it.isNotBlank() },
                         text = payload.optString("text"),
                         editedAt = payload.optString("editedAt").takeIf { it.isNotBlank() },
@@ -732,7 +732,7 @@ private fun JSONObject.toChatMessage(): ChatMessage {
         senderRole = optString("senderRole"),
         senderTeamTag = optString("senderTeamTag").takeIf { it.isNotBlank() },
         senderServerNumber = optInt("senderServerNumber").takeIf { it > 0 },
-        senderTelegramUsername = optString("senderTelegramUsername").takeIf { it.isNotBlank() },
+        senderAvatarRelativeUrl = optString("senderAvatarRelativeUrl").takeIf { it.isNotBlank() },
         text = optString("text"),
         editedAt = optString("editedAt").takeIf { it.isNotBlank() },
         forwardedFrom = optJSONObject("forwardedFrom")?.toForwardedFrom(),

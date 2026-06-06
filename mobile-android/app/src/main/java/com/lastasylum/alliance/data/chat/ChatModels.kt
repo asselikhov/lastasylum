@@ -126,7 +126,7 @@ data class ChatMessage(
     val senderRole: String,
     val senderTeamTag: String? = null,
     val senderServerNumber: Int? = null,
-    val senderTelegramUsername: String? = null,
+    val senderAvatarRelativeUrl: String? = null,
     val text: String,
     val editedAt: String? = null,
     val forwardedFrom: ChatForwardedFrom? = null,

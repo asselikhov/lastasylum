@@ -25,6 +25,7 @@ import {
 import { TeamForumTopicReadState } from './schemas/team-forum-topic-read-state.schema';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import { GameIdentitiesService } from './game-identities.service';
+import { buildAvatarRelativeUrl } from './user-avatar.util';
 import { TeamsService } from './teams.service';
 import { StickerAccessService } from './sticker-access.service';
 import { UsersService } from './users.service';
@@ -50,8 +51,8 @@ export type TeamForumTopicRow = {
   teamId: string;
   title: string;
   createdByUserId: string;
-  /** Telegram @handle for topic creator avatar (client builds CDN URL). */
-  createdByTelegramUsername: string | null;
+  /** Profile avatar for topic creator. */
+  createdByAvatarRelativeUrl: string | null;
   messageCount: number;
   unreadCount: number;
   lastReadMessageId: string | null;
@@ -59,7 +60,7 @@ export type TeamForumTopicRow = {
   /** Author of the newest non-deleted message in the topic (for list avatars). */
   lastMessageSenderUserId: string | null;
   lastMessageSenderUsername: string | null;
-  lastMessageSenderTelegramUsername: string | null;
+  lastMessageSenderAvatarRelativeUrl: string | null;
   createdAt: string;
   updatedAt: string;
   pinnedMessageId: string | null;
@@ -85,8 +86,8 @@ export type TeamForumMessageRow = {
   teamId: string;
   senderUserId: string;
   senderUsername: string;
-  /** Telegram @handle for sender avatar in forum thread UI. */
-  senderTelegramUsername: string | null;
+  /** Profile avatar for sender in forum thread UI. */
+  senderAvatarRelativeUrl: string | null;
   senderRole: PlayerTeamMemberRole;
   senderTeamTag: string | null;
   senderServerNumber: number | null;
@@ -153,20 +154,35 @@ export class TeamForumService {
     private readonly pinAudit: PinAuditService,
   ) {}
 
-  private async enrichMessagesWithTelegram(
+  private async enrichMessagesWithAvatars(
     rows: TeamForumMessageRow[],
   ): Promise<TeamForumMessageRow[]> {
     if (rows.length === 0) return rows;
     const senderIds = [...new Set(rows.map((r) => r.senderUserId))];
-    const telegramMap =
-      await this.usersService.findTelegramUsernamesByIds(senderIds);
+    const avatarMap =
+      await this.usersService.findAvatarRelativeUrlsByIds(senderIds);
+    const displayNameMap =
+      await this.gameIdentities.buildSenderDisplayNameMap(senderIds);
     return rows.map((r) => ({
       ...r,
-      senderTelegramUsername: telegramMap.get(r.senderUserId) ?? null,
+      senderUsername: this.gameIdentities.coalesceDisplayName(
+        r.senderUsername,
+        displayNameMap.get(r.senderUserId),
+      ),
+      replyTo: r.replyTo
+        ? {
+            ...r.replyTo,
+            senderUsername: this.gameIdentities.coalesceDisplayName(
+              r.replyTo.senderUsername,
+              null,
+            ),
+          }
+        : null,
+      senderAvatarRelativeUrl: avatarMap.get(r.senderUserId) ?? null,
     }));
   }
 
-  private async enrichTopicsWithTelegram(
+  private async enrichTopicsWithAvatars(
     rows: TeamForumTopicRow[],
   ): Promise<TeamForumTopicRow[]> {
     if (rows.length === 0) return rows;
@@ -176,15 +192,24 @@ export class TeamForumService {
       const lastId = row.lastMessageSenderUserId?.trim();
       if (lastId) userIds.add(lastId);
     }
-    const telegramMap = await this.usersService.findTelegramUsernamesByIds([
+    const avatarMap = await this.usersService.findAvatarRelativeUrlsByIds([
+      ...userIds,
+    ]);
+    const displayNameMap = await this.gameIdentities.buildSenderDisplayNameMap([
       ...userIds,
     ]);
     return rows.map((r) => ({
       ...r,
-      createdByTelegramUsername: telegramMap.get(r.createdByUserId) ?? null,
-      lastMessageSenderTelegramUsername: r.lastMessageSenderUserId
-        ? (telegramMap.get(r.lastMessageSenderUserId) ?? null)
+      createdByAvatarRelativeUrl: avatarMap.get(r.createdByUserId) ?? null,
+      lastMessageSenderAvatarRelativeUrl: r.lastMessageSenderUserId
+        ? (avatarMap.get(r.lastMessageSenderUserId) ?? null)
         : null,
+      lastMessageSenderUsername: r.lastMessageSenderUserId
+        ? this.gameIdentities.coalesceDisplayName(
+            r.lastMessageSenderUsername,
+            displayNameMap.get(r.lastMessageSenderUserId),
+          )
+        : r.lastMessageSenderUsername,
     }));
   }
 
@@ -400,23 +425,7 @@ export class TeamForumService {
   private async resolvePinnedByUsernames(
     userIds: string[],
   ): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
-    const unique = [...new Set(userIds.map((id) => id.trim()).filter(Boolean))];
-    if (unique.length === 0) return out;
-    const objectIds = unique
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-    if (objectIds.length === 0) return out;
-    const users = await this.userModel
-      .find({ _id: { $in: objectIds } })
-      .select('username email')
-      .lean<Array<{ _id: Types.ObjectId; username?: string; email?: string }>>()
-      .exec();
-    for (const user of users) {
-      const name = (user.username ?? user.email ?? '').trim();
-      if (name) out.set(user._id.toString(), name);
-    }
-    return out;
+    return this.gameIdentities.buildSenderDisplayNameMap(userIds);
   }
 
   private lastSenderFromTopicDoc(doc: TeamForumTopicDocument): {
@@ -456,7 +465,7 @@ export class TeamForumService {
       teamId: doc.teamId.toString(),
       title: doc.title,
       createdByUserId: doc.createdByUserId,
-      createdByTelegramUsername: null,
+      createdByAvatarRelativeUrl: null,
       messageCount: extras?.messageCount ?? doc.messageCount ?? 0,
       unreadCount: extras?.unreadCount ?? 0,
       lastReadMessageId: extras?.lastReadMessageId ?? null,
@@ -469,7 +478,7 @@ export class TeamForumService {
         extras?.lastMessageSenderUsername ??
         doc.lastMessageSenderUsername?.trim() ??
         null,
-      lastMessageSenderTelegramUsername: null,
+      lastMessageSenderAvatarRelativeUrl: null,
       pinnedMessageId: doc.pinnedMessageId?.toString() ?? null,
       pinnedAt: doc.pinnedAt?.toISOString() ?? null,
       pinnedByUserId: doc.pinnedByUserId ?? null,
@@ -826,7 +835,7 @@ export class TeamForumService {
       teamId: teamIdStr,
       senderUserId: doc.senderUserId,
       senderUsername: doc.senderUsername,
-      senderTelegramUsername: null,
+      senderAvatarRelativeUrl: null,
       senderRole: doc.senderRole ?? PlayerTeamMemberRole.R1,
       senderTeamTag: doc.senderTeamTag ?? null,
       senderServerNumber: doc.senderServerNumber ?? null,
@@ -922,7 +931,7 @@ export class TeamForumService {
       replyTarget = await this.messageModel.findById(replyId).exec();
     }
     const row = this.messageRow(msg, replyTarget, userId);
-    return (await this.enrichMessagesWithTelegram([row]))[0] ?? row;
+    return (await this.enrichMessagesWithAvatars([row]))[0] ?? row;
   }
 
   async getReactionBroadcastPayload(
@@ -984,7 +993,7 @@ export class TeamForumService {
             needsSenderAgg.map((doc) => doc._id),
           )
         : new Map<string, { senderUserId: string; senderUsername: string }>();
-    return this.enrichTopicsWithTelegram(
+    return this.enrichTopicsWithAvatars(
       topicDocs.map((doc) => {
         const id = doc._id.toString();
         const actualCount = countMap.get(id) ?? doc.messageCount ?? 0;
@@ -1025,7 +1034,7 @@ export class TeamForumService {
       .limit(limit)
       .exec();
     await this.applySenderServerNumbersToForumDocs(docs);
-    return this.enrichMessagesWithTelegram(
+    return this.enrichMessagesWithAvatars(
       docs.map((doc) => this.messageRow(doc, null)),
     );
   }
@@ -1193,7 +1202,7 @@ export class TeamForumService {
       topicDocs,
       lastReadMap,
     );
-    const result = await this.enrichTopicsWithTelegram(
+    const result = await this.enrichTopicsWithAvatars(
       topicDocs.map((doc) => {
         const id = doc._id.toString();
         const actualCount =
@@ -1553,7 +1562,7 @@ export class TeamForumService {
     if (needsServerNumbers) {
       await this.applySenderServerNumbersToForumDocs(allDocs);
     }
-    const result = await this.enrichMessagesWithTelegram(
+    const result = await this.enrichMessagesWithAvatars(
       docs
         .map((d) => {
           const rid = this.asIdString(d.replyToMessageId);
@@ -1614,7 +1623,13 @@ export class TeamForumService {
         const row = this.messageRow(existing, replyTarget, userId);
         return {
           ...row,
-          senderTelegramUsername: senderDoc?.telegramUsername ?? null,
+          senderAvatarRelativeUrl: senderDoc
+            ? buildAvatarRelativeUrl(
+                senderDoc._id.toString(),
+                senderDoc.avatarKey,
+                senderDoc.avatarUpdatedAt,
+              )
+            : null,
         };
       }
     }
@@ -1744,7 +1759,11 @@ export class TeamForumService {
     const row = this.messageRow(doc, replyTarget, userId);
     return {
       ...row,
-      senderTelegramUsername: senderDoc.telegramUsername ?? null,
+      senderAvatarRelativeUrl: buildAvatarRelativeUrl(
+        senderDoc._id.toString(),
+        senderDoc.avatarKey,
+        senderDoc.avatarUpdatedAt,
+      ),
     };
   }
 
@@ -1848,7 +1867,7 @@ export class TeamForumService {
       await topic.save();
     }
 
-    const rows = await this.enrichMessagesWithTelegram([
+    const rows = await this.enrichMessagesWithAvatars([
       this.messageRow(doc, null, userId),
     ]);
     return rows[0];
@@ -1909,7 +1928,7 @@ export class TeamForumService {
     msg.text = trimmed;
     msg.editedAt = new Date();
     await msg.save();
-    const rows = await this.enrichMessagesWithTelegram([
+    const rows = await this.enrichMessagesWithAvatars([
       this.messageRow(msg, null, userId),
     ]);
     const topic = await this.topicModel.findOne({

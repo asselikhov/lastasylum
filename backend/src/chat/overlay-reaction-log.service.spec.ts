@@ -1,5 +1,30 @@
 import { Types } from 'mongoose';
 import { OverlayReactionLogService } from './overlay-reaction-log.service';
+import { GameIdentitiesService } from '../users/game-identities.service';
+
+function mockOverlayGameIdentities(
+  displayMap: Map<string, string> = new Map(),
+) {
+  const real = new GameIdentitiesService({} as never, {} as never);
+  return {
+    buildSenderDisplayNameMap: jest.fn().mockResolvedValue(displayMap),
+    coalesceDisplayName: real.coalesceDisplayName.bind(real),
+    resolvePublicDisplayName: jest
+      .fn()
+      .mockImplementation((_user: unknown, _teamId: string) => 'ResolvedNick'),
+  };
+}
+
+function attachGameIdentities(
+  service: OverlayReactionLogService,
+  displayMap?: Map<string, string>,
+) {
+  (
+    service as unknown as {
+      gameIdentities: ReturnType<typeof mockOverlayGameIdentities>;
+    }
+  ).gameIdentities = mockOverlayGameIdentities(displayMap);
+}
 
 describe('OverlayReactionLogService visibility', () => {
   const service = Object.create(
@@ -62,6 +87,8 @@ describe('OverlayReactionLogService toggleLogEntryReaction', () => {
           .fn()
           .mockResolvedValue(['user-viewer', 'user-other']),
       };
+
+    attachGameIdentities(service);
 
     return service;
   }
@@ -248,6 +275,8 @@ describe('OverlayReactionLogService createPersonal reply', () => {
       .fn()
       .mockResolvedValue(['user-a', 'user-b', 'user-c']);
 
+    attachGameIdentities(service);
+
     return { service, createdDoc };
   }
 
@@ -387,11 +416,69 @@ describe('OverlayReactionLogService listForViewer reply hydration', () => {
       'visibilityFilter'
     ].bind(service);
 
+    attachGameIdentities(service);
+
     const page = await service.listForViewer(userId, { limit: 10 });
 
     expect(page.items).toHaveLength(1);
     expect(page.items[0].replyToLogId).toBe(parentId.toString());
     expect(page.items[0].replyToLog?._id).toBe(parentId.toString());
     expect(page.items[0].replyToLog?.reaction).toBe('heart');
+  });
+
+  it('coalesces email stored usernames via display name map', async () => {
+    const senderId = 'user-a';
+    const row = {
+      _id: new Types.ObjectId(),
+      teamId,
+      senderUserId: senderId,
+      senderUsername: 'user@example.com',
+      targetUserId: userId,
+      targetUsername: 'viewer@example.com',
+      reaction: 'heart',
+      visibility: 'personal' as const,
+      createdAt: new Date('2026-05-29T10:00:00.000Z'),
+      reactions: [],
+    };
+
+    const service = Object.create(
+      OverlayReactionLogService.prototype,
+    ) as OverlayReactionLogService;
+
+    (service as unknown as { assertActiveTeamMember: jest.Mock }).assertActiveTeamMember =
+      jest.fn().mockResolvedValue({ userId, teamId });
+
+    const listFindChain = {
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue([row]),
+    };
+
+    (service as unknown as { logModel: { find: jest.Mock } }).logModel = {
+      find: jest.fn().mockReturnValue(listFindChain),
+    };
+
+    (
+      service as unknown as {
+        visibilityFilter: (uid: string) => Record<string, unknown>;
+      }
+    ).visibilityFilter = OverlayReactionLogService.prototype[
+      'visibilityFilter'
+    ].bind(service);
+
+    attachGameIdentities(
+      service,
+      new Map([
+        [senderId, 'Alpha'],
+        [userId, 'ViewerNick'],
+      ]),
+    );
+
+    const page = await service.listForViewer(userId, { limit: 10 });
+
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].senderUsername).toBe('Alpha');
+    expect(page.items[0].targetUsername).toBe('ViewerNick');
   });
 });

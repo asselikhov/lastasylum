@@ -62,7 +62,6 @@ import com.lastasylum.alliance.ui.components.premium.PremiumGradientIconFab
 import com.lastasylum.alliance.ui.components.team.ForumTopicCardTokens
 import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
 import com.lastasylum.alliance.ui.components.team.ForumTopicGhostIconButton
-import com.lastasylum.alliance.ui.components.team.ForumTopicListFilter
 import com.lastasylum.alliance.ui.components.team.ForumTopicListHeader
 import com.lastasylum.alliance.ui.components.team.buildVisibleUnreadRankMap
 import com.lastasylum.alliance.ui.components.team.filterForumTopics
@@ -254,14 +253,11 @@ fun TeamForumListScreen(
         initialFirstVisibleItemIndex = 0,
         initialFirstVisibleItemScrollOffset = 0,
     )
-    var listFilter by remember { mutableStateOf(ForumTopicListFilter.All) }
-    val filteredTopics by remember(topics, searchQuery, listFilter, lastReadByTopic.size) {
+    val filteredTopics by remember(topics, searchQuery) {
         derivedStateOf {
             filterForumTopics(
                 topics = topics,
                 query = searchQuery,
-                filter = listFilter,
-                unreadAt = { topic -> effectiveTopicUnread(topic) },
             )
         }
     }
@@ -351,18 +347,16 @@ fun TeamForumListScreen(
                 else -> {
                     val listTopPad = if (overlayUi) 0.dp else 4.dp
                     Column(Modifier.fillMaxSize()) {
-                        ForumTopicListHeader(
-                            searchQuery = searchQuery,
-                            onSearchQueryChange = listViewModel::onSearchQueryChange,
-                            activeFilter = listFilter,
-                            onFilterChange = { listFilter = it },
-                            showSearch = !overlayUi,
-                            compactFilters = overlayUi,
-                        )
+                        if (!overlayUi) {
+                            ForumTopicListHeader(
+                                searchQuery = searchQuery,
+                                onSearchQueryChange = listViewModel::onSearchQueryChange,
+                            )
+                        }
                         if (filteredTopics.isEmpty()) {
                             PremiumEmptyState(
                                 icon = Icons.Outlined.Forum,
-                                title = stringResource(R.string.team_forum_filter_all),
+                                title = stringResource(R.string.team_forum_empty),
                                 body = stringResource(R.string.team_forum_search_hint),
                                 modifier = Modifier
                                     .weight(1f)

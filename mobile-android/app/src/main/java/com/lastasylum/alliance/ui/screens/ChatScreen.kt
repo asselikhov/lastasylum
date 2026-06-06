@@ -290,7 +290,6 @@ import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.chatRoomTabLabelForServer
 import com.lastasylum.alliance.ui.util.chatMessageHasMenuCopyAction
 import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -2625,7 +2624,7 @@ private fun ChatAlbumRow(
         message.senderRole,
         stringResource(R.string.cd_chat_message_image),
     )
-    val telegramUrl = telegramAvatarUrl(message.senderTelegramUsername)
+    val telegramUrl = message.senderAvatarRelativeUrl
     val senderAccent = roleAccentColor(message.senderRole)
     val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
     val displayName = message.senderUsername.trim().ifBlank { senderLine }
@@ -2740,7 +2739,7 @@ private fun ChatAlbumRow(
             reserveIncomingAvatarSpace = !isMine && !isChainBottom,
             leadingAvatar = {
                 ChatSenderAvatar(
-                    telegramUrl = telegramUrl,
+                    avatarRelativeUrl = telegramUrl,
                     size = ChatIncomingAvatarSize,
                     modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
                     fallbackName = displayName,
@@ -2842,7 +2841,7 @@ internal fun ChatMessageBubble(
     val replyQuoteInteraction = remember(message._id, message.replyTo?._id) {
         MutableInteractionSource()
     }
-    val telegramUrl = telegramAvatarUrl(message.senderTelegramUsername)
+    val telegramUrl = message.senderAvatarRelativeUrl
     val floatingSticker = stickerStem != null && message.replyTo == null
     val imageAttachments = remember(message.attachments) {
         message.chatImageAttachments()
@@ -3005,7 +3004,7 @@ internal fun ChatMessageBubble(
             leadingAvatar = {
                 if (overlayUi && !isMine) {
                     ChatSenderAvatarWithSquadRank(
-                    telegramUrl = telegramUrl,
+                    avatarRelativeUrl = telegramUrl,
                     squadRole = message.senderRole,
                     size = ChatIncomingAvatarSize,
                     modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
@@ -3013,7 +3012,7 @@ internal fun ChatMessageBubble(
                 )
             } else {
                 ChatSenderAvatar(
-                    telegramUrl = telegramUrl,
+                    avatarRelativeUrl = telegramUrl,
                     size = ChatIncomingAvatarSize,
                     modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
                     fallbackName = displayName,

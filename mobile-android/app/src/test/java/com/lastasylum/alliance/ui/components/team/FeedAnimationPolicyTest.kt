@@ -124,7 +124,7 @@ class FeedAnimationPolicyTest {
     }
 
     @Test
-    fun filterForumTopics_searchAndUnread() {
+    fun filterForumTopics_searchByTitle() {
         val topics = listOf(
             topic(id = "1", title = "Alpha raid", unread = 2),
             topic(id = "2", title = "Beta chat", unread = 0),
@@ -132,8 +132,6 @@ class FeedAnimationPolicyTest {
         val filtered = filterForumTopics(
             topics = topics,
             query = "alpha",
-            filter = ForumTopicListFilter.Unread,
-            unreadAt = { it.unreadCount },
         )
         assertEquals(1, filtered.size)
         assertEquals("1", filtered.first().id)

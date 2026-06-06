@@ -31,7 +31,7 @@ fun chatSenderDisplayLine(
     username: String,
     serverNumber: Int? = null,
 ): String {
-    val u = username.trim().ifBlank { "—" }
+    val u = sanitizePublicDisplayName(username, fallback = "—")
     val prefix = buildList {
         formatServerLabel(serverNumber)?.let { add(it) }
         teamTag?.trim()?.takeIf { it.isNotEmpty() }?.let { add("[$it]") }

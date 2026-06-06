@@ -365,10 +365,12 @@ export class GameIdentitiesService {
         (g) => g.serverNumber === activeServer,
       );
       const nick = onActiveServer?.gameNickname?.trim();
-      if (nick) return nick;
+      if (nick && !this.looksLikeAccountEmail(nick)) return nick;
     }
-    const any = onTeam.find((g) => g.gameNickname?.trim());
-    return any?.gameNickname?.trim() ?? this.resolveSenderUsername(user);
+    const any = onTeam
+      .map((g) => g.gameNickname?.trim())
+      .find((nick) => nick && !this.looksLikeAccountEmail(nick));
+    return any ?? this.resolveSenderUsername(user);
   }
 
   /**

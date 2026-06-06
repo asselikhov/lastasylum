@@ -62,7 +62,7 @@ describe('TeamForumService listTopics performance', () => {
 
   const usersService = {
     findById: jest.fn(),
-    findTelegramUsernamesByIds: jest.fn().mockResolvedValue(new Map()),
+    findAvatarRelativeUrlsByIds: jest.fn().mockResolvedValue(new Map()),
   };
 
   const topicModel = {

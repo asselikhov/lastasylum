@@ -1,16 +1,26 @@
 package com.lastasylum.alliance.data.users
 
+import okhttp3.MultipartBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.PATCH
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Multipart
 
 interface UsersApi {
     @GET("users/me")
     suspend fun getMyProfile(): MyProfileDto
+
+    @Multipart
+    @POST("users/me/avatar")
+    suspend fun uploadMyAvatar(@Part file: MultipartBody.Part): UploadedUserAvatarDto
+
+    @DELETE("users/me/avatar")
+    suspend fun deleteMyAvatar(): Map<String, Boolean?>
 
     @PATCH("users/me/telegram")
     suspend fun updateMyTelegram(@Body body: UpdateTelegramBody): MyProfileDto

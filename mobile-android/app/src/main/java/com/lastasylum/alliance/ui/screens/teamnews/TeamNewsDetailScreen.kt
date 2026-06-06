@@ -51,6 +51,7 @@ import com.lastasylum.alliance.ui.components.team.JournalFeedVariant
 import com.lastasylum.alliance.ui.components.team.PremiumJournalFeedShell
 import com.lastasylum.alliance.ui.components.team.PremiumJournalFeedTokens
 import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
+import com.lastasylum.alliance.ui.util.sanitizePublicDisplayName
 
 private val detailHeroShape = RoundedCornerShape(20.dp)
 private val pageHorizontalPad = 16.dp
@@ -128,6 +129,9 @@ internal fun TeamNewsDetailScrollContent(
     }
     val poll = detail.poll
     val pollOnly = poll != null && !showArticleBody
+    val authorMetaLine = remember(detail.authorUsername, detail.createdAt) {
+        "${sanitizePublicDisplayName(detail.authorUsername)} · ${formatTeamFeedDateRu(detail.createdAt)}"
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -184,7 +188,7 @@ internal fun TeamNewsDetailScrollContent(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = "${detail.authorUsername} · ${formatTeamFeedDateRu(detail.createdAt)}",
+                            text = authorMetaLine,
                             style = PremiumJournalFeedTokens.metaStyle,
                             color = PremiumJournalFeedTokens.metaOnHero.copy(alpha = 0.88f),
                             maxLines = 1,
@@ -214,7 +218,7 @@ internal fun TeamNewsDetailScrollContent(
                                 style = PremiumJournalFeedTokens.headlineStyle,
                             )
                             Text(
-                                "${detail.authorUsername} · ${formatTeamFeedDateRu(detail.createdAt)}",
+                                authorMetaLine,
                                 style = PremiumJournalFeedTokens.metaStyle,
                             )
                         }
@@ -234,7 +238,7 @@ internal fun TeamNewsDetailScrollContent(
         } else if (poll == null && hero == null) {
             item(key = "news_detail_meta") {
                 Text(
-                    "${detail.authorUsername} · ${formatTeamFeedDateRu(detail.createdAt)}",
+                    authorMetaLine,
                     style = PremiumJournalFeedTokens.metaStyle,
                     modifier = Modifier.padding(horizontal = pageHorizontalPad, vertical = 8.dp),
                 )

@@ -74,7 +74,6 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingOnBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.roleAccentColor
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
@@ -258,8 +257,8 @@ private fun OverlayChatStripMessage(
             msg.senderServerNumber,
         ).trim().ifBlank { "—" }
     }
-    val avatarUrl = remember(msg.senderTelegramUsername) {
-        telegramAvatarUrl(msg.senderTelegramUsername)
+    val avatarRelativeUrl = remember(msg.senderAvatarRelativeUrl) {
+        msg.senderAvatarRelativeUrl?.trim()?.takeIf { it.isNotEmpty() }
     }
     val role = remember(msg.senderRole) { msg.senderRole.trim() }
     val border = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
@@ -310,7 +309,7 @@ private fun OverlayChatStripMessage(
                 verticalAlignment = Alignment.Top,
             ) {
                 ChatSenderAvatarWithSquadRank(
-                    telegramUrl = avatarUrl,
+                    avatarRelativeUrl = avatarRelativeUrl,
                     squadRole = role,
                     size = avatarSize,
                     fallbackName = msg.senderUsername,

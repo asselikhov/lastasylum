@@ -1168,16 +1168,12 @@ fun TeamForumTopicScreen(
         }
     }
 
-    val forumListContentPadding = if (overlayUi) {
-        PaddingValues(
-            start = SquadRelayDimens.contentPaddingHorizontal,
-            end = SquadRelayDimens.contentPaddingHorizontal,
-            top = 52.dp,
-            bottom = 10.dp,
-        )
-    } else {
-        PaddingValues(horizontal = 12.dp, vertical = 10.dp)
-    }
+    val forumListContentPadding = PaddingValues(
+        start = SquadRelayDimens.contentPaddingHorizontal,
+        end = SquadRelayDimens.contentPaddingHorizontal,
+        top = 52.dp,
+        bottom = 10.dp,
+    )
 
     CompositionLocalProvider(
         LocalOpenRemoteChatImagePreview provides openImages,
@@ -1482,17 +1478,17 @@ fun TeamForumTopicScreen(
                     )
                 }
                 }
+                ForumTopicOverlayBackChip(
+                    onClick = { leaveTopic() },
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(
+                            start = SquadRelayDimens.contentPaddingHorizontal,
+                            top = 8.dp,
+                        )
+                        .zIndex(5f),
+                )
                 if (overlayUi) {
-                    ForumTopicOverlayBackChip(
-                        onClick = { leaveTopic() },
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(
-                                start = SquadRelayDimens.contentPaddingHorizontal,
-                                top = 8.dp,
-                            )
-                            .zIndex(5f),
-                    )
                     OverlayReactionLogJumpToUnreadFab(
                         visible = showJumpToUnreadMessages,
                         unreadCount = topicUnreadEstimate,

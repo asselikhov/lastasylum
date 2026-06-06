@@ -4534,7 +4534,7 @@ class CombatOverlayService : Service() {
             senderRole = profile?.playerTeamSquadRole?.trim()?.takeIf { it.isNotEmpty() }
                 ?: "R1",
             senderTeamTag = profile?.playerTeamTag?.trim()?.takeIf { it.isNotEmpty() },
-            senderTelegramUsername = profile?.telegramUsername?.trim()?.takeIf { it.isNotEmpty() },
+            senderAvatarRelativeUrl = profile?.avatarRelativeUrl?.trim()?.takeIf { it.isNotEmpty() },
             text = body,
             attachments = emptyList(),
             createdAt = Instant.now().toString(),
@@ -4997,7 +4997,7 @@ class CombatOverlayService : Service() {
             senderUsername = getString(R.string.app_name),
             senderRole = "",
             senderTeamTag = null,
-            senderTelegramUsername = null,
+            senderAvatarRelativeUrl = null,
             text = message.trimEnd(),
             attachments = emptyList(),
             createdAt = null,

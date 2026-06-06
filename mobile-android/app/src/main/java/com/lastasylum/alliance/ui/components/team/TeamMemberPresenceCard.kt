@@ -40,12 +40,12 @@ import com.lastasylum.alliance.ui.theme.SquadRelayPrimary
 import com.lastasylum.alliance.ui.theme.SquadRelaySecondary
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 import com.lastasylum.alliance.ui.theme.roleAccentColor
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
+import com.lastasylum.alliance.ui.util.profileAvatarImageRequestOrChatFallback
 
 @Composable
 fun TeamMemberPresenceCard(
     username: String,
-    telegramUsername: String?,
+    avatarRelativeUrl: String?,
     squadRole: String,
     displayName: String,
     presenceSubtitle: String,
@@ -57,7 +57,9 @@ fun TeamMemberPresenceCard(
     modifier: Modifier = Modifier,
     trailingContent: @Composable (() -> Unit)? = null,
 ) {
-    val avatarUrl = telegramAvatarUrl(telegramUsername)
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val avatarModel = avatarRelativeUrl?.trim()?.takeIf { it.isNotEmpty() }
+        ?.let { profileAvatarImageRequestOrChatFallback(ctx, it) }
     val letter = username.trim().take(1).uppercase().ifBlank { "?" }
     val roleCd = stringResource(R.string.overlay_member_squad_rank_cd, squadRole)
     val roleColor = roleAccentColor(squadRole)
@@ -119,9 +121,9 @@ fun TeamMemberPresenceCard(
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (avatarUrl != null) {
+                        if (avatarModel != null) {
                             AsyncImage(
-                                model = avatarUrl,
+                                model = avatarModel,
                                 contentDescription = null,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop,

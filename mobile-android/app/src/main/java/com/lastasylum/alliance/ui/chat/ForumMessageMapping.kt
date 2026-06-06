@@ -40,7 +40,7 @@ fun TeamForumMessageDto.toDisplayChatMessage(
         senderRole = senderRole,
         senderTeamTag = senderTeamTag,
         senderServerNumber = senderServerNumber,
-        senderTelegramUsername = senderTelegramUsername,
+        senderAvatarRelativeUrl = senderAvatarRelativeUrl,
         text = text,
         editedAt = editedAt,
         forwardedFrom = forwardedFrom?.let { fwd ->

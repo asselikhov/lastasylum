@@ -60,7 +60,7 @@ import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibility
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
 import com.lastasylum.alliance.ui.chat.ChatMessageReactionsRow
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
+import com.lastasylum.alliance.ui.util.profileAvatarImageRequestOrChatFallback
 import kotlinx.coroutines.delay
 
 private val ReactionPreviewColumnWidth = 112.dp
@@ -554,8 +554,12 @@ fun OverlayReactionLogAvatar(
     sizeDp: Int = 40,
 ) {
     val context = LocalContext.current
-    val telegram = remember(userId) { OverlayTeamContextCache.memberTelegramUsername(userId) }
-    val avatarUrl = telegramAvatarUrl(telegram)
+    val avatarRelativeUrl = remember(userId) {
+        OverlayTeamContextCache.memberAvatarRelativeUrl(userId)
+    }
+    val avatarModel = remember(avatarRelativeUrl, context) {
+        avatarRelativeUrl?.let { profileAvatarImageRequestOrChatFallback(context, it) }
+    }
     val letter = username.trim().take(1).uppercase().ifBlank { "?" }
     val sizePx = (sizeDp * context.resources.displayMetrics.density).toInt()
     Box(
@@ -565,13 +569,9 @@ fun OverlayReactionLogAvatar(
             .background(Color(0xFF1E2A3A)),
         contentAlignment = Alignment.Center,
     ) {
-        if (avatarUrl != null) {
+        if (avatarModel != null) {
             AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(avatarUrl)
-                    .size(sizePx, sizePx)
-                    .crossfade(false)
-                    .build(),
+                model = avatarModel,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

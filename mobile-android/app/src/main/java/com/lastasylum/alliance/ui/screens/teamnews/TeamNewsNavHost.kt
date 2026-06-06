@@ -124,7 +124,7 @@ import kotlinx.coroutines.flow.map
 import java.time.Instant
 import androidx.compose.ui.zIndex
 import com.lastasylum.alliance.ui.util.toUserMessageRu
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
+import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.components.team.PremiumJournalFeedTokens
 import com.lastasylum.alliance.ui.components.team.TeamNewsFeedCard
 import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
@@ -248,31 +248,11 @@ internal fun TeamNewsPollVoterChips(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    val avatarUrl = telegramAvatarUrl(vote.telegramUsername)
-                    if (avatarUrl != null) {
-                        AsyncImage(
-                            model = avatarUrl,
-                            contentDescription = label,
-                            modifier = Modifier
-                                .size(22.dp)
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop,
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(22.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = label.take(1).uppercase(),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
+                    ChatSenderAvatar(
+                        avatarRelativeUrl = vote.avatarRelativeUrl,
+                        size = 22.dp,
+                        fallbackName = label,
+                    )
                     Text(
                         text = label,
                         style = MaterialTheme.typography.labelSmall,

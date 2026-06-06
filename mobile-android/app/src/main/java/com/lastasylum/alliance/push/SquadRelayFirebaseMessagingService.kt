@@ -77,11 +77,11 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
             username = nickname,
             serverNumber = serverNumber,
         )
-        val telegram = message.data["senderTelegramUsername"]?.trim().orEmpty()
+        val avatarRelativeUrl = message.data["senderAvatarRelativeUrl"]?.trim().orEmpty()
         val squadRole = message.data["senderSquadRole"]?.trim().orEmpty()
         val largeIcon = PushNotificationSenderAvatar.loadLargeIcon(
             context = app,
-            telegramUsername = telegram.ifBlank { null },
+            avatarRelativeUrl = avatarRelativeUrl.ifBlank { null },
             squadRole = squadRole.ifBlank { null },
             fallbackName = nickname.ifBlank { null },
         )

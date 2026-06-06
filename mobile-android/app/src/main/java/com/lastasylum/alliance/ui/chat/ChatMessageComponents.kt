@@ -62,13 +62,13 @@ import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.hasVisibleText
-import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.ui.util.profileAvatarImageRequestOrChatFallback
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
 
 @Composable
 fun ChatSenderAvatar(
-    telegramUrl: String?,
+    avatarRelativeUrl: String?,
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
     fallbackName: String? = null,
@@ -98,15 +98,17 @@ fun ChatSenderAvatar(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (!telegramUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = SquadRelayImageRequests.chatAvatar(ctx, telegramUrl),
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape),
-                    contentScale = ContentScale.Crop,
-                )
+            avatarRelativeUrl?.trim()?.takeIf { it.isNotEmpty() }?.let { rel ->
+                profileAvatarImageRequestOrChatFallback(ctx, rel)?.let { model ->
+                    AsyncImage(
+                        model = model,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
             }
         }
     }

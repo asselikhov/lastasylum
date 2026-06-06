@@ -25,7 +25,7 @@ data class PlayerTeamMemberDto(
     val accountRole: String = "MEMBER",
     /** Squad role R1–R5 (R5 = leader). */
     val teamRole: String = "R1",
-    val telegramUsername: String?,
+    val avatarRelativeUrl: String? = null,
     /** ingame | online | away */
     val presenceStatus: String? = null,
     /** ISO-8601: последний пинг оверлея в игре (ingame). */
@@ -100,7 +100,7 @@ data class TeamNewsListItemDto(
     val excerpt: String,
     val authorUserId: String,
     val authorUsername: String,
-    val authorTelegramUsername: String? = null,
+    val authorAvatarRelativeUrl: String? = null,
     val createdAt: String,
     val updatedAt: String,
     val hasPoll: Boolean,
@@ -130,7 +130,7 @@ data class TeamNewsPollVoteDto(
     val optionId: String,
     /** Отображаемый ник; с бэкенда с версии poll voter enrichment. */
     val username: String? = null,
-    val telegramUsername: String? = null,
+    val avatarRelativeUrl: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -150,7 +150,7 @@ data class TeamNewsDetailDto(
     val excerpt: String,
     val authorUserId: String,
     val authorUsername: String,
-    val authorTelegramUsername: String? = null,
+    val authorAvatarRelativeUrl: String? = null,
     val createdAt: String,
     val updatedAt: String,
     val hasPoll: Boolean,
@@ -233,14 +233,14 @@ data class TeamForumTopicDto(
     val teamId: String,
     val title: String,
     val createdByUserId: String,
-    val createdByTelegramUsername: String? = null,
+    val createdByAvatarRelativeUrl: String? = null,
     val messageCount: Int,
     val unreadCount: Int = 0,
     val lastReadMessageId: String? = null,
     val lastMessageAt: String? = null,
     val lastMessageSenderUserId: String? = null,
     val lastMessageSenderUsername: String? = null,
-    val lastMessageSenderTelegramUsername: String? = null,
+    val lastMessageSenderAvatarRelativeUrl: String? = null,
     val createdAt: String,
     val updatedAt: String,
     val pinnedMessageId: String? = null,
@@ -306,7 +306,7 @@ data class TeamForumMessageDto(
     val teamId: String,
     val senderUserId: String,
     val senderUsername: String,
-    val senderTelegramUsername: String? = null,
+    val senderAvatarRelativeUrl: String? = null,
     val senderRole: String = "R1",
     val senderTeamTag: String? = null,
     val senderServerNumber: Int? = null,

@@ -61,7 +61,7 @@ export class PushNotificationsService implements OnModuleInit {
     eventId: string;
     senderName: string;
     senderLine?: string;
-    senderTelegramUsername?: string;
+    senderAvatarRelativeUrl?: string;
     senderSquadRole?: string;
     senderTeamTag?: string;
     senderServerNumber?: number | null;
@@ -97,7 +97,7 @@ export class PushNotificationsService implements OnModuleInit {
         teamTag: input.senderTeamTag ?? null,
         serverNumber: input.senderServerNumber ?? null,
       });
-    const senderTelegram = (input.senderTelegramUsername ?? '').trim();
+    const senderAvatar = (input.senderAvatarRelativeUrl ?? '').trim();
     const senderSquadRole = (input.senderSquadRole ?? '').trim().toUpperCase();
     const teamTag = (input.senderTeamTag ?? '').trim();
     const teamDisplayName = (input.senderTeamDisplayName ?? '').trim();
@@ -113,7 +113,7 @@ export class PushNotificationsService implements OnModuleInit {
           channelId: event.channelId,
           senderName: sender,
           senderLine,
-          senderTelegramUsername: senderTelegram,
+          senderAvatarRelativeUrl: senderAvatar,
           senderSquadRole: senderSquadRole,
           senderTeamTag: teamTag,
           teamDisplayName,

@@ -30,7 +30,7 @@ import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.isChatImage
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
+import com.lastasylum.alliance.ui.util.resolvedProfileAvatarUrl
 import kotlin.math.abs
 
 /**
@@ -86,7 +86,7 @@ object OverlayChatStripUi {
                 ColorUtils.blendARGB(noticeAvatarFill, Color.BLACK, 0.25f),
                 noticeAvatarFill,
             ),
-            senderTelegramUsername = null,
+            senderAvatarRelativeUrl = null,
             attachments = emptyList(),
             teamTag = null,
             titleText = title,
@@ -108,7 +108,7 @@ object OverlayChatStripUi {
         text: String,
         senderId: String?,
         senderRole: String?,
-        senderTelegramUsername: String?,
+        senderAvatarRelativeUrl: String?,
         attachments: List<ChatAttachment> = emptyList(),
         selfUserId: String?,
         showDismiss: Boolean = true,
@@ -141,7 +141,7 @@ object OverlayChatStripUi {
             container = container,
             avatarLetter = initial.toString(),
             avatarGradient = avatarColors,
-            senderTelegramUsername = senderTelegramUsername,
+            senderAvatarRelativeUrl = senderAvatarRelativeUrl,
             attachments = attachments,
             teamTag = teamTag?.trim()?.takeIf { it.isNotBlank() }?.take(8),
             titleText = safeName,
@@ -163,7 +163,7 @@ object OverlayChatStripUi {
         container: LinearLayout,
         avatarLetter: String,
         avatarGradient: IntArray,
-        senderTelegramUsername: String?,
+        senderAvatarRelativeUrl: String?,
         attachments: List<ChatAttachment>,
         teamTag: String?,
         titleText: String,
@@ -178,7 +178,7 @@ object OverlayChatStripUi {
         val avatarSide = dp(context, 34f).toInt()
         val cornerCard = dp(context, 14f)
 
-        val avatarUrl = telegramAvatarUrl(senderTelegramUsername)
+        val avatarUrl = resolvedProfileAvatarUrl(senderAvatarRelativeUrl)
         val avatarImage = ImageView(context).apply {
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -222,8 +222,7 @@ object OverlayChatStripUi {
         }
 
         if (avatarUrl != null) {
-            avatarImage.load(avatarUrl) {
-                size(128)
+            avatarImage.load(overlayAuthedImageRequest(context, avatarUrl) { size(128) }) {
                 listener(
                     object : ImageRequest.Listener {
                         override fun onSuccess(request: ImageRequest, result: SuccessResult) {

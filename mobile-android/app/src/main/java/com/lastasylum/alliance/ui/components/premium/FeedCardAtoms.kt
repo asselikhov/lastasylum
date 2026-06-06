@@ -39,6 +39,7 @@ import com.lastasylum.alliance.ui.components.team.PremiumJournalFeedTokens
 import com.lastasylum.alliance.ui.theme.SquadRelayPrimary
 import com.lastasylum.alliance.ui.theme.SquadRelaySecondary
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
+import com.lastasylum.alliance.ui.util.sanitizePublicDisplayName
 
 @Composable
 fun FeedCardUnreadDot(modifier: Modifier = Modifier) {
@@ -146,12 +147,13 @@ fun FeedCardStatChip(
 @Composable
 fun FeedCardMetaRow(
     username: String,
-    telegramUsername: String?,
+    avatarRelativeUrl: String?,
     trailingMeta: String,
     modifier: Modifier = Modifier,
     trailingContent: @Composable (() -> Unit)? = null,
 ) {
-    val avatarUrl = com.lastasylum.alliance.ui.util.telegramAvatarUrl(telegramUsername)
+    val displayUsername = sanitizePublicDisplayName(username)
+    val avatarUrl = avatarRelativeUrl?.trim()?.takeIf { it.isNotEmpty() }
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -159,7 +161,7 @@ fun FeedCardMetaRow(
     ) {
         if (avatarUrl != null) {
             ChatSenderAvatar(
-                telegramUrl = avatarUrl,
+                avatarRelativeUrl = avatarUrl,
                 size = FeedCardDesignTokens.avatarMeta,
                 fallbackName = username,
             )
@@ -185,7 +187,7 @@ fun FeedCardMetaRow(
             }
         }
         Text(
-            text = username,
+            text = displayUsername,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.primary,

@@ -24,6 +24,7 @@ import { TeamsService } from './teams.service';
 import { isValidGameEventId } from '../game-events/game-event-catalog';
 import { buildGameEventPushEnabledMap } from '../game-events/game-event-push.util';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
+import { buildAvatarRelativeUrl } from './user-avatar.util';
 import {
   type ChatRoomAccessFields,
   userMayAccessChatRoom,
@@ -51,6 +52,7 @@ export type SafeUser = {
   lastPresenceAt: string | null;
   lastAppActiveAt: string | null;
   telegramUsername: string | null;
+  avatarRelativeUrl: string | null;
   playerTeamId: string | null;
   playerTeamTag: string | null;
   playerTeamDisplayName: string | null;
@@ -445,6 +447,11 @@ export class UsersService implements OnModuleInit {
         ? reconciled.lastAppActiveAt.toISOString()
         : null,
       telegramUsername: reconciled.telegramUsername ?? null,
+      avatarRelativeUrl: buildAvatarRelativeUrl(
+        userId,
+        reconciled.avatarKey,
+        reconciled.avatarUpdatedAt,
+      ),
       ...teamFields,
       enabledStickerPacks,
       excavationPushEnabled: buildGameEventPushEnabledMap(reconciled)[
@@ -517,6 +524,35 @@ export class UsersService implements OnModuleInit {
         { returnDocument: 'after' },
       )
       .exec();
+  }
+
+  async findAvatarRelativeUrlsByIds(
+    ids: string[],
+  ): Promise<Map<string, string | null>> {
+    const unique = [...new Set(ids.filter((id) => Types.ObjectId.isValid(id)))];
+    if (!unique.length) {
+      return new Map();
+    }
+    const docs = await this.userModel
+      .find({ _id: { $in: unique.map((id) => new Types.ObjectId(id)) } })
+      .select('_id avatarKey avatarUpdatedAt')
+      .lean<
+        Array<{
+          _id: Types.ObjectId;
+          avatarKey?: string | null;
+          avatarUpdatedAt?: Date | null;
+        }>
+      >()
+      .exec();
+    const map = new Map<string, string | null>();
+    for (const d of docs) {
+      const userId = d._id.toString();
+      map.set(
+        userId,
+        buildAvatarRelativeUrl(userId, d.avatarKey, d.avatarUpdatedAt),
+      );
+    }
+    return map;
   }
 
   async findTelegramUsernamesByIds(

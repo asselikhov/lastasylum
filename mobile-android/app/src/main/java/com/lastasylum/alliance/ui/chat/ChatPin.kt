@@ -469,7 +469,9 @@ fun formatPinnedMetaLine(
     val at = pinnedAt?.trim().orEmpty()
     val timePart = if (at.isNotEmpty()) formatTime(at) else null
     val pinUserId = pinnedByUserId?.trim().orEmpty()
-    val name = pinnedByUsername?.trim().orEmpty()
+    val name = pinnedByUsername?.trim()?.takeIf { it.isNotEmpty() }
+        ?.let { com.lastasylum.alliance.ui.util.sanitizePublicDisplayName(it, fallback = "") }
+        .orEmpty()
     val who = when {
         pinUserId.isNotEmpty() && pinUserId == currentUserId.trim() -> youLabel
         name.isNotEmpty() -> userTemplate(name)

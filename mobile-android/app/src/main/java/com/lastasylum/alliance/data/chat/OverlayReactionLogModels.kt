@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.data.chat
 
+import com.lastasylum.alliance.ui.util.sanitizePublicDisplayName
 data class OverlayReactionLogReplyTo(
     val logId: String,
     val reaction: String,
@@ -71,9 +72,11 @@ data class OverlayReactionLogEntryDto(
         return OverlayReactionLogEntry(
             id = entryId,
             senderUserId = senderUserId.trim(),
-            senderUsername = senderUsername.trim(),
+            senderUsername = sanitizePublicDisplayName(senderUsername),
             targetUserId = targetUserId?.trim()?.takeIf { it.isNotEmpty() },
-            targetUsername = targetUsername?.trim()?.takeIf { it.isNotEmpty() },
+            targetUsername = targetUsername?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                sanitizePublicDisplayName(it)
+            },
             reaction = reaction.trim(),
             visibility = OverlayReactionLogVisibility.fromWire(visibility),
             createdAt = createdAt.trim(),
@@ -108,9 +111,11 @@ data class OverlayReactionLogReplyToDto(
             reaction = reaction.trim(),
             visibility = OverlayReactionLogVisibility.fromWire(visibility),
             senderUserId = senderUserId.trim(),
-            senderUsername = senderUsername.trim(),
+            senderUsername = sanitizePublicDisplayName(senderUsername),
             targetUserId = targetUserId?.trim()?.takeIf { it.isNotEmpty() },
-            targetUsername = targetUsername?.trim()?.takeIf { it.isNotEmpty() },
+            targetUsername = targetUsername?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                sanitizePublicDisplayName(it)
+            },
         )
     }
 }

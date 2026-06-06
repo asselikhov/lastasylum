@@ -1,5 +1,10 @@
 package com.lastasylum.alliance.ui.screens
 
+import android.net.Uri
+import android.webkit.MimeTypeMap
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,6 +29,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,7 +56,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -56,7 +63,6 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.users.GameIdentityDto
 import com.lastasylum.alliance.data.users.MyProfileDto
@@ -69,7 +75,7 @@ import androidx.compose.material.icons.outlined.PersonOutline
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.formatServerLabel
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
+import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.util.telegramDisplayHandle
 import com.lastasylum.alliance.ui.util.teamTagWithServerPrefix
 import kotlinx.coroutines.launch
@@ -150,6 +156,7 @@ private fun ProfileStatRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     username: String,
@@ -168,6 +175,45 @@ fun ProfileScreen(
     var dialogError by remember { mutableStateOf<String?>(null) }
     var dialogSaving by remember { mutableStateOf(false) }
 
+    var showAvatarSheet by remember { mutableStateOf(false) }
+    var showAvatarDeleteConfirm by remember { mutableStateOf(false) }
+    var avatarBusy by remember { mutableStateOf(false) }
+    var avatarError by remember { mutableStateOf<String?>(null) }
+
+    val pickAvatarLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            avatarBusy = true
+            avatarError = null
+            val mime = context.contentResolver.getType(uri)?.trim().orEmpty()
+                .ifBlank { "image/jpeg" }
+            val ext = MimeTypeMap.getSingleton()
+                .getExtensionFromMimeType(mime)
+                ?.takeIf { it.isNotBlank() }
+                ?: "jpg"
+            val bytes = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            }.getOrNull()
+            if (bytes == null || bytes.isEmpty()) {
+                avatarBusy = false
+                avatarError = context.getString(R.string.profile_avatar_upload_error)
+                return@launch
+            }
+            app.usersRepository.uploadMyAvatar(bytes, "avatar.$ext", mime)
+                .onSuccess {
+                    profile = it
+                    avatarError = null
+                    showAvatarSheet = false
+                }
+                .onFailure {
+                    avatarError = context.getString(R.string.profile_avatar_upload_error)
+                }
+            avatarBusy = false
+        }
+    }
+
     LaunchedEffect(app) {
         app.usersRepository.getMyProfile()
             .onSuccess {
@@ -182,10 +228,6 @@ fun ProfileScreen(
     val displayName = profile?.activeGameNickname?.trim()?.takeIf { it.isNotEmpty() }
         ?: profile?.username
         ?: username
-    val initialLetter = remember(displayName) {
-        displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-    }
-
     fun openDialog(which: ProfileEditDialog, initialDraft: String) {
         dialog = which
         draft = initialDraft
@@ -233,6 +275,7 @@ fun ProfileScreen(
                     Box(
                         modifier = Modifier
                             .size(64.dp)
+                            .clickable(enabled = !avatarBusy) { showAvatarSheet = true }
                             .border(
                                 width = 2.dp,
                                 brush = Brush.linearGradient(
@@ -247,31 +290,35 @@ fun ProfileScreen(
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.primaryContainer),
                     ) {
-                        Box(
+                        if (avatarBusy) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.35f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(28.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            }
+                        }
+                        ChatSenderAvatar(
+                            avatarRelativeUrl = profile?.avatarRelativeUrl,
                             modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = initialLetter,
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            )
-                        }
-                        val avatarUrl = telegramAvatarUrl(profile?.telegramUsername)
-                        if (avatarUrl != null) {
-                            AsyncImage(
-                                model = avatarUrl,
-                                contentDescription = stringResource(R.string.profile_telegram_avatar_cd),
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                        }
+                            size = 60.dp,
+                            fallbackName = displayName,
+                        )
                     }
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
+                        Text(
+                            text = stringResource(R.string.profile_avatar_tap_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         loadError?.let { err ->
                             Text(
                                 text = err,
@@ -635,5 +682,99 @@ fun ProfileScreen(
         }
 
         ProfileEditDialog.None -> Unit
+    }
+
+    if (showAvatarSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { if (!avatarBusy) showAvatarSheet = false },
+            sheetState = sheetState,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.profile_avatar_sheet_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                avatarError?.let { err ->
+                    Text(
+                        text = err,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Button(
+                    onClick = {
+                        pickAvatarLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    enabled = !avatarBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.profile_avatar_change))
+                }
+                if (!profile?.avatarRelativeUrl.isNullOrBlank()) {
+                    OutlinedButton(
+                        onClick = {
+                            showAvatarDeleteConfirm = true
+                            showAvatarSheet = false
+                        },
+                        enabled = !avatarBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.profile_avatar_delete))
+                    }
+                }
+                TextButton(
+                    onClick = { if (!avatarBusy) showAvatarSheet = false },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.profile_action_cancel))
+                }
+                Spacer(modifier = Modifier.size(12.dp))
+            }
+        }
+    }
+
+    if (showAvatarDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { if (!avatarBusy) showAvatarDeleteConfirm = false },
+            title = { Text(stringResource(R.string.profile_avatar_delete_confirm_title)) },
+            text = { Text(stringResource(R.string.profile_avatar_delete_confirm_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            avatarBusy = true
+                            avatarError = null
+                            app.usersRepository.deleteMyAvatar()
+                                .onSuccess {
+                                    profile = it
+                                    showAvatarDeleteConfirm = false
+                                }
+                                .onFailure {
+                                    avatarError = context.getString(R.string.profile_avatar_delete_error)
+                                    showAvatarDeleteConfirm = false
+                                    showAvatarSheet = true
+                                }
+                            avatarBusy = false
+                        }
+                    },
+                    enabled = !avatarBusy,
+                ) {
+                    Text(stringResource(R.string.profile_avatar_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { if (!avatarBusy) showAvatarDeleteConfirm = false }) {
+                    Text(stringResource(R.string.profile_action_cancel))
+                }
+            },
+        )
     }
 }

@@ -31,6 +31,7 @@ import {
   TeamJoinRequestStatus,
 } from './schemas/team-join-request.schema';
 import { GameIdentitiesService } from './game-identities.service';
+import { buildAvatarRelativeUrl } from './user-avatar.util';
 import { squadMemberUserIdEquals } from './squad-member-id.util';
 
 export type PlayerTeamProfileFields = {
@@ -51,7 +52,7 @@ export type TeamMemberRow = {
   /** App account role (MEMBER…ADMIN), not squad rank R1–R5. */
   accountRole: string;
   teamRole: string;
-  telegramUsername: string | null;
+  avatarRelativeUrl: string | null;
   /** ingame | online | away — для клиента «в игре / нет». */
   presenceStatus: string | null;
   /** ISO: последний пинг оверлея в игре (ingame). */
@@ -735,7 +736,11 @@ export class TeamsService {
             teamIdStr,
           ),
           role: u.role,
-          telegramUsername: u.telegramUsername ?? null,
+          avatarRelativeUrl: buildAvatarRelativeUrl(
+            u._id.toString(),
+            u.avatarKey,
+            u.avatarUpdatedAt,
+          ),
           presenceStatus: u.presenceStatus ?? null,
           lastPresenceAt: toIso(u.lastPresenceAt),
           lastAppActiveAt: toIso(u.lastAppActiveAt),
@@ -754,7 +759,7 @@ export class TeamsService {
         isLeader: id === leaderStr,
         accountRole: normalizeAllianceRole(row?.role ?? AllianceRole.MEMBER),
         teamRole,
-        telegramUsername: row?.telegramUsername ?? null,
+        avatarRelativeUrl: row?.avatarRelativeUrl ?? null,
         presenceStatus: row?.presenceStatus ?? null,
         lastPresenceAt: row?.lastPresenceAt ?? null,
         lastAppActiveAt: row?.lastAppActiveAt ?? null,
@@ -1578,7 +1583,11 @@ export class TeamsService {
           isLeader: team.leaderUserId.equals(u._id),
           accountRole: normalizeAllianceRole(u.role),
           teamRole: roleByUserId.get(uid) ?? 'R1',
-          telegramUsername: u.telegramUsername ?? null,
+          avatarRelativeUrl: buildAvatarRelativeUrl(
+            u._id.toString(),
+            u.avatarKey,
+            u.avatarUpdatedAt,
+          ),
           presenceStatus: u.presenceStatus ?? null,
           lastPresenceAt: toIso(u.lastPresenceAt),
           lastAppActiveAt: toIso(u.lastAppActiveAt),

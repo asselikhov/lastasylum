@@ -62,7 +62,7 @@ describe('TeamForumGateway personal fanout dedup', () => {
         teamId: 'team1',
         senderUserId: 'sender1',
         senderUsername: 'Sender',
-        senderTelegramUsername: null,
+        senderAvatarRelativeUrl: null,
         senderRole: 'R1',
         senderTeamTag: null,
         senderServerNumber: null,

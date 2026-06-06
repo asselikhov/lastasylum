@@ -175,6 +175,39 @@ export class OverlayReactionLogService {
     );
   }
 
+  private collectDisplayNameUserIds(
+    rows: Array<{
+      senderUserId?: string | null;
+      targetUserId?: string | null;
+      replyToLog?: ReplyToLogEmbedded | null;
+    }>,
+  ): string[] {
+    const ids = new Set<string>();
+    for (const row of rows) {
+      const senderId = row.senderUserId?.trim();
+      if (senderId) ids.add(senderId);
+      const targetId = row.targetUserId?.trim();
+      if (targetId) ids.add(targetId);
+      const replySenderId = row.replyToLog?.senderUserId?.trim();
+      if (replySenderId) ids.add(replySenderId);
+      const replyTargetId = row.replyToLog?.targetUserId?.trim();
+      if (replyTargetId) ids.add(replyTargetId);
+    }
+    return [...ids];
+  }
+
+  private async displayNameMapForRows(
+    rows: Array<{
+      senderUserId?: string | null;
+      targetUserId?: string | null;
+      replyToLog?: ReplyToLogEmbedded | null;
+    }>,
+  ): Promise<Map<string, string>> {
+    return this.gameIdentities.buildSenderDisplayNameMap(
+      this.collectDisplayNameUserIds(rows),
+    );
+  }
+
   private buildReplyToSnapshot(parent: ReplyToLogParentRow): ReplyToLogEmbedded {
     return {
       _id: parent._id,
@@ -321,36 +354,40 @@ export class OverlayReactionLogService {
         parent.visibility === 'broadcast' ? 'broadcast' : 'personal';
       const replySnapshot = this.buildReplyToSnapshot(parent.toObject());
 
+      const teamIdStr = teamId.toString();
       const doc = await this.logModel.create({
         teamId,
         senderUserId: senderId,
-        senderUsername: input.sender.username?.trim() || 'Союзник',
+        senderUsername: this.reactionDisplayName(input.sender, teamIdStr),
         targetUserId: targetId,
-        targetUsername: input.target.username?.trim() || null,
+        targetUsername: this.reactionDisplayName(input.target, teamIdStr),
         reaction: input.reaction,
         visibility: entryVisibility,
         replyToLogId: parent._id,
         replyToLog: replySnapshot,
         reactions: [],
       });
-      const entry = this.toView(doc.toObject(), senderId);
+      const displayNameMap = await this.displayNameMapForRows([doc.toObject()]);
+      const entry = this.toView(doc.toObject(), senderId, displayNameMap);
       const recipientUserIds = await this.listRecipientUserIds(teamId, doc);
       return { entry, recipientUserIds };
     }
 
+    const teamIdStr = teamId.toString();
     const doc = await this.logModel.create({
       teamId,
       senderUserId: senderId,
-      senderUsername: input.sender.username?.trim() || 'Союзник',
+      senderUsername: this.reactionDisplayName(input.sender, teamIdStr),
       targetUserId: targetId,
-      targetUsername: input.target.username?.trim() || null,
+      targetUsername: this.reactionDisplayName(input.target, teamIdStr),
       reaction: input.reaction,
       visibility: 'personal',
       replyToLogId: null,
       replyToLog: null,
       reactions: [],
     });
-    const entry = this.toView(doc.toObject(), senderId);
+    const displayNameMap = await this.displayNameMapForRows([doc.toObject()]);
+    const entry = this.toView(doc.toObject(), senderId, displayNameMap);
     const recipientUserIds = await this.listRecipientUserIds(teamId, doc);
     return { entry, recipientUserIds };
   }
@@ -363,10 +400,11 @@ export class OverlayReactionLogService {
     if (!teamId) {
       throw new BadRequestException('Sender has no team');
     }
+    const teamIdStr = teamId.toString();
     const doc = await this.logModel.create({
       teamId,
       senderUserId: input.sender._id.toString(),
-      senderUsername: input.sender.username?.trim() || 'Союзник',
+      senderUsername: this.reactionDisplayName(input.sender, teamIdStr),
       targetUserId: null,
       targetUsername: null,
       reaction: input.reaction,
@@ -375,7 +413,12 @@ export class OverlayReactionLogService {
       replyToLog: null,
       reactions: [],
     });
-    return this.toView(doc.toObject(), input.sender._id.toString());
+    const displayNameMap = await this.displayNameMapForRows([doc.toObject()]);
+    return this.toView(
+      doc.toObject(),
+      input.sender._id.toString(),
+      displayNameMap,
+    );
   }
 
   async listForViewer(
@@ -402,8 +445,15 @@ export class OverlayReactionLogService {
       .lean()
       .exec();
     await this.hydrateMissingReplySnapshots(rows as ReplyToLogRowFields[]);
+    const displayNameMap = await this.displayNameMapForRows(
+      rows as ReplyToLogRowFields[],
+    );
     const items = rows.map((r) =>
-      this.toView(r as Parameters<typeof this.toView>[0], userId),
+      this.toView(
+        r as Parameters<typeof this.toView>[0],
+        userId,
+        displayNameMap,
+      ),
     );
     const nextCursor =
       items.length >= lim ? items[items.length - 1]._id : null;
@@ -510,7 +560,9 @@ export class OverlayReactionLogService {
     }
     row.reactions = list.filter((x) => x.userIds.length > 0) as typeof row.reactions;
     await row.save();
-    const entry = this.toView(row.toObject(), userId);
+    const rowObj = row.toObject();
+    const displayNameMap = await this.displayNameMapForRows([rowObj]);
+    const entry = this.toView(rowObj, userId, displayNameMap);
     const recipientUserIds = await this.listRecipientUserIds(teamId, row);
     return { entry, recipientUserIds };
   }

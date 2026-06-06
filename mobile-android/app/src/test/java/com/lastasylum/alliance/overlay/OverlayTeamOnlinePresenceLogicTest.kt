@@ -28,7 +28,7 @@ class OverlayTeamOnlinePresenceLogicTest {
         username = username,
         isLeader = isLeader,
         teamRole = role,
-        telegramUsername = null,
+        avatarRelativeUrl = null,
         presenceStatus = presenceStatus,
         lastPresenceAt = lastPresenceAt,
     )
@@ -99,7 +99,7 @@ class OverlayTeamOnlinePresenceLogicTest {
     fun search_filter_by_username_and_telegram() {
         val sections = buildPresenceSections(
             ingame = listOf(
-                member("u1", "alice").copy(telegramUsername = "ali_tg"),
+                member("u1", "alice").copy(avatarRelativeUrl = "/users/avatars/u1"),
                 member("u2", "bob"),
             ),
             recentlyActive = emptyList(),

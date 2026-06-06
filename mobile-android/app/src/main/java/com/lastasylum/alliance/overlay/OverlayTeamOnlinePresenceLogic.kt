@@ -31,7 +31,7 @@ enum class OverlayOnlineFilterChip {
 data class OverlayOnlineMemberUiModel(
     val userId: String,
     val username: String,
-    val telegramUsername: String?,
+    val avatarRelativeUrl: String?,
     val teamRole: String,
     val isLeader: Boolean,
     val presenceStatus: String?,
@@ -172,8 +172,7 @@ fun filterByQuery(
     return sections.map { section ->
         section.copy(
             items = section.items.filter { member ->
-                member.username.contains(q, ignoreCase = true) ||
-                    member.telegramUsername?.contains(q, ignoreCase = true) == true
+                member.username.contains(q, ignoreCase = true)
             },
         )
     }
@@ -359,7 +358,7 @@ private fun TeamPresenceSocketEvent.toMemberDto(
         teamRole = fallbackMember?.teamRole?.trim()?.takeIf { it.isNotEmpty() }
             ?: teamRole?.trim()?.takeIf { it.isNotEmpty() }
             ?: "R1",
-        telegramUsername = fallbackMember?.telegramUsername,
+        avatarRelativeUrl = fallbackMember?.avatarRelativeUrl,
         presenceStatus = presenceStatus,
         lastPresenceAt = lastPresenceAt,
     )
@@ -372,7 +371,7 @@ private fun PlayerTeamMemberDto.toUiModel(
     return OverlayOnlineMemberUiModel(
         userId = userId,
         username = username,
-        telegramUsername = telegramUsername,
+        avatarRelativeUrl = avatarRelativeUrl,
         teamRole = teamRole.trim().uppercase().ifBlank { "R1" },
         isLeader = isLeader,
         presenceStatus = presenceStatus,

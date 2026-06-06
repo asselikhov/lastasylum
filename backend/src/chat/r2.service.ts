@@ -2,6 +2,7 @@ import '../common/aws-r2-sdk-env';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -52,6 +53,15 @@ export class R2Service {
         Body: input.body,
         ContentType: input.contentType,
         CacheControl: input.cacheControl,
+      }),
+    );
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    await this.s3.send(
+      new DeleteObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
       }),
     );
   }

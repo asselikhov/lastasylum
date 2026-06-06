@@ -105,8 +105,8 @@ export type ChatMessageView = {
   /** Three-letter team tag: stored on message or resolved from sender profile. */
   senderTeamTag: string | null;
   senderServerNumber: number | null;
-  /** Telegram @handle without @, from sender profile at read time (or at send). */
-  senderTelegramUsername: string | null;
+  /** Profile avatar relative URL (GET /users/avatars/:userId). */
+  senderAvatarRelativeUrl: string | null;
   text: string;
   editedAt: string | null;
   forwardedFrom: {
@@ -454,16 +454,7 @@ export class ChatService {
   private async resolvePinnedByUsernames(
     userIds: string[],
   ): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
-    const unique = [...new Set(userIds.map((id) => id.trim()).filter(Boolean))];
-    await Promise.all(
-      unique.map(async (id) => {
-        const user = await this.usersService.findById(id);
-        const name = (user?.username ?? user?.email ?? '').trim();
-        if (name) out.set(id, name);
-      }),
-    );
-    return out;
+    return this.gameIdentities.buildSenderDisplayNameMap(userIds);
   }
 
   attachPinStateToRoom<T extends ChatRoom>(
@@ -778,6 +769,7 @@ export class ChatService {
     message: MessageLean,
     senderTeamTagMap?: Map<string, string | null>,
     senderServerNumberMap?: Map<string, number | null>,
+    displayNameMap?: Map<string, string>,
   ): ChatMessageReplyPreview {
     const senderTeamTag =
       message.senderTeamTag ?? senderTeamTagMap?.get(message.senderId) ?? null;
@@ -788,7 +780,10 @@ export class ChatService {
     return {
       _id: this.asIdString(message._id)!,
       senderId: message.senderId,
-      senderUsername: message.senderUsername,
+      senderUsername: this.gameIdentities.coalesceDisplayName(
+        message.senderUsername,
+        displayNameMap?.get(message.senderId),
+      ),
       senderRole: message.senderRole,
       senderTeamTag,
       senderServerNumber,
@@ -801,10 +796,11 @@ export class ChatService {
   private serializeMessage(
     message: MessageLean,
     replyMap?: Map<string, MessageLean>,
-    senderTelegramMap?: Map<string, string | null>,
+    senderAvatarMap?: Map<string, string | null>,
     senderTeamTagMap?: Map<string, string | null>,
     viewerUserId?: string,
     senderServerNumberMap?: Map<string, number | null>,
+    displayNameMap?: Map<string, string>,
   ): ChatMessageView {
     const replyToMessageId = this.asIdString(message.replyToMessageId);
     const replyTarget = replyToMessageId
@@ -825,7 +821,10 @@ export class ChatService {
       ? {
           messageId: message.forwardedFrom.messageId.toString(),
           senderId: message.forwardedFrom.senderId,
-          senderUsername: message.forwardedFrom.senderUsername,
+          senderUsername: this.gameIdentities.coalesceDisplayName(
+            message.forwardedFrom.senderUsername,
+            displayNameMap?.get(message.forwardedFrom.senderId),
+          ),
           senderRole: message.forwardedFrom.senderRole,
           senderTeamTag: message.forwardedFrom.senderTeamTag ?? null,
           senderServerNumber:
@@ -846,14 +845,17 @@ export class ChatService {
       allianceId: message.allianceId,
       roomId: this.asIdString(message.roomId)!,
       senderId: message.senderId,
-      senderUsername: message.senderUsername,
+      senderUsername: this.gameIdentities.coalesceDisplayName(
+        message.senderUsername,
+        displayNameMap?.get(message.senderId),
+      ),
       senderRole: message.senderRole,
       senderTeamTag,
       senderServerNumber: this.resolveStoredSenderServerNumber(
         message,
         senderServerNumberMap,
       ),
-      senderTelegramUsername: senderTelegramMap?.get(message.senderId) ?? null,
+      senderAvatarRelativeUrl: senderAvatarMap?.get(message.senderId) ?? null,
       text: message.deletedAt ? '' : message.text,
       editedAt: this.effectiveEditedAtIso(message),
       forwardedFrom: message.deletedAt ? null : forwardedFrom,
@@ -867,6 +869,7 @@ export class ChatService {
             replyTarget,
             senderTeamTagMap,
             senderServerNumberMap,
+            displayNameMap,
           )
         : null,
       deletedAt: this.toIso(message.deletedAt),
@@ -919,12 +922,14 @@ export class ChatService {
     ];
     const squadRoleMap =
       await this.teamsService.resolveSquadRolesByUserIds(senderIds);
-    const senderTelegramMap =
-      await this.usersService.findTelegramUsernamesByIds(senderIds);
+    const senderAvatarMap =
+      await this.usersService.findAvatarRelativeUrlsByIds(senderIds);
     const senderTeamTagMap =
       await this.usersService.findTeamTagsByIds(senderIds);
     const senderServerNumberMap =
       await this.gameIdentities.buildSenderServerNumberMap(senderIds);
+    const displayNameMap =
+      await this.gameIdentities.buildSenderDisplayNameMap(senderIds);
     const replyMapWithRoles = new Map(
       [...replyMap.entries()].map(([id, doc]) => [
         id,
@@ -935,10 +940,11 @@ export class ChatService {
       this.serializeMessage(
         this.withSquadDisplayRoles(message, squadRoleMap),
         replyMapWithRoles,
-        senderTelegramMap,
+        senderAvatarMap,
         senderTeamTagMap,
         viewerUserId,
         senderServerNumberMap,
+        displayNameMap,
       ),
     );
   }

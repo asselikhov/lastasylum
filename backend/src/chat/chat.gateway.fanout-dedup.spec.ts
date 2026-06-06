@@ -43,7 +43,7 @@ describe('ChatGateway fanout dedup', () => {
             resolveTeamDisplayNameForGameEventPush: jest
               .fn()
               .mockResolvedValue('Team'),
-            findTelegramUsernamesByIds: jest.fn().mockResolvedValue(new Map()),
+            findAvatarRelativeUrlsByIds: jest.fn().mockResolvedValue(new Map()),
           },
         },
         { provide: JwtService, useValue: {} },

@@ -25,7 +25,7 @@ describe('TeamForumService.toggleMessageReaction', () => {
   };
 
   const usersService = {
-    findTelegramUsernamesByIds: jest.fn().mockResolvedValue(new Map()),
+    findAvatarRelativeUrlsByIds: jest.fn().mockResolvedValue(new Map()),
   };
 
   let savedReactions: { emoji: string; userIds: string[] }[] = [];
