@@ -28,6 +28,9 @@ internal fun ChatViewModel.shouldSuppressOwnOutgoingRealtimeEchoImpl(message: Ch
 internal fun ChatViewModel.shouldBlockOwnOutgoingRealtimeImpl(message: ChatMessage): Boolean {
         val selfId = currentUserId.trim()
         if (selfId.isEmpty() || message.senderId.trim() != selfId) return false
+        message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { cid ->
+            if (cid in activeOutgoingClientMessageIds) return true
+        }
         val snapshot = outboxRoomSnapshot
         message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { cid ->
             if (cid in snapshot.activeClientMessageIds) return true

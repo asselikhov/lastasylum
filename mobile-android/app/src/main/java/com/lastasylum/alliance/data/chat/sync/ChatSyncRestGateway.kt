@@ -16,6 +16,7 @@ interface ChatSyncRestGateway {
         attachments: List<String>?,
         excavationAlert: Boolean,
         clientMessageId: String?,
+        skipSocket: Boolean = false,
     ): Result<ChatMessage>
 
     suspend fun sendOverlayRaidCommandFast(
@@ -38,8 +39,15 @@ fun ChatRepository.asSyncGateway(): ChatSyncRestGateway = object : ChatSyncRestG
         attachments: List<String>?,
         excavationAlert: Boolean,
         clientMessageId: String?,
+        skipSocket: Boolean,
     ): Result<ChatMessage> = this@asSyncGateway.sendMessageWithRetriesForChatUi(
-        text, roomId, replyToMessageId, attachments, excavationAlert, clientMessageId,
+        text,
+        roomId,
+        replyToMessageId,
+        attachments,
+        excavationAlert,
+        clientMessageId,
+        skipSocket,
     )
 
     override suspend fun sendOverlayRaidCommandFast(

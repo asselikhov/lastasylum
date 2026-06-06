@@ -147,6 +147,7 @@ class ChatSyncEngineTest {
             attachments: List<String>?,
             excavationAlert: Boolean,
             clientMessageId: String?,
+            skipSocket: Boolean,
         ): Result<ChatMessage> {
             sendCalls.incrementAndGet()
             return sendResult

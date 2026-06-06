@@ -31,7 +31,8 @@ class ChatOutbox(
     fun observeActiveForRoom(userId: String, roomId: String): Flow<List<OutboxEntry>> =
         dao.observeActiveForRoom(userId, roomId.trim()).map { rows -> rows.map(::toEntry) }
 
-    suspend fun enqueueSend(
+    /** Main-thread safe: build optimistic row + outbox ids without blocking on Room I/O. */
+    fun prepareEnqueue(
         userId: String,
         roomId: String,
         text: String,
@@ -43,7 +44,7 @@ class ChatOutbox(
         currentUserRole: String,
         senderUsername: String,
         pendingMessageId: String = "pending-${UUID.randomUUID()}",
-    ): OutboxEnqueueResult = withContext(Dispatchers.IO) {
+    ): OutboxEnqueueResult {
         val clientMessageId = UUID.randomUUID().toString()
         val optimistic = ChatMessage(
             _id = pendingMessageId,
@@ -58,30 +59,68 @@ class ChatOutbox(
             createdAt = java.time.Instant.now().toString(),
             clientMessageId = clientMessageId,
         )
-        messageStore.upsertMessages(userId, roomId, listOf(optimistic))
+        val httpAckSpanId = latencyTracker.startSpan(LatencySpanType.ChatSendToHttpAck, clientMessageId)
+        return OutboxEnqueueResult(
+            clientMessageId = clientMessageId,
+            pendingMessageId = pendingMessageId,
+            optimisticMessage = optimistic,
+            httpAckSpanId = httpAckSpanId,
+            userId = userId,
+            attachments = attachments,
+            excavationAlert = excavationAlert,
+            source = source,
+        )
+    }
+
+    suspend fun persistEnqueue(prepared: OutboxEnqueueResult) = withContext(Dispatchers.IO) {
+        val roomId = prepared.optimisticMessage.roomId.trim()
+        messageStore.upsertMessages(prepared.userId, roomId, listOf(prepared.optimisticMessage))
         dao.upsert(
             ChatOutboxEntity(
-                clientMessageId = clientMessageId,
-                userId = userId,
-                roomId = roomId.trim(),
-                pendingMessageId = pendingMessageId,
-                text = text.trim(),
-                replyToMessageId = replyToMessageId?.trim()?.takeIf { it.isNotEmpty() },
-                attachmentsJson = ChatStoreJson.attachmentsToJson(attachments),
-                excavationAlert = excavationAlert,
-                source = source.wire,
+                clientMessageId = prepared.clientMessageId,
+                userId = prepared.userId,
+                roomId = roomId,
+                pendingMessageId = prepared.pendingMessageId,
+                text = prepared.optimisticMessage.text,
+                replyToMessageId = prepared.optimisticMessage.replyToMessageId,
+                attachmentsJson = ChatStoreJson.attachmentsToJson(prepared.attachments),
+                excavationAlert = prepared.excavationAlert,
+                source = prepared.source.wire,
                 state = OutboxSendState.Pending.wire,
                 attempts = 0,
                 createdAtMs = System.currentTimeMillis(),
             ),
         )
-        val spanId = latencyTracker.startSpan(LatencySpanType.ChatSendToHttpAck, clientMessageId)
-        OutboxEnqueueResult(
-            clientMessageId = clientMessageId,
+    }
+
+    suspend fun enqueueSend(
+        userId: String,
+        roomId: String,
+        text: String,
+        replyToMessageId: String?,
+        attachments: List<String>?,
+        excavationAlert: Boolean,
+        source: OutboxSendSource,
+        currentUserId: String,
+        currentUserRole: String,
+        senderUsername: String,
+        pendingMessageId: String = "pending-${UUID.randomUUID()}",
+    ): OutboxEnqueueResult = withContext(Dispatchers.IO) {
+        val prepared = prepareEnqueue(
+            userId = userId,
+            roomId = roomId,
+            text = text,
+            replyToMessageId = replyToMessageId,
+            attachments = attachments,
+            excavationAlert = excavationAlert,
+            source = source,
+            currentUserId = currentUserId,
+            currentUserRole = currentUserRole,
+            senderUsername = senderUsername,
             pendingMessageId = pendingMessageId,
-            optimisticMessage = optimistic,
-            httpAckSpanId = spanId,
         )
+        persistEnqueue(prepared)
+        prepared
     }
 
     suspend fun markSending(clientMessageId: String) = withContext(Dispatchers.IO) {
@@ -179,4 +218,8 @@ data class OutboxEnqueueResult(
     val pendingMessageId: String,
     val optimisticMessage: ChatMessage,
     val httpAckSpanId: Long,
+    val userId: String,
+    val attachments: List<String>?,
+    val excavationAlert: Boolean,
+    val source: OutboxSendSource,
 )

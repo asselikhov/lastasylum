@@ -162,6 +162,12 @@ class ChatViewModel(
     /** Flow-driven snapshot of active outbox sends for the selected room. */
     @Volatile
     internal var outboxRoomSnapshot = OutboxRoomSnapshot()
+    /** In-flight sends keyed by [ChatMessage.clientMessageId] — blocks socket echo before Room Flow updates. */
+    internal val activeOutgoingClientMessageIds =
+        java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
+    /** Optimistic overlay quick commands waiting for [sendOverlayRaidQuickCommandImpl]. */
+    internal val overlayQuickCommandPrepared =
+        java.util.concurrent.ConcurrentHashMap<String, com.lastasylum.alliance.data.chat.outbox.OutboxEnqueueResult>()
     internal var outboxObserverJob: Job? = null
 
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
@@ -288,7 +294,7 @@ class ChatViewModel(
 
     internal fun trackRecentSocketMessageId(id: String?) {
         val trimmed = id?.trim().orEmpty()
-        if (trimmed.isEmpty() || trimmed.startsWith("pending-")) return
+        if (trimmed.isEmpty() || isOptimisticOutgoingMessageId(trimmed)) return
         synchronized(recentSocketMessageIds) {
             recentSocketMessageIds.add(trimmed)
             while (recentSocketMessageIds.size > 256) {

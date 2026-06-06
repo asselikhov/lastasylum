@@ -1407,8 +1407,9 @@ class CombatOverlayService : Service() {
                 statusCompose.layoutParams = lp
             }
         }
-        if (!isInGameOverlayUiActive()) return
-        if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
+        val overlayEnabled = AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()
+        val hudVisible = (isInGameOverlayUiActive() || isOverlayUiHoldActive()) && overlayEnabled && canDrawOverlaysNow()
+        if (!hudVisible) return
         if (gateActive) {
             overlayStatusHudHost?.visibility = View.VISIBLE
             overlayTopRightHudHost?.visibility = View.GONE
@@ -1531,7 +1532,7 @@ class CombatOverlayService : Service() {
     private fun isOverlayHudAttachAllowed(): Boolean =
         overlayHudAttachGeneration == overlayTeardownGeneration &&
             AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
-            isInGameOverlayUiActive()
+            (isInGameOverlayUiActive() || isOverlayUiHoldActive())
 
     private fun ensureOverlaySessionPresenceStarted() {
         overlayPresenceCoordinator.pingIngameImmediate()
@@ -4558,8 +4559,9 @@ class CombatOverlayService : Service() {
         gameEventAlert: String? = null,
     ): Result<ChatMessage> {
         val pendingId = pendingOverlayQuickCommandId?.trim().orEmpty()
-        val vm = ensureChatViewModelForQuickCommandSend()
-            ?: return Result.failure(IllegalStateException("no_vm"))
+        val vm = withContext(Dispatchers.Main.immediate) {
+            ensureChatViewModelForQuickCommandSend()
+        } ?: return Result.failure(IllegalStateException("no_vm"))
         val roomId = ensureOverlayRaidRoomReadyForSend()
             ?: return Result.failure(IllegalStateException("no_raid"))
         if (overlayChatTeamPanelVisible) {
@@ -4581,9 +4583,11 @@ class CombatOverlayService : Service() {
                     pendingId = pendingId.takeIf { it.isNotEmpty() },
                 )
                 pendingOverlayQuickCommandId = null
+                restoreOverlayInGameWindowVisibility()
             }
         }.onFailure {
             pendingOverlayQuickCommandId = null
+            mainHandler.post { restoreOverlayInGameWindowVisibility() }
         }
         jwtSubFromAccessToken()?.trim()?.takeIf { it.isNotEmpty() }?.let { uid ->
             OutboxResumeScheduler.schedule(this@CombatOverlayService, uid)

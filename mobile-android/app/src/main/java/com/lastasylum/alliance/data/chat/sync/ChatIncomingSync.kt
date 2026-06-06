@@ -8,16 +8,19 @@ import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.RAID_GAP_RECONCILE_THRESHOLD_MS
 import com.lastasylum.alliance.ui.chat.buildChatMessagesListDerivedAfterReplaceNewest
 import com.lastasylum.alliance.ui.chat.chatMessagesListContentEqual
+import com.lastasylum.alliance.ui.chat.dedupeOwnOutgoingByClientMessageId
 import com.lastasylum.alliance.ui.chat.dedupeMessagesByIdNewestFirst
 import com.lastasylum.alliance.ui.chat.dropMatchingPendingOutgoing
 import com.lastasylum.alliance.ui.chat.filterMessagesForRoom
 import com.lastasylum.alliance.ui.chat.hasMatchingPendingOutgoing
+import com.lastasylum.alliance.ui.chat.isOptimisticOutgoingMessageId
 import com.lastasylum.alliance.ui.chat.mergeOutgoingConfirmation
 import com.lastasylum.alliance.ui.chat.rebuildMessageIdIndex
 import com.lastasylum.alliance.ui.chat.replaceMatchingPendingOutgoing
 import com.lastasylum.alliance.ui.chat.resolveChatListDerivedAfterMessagesUpdate
 import com.lastasylum.alliance.ui.chat.sanitizeMessagesAfterRealtimeApply
 import com.lastasylum.alliance.ui.chat.shouldTriggerGapReconcile
+import com.lastasylum.alliance.ui.chat.stripRedundantOwnOutgoingByClientMessageId
 import com.lastasylum.alliance.ui.chat.stripRedundantPendingOutgoing
 import com.lastasylum.alliance.ui.chat.upsertMessagesBatch
 import kotlinx.coroutines.CoroutineScope
@@ -242,6 +245,8 @@ class ChatIncomingSync(
             }
         }
         messages = stripRedundantPendingOutgoing(messages, host.currentUserId)
+        messages = stripRedundantOwnOutgoingByClientMessageId(messages, host.currentUserId)
+        messages = dedupeOwnOutgoingByClientMessageId(messages, host.currentUserId)
         messages = dedupeMessagesByIdNewestFirst(messages)
         rebuildMessageIdIndex(messages, messageIdIndex)
         if (stillFresh.isEmpty()) {
@@ -264,7 +269,12 @@ class ChatIncomingSync(
         val cappedAfterUpsert = stripRedundantPendingOutgoing(
             update.messages,
             host.currentUserId,
-        ).let { dedupeMessagesByIdNewestFirst(it) }
+        ).let {
+            dedupeOwnOutgoingByClientMessageId(
+                stripRedundantOwnOutgoingByClientMessageId(it, host.currentUserId),
+                host.currentUserId,
+            )
+        }.let { dedupeMessagesByIdNewestFirst(it) }
         rebuildMessageIdIndex(cappedAfterUpsert, messageIdIndex)
         return IncomingBatchWork(
             previousMessages = messages,
@@ -316,7 +326,7 @@ private fun mergeOwnOutgoingEchoesInPlace(
         if (idx !in nextMessages.indices) continue
         val before = nextMessages
         val existing = nextMessages[idx]
-        val merged = if (existing._id?.trim().orEmpty().startsWith("pending-") &&
+        val merged = if (isOptimisticOutgoingMessageId(existing._id?.trim().orEmpty()) &&
             echo.senderId.trim() == selfId
         ) {
             mergeOutgoingConfirmation(existing, echo)

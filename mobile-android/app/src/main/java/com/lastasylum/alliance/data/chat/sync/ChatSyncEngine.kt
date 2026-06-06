@@ -106,8 +106,13 @@ class ChatSyncEngine(
         resumePendingOutbox(scope, uid)
     }
 
-    suspend fun sendOutboxEntry(entry: OutboxEntry): Result<ChatMessage> {
-        latencyTracker.startSpan(LatencySpanType.ChatSendToSocket, entry.clientMessageId)
+    suspend fun sendOutboxEntry(
+        entry: OutboxEntry,
+        skipSocket: Boolean = false,
+    ): Result<ChatMessage> {
+        if (!skipSocket) {
+            latencyTracker.startSpan(LatencySpanType.ChatSendToSocket, entry.clientMessageId)
+        }
         val result = when (entry.source) {
             OutboxSendSource.OverlayRaid ->
                 repository.sendOverlayRaidCommandFast(
@@ -125,6 +130,7 @@ class ChatSyncEngine(
                     attachments = entry.attachments,
                     excavationAlert = entry.excavationAlert,
                     clientMessageId = entry.clientMessageId,
+                    skipSocket = skipSocket,
                 )
         }
         result.onSuccess { sent ->
@@ -139,10 +145,13 @@ class ChatSyncEngine(
         return result
     }
 
-    suspend fun sendEnqueuedOutbox(clientMessageId: String): Result<ChatMessage> {
+    suspend fun sendEnqueuedOutbox(
+        clientMessageId: String,
+        skipSocket: Boolean = false,
+    ): Result<ChatMessage> {
         val entry = chatOutbox.getByClientId(clientMessageId)
             ?: return Result.failure(IllegalStateException("outbox_missing"))
-        return sendOutboxEntry(entry)
+        return sendOutboxEntry(entry, skipSocket = skipSocket)
     }
 
     data class StoredRoomSnapshot(

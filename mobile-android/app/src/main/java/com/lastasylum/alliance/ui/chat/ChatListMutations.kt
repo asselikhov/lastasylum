@@ -10,6 +10,13 @@ import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 /** Newest-first in-memory cap to keep scroll/diff bounded for very long threads. */
 internal const val CHAT_MAX_MESSAGES_IN_MEMORY = 800
 
+/** Optimistic rows from chat UI ([pending-]) or overlay quick commands ([overlay-pending-]). */
+internal fun isOptimisticOutgoingMessageId(messageId: String?): Boolean {
+    val id = messageId?.trim().orEmpty()
+    if (id.isEmpty()) return false
+    return id.startsWith("overlay-pending-") || id.startsWith("pending-")
+}
+
 /** Rows shown in a room list must match that room (guards stale UI when switching rooms). */
 internal fun filterMessagesForRoom(
     messages: List<ChatMessage>,
@@ -78,14 +85,59 @@ internal fun sanitizeMessagesAfterRealtimeApply(
                 val id = msg._id?.trim().orEmpty()
                 id != pendingId &&
                     id.isNotEmpty() &&
-                    !id.startsWith("pending-") &&
+                    !isOptimisticOutgoingMessageId(id) &&
                     msg.senderId.trim() == selfId &&
                     outgoingTextsMatch(msg, pending)
             }
         }
     }
     out = stripRedundantPendingOutgoing(out, currentUserId)
+    out = stripRedundantOwnOutgoingByClientMessageId(out, currentUserId)
+    out = dedupeOwnOutgoingByClientMessageId(out, currentUserId)
     return dedupeMessagesByIdNewestFirst(out)
+}
+
+/** Drop optimistic rows when a confirmed server row with the same [clientMessageId] exists. */
+internal fun stripRedundantOwnOutgoingByClientMessageId(
+    messages: List<ChatMessage>,
+    currentUserId: String,
+): List<ChatMessage> {
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty()) return messages
+    val confirmedClientIds = messages.mapNotNull { msg ->
+        val id = msg._id?.trim().orEmpty()
+        val cid = msg.clientMessageId?.trim().orEmpty()
+        if (msg.senderId.trim() == selfId &&
+            cid.isNotEmpty() &&
+            !isOptimisticOutgoingMessageId(id)
+        ) {
+            cid
+        } else {
+            null
+        }
+    }.toSet()
+    if (confirmedClientIds.isEmpty()) return messages
+    return messages.filter { msg ->
+        val id = msg._id?.trim().orEmpty()
+        if (!isOptimisticOutgoingMessageId(id) || msg.senderId.trim() != selfId) return@filter true
+        val cid = msg.clientMessageId?.trim().orEmpty()
+        cid.isEmpty() || cid !in confirmedClientIds
+    }
+}
+
+/** Socket + HTTP can briefly show two confirmed rows with the same [clientMessageId] — keep newest first. */
+internal fun dedupeOwnOutgoingByClientMessageId(
+    messages: List<ChatMessage>,
+    currentUserId: String,
+): List<ChatMessage> {
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty()) return messages
+    val seen = HashSet<String>()
+    return messages.filter { msg ->
+        val cid = msg.clientMessageId?.trim().orEmpty()
+        if (msg.senderId.trim() != selfId || cid.isEmpty()) return@filter true
+        seen.add(cid)
+    }
 }
 
 /** Same server [message:new] already shown — drop delayed socket fan-out after HTTP confirm. */
@@ -114,7 +166,7 @@ internal fun hasMatchingPendingOutgoing(
     if (incomingClientId.isNotEmpty()) {
         if (messages.any { msg ->
                 val pendingId = msg._id?.trim().orEmpty()
-                pendingId.startsWith("pending-") &&
+                isOptimisticOutgoingMessageId(pendingId) &&
                     msg.senderId.trim() == selfId &&
                     msg.clientMessageId?.trim() == incomingClientId
             }
@@ -124,7 +176,7 @@ internal fun hasMatchingPendingOutgoing(
     }
     return messages.any { msg ->
         val pendingId = msg._id?.trim().orEmpty()
-        pendingId.startsWith("pending-") && outgoingTextsMatch(msg, incoming)
+        isOptimisticOutgoingMessageId(pendingId) && outgoingTextsMatch(msg, incoming)
     }
 }
 
@@ -155,7 +207,7 @@ internal fun stripRedundantPendingOutgoing(
     val confirmedFingerprints = HashSet<String>()
     for (msg in messages) {
         val id = msg._id?.trim().orEmpty()
-        if (msg.senderId.trim() != selfId || id.isEmpty() || id.startsWith("pending-")) continue
+        if (msg.senderId.trim() != selfId || id.isEmpty() || isOptimisticOutgoingMessageId(id)) continue
         confirmedFingerprints.add(
             "${msg.text.trim()}\u0000${normalizeOutgoingReplyToId(msg.replyToMessageId)}",
         )
@@ -163,7 +215,7 @@ internal fun stripRedundantPendingOutgoing(
     if (confirmedFingerprints.isEmpty()) return messages
     return messages.filter { msg ->
         val id = msg._id?.trim().orEmpty()
-        if (!id.startsWith("pending-") || msg.senderId.trim() != selfId) return@filter true
+        if (!isOptimisticOutgoingMessageId(id) || msg.senderId.trim() != selfId) return@filter true
         val fp = "${msg.text.trim()}\u0000${normalizeOutgoingReplyToId(msg.replyToMessageId)}"
         fp !in confirmedFingerprints
     }
@@ -204,7 +256,7 @@ internal fun mergeLoadedPageWithExisting(
     for (msg in scopedExisting) {
         val id = msg._id?.trim().orEmpty()
         if (id.isEmpty() || id in excludedMessageIds || id in loadedIds) continue
-        if (!id.startsWith("pending-") && pageAnchor != null) {
+        if (!isOptimisticOutgoingMessageId(id) && pageAnchor != null) {
             val aheadOfRest = isObjectIdNewer(id, pageAnchor)
             val inRestGap = pageOldest != null &&
                 pageOldest != pageAnchor &&
@@ -335,13 +387,13 @@ internal fun replaceMatchingPendingOutgoing(
 ): PendingOutgoingReplacement? {
     val selfId = currentUserId.trim()
     val serverId = incoming._id?.trim().orEmpty()
-    if (selfId.isEmpty() || serverId.isEmpty() || serverId.startsWith("pending-")) return null
+    if (selfId.isEmpty() || serverId.isEmpty() || isOptimisticOutgoingMessageId(serverId)) return null
     if (incoming.senderId.trim() != selfId) return null
     val incomingClientId = incoming.clientMessageId?.trim().orEmpty()
     if (incomingClientId.isNotEmpty()) {
         val byClientId = current.indexOfFirst { msg ->
             val pendingId = msg._id?.trim().orEmpty()
-            pendingId.startsWith("pending-") &&
+            isOptimisticOutgoingMessageId(pendingId) &&
                 msg.senderId.trim() == selfId &&
                 msg.clientMessageId?.trim() == incomingClientId
         }
@@ -361,7 +413,7 @@ internal fun replaceMatchingPendingOutgoing(
     }
     val idx = current.indexOfFirst { msg ->
         val pendingId = msg._id?.trim().orEmpty()
-        pendingId.startsWith("pending-") &&
+        isOptimisticOutgoingMessageId(pendingId) &&
             msg.senderId.trim() == selfId &&
             outgoingTextsMatch(msg, incoming)
     }
@@ -390,12 +442,12 @@ internal fun dropMatchingPendingOutgoing(
         val id = msg._id?.trim().orEmpty()
         msg.senderId.trim() == selfId &&
             id.isNotEmpty() &&
-            !id.startsWith("pending-")
+            !isOptimisticOutgoingMessageId(id)
     }
     if (confirmed.isEmpty()) return current
     return current.filter { msg ->
         val id = msg._id?.trim().orEmpty()
-        if (!id.startsWith("pending-")) return@filter true
+        if (!isOptimisticOutgoingMessageId(id)) return@filter true
         !confirmed.any { sent -> outgoingTextsMatch(msg, sent) }
     }
 }

@@ -458,6 +458,31 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun replaceMatchingPendingOutgoing_matchesOverlayPendingId() {
+        val pending = msg("overlay-pending-1", "coords").copy(clientMessageId = "client-1")
+        val server = msg("server-1", "coords").copy(clientMessageId = "client-1")
+        val replacement = replaceMatchingPendingOutgoing(listOf(pending), server, "u1")
+        requireNotNull(replacement)
+        assertEquals("server-1", replacement.messages.single()._id)
+    }
+
+    @Test
+    fun stripRedundantPendingOutgoing_removesOverlayPendingWhenConfirmed() {
+        val pending = msg("overlay-pending-1", "coords")
+        val server = msg("server-1", "coords")
+        val out = stripRedundantPendingOutgoing(listOf(server, pending), "u1")
+        assertEquals(listOf("server-1"), out.map { it._id })
+    }
+
+    @Test
+    fun dedupeOwnOutgoingByClientMessageId_keepsFirstRow() {
+        val first = msg("server-1", "hello").copy(clientMessageId = "cid-1")
+        val dup = msg("server-2", "hello").copy(clientMessageId = "cid-1")
+        val out = dedupeOwnOutgoingByClientMessageId(listOf(first, dup), "u1")
+        assertEquals(listOf("server-1"), out.map { it._id })
+    }
+
+    @Test
     fun dedupeMessagesByIdNewestFirst_keepsFirstOccurrence() {
         val server = msg("same", "hello")
         val dup = server.copy(text = "hello (server)")

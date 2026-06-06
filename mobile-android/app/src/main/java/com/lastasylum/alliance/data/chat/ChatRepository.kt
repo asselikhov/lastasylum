@@ -57,6 +57,23 @@ class ChatRepository(
             onHttpSuccess = realtime::dispatchOverlayHttpMessage,
         )
 
+    /** Fire-and-forget socket emit for fast peer delivery (HTTP confirms separately). */
+    fun emitChatOutgoingViaSocket(
+        text: String,
+        roomId: String,
+        replyToMessageId: String? = null,
+        clientMessageId: String,
+        excavationAlert: Boolean = false,
+    ) {
+        realtime.sendChatMessageViaSocket(
+            text = text,
+            roomId = roomId,
+            replyToMessageId = replyToMessageId,
+            clientMessageId = clientMessageId,
+            excavationAlert = excavationAlert,
+        )
+    }
+
     /** App/overlay chat UI: parallel socket + HTTP with shared [clientMessageId] for fast peer delivery. */
     suspend fun sendMessageWithRetriesForChatUi(
         text: String,
@@ -65,16 +82,19 @@ class ChatRepository(
         attachments: List<String>? = null,
         excavationAlert: Boolean = false,
         clientMessageId: String? = null,
+        skipSocket: Boolean = false,
     ): Result<ChatMessage> {
         val id = clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
             ?: java.util.UUID.randomUUID().toString()
-        realtime.sendChatMessageViaSocket(
-            text = text,
-            roomId = roomId,
-            replyToMessageId = replyToMessageId,
-            clientMessageId = id,
-            excavationAlert = excavationAlert,
-        )
+        if (!skipSocket) {
+            realtime.sendChatMessageViaSocket(
+                text = text,
+                roomId = roomId,
+                replyToMessageId = replyToMessageId,
+                clientMessageId = id,
+                excavationAlert = excavationAlert,
+            )
+        }
         return rest.sendMessageWithRetries(
             text,
             roomId,
