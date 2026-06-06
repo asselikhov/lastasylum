@@ -197,7 +197,7 @@ fun OverlayReactionNotificationsPanel(
         Column(modifier = Modifier.fillMaxSize()) {
             OverlayHudPanelHeader(
                 title = stringResource(R.string.overlay_notifications_title),
-                subtitle = null,
+                subtitle = overlayPanelUnreadSubtitle(unreadCount),
                 onClose = onClose,
                 closeIconTint = Color.White,
                 onMarkAllRead = {
@@ -520,7 +520,7 @@ fun OverlayReactionNotificationsPanel(
 
                         OverlayReactionLogJumpToUnreadFab(
                             visible = showJumpToUnread,
-                            unreadCount = visibleUnreadCount,
+                            unreadCount = unreadCount,
                             onClick = {
                                 if (firstUnreadIndex >= 0) {
                                     scope.launch {

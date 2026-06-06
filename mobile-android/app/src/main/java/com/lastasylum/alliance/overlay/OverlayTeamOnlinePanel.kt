@@ -64,6 +64,7 @@ fun OverlayTeamOnlinePanel(
     onHudRefresh: () -> Unit,
     onClose: () -> Unit = {},
     onIngameCountChanged: (Int) -> Unit = {},
+    onJoinRequestCountChanged: (Int) -> Unit = {},
     onSendReactionToUser: (userId: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -200,6 +201,7 @@ fun OverlayTeamOnlinePanel(
             OverlayGameStatusHudRefresh.loadTeamJoinRequestCount(context)
         }
         joinRequestCount = refreshed
+        onJoinRequestCountChanged(refreshed)
     }
     val selfLabel = stringResource(R.string.overlay_online_self)
 
@@ -212,6 +214,7 @@ fun OverlayTeamOnlinePanel(
                 .onSuccess {
                     leaderUi.inboxRequests = it
                     joinRequestCount = it.size
+                    onJoinRequestCountChanged(it.size)
                 }
                 .onFailure { err ->
                     leaderUi.inboxRequests = emptyList()
@@ -397,7 +400,7 @@ private fun RowScope.OverlayOnlineLeaderToolbarActions(
         BadgedBox(
             badge = {
                 Badge {
-                    Text(if (pendingJoinRequests > 9) "9+" else "$pendingJoinRequests")
+                    Text(OverlayBadgeFormat.label(pendingJoinRequests))
                 }
             },
         ) {

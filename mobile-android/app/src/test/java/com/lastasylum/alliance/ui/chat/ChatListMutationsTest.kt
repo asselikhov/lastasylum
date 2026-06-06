@@ -504,6 +504,13 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun hasDuplicateMessageIds_trueWhenSameIdTwice() {
+        val id = "6a24a23e4a984f6da85136db"
+        val list = listOf(msg(id, "hello"), msg(id, "dup"))
+        assertTrue(hasDuplicateMessageIds(list))
+    }
+
+    @Test
     fun capNewestFirst_keepsHead() {
         val newestFirst = (100 downTo 1).map { i -> msg("id$i", text = "$i") }
         val capped = capNewestFirst(newestFirst, 50)

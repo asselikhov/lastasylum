@@ -127,15 +127,20 @@ internal fun ChatViewModel.publishMessagesDerivedAfterPatchImpl(messages: List<C
     /** Мгновенная лента при переключении комнаты (кэш уже в памяти). */
 internal fun ChatViewModel.publishMessagesDerivedImmediateImpl(messages: List<ChatMessage>) {
         deriveJob?.cancel()
-        if (messages.isEmpty()) {
+        val sanitized = sanitizeMessagesForUiList(
+            messages = messages,
+            currentUserId = currentUserId,
+            activeOutgoingPendingId = outboxRoomSnapshot.newestPendingId,
+        )
+        if (sanitized.isEmpty()) {
             _listDerived.value = ChatMessagesListDerived.Empty
             return
         }
-        if (messages.size <= CHAT_LIST_DERIVE_SYNC_MAX) {
-            _listDerived.value = buildChatMessagesListDerived(messages)
+        if (sanitized.size <= CHAT_LIST_DERIVE_SYNC_MAX) {
+            _listDerived.value = buildChatMessagesListDerived(sanitized)
             return
         }
-        val expected = messages
+        val expected = sanitized
         deriveJob = vmScope.launch(Dispatchers.Default) {
             val derived = buildChatMessagesListDerived(expected)
             if (vmState.value.selectedRoomId == null) return@launch

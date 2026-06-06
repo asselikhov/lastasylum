@@ -43,6 +43,10 @@ class OverlayInboxBadgeCoordinator {
     var forumOptimisticUntilMs: Long = 0L
         private set
 
+    @Volatile
+    var newsOptimisticUntilMs: Long = 0L
+        private set
+
     fun invalidateNewsCache() {
         cachedBadgeAtMs = 0L
     }
@@ -61,8 +65,15 @@ class OverlayInboxBadgeCoordinator {
         forumOptimisticFloor = displayed.coerceIn(0, MAX_BADGE)
     }
 
+    fun bumpNewsOptimistic(displayed: Int) {
+        newsLastBumpAtMs = System.currentTimeMillis()
+        newsOptimisticUntilMs = System.currentTimeMillis() + NEWS_OPTIMISTIC_BADGE_MS
+        newsOptimisticFloor = displayed.coerceIn(0, MAX_BADGE)
+    }
+
     fun clearNewsOptimistic() {
         newsOptimisticFloor = 0
+        newsOptimisticUntilMs = 0L
     }
 
     fun clearForumOptimistic() {
@@ -82,6 +93,9 @@ class OverlayInboxBadgeCoordinator {
 
     fun isForumOptimisticActive(): Boolean =
         System.currentTimeMillis() < forumOptimisticUntilMs
+
+    fun isNewsOptimisticActive(): Boolean =
+        System.currentTimeMillis() < newsOptimisticUntilMs
 
     suspend fun fetchNewsUnread(
         context: android.content.Context,
@@ -169,11 +183,11 @@ class OverlayInboxBadgeCoordinator {
         prevDisplayed: Int,
         useAuthoritative: Boolean,
     ): Int {
-        if (authoritative <= 0 && !shouldDeferNewsReconcile()) {
+        if (authoritative <= 0 && !shouldDeferNewsReconcile() && !isNewsOptimisticActive()) {
             clearNewsOptimistic()
         }
         return when {
-            shouldDeferNewsReconcile() ->
+            isNewsOptimisticActive() || shouldDeferNewsReconcile() ->
                 maxOf(authoritative, prevDisplayed, newsOptimisticFloor)
             useAuthoritative -> mergeNewsDisplayed(authoritative, prevDisplayed)
             else -> mergeNewsDisplayed(authoritative, prevDisplayed)
@@ -222,6 +236,7 @@ class OverlayInboxBadgeCoordinator {
         private const val MAX_BADGE = 999
         const val RECONCILE_GRACE_MS = 4_000L
         const val FORUM_OPTIMISTIC_BADGE_MS = 8_000L
+        const val NEWS_OPTIMISTIC_BADGE_MS = 8_000L
         private const val CACHE_TTL_MS = 180_000L
     }
 }

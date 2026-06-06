@@ -276,7 +276,7 @@ internal fun OverlayGameHudChip(
             }
         }
         if (badge > 0) {
-            val badgeText = if (badge > 99) "99+" else badge.toString()
+            val badgeText = OverlayBadgeFormat.label(badge)
             Badge(
                 containerColor = HudBadgeColor,
                 modifier = Modifier

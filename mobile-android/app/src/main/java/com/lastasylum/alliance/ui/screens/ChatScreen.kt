@@ -240,6 +240,8 @@ import com.lastasylum.alliance.ui.chat.scrollTimelineItemToViewportCenter
 import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
 import com.lastasylum.alliance.ui.chat.clusterTopSpacingAt
 import com.lastasylum.alliance.ui.chat.chatTimelineDaySeparatorKey
+import com.lastasylum.alliance.ui.chat.chatTimelineMessageItemKey
+import com.lastasylum.alliance.ui.chat.duplicateMessageIdsIn
 import com.lastasylum.alliance.ui.chat.toChatListUiState
 import com.lastasylum.alliance.ui.chat.ChatListUiState
 import com.lastasylum.alliance.ui.chat.ChatTimelineEntry
@@ -1786,6 +1788,7 @@ private fun ChatMessagesLazyList(
     val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
     val timeline = listDerived.timeline
     val messageClusterFlags = listDerived.clusterFlags
+    val duplicateMessageIds = remember(messages) { duplicateMessageIdsIn(messages) }
     val configuration = LocalConfiguration.current
     val listBubbleMaxWidth = remember(configuration.screenWidthDp, overlayUi) {
         val rowWidth = configuration.screenWidthDp.dp
@@ -1930,7 +1933,12 @@ private fun ChatMessagesLazyList(
                     key = { idx ->
                         when (val e = timeline[idx]) {
                             is ChatTimelineEntry.DaySeparator -> chatTimelineDaySeparatorKey(idx, e.label)
-                            is ChatTimelineEntry.ChatMessageItem -> messageListKey(e.message)
+                            is ChatTimelineEntry.ChatMessageItem -> chatTimelineMessageItemKey(
+                                messageIndex = e.messageIndex,
+                                message = e.message,
+                                messageListKey = messageListKey,
+                                duplicateIds = duplicateMessageIds,
+                            )
                             is ChatTimelineEntry.ChatAlbumItem -> "album:${messageListKey(e.representativeMessage)}:${e.messageIndices.firstOrNull() ?: -1}:${e.messageIndices.lastOrNull() ?: -1}"
                         }
                     },

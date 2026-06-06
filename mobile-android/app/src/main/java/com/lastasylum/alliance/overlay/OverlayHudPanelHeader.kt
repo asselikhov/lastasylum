@@ -27,6 +27,16 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 @Composable
+fun overlayPanelUnreadSubtitle(unreadCount: Int): String? {
+    if (unreadCount <= 0) return null
+    return if (unreadCount > OverlayBadgeFormat.CAP) {
+        stringResource(R.string.overlay_panel_unread_subtitle_max)
+    } else {
+        stringResource(R.string.overlay_panel_unread_subtitle, unreadCount)
+    }
+}
+
+@Composable
 fun OverlayHudPanelHeader(
     title: String,
     onClose: () -> Unit,

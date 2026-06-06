@@ -602,7 +602,9 @@ internal fun ChatViewModel.insertOptimisticOutgoingSynchronouslyImpl(
                 knownMessageIds = knownMessageIds,
                 idIndex = messageIdIndex,
             )
-            val capped = capMessagesForMemory(update.messages)
+            val capped = capMessagesForMemory(
+                dedupeMessagesByIdNewestFirst(update.messages),
+            )
             rebuildMessageIdIndex(capped, messageIdIndex)
             message._id?.let { registerOutgoingLazyColumnKey(it) }
             Triple(snapshot, capped, update.newestMessageKey ?: message._id?.trim().orEmpty())

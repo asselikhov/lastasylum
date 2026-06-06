@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.overlay
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OverlayInboxBadgeCoordinatorTest {
@@ -77,5 +78,31 @@ class OverlayInboxBadgeCoordinatorTest {
             useAuthoritative = true,
         )
         assertEquals(3, afterServerCatchUp)
+    }
+
+    @Test
+    fun mergeHudNews_optimisticFloor_keepsDisplayedUntilAuthoritativeCatchUp() {
+        val coordinator = OverlayInboxBadgeCoordinator()
+        coordinator.bumpNewsOptimistic(3)
+        val afterPartialZero = coordinator.mergeHudNews(
+            authoritative = 0,
+            prevDisplayed = 3,
+            useAuthoritative = false,
+        )
+        assertEquals(3, afterPartialZero)
+        val afterServerCatchUp = coordinator.mergeHudNews(
+            authoritative = 3,
+            prevDisplayed = afterPartialZero,
+            useAuthoritative = true,
+        )
+        assertEquals(3, afterServerCatchUp)
+    }
+
+    @Test
+    fun bumpNewsOptimistic_setsFloorAndGrace() {
+        val coordinator = OverlayInboxBadgeCoordinator()
+        coordinator.bumpNewsOptimistic(2)
+        assertEquals(2, coordinator.newsOptimisticFloor)
+        assertTrue(coordinator.shouldDeferNewsReconcile())
     }
 }

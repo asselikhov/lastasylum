@@ -95,12 +95,14 @@ internal object OverlayGameStatusHudRefresh {
 
     /**
      * @param preloadedRooms when non-null, skips [ChatRepository.listRooms] inside load.
-     * @param refreshNewsForum when false, reuses news/forum counts for [NEWS_FORUM_CACHE_TTL_MS].
+     * @param refreshNews when false, reuses news count for [NEWS_FORUM_CACHE_TTL_MS].
+     * @param refreshForum when false, reuses forum count for [NEWS_FORUM_CACHE_TTL_MS].
      */
     suspend fun load(
         context: android.content.Context,
         preloadedRooms: List<ChatRoomDto>? = null,
-        refreshNewsForum: Boolean = true,
+        refreshNews: Boolean = true,
+        refreshForum: Boolean = true,
     ): OverlayGameStatusHudState {
         val container = AppContainer.from(context)
         val profile = container.usersRepository.resolveMyProfilePreferCache()
@@ -125,11 +127,11 @@ internal object OverlayGameStatusHudRefresh {
 
         val teamId = profile?.playerTeamId?.trim().orEmpty()
         val now = System.currentTimeMillis()
-        val newsCacheFresh = !refreshNewsForum &&
+        val newsCacheFresh = !refreshNews &&
             teamId.isNotEmpty() &&
             teamId == cachedBadgeTeamId &&
             now - cachedNewsAtMs < NEWS_FORUM_CACHE_TTL_MS
-        val forumCacheFresh = !refreshNewsForum &&
+        val forumCacheFresh = !refreshForum &&
             teamId.isNotEmpty() &&
             teamId == cachedBadgeTeamId &&
             now - cachedForumAtMs < NEWS_FORUM_CACHE_TTL_MS
@@ -190,12 +192,10 @@ internal object OverlayGameStatusHudRefresh {
         val container = AppContainer.from(context)
         val profile = container.usersRepository.resolveMyProfilePreferCache() ?: return 0
         if (!profile.isPlayerTeamLeader) return 0
-        val fromProfile = profile.pendingPlayerTeamJoinRequests.coerceAtLeast(0)
-        if (fromProfile > 0) return fromProfile
         return container.teamsRepository.listPendingJoinRequests()
             .getOrNull()
             ?.size
-            ?: 0
+            ?: profile.pendingPlayerTeamJoinRequests.coerceAtLeast(0)
     }
 
     fun effectiveForumTopicUnread(

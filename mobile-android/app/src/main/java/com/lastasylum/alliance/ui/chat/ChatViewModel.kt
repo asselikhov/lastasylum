@@ -393,8 +393,30 @@ class ChatViewModel(
             clearComposer: Boolean,
         ) {
             val snapshot = _state.value
-            var nextState = snapshot.copy(
+            val safeMessages = sanitizeMessagesForUiList(
                 messages = cappedMessages,
+                currentUserId = currentUserId,
+                activeOutgoingPendingId = outboxRoomSnapshot.newestPendingId,
+            )
+            val pendingInSnapshot = snapshot.messages.any {
+                isOptimisticOutgoingMessageId(it._id?.trim().orEmpty())
+            }
+            val pendingInBatch = safeMessages.any {
+                isOptimisticOutgoingMessageId(it._id?.trim().orEmpty())
+            }
+            if (!pendingInSnapshot && pendingInBatch && work.previousMessages !== snapshot.messages) {
+                return
+            }
+            if (hasDuplicateMessageIds(safeMessages) && !hasDuplicateMessageIds(snapshot.messages)) {
+                return
+            }
+            val safeDerived = if (safeMessages == cappedMessages) {
+                derived
+            } else {
+                buildChatMessagesListDerived(safeMessages)
+            }
+            var nextState = snapshot.copy(
+                messages = safeMessages,
                 newestMessageKey = work.newestMessageKey ?: snapshot.newestMessageKey,
                 isSending = false,
                 error = null,
@@ -420,7 +442,7 @@ class ChatViewModel(
                 )
             }
             _state.value = syncSelections(nextState)
-            _listDerived.value = derived
+            _listDerived.value = safeDerived
         }
 
         override fun onIncomingBatchSideEffects(
@@ -877,6 +899,12 @@ class ChatViewModel(
         val id = message._id?.trim().orEmpty()
         if (id.isNotEmpty()) {
             lazyColumnKeyByMessageId[id]?.let { return it }
+            val index = messageIdIndex[id]
+            if (index != null &&
+                vmState.value.messages.count { it._id?.trim() == id } > 1
+            ) {
+                return "$id@$index"
+            }
             return id
         }
         return chatMessageKey(message)
@@ -1441,8 +1469,15 @@ class ChatViewModel(
         shouldBlockOwnOutgoingRealtimeImpl(message)
     internal fun stashIncomingMessageForRoom(message: ChatMessage) =
         stashIncomingMessageForRoomImpl(message)
-    internal fun confirmPendingOutgoingMessage(pendingId: String?, sent: ChatMessage) =
-        confirmPendingOutgoingMessageImpl(pendingId, sent)
+    internal fun confirmPendingOutgoingMessage(pendingId: String?, sent: ChatMessage) {
+        vmScope.launch {
+            incomingApplyMutex.withLock {
+                withContext(Dispatchers.Main.immediate) {
+                    confirmPendingOutgoingMessageImpl(pendingId, sent)
+                }
+            }
+        }
+    }
     internal fun applyIncomingMessage(message: ChatMessage, clearComposer: Boolean = false) =
         applyIncomingMessageImpl(message, clearComposer)
     internal fun launchTextOutgoingSend(

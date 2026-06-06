@@ -30,6 +30,32 @@ fun clusterTopSpacingAt(derived: ChatMessagesListDerived, timelineIndex: Int): I
 fun chatTimelineDaySeparatorKey(timelineIndex: Int, label: String): String =
     "day:$timelineIndex:${label.trim()}"
 
+fun duplicateMessageIdsIn(messages: List<ChatMessage>): Set<String> {
+    if (messages.size <= 1) return emptySet()
+    val counts = HashMap<String, Int>()
+    for (msg in messages) {
+        val id = msg._id?.trim().orEmpty()
+        if (id.isEmpty()) continue
+        counts[id] = (counts[id] ?: 0) + 1
+    }
+    return counts.filterValues { it > 1 }.keys
+}
+
+fun chatTimelineMessageItemKey(
+    messageIndex: Int,
+    message: ChatMessage,
+    messageListKey: (ChatMessage) -> String,
+    duplicateIds: Set<String> = emptySet(),
+): String {
+    val base = messageListKey(message)
+    val id = message._id?.trim().orEmpty()
+    return if (id.isNotEmpty() && id in duplicateIds) {
+        "msg:$messageIndex:$base"
+    } else {
+        base
+    }
+}
+
 fun resolveChatListDerivedAfterMessagesUpdate(
     previousDerived: ChatMessagesListDerived,
     previousMessages: List<ChatMessage>,

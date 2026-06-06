@@ -746,6 +746,8 @@
     <string name="overlay_app_update_downloading">Загрузка обновления…</string>
     <string name="overlay_hud_alliance_chat_cd">Чат альянса, непрочитанные: %1$d</string>
     <string name="overlay_hud_news_cd">Новости команды: %1$d</string>
+    <string name="overlay_panel_unread_subtitle">%1$d непрочитанных</string>
+    <string name="overlay_panel_unread_subtitle_max">99+ непрочитанных</string>
     <string name="overlay_hud_forum_cd">Форум команды, непрочитанные: %1$d</string>
     <string name="overlay_hud_forum_open_cd">Открыть форум</string>
     <string name="overlay_hud_online_open_cd">Кто в игре</string>

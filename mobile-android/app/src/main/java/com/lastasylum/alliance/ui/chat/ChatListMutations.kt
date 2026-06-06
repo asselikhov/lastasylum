@@ -374,6 +374,28 @@ internal fun dedupeMessagesByIdNewestFirst(messages: List<ChatMessage>): List<Ch
     return out
 }
 
+internal fun hasDuplicateMessageIds(messages: List<ChatMessage>): Boolean {
+    if (messages.size <= 1) return false
+    val seen = HashSet<String>()
+    for (msg in messages) {
+        val id = msg._id?.trim().orEmpty()
+        if (id.isEmpty()) continue
+        if (!seen.add(id)) return true
+    }
+    return false
+}
+
+/** UI-bound list: strip pending/server races and enforce unique ids before LazyColumn derive. */
+internal fun sanitizeMessagesForUiList(
+    messages: List<ChatMessage>,
+    currentUserId: String,
+    activeOutgoingPendingId: String?,
+): List<ChatMessage> = sanitizeMessagesAfterRealtimeApply(
+    messages = messages,
+    currentUserId = currentUserId,
+    activeOutgoingPendingId = activeOutgoingPendingId,
+)
+
 /** In-place swap of a matching optimistic row for the confirmed server message (socket/HTTP). */
 internal data class PendingOutgoingReplacement(
     val messages: List<ChatMessage>,

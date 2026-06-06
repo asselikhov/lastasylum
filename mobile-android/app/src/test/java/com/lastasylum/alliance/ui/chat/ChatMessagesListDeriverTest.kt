@@ -94,4 +94,21 @@ class ChatMessagesListDeriverTest {
         assertEquals(full, incremental)
         assertTrue(incremental.timeline.isNotEmpty())
     }
+
+    @Test
+    fun duplicateMessageIdsIn_detectsRepeatedServerIds() {
+        val id = "6a24a23e4a984f6da85136db"
+        val messages = listOf(msg(id), msg(id, text = "dup"))
+        assertEquals(setOf(id), duplicateMessageIdsIn(messages))
+    }
+
+    @Test
+    fun chatTimelineMessageItemKey_usesIndexWhenDuplicateIds() {
+        val id = "6a24a23e4a984f6da85136db"
+        val message = msg(id)
+        val key0 = chatTimelineMessageItemKey(0, message, { it._id!! }, setOf(id))
+        val key1 = chatTimelineMessageItemKey(1, message, { it._id!! }, setOf(id))
+        assertEquals("msg:0:$id", key0)
+        assertEquals("msg:1:$id", key1)
+    }
 }

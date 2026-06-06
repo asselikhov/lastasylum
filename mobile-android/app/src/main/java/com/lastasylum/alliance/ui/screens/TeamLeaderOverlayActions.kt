@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.overlay.OverlayTeamContextCache
+import com.lastasylum.alliance.overlay.OverlayBadgeFormat
 import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamJoinRequestDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
@@ -177,7 +178,7 @@ fun TeamLeaderToolbar(
                 BadgedBox(
                     badge = {
                         Badge {
-                            Text(if (pendingJoinRequests > 9) "9+" else "$pendingJoinRequests")
+                            Text(OverlayBadgeFormat.label(pendingJoinRequests))
                         }
                     },
                 ) {
