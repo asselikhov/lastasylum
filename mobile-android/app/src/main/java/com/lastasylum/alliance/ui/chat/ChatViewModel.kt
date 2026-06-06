@@ -362,7 +362,7 @@ class ChatViewModel(
             this@ChatViewModel.isRoomActivelyViewed(roomId, message)
 
         override fun shouldDeferOwnOutgoingSocketEcho(message: ChatMessage): Boolean =
-            shouldDeferOwnOutgoingSocketEcho(message)
+            this@ChatViewModel.shouldDeferOwnOutgoingSocketEcho(message)
 
         override fun shouldBlockOwnOutgoingRealtime(message: ChatMessage): Boolean =
             this@ChatViewModel.shouldBlockOwnOutgoingRealtime(message)
