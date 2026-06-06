@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.ui.components.team
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ForumTopicCardLayoutTest {
@@ -24,5 +25,17 @@ class ForumTopicCardLayoutTest {
     @Test
     fun slotWidths_matchGhostButtonAndBadge() {
         assertEquals(ForumTopicCardTokens.ghostButtonSize, ForumTopicCardTokens.actionsSlotWidth)
+    }
+
+    @Test
+    fun subtitleEndInset_reservesMenuAndOptionalBadge() {
+        assertTrue(
+            ForumTopicCardTokens.subtitleEndInset(hasUnreadBadge = false) >=
+                ForumTopicCardTokens.actionsSlotWidth,
+        )
+        assertTrue(
+            ForumTopicCardTokens.subtitleEndInset(hasUnreadBadge = true) >
+                ForumTopicCardTokens.subtitleEndInset(hasUnreadBadge = false),
+        )
     }
 }

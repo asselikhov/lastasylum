@@ -13,9 +13,9 @@ class ForumTopicCardTokensTest {
     }
 
     @Test
-    fun activityLevel_warmWhenNoUnreadButMessages() {
+    fun activityLevel_calmWhenReadRegardlessOfMessages() {
         assertEquals(
-            ForumTopicCardTokens.ActivityLevel.Warm,
+            ForumTopicCardTokens.ActivityLevel.Calm,
             ForumTopicCardTokens.activityLevel(unreadCount = 0, messageCount = 5),
         )
     }

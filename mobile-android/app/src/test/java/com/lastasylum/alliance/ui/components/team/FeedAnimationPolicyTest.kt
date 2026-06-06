@@ -68,17 +68,49 @@ class FeedAnimationPolicyTest {
     }
 
     @Test
-    fun forumTopicAnimationTier_warmActivityUsesLite() {
+    fun forumTopicAnimationTier_fullForTopVisibleRead() {
+        assertEquals(
+            FeedAnimationTier.Full,
+            forumTopicAnimationTier(
+                unread = false,
+                isVisible = true,
+                visibleUnreadRank = -1,
+                visibleReadRank = 0,
+                listSize = 10,
+                sectionActive = true,
+                overlayMode = false,
+            ),
+        )
+    }
+
+    @Test
+    fun forumTopicAnimationTier_liteForVisibleReadRank4() {
         assertEquals(
             FeedAnimationTier.Lite,
             forumTopicAnimationTier(
                 unread = false,
                 isVisible = true,
                 visibleUnreadRank = -1,
+                visibleReadRank = 4,
                 listSize = 10,
                 sectionActive = true,
                 overlayMode = false,
-                warmActivity = true,
+            ),
+        )
+    }
+
+    @Test
+    fun forumTopicAnimationTier_offWhenReadNotVisible() {
+        assertEquals(
+            FeedAnimationTier.Off,
+            forumTopicAnimationTier(
+                unread = false,
+                isVisible = false,
+                visibleUnreadRank = -1,
+                visibleReadRank = 0,
+                listSize = 10,
+                sectionActive = true,
+                overlayMode = false,
             ),
         )
     }
