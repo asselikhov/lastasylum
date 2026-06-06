@@ -107,7 +107,12 @@ class ChatRoomPagingSync(
             }
             if (loadResult == null) {
                 if (overlayEmptyLoad) {
-                    host.applyOverlayLoadTimeout(host.overlayTimeoutString())
+                    val snapshot = host.stateSnapshot()
+                    if (snapshot.rooms.isNotEmpty() && snapshot.messages.isEmpty()) {
+                        host.applyOverlayLoadTimeout("")
+                    } else {
+                        host.applyOverlayLoadTimeout(host.overlayTimeoutString())
+                    }
                 }
                 return@launch
             }
@@ -156,7 +161,11 @@ class ChatRoomPagingSync(
                         isSelectedRoom &&
                         host.stateSnapshot().messages.isEmpty()
                     ) {
-                        host.applyPagingError(host.loadErrorString(e))
+                        if (host.stateSnapshot().rooms.isEmpty()) {
+                            host.applyPagingError(host.loadErrorString(e))
+                        } else {
+                            host.applyOverlayLoadTimeout("")
+                        }
                     }
                 }
         }

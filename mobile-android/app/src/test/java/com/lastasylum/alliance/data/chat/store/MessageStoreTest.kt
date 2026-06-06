@@ -6,6 +6,7 @@ import com.lastasylum.alliance.data.chat.ChatMessage
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,6 +34,26 @@ class MessageStoreTest {
         store.upsertMessages(userId, roomId, listOf(older, newer))
         val observed = store.observeMessages(userId, roomId).first()
         assertEquals("507f1f77bcf86cd799439099", observed.first()._id)
+    }
+
+    @Test
+    fun isRoomKnown_trueAfterUpsertRooms() = runBlocking {
+        val roomId = "room-known"
+        val userId = "user1"
+        store.upsertRooms(
+            userId,
+            listOf(
+                com.lastasylum.alliance.data.chat.ChatRoomDto(
+                    id = roomId,
+                    allianceId = "pt:team",
+                    title = "Hub",
+                    sortOrder = 1,
+                    unreadCount = 0,
+                    lastReadMessageId = null,
+                ),
+            ),
+        )
+        assertTrue(store.isRoomKnown(userId, roomId))
     }
 
     @Test

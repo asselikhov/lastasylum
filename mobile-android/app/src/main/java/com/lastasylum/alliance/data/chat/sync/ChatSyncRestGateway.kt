@@ -23,6 +23,7 @@ interface ChatSyncRestGateway {
         roomId: String,
         gameEventAlert: String?,
         clientMessageId: String,
+        maxAttempts: Int = 3,
     ): Result<ChatMessage>
 }
 
@@ -46,10 +47,12 @@ fun ChatRepository.asSyncGateway(): ChatSyncRestGateway = object : ChatSyncRestG
         roomId: String,
         gameEventAlert: String?,
         clientMessageId: String,
+        maxAttempts: Int,
     ): Result<ChatMessage> = this@asSyncGateway.sendOverlayRaidCommandFast(
         text = text,
         roomId = roomId,
         gameEventAlert = gameEventAlert,
         clientMessageId = clientMessageId,
+        maxAttempts = maxAttempts,
     )
 }

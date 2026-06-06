@@ -95,6 +95,16 @@ class ChatSyncEngineTest {
         assertEquals(1, fakeGateway.sendCalls.get())
     }
 
+    @Test
+    fun loadRoomSnapshotFromStore_returnsEmptySnapshotForKnownRoomWithoutMessages() = runBlocking {
+        messageStore.upsertRooms(userId, listOf(sampleRoom(roomId)))
+
+        val snapshot = engine.loadRoomSnapshotFromStore(userId, roomId)
+
+        assertTrue(snapshot != null)
+        assertTrue(snapshot!!.messages.isEmpty())
+    }
+
     private fun sampleRoom(id: String) = ChatRoomDto(
         id = id,
         allianceId = "pt:team",
@@ -147,6 +157,7 @@ class ChatSyncEngineTest {
             roomId: String,
             gameEventAlert: String?,
             clientMessageId: String,
+            maxAttempts: Int,
         ): Result<ChatMessage> {
             sendCalls.incrementAndGet()
             return sendResult

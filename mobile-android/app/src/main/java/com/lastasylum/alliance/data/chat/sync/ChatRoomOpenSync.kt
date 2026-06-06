@@ -9,7 +9,6 @@ import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
 import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.filterMessagesForRoom
 import com.lastasylum.alliance.ui.chat.rebuildMessageIdIndex
-import kotlinx.coroutines.Job
 
 /** Open/select room: cache hydrate, realtime subscribe, first page fetch. */
 class ChatRoomOpenSync(
@@ -108,13 +107,45 @@ class ChatRoomOpenSync(
             )
         }
         if (!host.isActiveSelectedRoom(rid)) return
+
+        val storeSnapshot = if (host.currentUserId.isNotBlank()) {
+            syncEngine.loadRoomSnapshotFromStore(host.currentUserId, rid)
+        } else {
+            null
+        }
+        val roomKnownLocally = storeSnapshot != null || rooms.any { it.id == rid }
+        var hadCachedMessagesLocal = hadCachedMessages || storeSnapshot != null || roomKnownLocally
+
+        if (storeSnapshot != null) {
+            if (storeSnapshot.messages.isNotEmpty()) {
+                val filteredStore = host.messagesWithoutLocallyRemoved(
+                    host.filterMessagesForRoom(storeSnapshot.messages, rid),
+                )
+                if (filteredStore.isNotEmpty()) {
+                    host.updateRoomMessageCache(
+                        rid,
+                        ChatRoomMessageCache(
+                            messages = host.capMessagesForMemory(filteredStore),
+                            hasMoreOlder = storeSnapshot.hasMoreOlder,
+                        ),
+                    )
+                    ChatSessionCache.updateMessages(rid, host.roomMessageCache(rid)!!.messages)
+                }
+            } else {
+                host.updateRoomMessageCache(
+                    rid,
+                    ChatRoomMessageCache(messages = emptyList(), hasMoreOlder = storeSnapshot.hasMoreOlder),
+                )
+            }
+        }
+
         val isGlobalRoom = host.isGlobalChatRoom(rid, rooms)
         val hasTeam = host.loadTeamProfileGate(
             isGlobalRoom = isGlobalRoom,
-            hadCachedMessages = hadCachedMessages,
+            hadCachedMessages = hadCachedMessagesLocal,
             messagesAlreadyInState = messagesAlreadyInState,
         )
-        if (!hadCachedMessages) {
+        if (!hadCachedMessagesLocal) {
             if (!host.isActiveSelectedRoom(rid)) return
             host.applyOpenRoomLoadingState(rid, rooms, hasTeam)
         } else {
@@ -130,62 +161,70 @@ class ChatRoomOpenSync(
             }
         }
         host.connectRealtime(rooms)
-        var hadCachedMessagesLocal = hadCachedMessages
-        if (!hadCachedMessagesLocal && host.currentUserId.isNotBlank()) {
-            val storeSnapshot = syncEngine.loadRoomSnapshotFromStore(host.currentUserId, rid)
-            if (storeSnapshot != null && storeSnapshot.messages.isNotEmpty()) {
-                val filteredStore = host.messagesWithoutLocallyRemoved(
-                    host.filterMessagesForRoom(storeSnapshot.messages, rid),
+
+        val cached = host.roomMessageCache(rid)
+        if (hadCachedMessagesLocal && cached != null) {
+            if (cached.messages.isNotEmpty()) {
+                rehydrateSync.rehydrateRoomMessagesFromCache(rid)
+                if (!host.isActiveSelectedRoom(rid)) return
+                val filteredCache = host.messagesWithoutLocallyRemoved(
+                    host.filterMessagesForRoom(host.roomMessageCache(rid)?.messages.orEmpty(), rid),
                 )
-                if (filteredStore.isNotEmpty()) {
+                if (host.roomMessageCache(rid)?.messages?.size != filteredCache.size) {
                     host.updateRoomMessageCache(
                         rid,
-                        ChatRoomMessageCache(
-                            messages = host.capMessagesForMemory(filteredStore),
-                            hasMoreOlder = storeSnapshot.hasMoreOlder,
-                        ),
+                        cached.copy(messages = host.capMessagesForMemory(filteredCache)),
                     )
                     ChatSessionCache.updateMessages(rid, host.roomMessageCache(rid)!!.messages)
-                    hadCachedMessagesLocal = true
                 }
-            }
-        }
-        val cached = host.roomMessageCache(rid)
-        if (hadCachedMessagesLocal && cached != null && cached.messages.isNotEmpty()) {
-            rehydrateSync.rehydrateRoomMessagesFromCache(rid)
-            if (!host.isActiveSelectedRoom(rid)) return
-            val filteredCache = host.messagesWithoutLocallyRemoved(
-                host.filterMessagesForRoom(host.roomMessageCache(rid)?.messages.orEmpty(), rid),
-            )
-            if (host.roomMessageCache(rid)?.messages?.size != filteredCache.size) {
-                host.updateRoomMessageCache(
-                    rid,
-                    cached.copy(messages = host.capMessagesForMemory(filteredCache)),
+                host.applyOpenRoomCachedState(
+                    roomId = rid,
+                    rooms = rooms,
+                    hasTeam = hasTeam,
+                    filteredCache = filteredCache,
+                    hasMoreOlder = cached.hasMoreOlder,
+                    messagesAlreadyInState = messagesAlreadyInState,
                 )
-                ChatSessionCache.updateMessages(rid, host.roomMessageCache(rid)!!.messages)
+                if (host.shouldAutoMarkReadSelectedRoom()) {
+                    host.stateSnapshot().messages.firstOrNull()?._id?.let { newestId ->
+                        host.markRoomReadUpTo(rid, newestId)
+                    }
+                }
+                pagingSync.refreshMessagesInBackground(rid, force = false)
+                host.schedulePersistChatSnapshot()
+                return
             }
+            // Known empty room: show empty state immediately, refresh in background.
             host.applyOpenRoomCachedState(
                 roomId = rid,
                 rooms = rooms,
                 hasTeam = hasTeam,
-                filteredCache = filteredCache,
+                filteredCache = emptyList(),
                 hasMoreOlder = cached.hasMoreOlder,
                 messagesAlreadyInState = messagesAlreadyInState,
             )
-            if (host.shouldAutoMarkReadSelectedRoom()) {
-                host.stateSnapshot().messages.firstOrNull()?._id?.let { newestId ->
-                    host.markRoomReadUpTo(rid, newestId)
-                }
-            }
-            pagingSync.refreshMessagesInBackground(rid, force = true)
+            host.setListDerivedEmpty()
+            pagingSync.refreshMessagesInBackground(rid, force = false)
             host.schedulePersistChatSnapshot()
             return
         }
         if (deferNetworkMessages) {
             host.setLaunchWarmupNeedsMessages(true)
-            if (host.isAllianceRaidRoom(rid)) {
-                pagingSync.refreshMessagesInBackground(rid, force = true)
-            }
+            pagingSync.refreshMessagesInBackground(rid, force = true)
+            host.schedulePersistChatSnapshot()
+            return
+        }
+        if (roomKnownLocally) {
+            host.applyOpenRoomCachedState(
+                roomId = rid,
+                rooms = rooms,
+                hasTeam = hasTeam,
+                filteredCache = emptyList(),
+                hasMoreOlder = true,
+                messagesAlreadyInState = messagesAlreadyInState,
+            )
+            host.setListDerivedEmpty()
+            pagingSync.refreshMessagesInBackground(rid, force = true)
             host.schedulePersistChatSnapshot()
             return
         }
@@ -198,12 +237,9 @@ class ChatRoomOpenSync(
                 )
             }
             .onFailure { e ->
-                if (!hadCachedMessages && host.isActiveSelectedRoom(rid)) {
+                if (!hadCachedMessagesLocal && host.isActiveSelectedRoom(rid)) {
                     host.applyOpenRoomLoadError(e.message ?: "load_failed")
                 }
             }
-        if (host.isAllianceRaidRoom(rid)) {
-            pagingSync.refreshMessagesInBackground(rid, force = true)
-        }
     }
 }

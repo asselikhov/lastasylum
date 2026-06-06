@@ -222,31 +222,36 @@ internal fun ChatViewModel.prepareOverlayRaidQuickCommandOutgoingImpl(
         val pending = pendingId.trim()
         if (rid.isEmpty() || body.isEmpty() || pending.isEmpty()) return
         if (messageIdIndex.containsKey(pending) || knownMessageIds.contains(pending)) return
-        if (vmState.value.selectedRoomId != rid) {
-            selectRoom(rid)
-        }
-        vmScope.launch {
-            val enqueue = runCatching {
-                withContext(Dispatchers.IO) {
-                    chatOutbox.enqueueSend(
-                        userId = currentUserId,
-                        roomId = rid,
-                        text = body,
-                        replyToMessageId = null,
-                        attachments = null,
-                        excavationAlert = false,
-                        source = OutboxSendSource.OverlayRaid,
-                        currentUserId = currentUserId,
-                        currentUserRole = currentUserRole,
-                        senderUsername = "",
-                        pendingMessageId = pending,
-                    )
-                }
-            }.getOrNull() ?: return@launch
-            insertOptimisticOutgoingSynchronously(
-                enqueue.optimisticMessage.copy(_id = pending),
-                clearComposer = false,
-            )
+        ensureSelectedRoomForOverlayOutgoing(rid)
+        insertOptimisticOutgoingSynchronously(
+            ChatMessage(
+                _id = pending,
+                allianceId = "",
+                roomId = rid,
+                senderId = currentUserId,
+                senderUsername = "",
+                senderRole = currentUserRole,
+                text = body,
+                createdAt = java.time.Instant.now().toString(),
+            ),
+            clearComposer = false,
+        )
+        vmScope.launch(Dispatchers.IO) {
+            runCatching {
+                chatOutbox.enqueueSend(
+                    userId = currentUserId,
+                    roomId = rid,
+                    text = body,
+                    replyToMessageId = null,
+                    attachments = null,
+                    excavationAlert = false,
+                    source = OutboxSendSource.OverlayRaid,
+                    currentUserId = currentUserId,
+                    currentUserRole = currentUserRole,
+                    senderUsername = "",
+                    pendingMessageId = pending,
+                )
+            }
         }
     }
 
@@ -262,11 +267,22 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
         if (rid.isEmpty() || body.isEmpty() || pending.isEmpty()) {
             return Result.failure(IllegalStateException("invalid_overlay_raid_send"))
         }
-        if (vmState.value.selectedRoomId != rid) {
-            withContext(Dispatchers.Main.immediate) { selectRoom(rid) }
+        withContext(Dispatchers.Main.immediate) {
+            ensureSelectedRoomForOverlayOutgoing(rid)
         }
         if (messageIdIndex.containsKey(pending) || knownMessageIds.contains(pending)) {
             return sendOverlayRaidQuickCommandViaOutboxImpl(pending)
+                .also { result ->
+                    result.onSuccess { sent ->
+                        withContext(Dispatchers.Main.immediate) {
+                            confirmPendingOutgoingMessage(pending, sent)
+                        }
+                    }.onFailure {
+                        withContext(Dispatchers.Main.immediate) {
+                            removePendingOutgoingMessage(pending)
+                        }
+                    }
+                }
         }
         val enqueue = runCatching {
             withContext(Dispatchers.IO) {

@@ -115,6 +115,7 @@ class ChatSyncEngine(
                     roomId = entry.roomId,
                     gameEventAlert = null,
                     clientMessageId = entry.clientMessageId,
+                    maxAttempts = 1,
                 )
             OutboxSendSource.ChatUi ->
                 repository.sendMessageWithRetriesForChatUi(
@@ -154,11 +155,14 @@ class ChatSyncEngine(
         val rid = roomId.trim()
         if (uid.isEmpty() || rid.isEmpty()) return null
         val messages = messageStore.getMessages(uid, rid)
-        if (messages.isEmpty()) return null
-        return StoredRoomSnapshot(
-            messages = messages,
-            hasMoreOlder = messageStore.getHasMoreOlderHint(uid, rid),
-        )
+        val hasMoreOlder = messageStore.getHasMoreOlderHint(uid, rid)
+        if (messages.isNotEmpty()) {
+            return StoredRoomSnapshot(messages = messages, hasMoreOlder = hasMoreOlder)
+        }
+        if (messageStore.isRoomKnown(uid, rid)) {
+            return StoredRoomSnapshot(messages = emptyList(), hasMoreOlder = hasMoreOlder)
+        }
+        return null
     }
 
     suspend fun bootstrapLoadRooms(userId: String): Result<List<ChatRoomDto>> {

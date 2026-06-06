@@ -85,15 +85,17 @@ class ChatRestRepository(
         return Result.failure(last ?: IllegalStateException("send_failed"))
     }
 
-    /** Overlay quick commands: match [sendMessageWithRetries] backoff; socket send is parallel in [ChatRepository]. */
+    /** Overlay quick commands: single attempt on hot path; retries handled by outbox resume. */
     suspend fun sendOverlayRaidCommandFast(
         text: String,
         roomId: String,
         gameEventAlert: String? = null,
         clientMessageId: String = java.util.UUID.randomUUID().toString(),
+        maxAttempts: Int = 3,
     ): Result<ChatMessage> {
         var last: Throwable? = null
-        repeat(3) { attempt ->
+        val attempts = maxAttempts.coerceIn(1, 3)
+        repeat(attempts) { attempt ->
             val r = sendMessage(
                 text = text,
                 roomId = roomId,
@@ -102,8 +104,8 @@ class ChatRestRepository(
             )
             if (r.isSuccess) return r
             last = r.exceptionOrNull()
-            if (attempt < 2) {
-                delay(listOf(120L, 350L)[attempt])
+            if (attempt < attempts - 1) {
+                delay(listOf(120L, 350L)[attempt.coerceAtMost(1)])
             }
         }
         return Result.failure(last ?: IllegalStateException("send_failed"))

@@ -4454,7 +4454,7 @@ class CombatOverlayService : Service() {
             showOverlayHudPane(OverlayHudPane.Chat)
         }
         if (vm.state.value.selectedRoomId != rid) {
-            vm.selectRoom(rid)
+            vm.ensureSelectedRoomForOverlayOutgoing(rid)
         }
         val pending = pendingId?.trim().orEmpty()
         if (pending.isNotEmpty()) {

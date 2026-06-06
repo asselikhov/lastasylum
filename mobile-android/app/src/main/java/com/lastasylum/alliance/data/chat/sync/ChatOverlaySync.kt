@@ -74,6 +74,25 @@ class ChatOverlaySync(
                 host.refreshPinBarForSelectedRoom()
                 return
             }
+            if (overlayHubRoomsReady(host.stateSnapshot().rooms)) {
+                val hubId = host.allianceHubRoomId(host.stateSnapshot().rooms) ?: return
+                host.updateState { st ->
+                    st.copy(
+                        isLoading = false,
+                        isRoomsLoading = false,
+                        error = null,
+                        selectedRoomId = hubId,
+                        rooms = st.rooms.ifEmpty { host.stateSnapshot().rooms },
+                        messages = if (st.selectedRoomId == hubId) st.messages else emptyList(),
+                    )
+                }
+                if (host.stateSnapshot().messages.isEmpty()) {
+                    host.setListDerivedEmpty()
+                }
+                scheduleOverlayRoomHistorySync(hubId)
+                host.refreshPinBarForSelectedRoom()
+                return
+            }
         }
         val roomsRaw = ChatSessionCache.getFreshRooms()
             ?: host.stateSnapshot().rooms.takeIf { it.isNotEmpty() }
@@ -118,6 +137,25 @@ class ChatOverlaySync(
                 host.knownMessageIds().clear()
                 host.messageIdIndex().clear()
                 host.setListDerivedEmpty()
+            }
+            if (rooms.any { it.id == roomId }) {
+                host.updateState { st ->
+                    st.copy(
+                        isLoading = false,
+                        isRoomsLoading = false,
+                        error = null,
+                        selectedRoomId = roomId,
+                        messages = if (switchingRoom) emptyList() else st.messages,
+                        rooms = if (st.rooms.isEmpty()) rooms else st.rooms,
+                        hasMoreOlder = cached?.hasMoreOlder ?: st.hasMoreOlder,
+                    )
+                }
+                host.setListDerivedEmpty()
+                if (host.overlayChatPanelVisible()) {
+                    scheduleOverlayRoomHistorySync(roomId)
+                }
+                host.refreshPinBarForSelectedRoom()
+                return
             }
             if (host.isActiveSelectedRoom(roomId) || snapshot.selectedRoomId.isNullOrBlank()) {
                 host.updateState { st ->
@@ -176,14 +214,12 @@ class ChatOverlaySync(
             host.messagesBelongToRoom(st.messages, hubId)
     }
 
-    fun overlayHubRoomsReady(rooms: List<ChatRoomDto>): Boolean {
-        if (rooms.isEmpty()) return false
-        val hubId = host.allianceHubRoomId(rooms) ?: return false
-        val st = host.stateSnapshot()
-        return !st.isRoomsLoading &&
-            st.error.isNullOrBlank() &&
-            (st.selectedRoomId == hubId || st.selectedRoomId.isNullOrBlank())
-    }
+    fun overlayHubRoomsReady(rooms: List<ChatRoomDto>): Boolean =
+        overlayHubRoomsReadyForState(
+            rooms = rooms,
+            hubId = host.allianceHubRoomId(rooms),
+            state = host.stateSnapshot(),
+        )
 
     fun overlayRaidAlreadyReady(rooms: List<ChatRoomDto>): Boolean {
         val raidId = host.allianceRaidRoomId(rooms) ?: return false

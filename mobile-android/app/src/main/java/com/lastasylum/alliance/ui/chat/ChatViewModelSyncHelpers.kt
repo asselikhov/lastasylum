@@ -25,7 +25,8 @@ internal suspend fun ChatViewModel.loadTeamProfileGateForOpen(
     isGlobalRoom -> loadTeamProfileGate()
     hadCachedMessages && cachedTeamProfileGate != null -> cachedTeamProfileGate == true
     messagesAlreadyInState -> vmState.value.hasTeamProfileForGlobalChat
-    else -> loadTeamProfileGate()
+    cachedTeamProfileGate != null -> cachedTeamProfileGate == true
+    else -> vmState.value.hasTeamProfileForGlobalChat
 }
 
 internal fun ChatViewModel.applyOpenRoomLoadingState(

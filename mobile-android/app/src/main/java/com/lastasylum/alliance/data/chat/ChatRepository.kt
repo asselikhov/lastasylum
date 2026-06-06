@@ -104,6 +104,7 @@ class ChatRepository(
         roomId: String,
         gameEventAlert: String? = null,
         clientMessageId: String? = null,
+        maxAttempts: Int = 3,
     ): Result<ChatMessage> {
         val id = clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
             ?: java.util.UUID.randomUUID().toString()
@@ -118,6 +119,7 @@ class ChatRepository(
             roomId = roomId,
             gameEventAlert = gameEventAlert,
             clientMessageId = id,
+            maxAttempts = maxAttempts,
         )
     }
 

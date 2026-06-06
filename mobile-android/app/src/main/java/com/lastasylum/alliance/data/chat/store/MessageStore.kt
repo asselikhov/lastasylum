@@ -46,6 +46,14 @@ class MessageStore(
             roomDao.getByUser(userId).mapNotNull { ChatStoreJson.roomFromJson(it.payloadJson) }
         }
 
+    /** True when the room row exists in Room (even with zero messages). */
+    suspend fun isRoomKnown(userId: String, roomId: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val rid = roomId.trim()
+            userId.isNotBlank() && rid.isNotEmpty() &&
+                roomDao.getByUser(userId).any { it.roomId == rid }
+        }
+
     suspend fun upsertMessages(
         userId: String,
         roomId: String,

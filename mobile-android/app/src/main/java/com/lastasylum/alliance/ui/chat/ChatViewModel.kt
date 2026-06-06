@@ -1016,20 +1016,29 @@ class ChatViewModel(
         val snapshot = kotlinx.coroutines.runBlocking(Dispatchers.IO) {
             chatSyncEngine.loadRoomSnapshotFromStore(currentUserId, roomId)
         } ?: return null
-        if (snapshot.messages.isEmpty()) return null
-        val scrubbed = filterMessagesForRoom(
-            messagesWithoutLocallyRemoved(snapshot.messages),
-            roomId,
-        )
+        val scrubbed = if (snapshot.messages.isEmpty()) {
+            emptyList()
+        } else {
+            filterMessagesForRoom(
+                messagesWithoutLocallyRemoved(snapshot.messages),
+                roomId,
+            )
+        }
         val capped = capNewestFirst(scrubbed, CHAT_PAGE_SIZE)
         return ChatRoomMessageCache(
             messages = capped,
             hasMoreOlder = snapshot.hasMoreOlder,
         ).also { entry ->
             roomMessageCache[roomId] = entry
-            ChatSessionCache.updateMessages(roomId, capped)
+            if (capped.isNotEmpty()) {
+                ChatSessionCache.updateMessages(roomId, capped)
+            }
         }
     }
+
+    /** Select raid/hub for overlay outgoing without full openRoom network gate. */
+    internal fun ensureSelectedRoomForOverlayOutgoing(roomId: String) =
+        ensureSelectedRoomForOverlayOutgoingImpl(roomId)
 
     /**
      * Синхронно подставить комнаты/ленту из RAM, [ChatSessionCache] или [LaunchDiskCache]

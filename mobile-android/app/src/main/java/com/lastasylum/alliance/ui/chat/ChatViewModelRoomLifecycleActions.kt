@@ -12,6 +12,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.chat.ChatTeamRoomsMembership
+import com.lastasylum.alliance.data.chat.sync.applyOverlayLoadTimeoutPolicy
 import com.lastasylum.alliance.data.chat.sync.CHAT_INITIAL_PAGE_SIZE
 import com.lastasylum.alliance.data.chat.sync.CHAT_PAGE_SIZE
 import com.lastasylum.alliance.data.chat.sync.CHAT_ROOMS_SYNC_ON_RESUME_TTL_MS
@@ -287,17 +288,8 @@ internal fun ChatViewModel.scheduleBootstrapImpl(
                     )
                 }
                 if (completed == null && overlayChatPanelVisible) {
-                    vmState.update {
-                        if (it.isLoading || it.isRoomsLoading) {
-                            it.copy(
-                                isLoading = false,
-                                isRoomsLoading = false,
-                                error = it.error ?: res.getString(R.string.overlay_panel_load_timeout),
-                            )
-                        } else {
-                            it
-                        }
-                    }
+                    val timeoutMessage = res.getString(R.string.overlay_panel_load_timeout)
+                    vmState.update { applyOverlayLoadTimeoutPolicy(it, timeoutMessage) }
                 }
             } else {
                 bootstrap(
@@ -715,10 +707,11 @@ internal fun ChatViewModel.selectRoomImpl(roomId: String) {
             )
         }
         val hasCachedMessages = cachedMessages.isNotEmpty()
+        val roomKnown = vmState.value.rooms.any { it.id == roomId }
         vmState.value = vmState.value.copy(
             selectedRoomId = roomId,
             messages = cachedMessages,
-            isLoading = !hasCachedMessages,
+            isLoading = !hasCachedMessages && !roomKnown,
             hasMoreOlder = cached?.hasMoreOlder ?: true,
             isLoadingOlder = false,
             error = null,
@@ -757,10 +750,19 @@ internal fun ChatViewModel.selectRoomImpl(roomId: String) {
             openRoom(
                 roomId = roomId,
                 rooms = vmState.value.rooms,
-                hadCachedMessages = cached != null,
+                hadCachedMessages = cached != null || roomKnown,
                 messagesAlreadyInState = hasCachedMessages,
             )
         }
+    }
+
+internal fun ChatViewModel.ensureSelectedRoomForOverlayOutgoingImpl(roomId: String) {
+        val rid = roomId.trim()
+        if (rid.isEmpty() || vmState.value.selectedRoomId == rid) return
+        vmState.update { it.copy(selectedRoomId = rid, error = null) }
+        roomStoreBindings.bindSelectedRoom(rid)
+        bindOutboxObservers(rid)
+        _otherReadUptoMessageId.value = otherReadUptoByRoom[rid]
     }
 
 internal fun ChatViewModel.clearUnreadForRoomImpl(

@@ -4,6 +4,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatRoomDto
+import com.lastasylum.alliance.data.chat.sync.applyOverlayLoadTimeoutPolicy
 import com.lastasylum.alliance.data.chat.sync.ChatRoomMessageCache
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.CoroutineScope
@@ -116,11 +117,7 @@ internal class ChatViewModelSyncBundle(
             vm.vmState.update { it.copy(isLoading = false, error = errorMessage) }
         }
         override fun applyOverlayLoadTimeout(message: String) {
-            vm.vmState.update {
-                if (it.isLoading || it.isRoomsLoading) {
-                    it.copy(isLoading = false, isRoomsLoading = false, error = it.error ?: message)
-                } else it
-            }
+            vm.vmState.update { applyOverlayLoadTimeoutPolicy(it, message) }
         }
         override fun markRoomReadUpTo(roomId: String, messageId: String) {
             scope.launch { vm.markRoomReadUpTo(roomId, messageId) }
