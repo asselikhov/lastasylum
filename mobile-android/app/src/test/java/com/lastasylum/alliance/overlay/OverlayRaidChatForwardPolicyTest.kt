@@ -67,6 +67,19 @@ class OverlayRaidChatForwardPolicyTest {
     }
 
     @Test
+    fun appliesForPeerMessageWhenRaidRoomSelectedEvenIfPanelHidden() {
+        assertTrue(
+            OverlayRaidChatForwardPolicy.shouldApplyToVisibleChat(
+                selectedRoomId = "room-raid",
+                messageRoomId = "room-raid",
+                overlayPanelVisible = false,
+                isOwnQuickCommandResponse = false,
+                isPeerMessage = true,
+            ),
+        )
+    }
+
+    @Test
     fun trimsWhitespaceBeforeCompare() {
         assertTrue(
             OverlayRaidChatForwardPolicy.shouldApplyToVisibleChat(

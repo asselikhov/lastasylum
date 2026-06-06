@@ -117,6 +117,16 @@ class ChatUnreadCountsTest {
     }
 
     @Test
+    fun overlayAllianceHubBadge_ignoresRaidRoomUnread() {
+        val rooms = listOf(
+            room(id = "hub", sortOrder = 1, allianceId = "pt:team1", unread = 2),
+            room(id = "raid", sortOrder = 2, allianceId = "pt:team1", title = "Рейд", unread = 7),
+        )
+        assertEquals(2, ChatUnreadCounts.overlayAllianceHubBadge(rooms, emptyMap()))
+        assertEquals(9, ChatUnreadCounts.tabBadgeTotal(rooms))
+    }
+
+    @Test
     fun allianceHubUnread_allianceNameScope() {
         val rooms = listOf(
             room(

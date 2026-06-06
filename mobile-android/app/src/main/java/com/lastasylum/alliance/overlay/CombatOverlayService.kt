@@ -2040,7 +2040,6 @@ class CombatOverlayService : Service() {
 
     private fun refreshOverlayNewsBadgeOnly() {
         if (!isInGameOverlayUiActive()) return
-        inboxBadgeCoordinator.clearNewsOptimistic()
         if (inboxBadgeCoordinator.shouldDeferNewsReconcile()) return
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
@@ -2522,12 +2521,14 @@ class CombatOverlayService : Service() {
         val vm = resolveChatViewModel() ?: return
         vm.stashOverlayRealtimeMessage(msg)
         if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
-        if (!overlayChatTeamPanelVisible) return
         val selectedId = vm.state.value.selectedRoomId?.trim().orEmpty()
         val msgRoomId = msg.roomId.trim()
-        val applyViaOverlay = !activityChatViewModelHandlesUnread() ||
-            (selectedId.isNotEmpty() && selectedId == msgRoomId)
-        if (!applyViaOverlay) return
+        val raidId = resolveOverlayRaidRoomId()?.trim().orEmpty()
+        val isRaidMessage = raidId.isNotEmpty() && msgRoomId == raidId
+        val raidSelected = isRaidMessage && selectedId.isNotEmpty() && selectedId == msgRoomId
+        val applyViaOverlayPanel = overlayChatTeamPanelVisible &&
+            (!activityChatViewModelHandlesUnread() || selectedId == msgRoomId)
+        if (!raidSelected && !applyViaOverlayPanel) return
         vm.applyOverlayChatMessageFromSocket(msg)
     }
 
@@ -5009,6 +5010,7 @@ class CombatOverlayService : Service() {
     private suspend fun ensureOverlayRaidRoomReadyForSend(): String? {
         resolveCachedRaidRoomIdForSend()?.let { id ->
             scheduleOverlayRaidRealtimeWarm(id)
+            rememberOverlayRaidRoomId(id)
             return id
         }
         val container = AppContainer.from(this@CombatOverlayService)
@@ -5024,7 +5026,10 @@ class CombatOverlayService : Service() {
                 raidId = container.chatRepository.ensureRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
             }
         }
-        raidId?.let { scheduleOverlayRaidRealtimeWarm(it) }
+        raidId?.let {
+            scheduleOverlayRaidRealtimeWarm(it)
+            rememberOverlayRaidRoomId(it)
+        }
         return raidId
     }
 
@@ -6874,28 +6879,40 @@ class CombatOverlayService : Service() {
         fun refreshStatusHudAfterMarkAll() {
             val service = runningInstance ?: return
             service.mainHandler.post {
-                service.inboxBadgeCoordinator.clearForumOptimistic()
                 service.clearHubUnreadOptimisticState()
                 service.refreshOverlayStatusHudData(force = true)
             }
         }
 
-        /** Main app read news/forum — refresh overlay HUD chips (mirrors hub badge sync). */
+        /** Main app read news/forum — refresh overlay HUD chips without clearing optimistic floors first. */
         fun notifyOverlayTeamInboxChanged(news: Boolean = false, forum: Boolean = false) {
             val service = runningInstance ?: return
             service.mainHandler.post {
                 if (news) {
                     OverlayGameStatusHudRefresh.invalidateNewsCache()
-                    service.inboxBadgeCoordinator.clearNewsOptimistic()
                     service.refreshOverlayNewsBadgeOnly()
                 }
                 if (forum) {
                     OverlayGameStatusHudRefresh.invalidateForumCache()
-                    service.inboxBadgeCoordinator.clearForumOptimistic()
                     service.refreshOverlayForumBadgeOnly()
                 }
             }
         }
+
+        /** Forum read/mark sync from app — merge without optimistic floor wipe. */
+        fun refreshOverlayForumBadgeFromApp() {
+            val service = runningInstance ?: return
+            service.mainHandler.post {
+                OverlayGameStatusHudRefresh.invalidateForumCache()
+                service.refreshOverlayForumBadgeOnly()
+            }
+        }
+
+        fun currentAllianceHubBadgeDisplayed(): Int =
+            runningInstance?.overlayStatusHudFlow?.value?.allianceChatUnread ?: 0
+
+        fun currentHubUnreadOptimisticFloor(): Int =
+            runningInstance?.hubUnreadOptimisticFloor ?: 0
 
         /** Push client forum unread to overlay HUD without clearing optimistic floors (topic list sync). */
         fun syncOverlayForumBadgeFromTopics(topics: List<com.lastasylum.alliance.data.teams.TeamForumTopicDto>) {

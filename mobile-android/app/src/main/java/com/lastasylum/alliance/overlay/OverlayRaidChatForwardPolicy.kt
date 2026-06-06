@@ -7,11 +7,14 @@ internal object OverlayRaidChatForwardPolicy {
         messageRoomId: String,
         overlayPanelVisible: Boolean = false,
         isOwnQuickCommandResponse: Boolean = false,
+        isPeerMessage: Boolean = false,
     ): Boolean {
         val rid = messageRoomId.trim()
         if (rid.isEmpty()) return false
         val selected = selectedRoomId?.trim().orEmpty()
         if (rid == selected) return true
-        return overlayPanelVisible && isOwnQuickCommandResponse
+        if (overlayPanelVisible && isOwnQuickCommandResponse) return true
+        if (overlayPanelVisible && isPeerMessage && selected == rid) return true
+        return false
     }
 }

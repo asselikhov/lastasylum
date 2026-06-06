@@ -14,7 +14,7 @@ describe('ChatGateway fanout dedup', () => {
   let gateway: ChatGateway;
   const emit = jest.fn();
   const to = jest.fn().mockReturnValue({ emit });
-  const listOverlayIngameTeammateIds = jest
+  const listSquadTeammateUserIdsForRaidFanout = jest
     .fn()
     .mockResolvedValue(['t1', 't2', 't3']);
 
@@ -39,7 +39,7 @@ describe('ChatGateway fanout dedup', () => {
             listActiveUserIdsForChatRoomAccess: jest
               .fn()
               .mockResolvedValue(['t1', 't2', 't3']),
-            listOverlayIngameTeammateIds,
+            listSquadTeammateUserIdsForRaidFanout,
             resolveTeamDisplayNameForGameEventPush: jest
               .fn()
               .mockResolvedValue('Team'),

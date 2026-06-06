@@ -66,3 +66,24 @@ fun displayedUnreadCount(
 /** @see displayedUnreadCount */
 fun reconcileDisplayedUnread(serverUnread: Int, previouslyDisplayed: Int): Int =
     displayedUnreadCount(serverUnread, previouslyDisplayed, rawServerUnread = serverUnread)
+
+/** Unified inbox badge display: effective unread + optimistic floor + anti-flicker previous. */
+fun computeDisplayedUnread(
+    serverUnread: Int,
+    lastReadMessageId: String?,
+    localLastReadMessageId: String?,
+    optimisticFloor: Int = 0,
+    previouslyDisplayed: Int = 0,
+): Int {
+    val effective = effectiveUnreadCount(
+        serverUnread = serverUnread,
+        lastReadMessageId = lastReadMessageId,
+        localLastReadMessageId = localLastReadMessageId,
+    )
+    return displayedUnreadCount(
+        effectiveUnread = effective,
+        previouslyDisplayed = previouslyDisplayed,
+        rawServerUnread = serverUnread,
+        optimisticFloor = optimisticFloor,
+    )
+}

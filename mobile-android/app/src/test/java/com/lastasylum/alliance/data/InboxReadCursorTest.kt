@@ -132,4 +132,28 @@ class InboxReadCursorTest {
     fun reconcileDisplayedUnread_clearsWhenServerZero() {
         assertEquals(0, reconcileDisplayedUnread(serverUnread = 0, previouslyDisplayed = 5))
     }
+
+    @Test
+    fun computeDisplayedUnread_mergesLocalCursorAndOptimisticFloor() {
+        assertEquals(
+            2,
+            computeDisplayedUnread(
+                serverUnread = 0,
+                lastReadMessageId = null,
+                localLastReadMessageId = null,
+                optimisticFloor = 2,
+                previouslyDisplayed = 1,
+            ),
+        )
+        assertEquals(
+            0,
+            computeDisplayedUnread(
+                serverUnread = 5,
+                lastReadMessageId = "000000000000000000000040",
+                localLastReadMessageId = "000000000000000000000100",
+                optimisticFloor = 3,
+                previouslyDisplayed = 4,
+            ),
+        )
+    }
 }

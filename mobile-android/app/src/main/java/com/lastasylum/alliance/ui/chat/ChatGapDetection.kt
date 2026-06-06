@@ -5,6 +5,9 @@ import com.lastasylum.alliance.data.isObjectIdNewer
 /** Max ObjectId timestamp gap before we assume missed messages and force REST reconcile. */
 internal const val CHAT_GAP_RECONCILE_THRESHOLD_MS = 120_000L
 
+/** Raid room: shorter gap window — overlay stash + quick commands need faster reconcile. */
+internal const val RAID_GAP_RECONCILE_THRESHOLD_MS = 30_000L
+
 internal fun incomingMessageFingerprint(
     senderId: String,
     text: String,
@@ -32,11 +35,12 @@ internal fun shouldTriggerGapReconcile(
     visibleNewestId: String?,
     incomingId: String?,
     knownMessageIds: Set<String>,
+    thresholdMs: Long = CHAT_GAP_RECONCILE_THRESHOLD_MS,
 ): Boolean {
     val newest = visibleNewestId?.trim().orEmpty()
     val incoming = incomingId?.trim().orEmpty()
     if (newest.isEmpty() || incoming.isEmpty()) return false
     if (incoming in knownMessageIds) return false
     if (!isObjectIdNewer(incoming, newest)) return false
-    return objectIdTimestampGapMs(newest, incoming) >= CHAT_GAP_RECONCILE_THRESHOLD_MS
+    return objectIdTimestampGapMs(newest, incoming) >= thresholdMs
 }

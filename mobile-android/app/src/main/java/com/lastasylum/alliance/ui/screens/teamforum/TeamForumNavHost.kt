@@ -469,20 +469,13 @@ private fun TeamForumListRoute(
     fun applyTopicRows(rows: List<TeamForumTopicDto>) {
         topics.clear()
         hydrateReadCursorsFromTopics(rows)
-        val patchedRows = rows.map { topic ->
-            if (effectiveTopicUnread(topic) == 0 && topic.unreadCount > 0) {
-                topic.copy(unreadCount = 0)
-            } else {
-                topic
-            }
-        }
-        topics.addAll(patchedRows)
-        patchedRows.forEach { t ->
+        topics.addAll(rows)
+        rows.forEach { t ->
             topicTitles[t.id] = t.title
             topicSnapshots[t.id] = t
         }
-        onForumTopicsSynced(patchedRows)
-        val staleReads = patchedRows.mapNotNull { topic ->
+        onForumTopicsSynced(rows)
+        val staleReads = rows.mapNotNull { topic ->
             if (topic.unreadCount > 0 && effectiveTopicUnread(topic) == 0) {
                 lastReadByTopic[topic.id]?.let { topic.id to it }
             } else {
@@ -557,6 +550,16 @@ private fun TeamForumListRoute(
                 app.userSettingsPreferences,
                 uid,
             )
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                ReadCursorSession.syncAllInboxReadCursors(
+                    usersRepository = app.usersRepository,
+                    teamsRepository = teamsRepository,
+                    chatRepository = app.chatRepository,
+                    chatRoomPreferences = app.chatRoomPreferences,
+                    teamForumPreferences = forumPrefs,
+                    userSettingsPreferences = app.userSettingsPreferences,
+                )
+            }
         }
         reload()
     }
@@ -576,11 +579,7 @@ private fun TeamForumListRoute(
                 messageCount = row.messageCount + 1,
                 lastMessageAt = java.time.Instant.now().toString(),
             )
-            topics[idx] = if (effectiveTopicUnread(bumped) == 0) {
-                bumped.copy(unreadCount = 0)
-            } else {
-                bumped
-            }
+            topics[idx] = bumped
             onForumTopicsSynced(topics.toList())
         }
     }
@@ -1366,7 +1365,7 @@ private fun TeamForumTopicChatRoute(
 
     fun notifyForumInboxAfterRead() {
         onInboxChanged()
-        com.lastasylum.alliance.overlay.CombatOverlayService.notifyOverlayTeamInboxChanged(forum = true)
+        com.lastasylum.alliance.overlay.CombatOverlayService.refreshOverlayForumBadgeFromApp()
     }
 
     fun scheduleMarkForumTopicRead(messageId: String) {

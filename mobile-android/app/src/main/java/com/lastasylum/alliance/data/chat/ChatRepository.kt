@@ -86,15 +86,26 @@ class ChatRepository(
         onHttpSuccess = null,
     )
 
+    /** Overlay quick commands: parallel socket + HTTP with shared [clientMessageId] for idempotent delivery. */
     suspend fun sendOverlayRaidCommandFast(
         text: String,
         roomId: String,
         gameEventAlert: String? = null,
-    ): Result<ChatMessage> = rest.sendOverlayRaidCommandFast(
-        text = text,
-        roomId = roomId,
-        gameEventAlert = gameEventAlert,
-    )
+    ): Result<ChatMessage> {
+        val clientMessageId = java.util.UUID.randomUUID().toString()
+        realtime.sendOverlayRaidCommandViaSocket(
+            text = text,
+            roomId = roomId,
+            clientMessageId = clientMessageId,
+            gameEventAlert = gameEventAlert,
+        )
+        return rest.sendOverlayRaidCommandFast(
+            text = text,
+            roomId = roomId,
+            gameEventAlert = gameEventAlert,
+            clientMessageId = clientMessageId,
+        )
+    }
 
     suspend fun uploadImageFile(roomId: String, file: File, mimeType: String): Result<UploadChatAttachmentResponse> =
         rest.uploadImageFile(roomId, file, mimeType)

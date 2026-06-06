@@ -268,14 +268,26 @@ class ChatSocketManager {
         openSocket(base, token, rooms)
     }
 
-    fun sendMessage(text: String, roomId: String, replyToMessageId: String? = null) {
-        socket?.emit(
-            "message:send",
-            JSONObject()
-                .put("roomId", roomId)
-                .put("text", text)
-                .put("replyToMessageId", replyToMessageId),
-        )
+    fun sendMessage(
+        text: String,
+        roomId: String,
+        replyToMessageId: String? = null,
+        clientMessageId: String? = null,
+        gameEventAlert: String? = null,
+    ) {
+        val payload = JSONObject()
+            .put("roomId", roomId)
+            .put("text", text)
+        if (!replyToMessageId.isNullOrBlank()) {
+            payload.put("replyToMessageId", replyToMessageId)
+        }
+        clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            payload.put("clientMessageId", it)
+        }
+        gameEventAlert?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            payload.put("gameEventAlert", it)
+        }
+        socket?.emit("message:send", payload)
     }
 
     fun emitTyping(roomId: String) {

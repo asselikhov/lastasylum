@@ -881,7 +881,7 @@ export class ChatGateway {
     const room = await this.chatRoomsService.findById(rid);
     if (!room || room.title !== ALLIANCE_RAID_ROOM_TITLE) return;
     const teammateIds =
-      await this.usersService.listOverlayIngameTeammateIds(uid);
+      await this.usersService.listSquadTeammateUserIdsForRaidFanout(uid);
     let fanoutCount = 0;
     let skippedInRoom = 0;
     let skippedPersonal = 0;

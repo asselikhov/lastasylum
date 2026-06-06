@@ -817,6 +817,50 @@ export class UsersService implements OnModuleInit {
     return rows.map((r) => r._id.toString());
   }
 
+  /** All active squad mates for raid room personal fanout (Path C), not limited to ingame presence. */
+  async listSquadTeammateUserIdsForRaidFanout(
+    excludeUserId: string,
+  ): Promise<string[]> {
+    if (!Types.ObjectId.isValid(excludeUserId)) {
+      return [];
+    }
+    const squadTeamId =
+      await this.teamsService.resolveSquadTeamIdForUser(excludeUserId);
+    if (!squadTeamId) {
+      return [];
+    }
+    const sender = await this.userModel
+      .findById(excludeUserId)
+      .select('membershipStatus')
+      .lean<{ membershipStatus?: string }>()
+      .exec();
+    if (
+      !sender ||
+      this.effectiveMembership(sender as UserDocument) !==
+        TeamMembershipStatus.ACTIVE
+    ) {
+      return [];
+    }
+    const memberIds = await this.teamsService.listSquadMemberUserIds(
+      squadTeamId,
+    );
+    const teammateOids = memberIds
+      .filter((id) => id !== excludeUserId && Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (teammateOids.length === 0) {
+      return [];
+    }
+    const rows = await this.userModel
+      .find({
+        _id: { $in: teammateOids },
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+      })
+      .select('_id')
+      .lean<Array<{ _id: Types.ObjectId }>>()
+      .exec();
+    return rows.map((r) => r._id.toString());
+  }
+
   async listActiveTeamMemberUserIds(teamId: string): Promise<string[]> {
     if (!Types.ObjectId.isValid(teamId)) return [];
     const teamOid = new Types.ObjectId(teamId);

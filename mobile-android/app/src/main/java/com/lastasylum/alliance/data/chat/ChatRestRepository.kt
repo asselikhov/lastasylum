@@ -85,7 +85,7 @@ class ChatRestRepository(
         return Result.failure(last ?: IllegalStateException("send_failed"))
     }
 
-    /** Overlay quick commands: fewer retries, shorter backoff than [sendMessageWithRetries]. */
+    /** Overlay quick commands: match [sendMessageWithRetries] backoff; socket send is parallel in [ChatRepository]. */
     suspend fun sendOverlayRaidCommandFast(
         text: String,
         roomId: String,
@@ -93,7 +93,7 @@ class ChatRestRepository(
         clientMessageId: String = java.util.UUID.randomUUID().toString(),
     ): Result<ChatMessage> {
         var last: Throwable? = null
-        repeat(2) { attempt ->
+        repeat(3) { attempt ->
             val r = sendMessage(
                 text = text,
                 roomId = roomId,
@@ -102,7 +102,9 @@ class ChatRestRepository(
             )
             if (r.isSuccess) return r
             last = r.exceptionOrNull()
-            if (attempt < 1) delay(80L)
+            if (attempt < 2) {
+                delay(listOf(120L, 350L)[attempt])
+            }
         }
         return Result.failure(last ?: IllegalStateException("send_failed"))
     }

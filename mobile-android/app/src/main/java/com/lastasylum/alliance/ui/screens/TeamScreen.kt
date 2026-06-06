@@ -490,7 +490,7 @@ fun TeamScreen(
                                             onForumInboxChanged = {
                                                 teamViewModel.refreshSectionBadges(force = true)
                                                 com.lastasylum.alliance.overlay.CombatOverlayService
-                                                    .notifyOverlayTeamInboxChanged(forum = true)
+                                                    .refreshOverlayForumBadgeFromApp()
                                             },
                                         )
                                     }

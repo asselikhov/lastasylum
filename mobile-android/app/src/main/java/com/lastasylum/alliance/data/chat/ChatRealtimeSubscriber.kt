@@ -477,4 +477,24 @@ class ChatRealtimeSubscriber(
             listeners.forEach { l -> runCatching { l(event) } }
         }
     }
+
+    /** Fire-and-forget socket send for overlay quick commands (HTTP confirms with same [clientMessageId]). */
+    fun sendOverlayRaidCommandViaSocket(
+        text: String,
+        roomId: String,
+        clientMessageId: String,
+        gameEventAlert: String? = null,
+    ) {
+        val rid = roomId.trim()
+        val body = text.trim()
+        if (rid.isEmpty() || body.isEmpty()) return
+        overlayRealtimeRoomIds.add(rid)
+        ensureRealtimeSocketConnected()
+        socketManager.sendMessage(
+            text = body,
+            roomId = rid,
+            clientMessageId = clientMessageId,
+            gameEventAlert = gameEventAlert,
+        )
+    }
 }

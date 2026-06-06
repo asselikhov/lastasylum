@@ -471,6 +471,7 @@ class ChatViewModel(
                 messageRoomId = message.roomId,
                 overlayPanelVisible = overlayChatPanelVisible,
                 isOwnQuickCommandResponse = isOwnQuickCommand,
+                isPeerMessage = !isOwnQuickCommand,
             )
         ) {
             return
@@ -619,11 +620,15 @@ class ChatViewModel(
 
     private fun syncOverlayAllianceHubBadge(rooms: List<ChatRoomDto> = _state.value.rooms) {
         val localRead = chatRoomPreferences.loadAllLastReadMessageIds()
+        if (ChatUnreadCounts.isAllianceHubLocallyReadSuppressed(rooms, localRead)) {
+            CombatOverlayService.syncHubBadgeFromSharedReadState(null)
+            return
+        }
         val displayed = ChatUnreadCounts.overlayAllianceHubBadge(
             rooms = rooms,
             localReadByRoom = localRead,
-            optimisticFloor = 0,
-            previouslyDisplayed = 0,
+            optimisticFloor = CombatOverlayService.currentHubUnreadOptimisticFloor(),
+            previouslyDisplayed = CombatOverlayService.currentAllianceHubBadgeDisplayed(),
         )
         CombatOverlayService.syncHubBadgeFromSharedReadState(displayed)
     }
@@ -2460,7 +2465,7 @@ class ChatViewModel(
             syncTabUnreadBadge()
             ChatSessionCache.update(_state.value.rooms)
             if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
-                CombatOverlayService.notifyAllianceHubUnread(0)
+                syncOverlayAllianceHubBadge(_state.value.rooms)
             }
             repository.markRoomRead(roomId, messageId)
                 .onSuccess { response ->
@@ -2473,7 +2478,7 @@ class ChatViewModel(
                         syncTabUnreadBadge()
                         ChatSessionCache.update(_state.value.rooms)
                         if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
-                            CombatOverlayService.notifyAllianceHubUnread(0)
+                            syncOverlayAllianceHubBadge(_state.value.rooms)
                         }
                     } else {
                         scheduleUnreadSyncFromServer()
@@ -2629,6 +2634,9 @@ class ChatViewModel(
         if (rid.isEmpty()) return
         if (!isActiveSelectedRoom(rid)) return
         hydratePeerReadCursor(rid)
+        if (isAllianceRaidRoom(rid)) {
+            rehydrateSelectedRoomMessagesFromCache()
+        }
         typingEmitJob?.cancel()
         typingEmitJob = null
         synchronized(typingPeerJobsLock) {
@@ -2749,6 +2757,9 @@ class ChatViewModel(
         }
         if (deferNetworkMessages) {
             launchWarmupNeedsMessages = true
+            if (isAllianceRaidRoom(rid)) {
+                refreshMessagesInBackground(rid, force = true)
+            }
             schedulePersistChatSnapshot()
             return
         }
@@ -2768,6 +2779,9 @@ class ChatViewModel(
                     )
                 }
             }
+        if (isAllianceRaidRoom(rid)) {
+            refreshMessagesInBackground(rid, force = true)
+        }
     }
 
     private fun refreshMessagesInBackground(roomId: String, force: Boolean = false) {
@@ -5063,7 +5077,18 @@ class ChatViewModel(
                     ChatSessionCache.updateMessages(rid, cappedMessages)
                     val prevHead = work.previousMessages.firstOrNull()?._id
                     val incomingHead = scopedBatch.firstOrNull()?._id
-                    if (shouldTriggerGapReconcile(prevHead, incomingHead, knownMessageIds)) {
+                    val gapThreshold = if (isAllianceRaidRoom(rid)) {
+                        RAID_GAP_RECONCILE_THRESHOLD_MS
+                    } else {
+                        CHAT_GAP_RECONCILE_THRESHOLD_MS
+                    }
+                    if (shouldTriggerGapReconcile(
+                            prevHead,
+                            incomingHead,
+                            knownMessageIds,
+                            gapThreshold,
+                        )
+                    ) {
                         ChatDeliveryMetrics.logGapReconcile(rid, "socket_jump")
                         refreshMessagesInBackground(rid, force = true)
                     }

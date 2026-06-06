@@ -31,6 +31,34 @@ class ChatGapDetectionTest {
     }
 
     @Test
+    fun noGapReconcile_whenJumpBelowRaidThreshold() {
+        val older = "507f1f77bcf86cd799439011"
+        val newer = "507f1f77bcf86cd799439012"
+        assertFalse(
+            shouldTriggerGapReconcile(
+                visibleNewestId = older,
+                incomingId = newer,
+                knownMessageIds = emptySet(),
+                thresholdMs = RAID_GAP_RECONCILE_THRESHOLD_MS,
+            ),
+        )
+    }
+
+    @Test
+    fun gapReconcile_raidUsesShorterThreshold() {
+        val older = "507f1f77bcf86cd799439011"
+        val newer = "657a00000000000000000001"
+        assertTrue(
+            shouldTriggerGapReconcile(
+                visibleNewestId = older,
+                incomingId = newer,
+                knownMessageIds = emptySet(),
+                thresholdMs = RAID_GAP_RECONCILE_THRESHOLD_MS,
+            ),
+        )
+    }
+
+    @Test
     fun fingerprint_stableForSameMessage() {
         val fp = incomingMessageFingerprint("u1", "hello", "2026-01-01T00:00:00Z")
         assertTrue(fp.contains("u1"))
