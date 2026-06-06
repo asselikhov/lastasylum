@@ -683,7 +683,7 @@ export class ChatGateway {
       input.message,
       senderUserId,
     );
-    await this.notifyRoomUnreadAfterNewMessage(roomId, senderUserId);
+    void this.notifyRoomUnreadAfterNewMessage(roomId, senderUserId);
     if (
       eventId &&
       input.messageAllianceId &&
@@ -935,10 +935,11 @@ export class ChatGateway {
   ): Promise<void> {
     const exclude = excludeUserId.trim();
     const eligible = await this.listEligibleUserIdsForRoom(roomId);
-    for (const userId of eligible) {
-      if (userId === exclude) continue;
-      await this.emitUnreadToUser(userId, roomId);
-    }
+    const targets = eligible.filter((userId) => userId !== exclude);
+    if (targets.length === 0) return;
+    await Promise.all(
+      targets.map((userId) => this.emitUnreadToUser(userId, roomId)),
+    );
   }
 
   broadcastMessageDeleted(roomId: string, payload: unknown) {

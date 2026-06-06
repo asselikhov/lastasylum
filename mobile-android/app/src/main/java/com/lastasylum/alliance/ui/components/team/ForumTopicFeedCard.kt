@@ -24,18 +24,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -81,7 +76,7 @@ fun ForumTopicFeedCard(
         timeMeta = messageMeta,
         unreadCount = badgeUnread,
     )
-    val titleStyle = ForumTopicCardTokens.titleStyleFor(hasUnread)
+    val titleStyle = ForumTopicCardTokens.titleStyle
 
     ForumTopicAnimatedShell(
         onClick = onClick,
@@ -102,8 +97,6 @@ fun ForumTopicFeedCard(
                 topic = topic,
                 accent = accent,
                 activityLevel = activityLevel,
-                showPulse = animationTier == FeedAnimationTier.Full &&
-                    activityLevel == ForumTopicCardTokens.ActivityLevel.Hot,
             )
             Column(
                 modifier = Modifier
@@ -123,25 +116,7 @@ fun ForumTopicFeedCard(
                         style = titleStyle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f)
-                            .then(
-                                if (hasUnread) {
-                                    Modifier.drawBehind {
-                                        drawRect(
-                                            brush = Brush.horizontalGradient(
-                                                colors = listOf(
-                                                    PremiumColors.accentCyan.copy(alpha = 0.14f),
-                                                    Color.Transparent,
-                                                ),
-                                                endX = size.width * 0.65f,
-                                            ),
-                                        )
-                                    }
-                                } else {
-                                    Modifier
-                                },
-                            ),
+                        modifier = Modifier.weight(1f),
                     )
                     Box(
                         modifier = Modifier
@@ -170,7 +145,11 @@ fun ForumTopicFeedCard(
                 ) {
                     if (pinPreview != null) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    end = ForumTopicCardTokens.subtitleEndInset(hasUnread),
+                                ),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
@@ -268,38 +247,19 @@ fun ForumTopicGhostIconButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val glow by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (pressed) 1f else 0.55f,
+    val fillAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (pressed) 0.48f else 0.38f,
         animationSpec = ForumTopicCardTokens.pressAnimSpec,
-        label = "forumMenuGlow",
+        label = "forumMenuFill",
     )
     Surface(
         onClick = onClick,
-        modifier = modifier
-            .size(ForumTopicCardTokens.ghostButtonSize)
-            .drawBehind {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            PremiumColors.accentCyan.copy(alpha = 0.14f * glow),
-                            Color.Transparent,
-                        ),
-                        radius = size.minDimension * 0.85f,
-                    ),
-                    radius = size.minDimension * 0.55f,
-                    center = center,
-                )
-            },
+        modifier = modifier.size(ForumTopicCardTokens.ghostButtonSize),
         shape = CircleShape,
-        color = Color(0xFF152033).copy(alpha = 0.5f + glow * 0.1f),
+        color = ForumTopicCardTokens.glassBottom.copy(alpha = fillAlpha),
         border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            Brush.linearGradient(
-                colors = listOf(
-                    PremiumColors.accentCyan.copy(alpha = 0.24f * glow),
-                    PremiumColors.accentPurple.copy(alpha = 0.14f * glow),
-                ),
-            ),
+            0.75.dp,
+            PremiumColors.accentCyan.copy(alpha = if (pressed) 0.26f else 0.18f),
         ),
         interactionSource = interactionSource,
     ) {
@@ -308,7 +268,7 @@ fun ForumTopicGhostIconButton(
                 imageVector = icon,
                 contentDescription = contentDescription,
                 modifier = Modifier.size(ForumTopicCardTokens.ghostIconSize),
-                tint = Color(0xFFD8E8FF).copy(alpha = 0.72f + glow * 0.2f),
+                tint = Color(0xFFD8E8FF).copy(alpha = if (pressed) 0.88f else 0.72f),
             )
         }
     }
@@ -319,7 +279,6 @@ private fun ForumTopicCompactAvatar(
     topic: TeamForumTopicDto,
     accent: ForumTopicCardTokens.Accent,
     activityLevel: ForumTopicCardTokens.ActivityLevel,
-    showPulse: Boolean,
 ) {
     val creatorAvatarUrl = telegramAvatarUrl(topic.createdByTelegramUsername)
     val showLastSenderAvatar = topic.messageCount > 0
@@ -342,13 +301,6 @@ private fun ForumTopicCompactAvatar(
         modifier = Modifier.size(ForumTopicCardTokens.avatarOuter),
         contentAlignment = Alignment.Center,
     ) {
-        if (showPulse) {
-            ForumTopicActivityPulseDot(
-                accent = accent,
-                hot = true,
-                modifier = Modifier.align(Alignment.TopEnd),
-            )
-        }
         Box(
             modifier = Modifier
                 .size(ForumTopicCardTokens.avatarOuter)
@@ -398,36 +350,4 @@ private fun ForumTopicCompactAvatar(
             }
         }
     }
-}
-
-@Composable
-private fun ForumTopicActivityPulseDot(
-    accent: ForumTopicCardTokens.Accent,
-    hot: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val infinite = rememberInfiniteTransition(label = "forumPulse")
-    val pulse by infinite.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(750),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "forumPulseAlpha",
-    )
-    val firePalette = ForumTopicCardTokens.FirePalette
-    val dotPrimary = if (hot) firePalette.orange else accent.primary
-    Box(
-        modifier = modifier
-            .size(ForumTopicCardTokens.activityDotSize)
-            .drawBehind {
-                drawCircle(
-                    color = firePalette.orange.copy(alpha = 0.25f * pulse),
-                    radius = size.minDimension * 1.4f,
-                )
-            }
-            .clip(CircleShape)
-            .background(dotPrimary.copy(alpha = 0.85f + pulse * 0.15f)),
-    )
 }

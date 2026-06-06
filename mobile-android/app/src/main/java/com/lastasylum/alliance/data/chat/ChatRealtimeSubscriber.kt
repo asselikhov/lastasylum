@@ -478,6 +478,28 @@ class ChatRealtimeSubscriber(
         }
     }
 
+    /** Fire-and-forget socket send for app chat UI (HTTP confirms with same [clientMessageId]). */
+    fun sendChatMessageViaSocket(
+        text: String,
+        roomId: String,
+        replyToMessageId: String? = null,
+        clientMessageId: String,
+        excavationAlert: Boolean = false,
+    ) {
+        val rid = roomId.trim()
+        val body = text.trim()
+        if (rid.isEmpty() || body.isEmpty()) return
+        primaryRealtimeRoomIds.add(rid)
+        ensureRealtimeSocketConnected()
+        socketManager.sendMessage(
+            text = body,
+            roomId = rid,
+            replyToMessageId = replyToMessageId,
+            clientMessageId = clientMessageId,
+            gameEventAlert = if (excavationAlert) "excavation" else null,
+        )
+    }
+
     /** Fire-and-forget socket send for overlay quick commands (HTTP confirms with same [clientMessageId]). */
     fun sendOverlayRaidCommandViaSocket(
         text: String,

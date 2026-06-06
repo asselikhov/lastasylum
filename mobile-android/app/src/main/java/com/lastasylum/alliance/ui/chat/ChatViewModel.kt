@@ -84,7 +84,8 @@ private const val INITIAL_PAGE_SIZE = 20
 private const val PAGE_SIZE = 30
 private const val INCOMING_SOCKET_DEBOUNCE_MS = 24L
 private const val INCOMING_SOCKET_DEBOUNCE_BURST_MS = 8L
-private const val ACTIVE_ROOM_RECONCILE_INTERVAL_MS = 60_000L
+private const val ACTIVE_ROOM_RECONCILE_INTERVAL_MS = 120_000L
+private const val PEER_READ_CURSOR_POLL_DELAY_MS = 2_000L
 private const val CHAT_DERIVE_DEBOUNCE_MS = 24L
 private const val PROFILE_GATE_TTL_MS = 5 * 60_000L
 /** Отложить reconcile с сервером, если сообщения уже в кэше после splash/bootstrap. */
@@ -209,6 +210,7 @@ class ChatViewModel(
     private val optimisticUnreadFloorByRoom = mutableMapOf<String, Int>()
     private var lastRoomsSyncedAtMs: Long = 0L
     private val markReadInFlight = CopyOnWriteArrayList<Job>()
+    private val peerReadPollJobs = mutableMapOf<String, Job>()
     private var unreadSyncJob: Job? = null
     private var stashRehydrateJob: Job? = null
     /** False when user left the Chat tab — must not auto mark-read or zero selected-room badge. */
@@ -631,6 +633,43 @@ class ChatViewModel(
             previouslyDisplayed = CombatOverlayService.currentAllianceHubBadgeDisplayed(),
         )
         CombatOverlayService.syncHubBadgeFromSharedReadState(displayed)
+    }
+
+    /** Called from overlay service when activity VM owns unread (socket hub path). */
+    fun syncOverlayAllianceHubBadgeFromExternal() {
+        syncOverlayAllianceHubBadge()
+    }
+
+    /** Raid/hub strip visible in-game — mark newest strip message read. */
+    fun markOverlayStripVisibleAsRead() {
+        val (roomId, messageId) = CombatOverlayService.overlayStripMarkReadTarget() ?: return
+        if (!isValidMarkReadMessageId(messageId)) return
+        viewModelScope.launch { markRoomReadUpTo(roomId, messageId) }
+    }
+
+    private fun schedulePeerReadCursorPoll(roomId: String, sentMessageId: String) {
+        val rid = roomId.trim()
+        val sentId = sentMessageId.trim()
+        if (rid.isEmpty() || !isValidMarkReadMessageId(sentId)) return
+        peerReadPollJobs[rid]?.cancel()
+        val baseline = otherReadUptoByRoom[rid]
+        peerReadPollJobs[rid] = viewModelScope.launch {
+            kotlinx.coroutines.delay(PEER_READ_CURSOR_POLL_DELAY_MS)
+            val current = otherReadUptoByRoom[rid]
+            if (current != null && isObjectIdNewer(current, baseline)) return@launch
+            if (current != null && isObjectIdNewer(current, sentId)) return@launch
+            repository.getPeerReadCursor(rid).getOrNull()?.let { peerUpto ->
+                val publish = PeerReadCursorLogic.hydratePeerRead(
+                    otherReadUptoByRoom = otherReadUptoByRoom,
+                    selectedRoomId = _state.value.selectedRoomId,
+                    roomId = rid,
+                    peerUptoMessageId = peerUpto,
+                )
+                if (publish != null) {
+                    _otherReadUptoMessageId.value = publish
+                }
+            }
+        }
     }
 
   /**
@@ -2604,23 +2643,14 @@ class ChatViewModel(
         )
     }
 
-    /** Gap-fill after socket reconnect: merge stash + REST for subscribed rooms. */
+    /** Gap-fill after socket reconnect: merge stash + REST for selected room only. */
     private fun onChatSocketConnected() {
         forceBackgroundRefreshAfterReconnect = true
         rehydrateSelectedRoomMessagesFromCache()
         reconnectRealtimeIfNeeded()
-        _state.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let { rid ->
-            viewModelScope.launch { hydratePeerReadCursor(rid) }
-        }
-        val rooms = _state.value.rooms
-        val roomIds = if (rooms.isNotEmpty()) {
-            realtimeSubscriptionRoomIds(rooms)
-        } else {
-            _state.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let { listOf(it) }.orEmpty()
-        }
-        for (roomId in roomIds) {
-            refreshMessagesInBackground(roomId, force = true)
-        }
+        val selectedId = _state.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        viewModelScope.launch { hydratePeerReadCursor(selectedId) }
+        refreshMessagesInBackground(selectedId, force = true)
     }
 
     private suspend fun openRoom(
@@ -4891,6 +4921,7 @@ class ChatViewModel(
         val rid = _state.value.selectedRoomId
         if (!rid.isNullOrBlank()) {
             acknowledgeOwnOutgoingInActiveRoom(rid, serverId)
+            schedulePeerReadCursorPoll(rid, serverId)
         }
         if (!rid.isNullOrBlank()) {
             roomMessageCache[rid] = RoomMessageCache(

@@ -13,15 +13,16 @@ enum class FeedAnimationTier {
 /**
  * Resolves animation tier for a forum topic card.
  * @param visibleUnreadRank rank among visible unread items (0 = top); -1 if not unread/visible.
+ * @param visibleReadRank rank among visible read items (0 = top); -1 if unread or not ranked.
  */
 fun forumTopicAnimationTier(
     unread: Boolean,
     isVisible: Boolean,
     visibleUnreadRank: Int,
+    visibleReadRank: Int = -1,
     listSize: Int,
     sectionActive: Boolean,
     overlayMode: Boolean,
-    warmActivity: Boolean = false,
 ): FeedAnimationTier {
     if (!sectionActive || !isVisible) return FeedAnimationTier.Off
     if (unread) {
@@ -35,8 +36,13 @@ fun forumTopicAnimationTier(
             else -> FeedAnimationTier.Off
         }
     }
-    if (warmActivity) return FeedAnimationTier.Lite
-    return FeedAnimationTier.Off
+    if (overlayMode && listSize > 20) return FeedAnimationTier.Lite
+    if (overlayMode && visibleReadRank > 2) return FeedAnimationTier.Lite
+    return when {
+        visibleReadRank in 0..2 -> FeedAnimationTier.Full
+        visibleReadRank >= 0 -> FeedAnimationTier.Lite
+        else -> FeedAnimationTier.Off
+    }
 }
 
 /** Cyan wave tier for unread news cards in journal feed. */

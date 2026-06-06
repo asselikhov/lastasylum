@@ -54,6 +54,18 @@ class PeerReadCursorLogicTest {
     }
 
     @Test
+    fun hydratePeerRead_httpFallbackAdvancesStaleCursor() {
+        val map = mutableMapOf("roomA" to "000000000000000000000010")
+        val publish = PeerReadCursorLogic.hydratePeerRead(
+            otherReadUptoByRoom = map,
+            selectedRoomId = "roomA",
+            roomId = "roomA",
+            peerUptoMessageId = "000000000000000000000050",
+        )
+        assertEquals("000000000000000000000050", publish)
+    }
+
+    @Test
     fun mergePeerRead_afterRoomSwitch_usesStoredCursor() {
         val map = mutableMapOf("roomA" to "000000000000000000000060")
         val publish = PeerReadCursorLogic.mergePeerReadEvent(

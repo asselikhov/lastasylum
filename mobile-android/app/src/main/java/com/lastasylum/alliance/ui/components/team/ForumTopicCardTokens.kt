@@ -42,14 +42,15 @@ object ForumTopicCardTokens {
     val subtitleLineHeight = 16.dp
     val metaLineHeight = 14.dp
     val textBlockGap = 1.dp
-    val actionsSlotWidth = 32.dp
+    val actionsSlotWidth = 26.dp
     val badgeSlotWidth = 28.dp
     val chipGap = 6.dp
     val chipRadius = 10.dp
     val chipPaddingH = 8.dp
     val chipPaddingV = 3.dp
-    val ghostButtonSize = 32.dp
-    val ghostIconSize = 16.dp
+    val ghostButtonSize = 26.dp
+    val ghostIconSize = 14.dp
+    val subtitleEndGap = 4.dp
     val activityStripHeight = 2.dp
     val activityStripHeightHot = 2.5.dp
     val activityDotSize = 6.dp
@@ -114,12 +115,11 @@ object ForumTopicCardTokens {
             ),
         )
 
-    fun titleStyleFor(unread: Boolean): TextStyle =
-        if (unread) {
-            titleStyle.copy(fontWeight = FontWeight.Bold)
-        } else {
-            titleStyle
-        }
+    fun titleStyleFor(unread: Boolean): TextStyle = titleStyle
+
+    /** Reserve space under the title-row menu (and optional unread badge). */
+    fun subtitleEndInset(hasUnreadBadge: Boolean): Dp =
+        actionsSlotWidth + subtitleEndGap + if (hasUnreadBadge) badgeSlotWidth else 0.dp
 
     /** Sum of the three text lines + gaps — must equal [cardContentHeight]. */
     fun textBlockHeightSum(): Dp =
@@ -142,14 +142,13 @@ object ForumTopicCardTokens {
 
     fun activityLevel(unreadCount: Int, messageCount: Int): ActivityLevel = when {
         unreadCount > 0 -> ActivityLevel.Hot
-        messageCount >= 3 -> ActivityLevel.Warm
         else -> ActivityLevel.Calm
     }
 
     fun glassAlpha(level: ActivityLevel): Float = when (level) {
-        ActivityLevel.Hot -> 0.92f
+        ActivityLevel.Hot -> 0.88f
         ActivityLevel.Warm -> 0.86f
-        ActivityLevel.Calm -> 0.82f
+        ActivityLevel.Calm -> 0.86f
     }
 
     fun glassFill(alpha: Float): Color = glassBottom.copy(alpha = alpha)

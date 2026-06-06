@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.chat
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -62,5 +63,10 @@ class ChatRegressionChecklistTest {
                 nowMs = System.currentTimeMillis(),
             ),
         )
+    }
+
+    @Test
+    fun raidGapReconcileThreshold_isSixtySeconds() {
+        assertEquals(60_000L, RAID_GAP_RECONCILE_THRESHOLD_MS)
     }
 }

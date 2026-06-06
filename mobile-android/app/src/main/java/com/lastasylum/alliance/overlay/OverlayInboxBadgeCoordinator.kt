@@ -111,11 +111,24 @@ internal class OverlayInboxBadgeCoordinator {
         teamId: String,
     ): ForumUnreadCounts = withContext(Dispatchers.IO) {
         val container = AppContainer.from(context)
-        TeamInboxBadgeDeriver.computeForumUnreadCountsFromRepository(
+        val prefs = container.userSettingsPreferences
+        val newsAfter = prefs.getLastSeenTeamNewsCreatedAt()
+        val apiForumUnread = container.teamsRepository
+            .getTeamInboxBadges(teamId, newsAfter)
+            .getOrNull()
+            ?.forumUnread
+            ?.coerceAtLeast(0)
+        val clientCounts = TeamInboxBadgeDeriver.computeForumUnreadCountsFromRepository(
             teamsRepository = container.teamsRepository,
             forumPrefs = container.teamForumPreferences,
             teamId = teamId,
         )
+        val effective = TeamInboxBadgeDeriver.resolveForumUnread(
+            clientUnread = clientCounts.effective,
+            apiUnread = apiForumUnread,
+        )
+        val rawServer = maxOf(clientCounts.rawServer, apiForumUnread ?: 0)
+        ForumUnreadCounts(effective = effective, rawServer = rawServer)
     }
 
     fun mergeNewsDisplayed(

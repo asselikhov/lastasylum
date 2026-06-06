@@ -6,7 +6,7 @@ import com.lastasylum.alliance.data.isObjectIdNewer
 internal const val CHAT_GAP_RECONCILE_THRESHOLD_MS = 120_000L
 
 /** Raid room: shorter gap window — overlay stash + quick commands need faster reconcile. */
-internal const val RAID_GAP_RECONCILE_THRESHOLD_MS = 30_000L
+internal const val RAID_GAP_RECONCILE_THRESHOLD_MS = 60_000L
 
 internal fun incomingMessageFingerprint(
     senderId: String,

@@ -64,6 +64,7 @@ fun ForumTopicAnimatedShell(
     val animActive = animationTier != FeedAnimationTier.Off
     val fullAnim = animationTier == FeedAnimationTier.Full
     val liteAnim = animationTier == FeedAnimationTier.Lite
+    val isHot = activityLevel == ForumTopicCardTokens.ActivityLevel.Hot
 
     val drift: Float
     val pulse: Float
@@ -97,7 +98,14 @@ fun ForumTopicAnimatedShell(
             initialValue = 0.35f,
             targetValue = 1f,
             animationSpec = infiniteRepeatable(
-                animation = tween(if (fullAnim) 520 else 1_800, easing = FastOutSlowInEasing),
+                animation = tween(
+                    when {
+                        fullAnim && isHot -> 720
+                        fullAnim -> 2_200
+                        else -> 1_800
+                    },
+                    easing = FastOutSlowInEasing,
+                ),
                 repeatMode = RepeatMode.Reverse,
             ),
             label = "forumFlicker",
@@ -107,7 +115,7 @@ fun ForumTopicAnimatedShell(
                 initialValue = 0f,
                 targetValue = 1f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(9_000, easing = LinearEasing),
+                    animation = tween(if (isHot) 9_000 else 20_000, easing = LinearEasing),
                     repeatMode = RepeatMode.Restart,
                 ),
                 label = "forumHeatPhase",
@@ -122,13 +130,19 @@ fun ForumTopicAnimatedShell(
         heatPhase = 0f
     }
 
-    val isHot = activityLevel == ForumTopicCardTokens.ActivityLevel.Hot
-    val isWarm = activityLevel == ForumTopicCardTokens.ActivityLevel.Warm
     val glassAlpha = ForumTopicCardTokens.glassAlpha(activityLevel)
-    val borderColors = ForumTopicCardTokens.gradientBorderColors(accent, activityLevel, glowBoost)
+    val borderColors = if (isHot) {
+        ForumTopicCardTokens.gradientBorderColors(accent, activityLevel, glowBoost)
+    } else {
+        ForumTopicCardTokens.gradientBorderColors(
+            accent,
+            ForumTopicCardTokens.ActivityLevel.Calm,
+            glowBoost,
+        )
+    }
     val outerShape = ForumTopicCardTokens.cardShape
     val innerShape = ForumTopicCardTokens.cardInnerShape
-    val showActivityStrip = animActive && activityLevel != ForumTopicCardTokens.ActivityLevel.Calm
+    val showActivityStrip = animActive && isHot
 
     Box(
         modifier = modifier
@@ -152,7 +166,13 @@ fun ForumTopicAnimatedShell(
                         accent, drift, flicker, heatPhase, emberBoost,
                     )
                     liteAnim && isHot -> drawForumFireBackgroundLite(accent, drift, flicker)
-                    liteAnim && isWarm -> drawTacticalFogParticles(drift, accent)
+                    fullAnim && !isHot -> drawForumSereneBackground(
+                        accent = accent,
+                        drift = drift,
+                        pulse = pulse,
+                        breathPhase = heatPhase,
+                    )
+                    liteAnim && !isHot -> drawForumSereneBackgroundLite(accent, drift, pulse)
                 }
                 if (showActivityStrip) {
                     drawForumActivityStripOverlay(
@@ -208,8 +228,9 @@ private fun railColor(
     accent: ForumTopicCardTokens.Accent,
 ): Color = when (activityLevel) {
     ForumTopicCardTokens.ActivityLevel.Hot -> ForumTopicCardTokens.FirePalette.orange
-    ForumTopicCardTokens.ActivityLevel.Warm -> accent.primary
-    ForumTopicCardTokens.ActivityLevel.Calm -> accent.primary.copy(alpha = 0.65f)
+    ForumTopicCardTokens.ActivityLevel.Warm,
+    ForumTopicCardTokens.ActivityLevel.Calm,
+    -> accent.primary.copy(alpha = 0.72f)
 }
 
 /** @deprecated Use [ForumTopicAnimatedShell] with explicit [FeedAnimationTier]. */
@@ -296,27 +317,6 @@ private fun DrawScope.drawTacticalCardShadow(
     )
 }
 
-private fun DrawScope.drawTacticalFogParticles(drift: Float, accent: ForumTopicCardTokens.Accent) {
-    val specs = rememberFogParticleSpecs()
-    specs.take(2).forEachIndexed { index, spec ->
-        val phase = drift * 6.283f + index * 1.7f
-        val x = size.width * (spec.baseX + sin(phase) * spec.wobbleX)
-        val y = size.height * (spec.baseY + sin(phase * 0.85f) * spec.wobbleY)
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    accent.secondary.copy(alpha = spec.alpha * 0.8f),
-                    Color.Transparent,
-                ),
-                center = Offset(x, y),
-                radius = spec.radius * 0.85f,
-            ),
-            radius = spec.radius * 0.85f,
-            center = Offset(x, y),
-        )
-    }
-}
-
 private fun DrawScope.drawTacticalInnerEdgeGlow(
     accent: ForumTopicCardTokens.Accent,
     activityLevel: ForumTopicCardTokens.ActivityLevel,
@@ -354,19 +354,3 @@ private fun DrawScope.drawTacticalInnerEdgeGlow(
         cornerRadius = CornerRadius(corner, corner),
     )
 }
-
-private data class FogParticleSpec(
-    val baseX: Float,
-    val baseY: Float,
-    val wobbleX: Float,
-    val wobbleY: Float,
-    val radius: Float,
-    val alpha: Float,
-)
-
-private fun rememberFogParticleSpecs(): List<FogParticleSpec> = listOf(
-    FogParticleSpec(0.12f, 0.22f, 0.04f, 0.03f, 38f, 0.07f),
-    FogParticleSpec(0.78f, 0.18f, 0.05f, 0.04f, 44f, 0.05f),
-    FogParticleSpec(0.62f, 0.72f, 0.03f, 0.05f, 52f, 0.04f),
-    FogParticleSpec(0.28f, 0.68f, 0.04f, 0.03f, 34f, 0.06f),
-)

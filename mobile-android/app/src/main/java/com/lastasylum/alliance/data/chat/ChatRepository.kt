@@ -57,22 +57,32 @@ class ChatRepository(
             onHttpSuccess = realtime::dispatchOverlayHttpMessage,
         )
 
-    /** App/overlay chat UI: confirm via [ChatViewModel] only — no overlay HTTP fan-out (avoids duplicate row). */
+    /** App/overlay chat UI: parallel socket + HTTP with shared [clientMessageId] for fast peer delivery. */
     suspend fun sendMessageWithRetriesForChatUi(
         text: String,
         roomId: String,
         replyToMessageId: String? = null,
         attachments: List<String>? = null,
         excavationAlert: Boolean = false,
-    ): Result<ChatMessage> =
-        rest.sendMessageWithRetries(
+    ): Result<ChatMessage> {
+        val clientMessageId = java.util.UUID.randomUUID().toString()
+        realtime.sendChatMessageViaSocket(
+            text = text,
+            roomId = roomId,
+            replyToMessageId = replyToMessageId,
+            clientMessageId = clientMessageId,
+            excavationAlert = excavationAlert,
+        )
+        return rest.sendMessageWithRetries(
             text,
             roomId,
             replyToMessageId,
             attachments,
             excavationAlert,
             onHttpSuccess = null,
+            clientMessageId = clientMessageId,
         )
+    }
 
     /** Overlay quick commands: strip is updated optimistically in [CombatOverlayService] before HTTP. */
     suspend fun sendOverlayRaidCommandWithRetries(

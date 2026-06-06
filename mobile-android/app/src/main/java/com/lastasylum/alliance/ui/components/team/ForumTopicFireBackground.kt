@@ -149,13 +149,13 @@ fun DrawScope.drawForumFireBackgroundLite(
     val w = size.width
     val h = size.height
     val corner = FeedCardDesignTokens.compactInnerCornerRadius.toPx()
-    val pulse = 0.65f + flicker * 0.25f
+    val pulse = 0.60f + flicker * 0.22f
     drawRoundRect(
         brush = Brush.verticalGradient(
             colors = listOf(
                 Color.Transparent,
-                palette.smoke.copy(alpha = 0.08f),
-                palette.deep.copy(alpha = 0.22f * pulse),
+                palette.smoke.copy(alpha = 0.07f),
+                palette.deep.copy(alpha = 0.19f * pulse),
             ),
             startY = h * 0.55f,
             endY = h,
@@ -256,9 +256,9 @@ private fun DrawScope.drawCoalBed(
         brush = Brush.verticalGradient(
             colors = listOf(
                 Color.Transparent,
-                palette.smoke.copy(alpha = 0.10f + flicker * 0.05f),
-                palette.coal.copy(alpha = 0.20f * pulse + shimmer),
-                palette.deep.copy(alpha = 0.36f * pulse),
+                palette.smoke.copy(alpha = 0.085f + flicker * 0.04f),
+                palette.coal.copy(alpha = 0.17f * pulse + shimmer),
+                palette.deep.copy(alpha = 0.31f * pulse),
             ),
             startY = h * 0.32f,
             endY = h,
@@ -313,8 +313,8 @@ private fun DrawScope.drawSmokeVeils(
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
-                    palette.smoke.copy(alpha = 0.14f * pulse),
-                    palette.deep.copy(alpha = 0.08f * pulse),
+                    palette.smoke.copy(alpha = 0.12f * pulse),
+                    palette.deep.copy(alpha = 0.07f * pulse),
                     Color.Transparent,
                 ),
                 center = Offset(cx, cy),
@@ -398,7 +398,7 @@ private fun DrawScope.drawEmberField(
         val rise = riseNorm * maxRise
         val x = w * ember.baseX + sin(phase * 1.65f) * w * 0.045f
         val y = h * ember.baseY - rise
-        val alpha = emberOpacityAtRise(riseNorm) * (0.65f + flicker * 0.35f) * boost
+        val alpha = emberOpacityAtRise(riseNorm) * (0.58f + flicker * 0.28f) * boost
         val radius = ember.radius * (0.75f + flicker * 0.35f)
         drawCircle(
             brush = Brush.radialGradient(
@@ -427,7 +427,7 @@ private fun DrawScope.drawRimGlow(
     drawRoundRect(
         brush = Brush.verticalGradient(
             colors = listOf(
-                palette.amber.copy(alpha = 0.06f + pulse * 0.04f),
+                palette.amber.copy(alpha = 0.05f + pulse * 0.03f),
                 Color.Transparent,
             ),
             startY = 0f,
@@ -439,10 +439,10 @@ private fun DrawScope.drawRimGlow(
     drawRoundRect(
         brush = Brush.horizontalGradient(
             colors = listOf(
-                accent.primary.copy(alpha = 0.15f * flicker),
+                accent.primary.copy(alpha = 0.12f * flicker),
                 Color.Transparent,
                 Color.Transparent,
-                accent.primary.copy(alpha = 0.15f * flicker),
+                accent.primary.copy(alpha = 0.12f * flicker),
             ),
             startX = 0f,
             endX = w,

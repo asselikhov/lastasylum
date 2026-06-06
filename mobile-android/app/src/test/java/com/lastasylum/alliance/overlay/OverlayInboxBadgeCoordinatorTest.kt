@@ -60,4 +60,22 @@ class OverlayInboxBadgeCoordinatorTest {
         )
         assertEquals(1, news)
     }
+
+    @Test
+    fun mergeHudForum_multiEventOrdering_keepsOptimisticUntilAuthoritativeCatchesUp() {
+        val coordinator = OverlayInboxBadgeCoordinator()
+        coordinator.bumpForumOptimistic(3)
+        val afterPartialZero = coordinator.mergeHudForum(
+            authoritative = 0,
+            prevDisplayed = 3,
+            useAuthoritative = false,
+        )
+        assertEquals(3, afterPartialZero)
+        val afterServerCatchUp = coordinator.mergeHudForum(
+            authoritative = 3,
+            prevDisplayed = afterPartialZero,
+            useAuthoritative = true,
+        )
+        assertEquals(3, afterServerCatchUp)
+    }
 }

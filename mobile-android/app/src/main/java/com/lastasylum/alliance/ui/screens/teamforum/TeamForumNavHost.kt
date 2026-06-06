@@ -396,7 +396,6 @@ fun TeamForumNavHost(
                 enabledStickerPackKeys = enabledStickerPackKeys,
                 onBack = {
                     nav.popBackStack()
-                    listRefreshNonce++
                 },
                 onInboxChanged = onForumInboxChanged,
                 onProvideMarkReadAction = registerMarkReadAction,
@@ -491,8 +490,12 @@ private fun TeamForumListRoute(
         }
     }
 
+    var reloadJob by remember(teamId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var inboxSyncedForSection by remember(teamId) { mutableStateOf(false) }
+
     fun reload() {
-        scope.launch {
+        reloadJob?.cancel()
+        reloadJob = scope.launch {
             val (diskTopics, lastReadSnapshot) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 val disk = if (currentUserId.isNotBlank()) {
                     app.launchDiskCache.loadForumTopics(currentUserId, teamId)
@@ -540,47 +543,57 @@ private fun TeamForumListRoute(
         onDispose { onProvideMarkReadAction(FORUM_MARK_READ_LIST_KEY, null) }
     }
 
-    LaunchedEffect(teamId, refreshNonce, currentUserId, sectionActive) {
+    LaunchedEffect(teamId, sectionActive, currentUserId) {
         if (!sectionActive) return@LaunchedEffect
         val uid = currentUserId.trim()
-        if (uid.isNotEmpty()) {
-            ReadCursorSession.bind(
-                app.chatRoomPreferences,
-                forumPrefs,
-                app.userSettingsPreferences,
-                uid,
+        if (uid.isEmpty() || inboxSyncedForSection) return@LaunchedEffect
+        ReadCursorSession.bind(
+            app.chatRoomPreferences,
+            forumPrefs,
+            app.userSettingsPreferences,
+            uid,
+        )
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            ReadCursorSession.syncAllInboxReadCursors(
+                usersRepository = app.usersRepository,
+                teamsRepository = teamsRepository,
+                chatRepository = app.chatRepository,
+                chatRoomPreferences = app.chatRoomPreferences,
+                teamForumPreferences = forumPrefs,
+                userSettingsPreferences = app.userSettingsPreferences,
             )
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                ReadCursorSession.syncAllInboxReadCursors(
-                    usersRepository = app.usersRepository,
-                    teamsRepository = teamsRepository,
-                    chatRepository = app.chatRepository,
-                    chatRoomPreferences = app.chatRoomPreferences,
-                    teamForumPreferences = forumPrefs,
-                    userSettingsPreferences = app.userSettingsPreferences,
-                )
-            }
         }
+        inboxSyncedForSection = true
+    }
+
+    LaunchedEffect(teamId, refreshNonce, sectionActive) {
+        if (!sectionActive) return@LaunchedEffect
         reload()
     }
 
+    var topicActivityDebounceJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
     LaunchedEffect(topicActivityPatch) {
         val event = topicActivityPatch ?: return@LaunchedEffect
-        val messageId = event.messageId.trim()
-        if (messageId.isBlank()) return@LaunchedEffect
-        val idx = topics.indexOfFirst { it.id == event.topicId }
-        if (idx >= 0) {
-            val row = topics[idx]
-            val localLast = forumPrefs.getLastReadMessageId(teamId, event.topicId)
-                ?: lastReadByTopic[row.id]
-            if (!isObjectIdNewer(messageId, localLast.orEmpty())) return@LaunchedEffect
-            val bumped = row.copy(
-                unreadCount = row.unreadCount + 1,
-                messageCount = row.messageCount + 1,
-                lastMessageAt = java.time.Instant.now().toString(),
-            )
-            topics[idx] = bumped
-            onForumTopicsSynced(topics.toList())
+        topicActivityDebounceJob?.cancel()
+        topicActivityDebounceJob = scope.launch {
+            kotlinx.coroutines.delay(300)
+            val messageId = event.messageId.trim()
+            if (messageId.isBlank()) return@launch
+            val idx = topics.indexOfFirst { it.id == event.topicId }
+            if (idx >= 0) {
+                val row = topics[idx]
+                val localLast = forumPrefs.getLastReadMessageId(teamId, event.topicId)
+                    ?: lastReadByTopic[row.id]
+                if (!isObjectIdNewer(messageId, localLast.orEmpty())) return@launch
+                val bumped = row.copy(
+                    unreadCount = row.unreadCount + 1,
+                    messageCount = row.messageCount + 1,
+                    lastMessageAt = java.time.Instant.now().toString(),
+                )
+                topics[idx] = bumped
+                onForumTopicsSynced(topics.toList())
+            }
         }
     }
 
@@ -626,6 +639,15 @@ private fun TeamForumListRoute(
                 topicListState.layoutInfo.visibleItemsInfo.map { it.index }.sorted(),
             ) { idx ->
                 idx in filteredTopics.indices && effectiveTopicUnread(filteredTopics[idx]) > 0
+            }
+        }
+    }
+    val visibleReadRanks by remember(topicListState, filteredTopics, lastReadByTopic.size) {
+        derivedStateOf {
+            buildVisibleUnreadRankMap(
+                topicListState.layoutInfo.visibleItemsInfo.map { it.index }.sorted(),
+            ) { idx ->
+                idx in filteredTopics.indices && effectiveTopicUnread(filteredTopics[idx]) == 0
             }
         }
     }
@@ -729,14 +751,15 @@ private fun TeamForumListRoute(
                         ) { index, t ->
                             val unread = effectiveTopicUnread(t)
                             val unreadRank = visibleUnreadRanks[index] ?: -1
+                            val readRank = visibleReadRanks[index] ?: -1
                             val animationTier = forumTopicAnimationTier(
                                 unread = unread > 0,
                                 isVisible = index in visibleIndices,
                                 visibleUnreadRank = unreadRank,
+                                visibleReadRank = if (unread > 0) -1 else readRank,
                                 listSize = filteredTopics.size,
                                 sectionActive = sectionActive,
                                 overlayMode = overlayUi,
-                                warmActivity = unread == 0 && t.messageCount >= 3,
                             )
                             val timeIso = t.lastMessageAt ?: t.createdAt
                             ForumTopicFeedCard(
@@ -1364,7 +1387,6 @@ private fun TeamForumTopicChatRoute(
     var markForumReadJob by remember(teamId, topicId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     fun notifyForumInboxAfterRead() {
-        onInboxChanged()
         com.lastasylum.alliance.overlay.CombatOverlayService.refreshOverlayForumBadgeFromApp()
     }
 
@@ -1591,7 +1613,7 @@ private fun TeamForumTopicChatRoute(
                     loading = true
                 }
             }
-            val bypassCache = forceRefresh || forceForumRefreshAfterReconnect || !appendOlder
+            val bypassCache = forceRefresh || forceForumRefreshAfterReconnect
             teamsRepository.listForumMessages(
                 teamId,
                 topicId,
