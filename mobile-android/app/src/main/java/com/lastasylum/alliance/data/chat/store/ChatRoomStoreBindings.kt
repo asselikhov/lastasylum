@@ -9,9 +9,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-/**
- * Subscribes VM to Room flows when [ChatArchitectureFlags.useRoomMessageStore] is enabled.
- */
+/** Subscribes VM to Room flows for rooms, messages, and read cursors. */
 class ChatRoomStoreBindings(
     private val messageStore: MessageStore,
     private val syncEngine: ChatSyncEngine,
@@ -27,7 +25,7 @@ class ChatRoomStoreBindings(
     var onReadCursorFromStore: ((String, String?) -> Unit)? = null
 
     fun startRoomsObserver() {
-        if (!ChatArchitectureFlags.useRoomMessageStore || userId.isBlank()) return
+        if (userId.isBlank()) return
         roomsJob?.cancel()
         roomsJob = scope.launch {
             messageStore.observeRooms(userId)
@@ -43,7 +41,7 @@ class ChatRoomStoreBindings(
         messagesJob?.cancel()
         readCursorJob?.cancel()
         val rid = roomId?.trim().orEmpty()
-        if (!ChatArchitectureFlags.useRoomMessageStore || userId.isBlank() || rid.isEmpty()) return
+        if (userId.isBlank() || rid.isEmpty()) return
         messagesJob = scope.launch {
             messageStore.observeMessages(userId, rid)
                 .distinctUntilChanged()

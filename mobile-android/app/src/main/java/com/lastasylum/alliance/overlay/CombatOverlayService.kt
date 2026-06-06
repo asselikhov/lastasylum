@@ -108,6 +108,7 @@ import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.voice.VoiceChatSession
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.data.chat.outbox.OutboxResumeScheduler
 import com.lastasylum.alliance.data.telemetry.LatencySpanType
 import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.layout.OverlayLayoutDp
@@ -4511,6 +4512,9 @@ class CombatOverlayService : Service() {
             }
         }.onFailure {
             pendingOverlayQuickCommandId = null
+        }
+        jwtSubFromAccessToken()?.trim()?.takeIf { it.isNotEmpty() }?.let { uid ->
+            OutboxResumeScheduler.schedule(this@CombatOverlayService, uid)
         }
         return result
     }

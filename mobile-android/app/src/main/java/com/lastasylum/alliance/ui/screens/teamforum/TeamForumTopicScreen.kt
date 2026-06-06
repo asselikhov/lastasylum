@@ -1,4 +1,4 @@
-﻿package com.lastasylum.alliance.ui.screens.teamforum
+package com.lastasylum.alliance.ui.screens.teamforum
 
 import android.app.Application
 import android.content.ContentResolver
@@ -62,6 +62,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.util.Log
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.auth.TokenStore
@@ -91,7 +92,6 @@ import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction
 import com.lastasylum.alliance.ui.chat.ChatComposer
 import com.lastasylum.alliance.ui.chat.ChatComposerBar
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
-import com.lastasylum.alliance.ui.chat.ForumDeliveryMetrics
 import com.lastasylum.alliance.ui.chat.ForumPinCoordinator
 import com.lastasylum.alliance.ui.chat.ForumTimelineEntry
 import com.lastasylum.alliance.ui.chat.LocalChatBubbleMaxWidth
@@ -844,13 +844,17 @@ fun TeamForumTopicScreen(
                 inFlightForumClientMessageIds,
             )
         ) {
-            ForumDeliveryMetrics.logDrop(teamId, topicId, msg.id, "own_echo")
+            if (BuildConfig.DEBUG) {
+                Log.d("SR_Forum", "drop team=$teamId topic=$topicId id=${msg.id} reason=own_echo")
+            }
             return
         }
         if (source == "socket") {
             val visibleNewestId = messages.lastOrNull()?.id
             if (shouldTriggerGapReconcile(visibleNewestId, msg.id, knownForumMessageIds)) {
-                ForumDeliveryMetrics.logGapReconcile(teamId, topicId, "socket_jump")
+                if (BuildConfig.DEBUG) {
+                    Log.i("SR_Forum", "gapReconcile team=$teamId topic=$topicId trigger=socket_jump")
+                }
                 loadForumMessages(before = null, appendOlder = false, forceRefresh = true)
                 return
             }
@@ -879,7 +883,9 @@ fun TeamForumTopicScreen(
         msg.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { clientId ->
             inFlightForumClientMessageIds = inFlightForumClientMessageIds - clientId
         }
-        ForumDeliveryMetrics.logMerge(teamId, topicId, 1, source)
+        if (BuildConfig.DEBUG) {
+            Log.d("SR_Forum", "merge team=$teamId topic=$topicId count=1 source=$source")
+        }
         persistForumMessagesToDisk()
         topicViewModel.mergeIncoming(msg)
         if (!overlayUi || isNearBottom) {

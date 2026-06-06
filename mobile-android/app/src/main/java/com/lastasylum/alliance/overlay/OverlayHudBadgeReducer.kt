@@ -18,18 +18,4 @@ class OverlayHudBadgeReducer(
             hudFlow.value = next
         }
     }
-
-    fun commitInboxPartialRefresh(
-        allianceChatUnread: Int? = null,
-        teamNewsUnread: Int? = null,
-        forumUnread: Int? = null,
-    ) {
-        commit { prev ->
-            prev.copy(
-                allianceChatUnread = allianceChatUnread ?: prev.allianceChatUnread,
-                teamNewsUnread = teamNewsUnread ?: prev.teamNewsUnread,
-                forumUnread = forumUnread ?: prev.forumUnread,
-            )
-        }
-    }
 }

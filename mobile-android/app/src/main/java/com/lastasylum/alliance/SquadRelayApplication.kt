@@ -9,6 +9,8 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
+import com.lastasylum.alliance.data.chat.outbox.OutboxResumeScheduler
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayRuntimeScheduler
@@ -58,6 +60,9 @@ class SquadRelayApplication : Application(), SingletonImageLoader.Factory {
                     )
                 }
                 runCatching { OverlayRuntimeScheduler.syncSchedule(this@SquadRelayApplication) }
+                JwtAccessTokenClaims.sub(access)?.trim()?.takeIf { it.isNotEmpty() }?.let { uid ->
+                    runCatching { OutboxResumeScheduler.schedule(this@SquadRelayApplication, uid) }
+                }
             }
         }
     }

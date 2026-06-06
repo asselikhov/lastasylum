@@ -7,7 +7,6 @@ import com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent
 import com.lastasylum.alliance.data.chat.ChatRoomPinChangedEvent
 import com.lastasylum.alliance.data.chat.ChatRoomReadEvent
 import com.lastasylum.alliance.data.chat.ChatRaidRoomSync
-import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.ChatTypingEvent
 import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
@@ -29,20 +28,13 @@ internal fun ChatViewModel.shouldSuppressOwnOutgoingRealtimeEchoImpl(message: Ch
 internal fun ChatViewModel.shouldBlockOwnOutgoingRealtimeImpl(message: ChatMessage): Boolean {
         val selfId = currentUserId.trim()
         if (selfId.isEmpty() || message.senderId.trim() != selfId) return false
+        val snapshot = outboxRoomSnapshot
         message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { cid ->
-            if (outboxClientIdByPendingId.containsValue(cid)) return true
+            if (cid in snapshot.activeClientMessageIds) return true
         }
         if (hasMatchingPendingOutgoing(vmState.value.messages, message, currentUserId)) return true
-        if (!ChatArchitectureFlags.useChatOutbox) {
-            val fingerprint = outgoingMessageFingerprint(
-                message.roomId,
-                message.text,
-                message.replyToMessageId,
-            )
-            if (inFlightOutgoingFingerprints.contains(fingerprint)) return true
-        }
         val pendingId = message._id?.trim().orEmpty()
-        if (pendingId.isNotEmpty() && outboxClientIdByPendingId.containsKey(pendingId)) return true
+        if (pendingId.isNotEmpty() && snapshot.pendingToClientId.containsKey(pendingId)) return true
         return isDuplicateOwnOutgoingDelivery(
             vmState.value.messages,
             message,
@@ -251,26 +243,7 @@ internal fun ChatViewModel.flushRoomMessagesToDiskNowImpl(roomId: String) {
         if (currentUserId.isBlank()) return
         val rid = roomId.trim()
         if (rid.isEmpty()) return
-        vmScope.launch(Dispatchers.IO) {
-            val snapshot = withContext(Dispatchers.Main) {
-                val entry = roomMessageCache[rid]
-                val raw = entry?.messages?.takeIf { it.isNotEmpty() }
-                    ?: if (vmState.value.selectedRoomId == rid) {
-                        vmState.value.messages
-                    } else {
-                        null
-                    }
-                if (raw == null) return@withContext null
-                Triple(
-                    messagesWithoutLocallyRemoved(raw),
-                    entry?.hasMoreOlder ?: vmState.value.hasMoreOlder,
-                    raw,
-                )
-            } ?: return@launch
-            val (messages, hasMoreOlder, _) = snapshot
-            if (messages.isEmpty()) return@launch
-            launchDiskCache.saveRoomMessages(currentUserId, rid, messages, hasMoreOlder)
-        }
+        schedulePersistChatSnapshot()
     }
 
 internal fun ChatViewModel.scrubRemovedMessageImpl(state: ChatState, removedId: String): ChatState {

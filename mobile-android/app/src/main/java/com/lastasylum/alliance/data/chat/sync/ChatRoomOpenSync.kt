@@ -4,7 +4,6 @@ import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatSessionCache
-import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
 import com.lastasylum.alliance.data.chat.store.ChatRoomStoreBindings
 import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
 import com.lastasylum.alliance.ui.chat.ChatState
@@ -88,9 +87,7 @@ class ChatRoomOpenSync(
         val rid = roomId.trim()
         if (rid.isEmpty()) return
         if (!host.isActiveSelectedRoom(rid)) return
-        if (ChatArchitectureFlags.useRoomMessageStore) {
-            roomStoreBindings.bindSelectedRoom(rid)
-        }
+        roomStoreBindings.bindSelectedRoom(rid)
         host.hydratePeerReadCursor(rid)
         if (host.isAllianceRaidRoom(rid)) {
             rehydrateSync.rehydrateSelectedRoomMessagesFromCache()
@@ -134,10 +131,7 @@ class ChatRoomOpenSync(
         }
         host.connectRealtime(rooms)
         var hadCachedMessagesLocal = hadCachedMessages
-        if (!hadCachedMessagesLocal &&
-            ChatArchitectureFlags.useRoomMessageStore &&
-            host.currentUserId.isNotBlank()
-        ) {
+        if (!hadCachedMessagesLocal && host.currentUserId.isNotBlank()) {
             val storeSnapshot = syncEngine.loadRoomSnapshotFromStore(host.currentUserId, rid)
             if (storeSnapshot != null && storeSnapshot.messages.isNotEmpty()) {
                 val filteredStore = host.messagesWithoutLocallyRemoved(

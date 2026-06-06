@@ -137,7 +137,7 @@ internal class ChatViewModelSyncBundle(
     val roomPagingSync = com.lastasylum.alliance.data.chat.sync.ChatRoomPagingSync(
         scope = scope,
         repository = repository,
-        launchDiskCache = vm.launchDiskCacheInternal,
+        messageStore = vm.messageStore,
         host = pagingSyncHost,
     )
 
@@ -316,8 +316,8 @@ internal class ChatViewModelSyncBundle(
         override fun updateRoomMessageCache(roomId: String, cache: ChatRoomMessageCache) {
             vm.roomMessageCache[roomId] = cache
         }
-        override fun primeRoomMessagesFromDisk(roomId: String): ChatRoomMessageCache? =
-            vm.primeRoomMessagesFromDisk(roomId)
+        override fun loadRoomSnapshotFromStore(roomId: String): ChatRoomMessageCache? =
+            vm.loadRoomSnapshotFromStore(roomId)
         override fun messagesWithoutLocallyRemoved(messages: List<ChatMessage>) =
             vm.messagesWithoutLocallyRemoved(messages)
         override fun filterMessagesForRoom(messages: List<ChatMessage>, roomId: String) =

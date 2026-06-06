@@ -132,7 +132,7 @@ class ChatOutbox(
     suspend fun resumePending(
         scope: CoroutineScope,
         userId: String,
-        sendBlock: suspend (OutboxEntry) -> Result<ChatMessage>,
+        sendBlock: suspend (OutboxEntry) -> Result<com.lastasylum.alliance.data.chat.ChatMessage>,
     ) = resumeMutex.withLock {
         val pending = withContext(Dispatchers.IO) { dao.getResumable(userId) }
         pending.forEach { row ->
@@ -141,6 +141,19 @@ class ChatOutbox(
                 markSending(entry.clientMessageId)
                 sendBlock(entry)
             }
+        }
+    }
+
+    /** Synchronous resume for [OutboxSendWorker] (no VM scope). */
+    suspend fun resumePendingSync(
+        userId: String,
+        sendBlock: suspend (OutboxEntry) -> Result<com.lastasylum.alliance.data.chat.ChatMessage>,
+    ) = resumeMutex.withLock {
+        val pending = withContext(Dispatchers.IO) { dao.getResumable(userId) }
+        pending.forEach { row ->
+            val entry = toEntry(row)
+            markSending(entry.clientMessageId)
+            sendBlock(entry)
         }
     }
 

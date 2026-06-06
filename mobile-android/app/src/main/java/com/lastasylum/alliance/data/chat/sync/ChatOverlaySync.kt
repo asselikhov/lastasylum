@@ -35,7 +35,7 @@ class ChatOverlaySync(
         fun diskChatRoomsOrNull(): List<ChatRoomDto>?
         fun roomMessageCache(roomId: String): ChatRoomMessageCache?
         fun updateRoomMessageCache(roomId: String, cache: ChatRoomMessageCache)
-        fun primeRoomMessagesFromDisk(roomId: String): ChatRoomMessageCache?
+        fun loadRoomSnapshotFromStore(roomId: String): ChatRoomMessageCache?
 
         fun messagesWithoutLocallyRemoved(messages: List<ChatMessage>): List<ChatMessage>
         fun filterMessagesForRoom(messages: List<ChatMessage>, roomId: String): List<ChatMessage>
@@ -110,7 +110,7 @@ class ChatOverlaySync(
                     hasMoreOlder = scrubbed.size >= CHAT_PAGE_SIZE,
                 ).also { host.updateRoomMessageCache(roomId, it) }
             }
-            ?: host.primeRoomMessagesFromDisk(roomId)
+            ?: host.loadRoomSnapshotFromStore(roomId)
         if (cached == null || cached.messages.isEmpty()) {
             val switchingRoom = snapshot.selectedRoomId != roomId ||
                 !host.messagesBelongToRoom(snapshot.messages, roomId)

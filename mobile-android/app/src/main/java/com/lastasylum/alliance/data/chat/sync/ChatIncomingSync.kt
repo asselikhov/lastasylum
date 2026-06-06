@@ -1,7 +1,6 @@
 package com.lastasylum.alliance.data.chat.sync
 
 import com.lastasylum.alliance.data.chat.ChatMessage
-import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
 import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.ui.chat.CHAT_GAP_RECONCILE_THRESHOLD_MS
 import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
@@ -90,10 +89,6 @@ class ChatIncomingSync(
 
     fun dispatchIncomingBatch(batch: List<ChatMessage>) {
         if (batch.isEmpty()) return
-        if (!ChatArchitectureFlags.useChatSyncEngine) {
-            dispatchIncomingBatchLegacy(batch)
-            return
-        }
         val selected = host.selectedRoomId()
         val applyQueue = ArrayList<ChatMessage>(batch.size)
         for (message in batch) {
@@ -111,27 +106,6 @@ class ChatIncomingSync(
         }
         if (applyQueue.isNotEmpty()) {
             applyIncomingBatch(applyQueue)
-        }
-    }
-
-    private fun dispatchIncomingBatchLegacy(batch: List<ChatMessage>) {
-        val selected = host.selectedRoomId()
-        val applyQueue = ArrayList<ChatMessage>(batch.size)
-        for (message in batch) {
-            val roomId = message.roomId.trim()
-            if (roomId.isBlank()) continue
-            if (roomId == selected && host.isRoomActivelyViewed(roomId, message)) {
-                if (!host.shouldDeferOwnOutgoingSocketEcho(message)) {
-                    applyQueue.add(message)
-                } else {
-                    host.stashIncomingMessageForRoom(message)
-                }
-            } else {
-                host.processRealtimeMessageForUnread(message)
-            }
-        }
-        if (applyQueue.isNotEmpty()) {
-            applyIncomingBatch(applyQueue, clearComposer = false)
         }
     }
 

@@ -3,7 +3,6 @@ package com.lastasylum.alliance.data.chat.sync
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatRoomDto
-import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
 import com.lastasylum.alliance.data.chat.store.MessageStore
 import com.lastasylum.alliance.data.chat.outbox.ChatOutbox
 import com.lastasylum.alliance.data.chat.outbox.OutboxEntry
@@ -31,7 +30,6 @@ data class ChatSyncState(
 
 /**
  * Orchestrates REST/socket → Room and durable outbox resume.
- * Strangler: VM delegates persist/reconnect/read paths here first.
  */
 class ChatSyncEngine(
     private val messageStore: MessageStore,
@@ -53,7 +51,6 @@ class ChatSyncEngine(
         rooms: List<ChatRoomDto>,
         messagesByRoom: Map<String, Pair<List<ChatMessage>, Boolean>>,
     ) {
-        if (!ChatArchitectureFlags.useRoomMessageStore) return
         val uid = userId.trim()
         if (uid.isEmpty()) return
         withContext(Dispatchers.IO) {
@@ -81,7 +78,6 @@ class ChatSyncEngine(
         message: ChatMessage,
         clientMessageId: String? = null,
     ) {
-        if (!ChatArchitectureFlags.useRoomMessageStore) return
         messageStore.upsertMessages(userId, roomId, listOf(message))
         clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { cid ->
             latencyTracker.endSpanByCorrelation(LatencySpanType.ChatSendToSocket, cid, "ok")
@@ -89,15 +85,22 @@ class ChatSyncEngine(
     }
 
     suspend fun resumePendingOutbox(scope: CoroutineScope, userId: String) {
-        if (!ChatArchitectureFlags.useChatOutbox) return
         chatOutbox.resumePending(scope, userId) { entry ->
+            sendOutboxEntry(entry)
+        }
+    }
+
+    suspend fun resumePendingOutboxSync(userId: String) {
+        val uid = userId.trim()
+        if (uid.isEmpty()) return
+        bindUser(uid)
+        chatOutbox.resumePendingSync(uid) { entry ->
             sendOutboxEntry(entry)
         }
     }
 
     /** After socket reconnect: retry durable outbox sends for the bound user. */
     suspend fun reconnectOutboxResume(scope: CoroutineScope) {
-        if (!ChatArchitectureFlags.useChatOutbox) return
         val uid = _state.value.boundUserId?.trim().orEmpty()
         if (uid.isEmpty()) return
         resumePendingOutbox(scope, uid)
@@ -147,7 +150,6 @@ class ChatSyncEngine(
     )
 
     suspend fun loadRoomSnapshotFromStore(userId: String, roomId: String): StoredRoomSnapshot? {
-        if (!ChatArchitectureFlags.useRoomMessageStore) return null
         val uid = userId.trim()
         val rid = roomId.trim()
         if (uid.isEmpty() || rid.isEmpty()) return null
@@ -163,7 +165,7 @@ class ChatSyncEngine(
         val uid = userId.trim()
         if (uid.isEmpty()) return Result.failure(IllegalArgumentException("user_required"))
         return repository.listRooms().onSuccess { rooms ->
-            if (ChatArchitectureFlags.useRoomMessageStore && rooms.isNotEmpty()) {
+            if (rooms.isNotEmpty()) {
                 messageStore.upsertRooms(uid, rooms)
             }
         }
@@ -173,7 +175,6 @@ class ChatSyncEngine(
         loadRoomSnapshotFromStore(userId, roomId)?.messages
 
     suspend fun loadRoomsFromStore(userId: String): List<ChatRoomDto>? {
-        if (!ChatArchitectureFlags.useRoomMessageStore) return null
         val rooms = messageStore.getRooms(userId)
         return rooms.takeIf { it.isNotEmpty() }
     }
@@ -184,7 +185,6 @@ class ChatSyncEngine(
         messages: List<ChatMessage>,
         hasMoreOlder: Boolean = false,
     ) {
-        if (!ChatArchitectureFlags.useRoomMessageStore) return
         val uid = userId.trim()
         val rid = roomId.trim()
         if (uid.isEmpty() || rid.isEmpty() || messages.isEmpty()) return

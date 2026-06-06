@@ -1,4 +1,4 @@
-﻿package com.lastasylum.alliance.ui.chat
+package com.lastasylum.alliance.ui.chat
 
 import android.app.Application
 import com.lastasylum.alliance.R
@@ -11,7 +11,6 @@ import com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent
 import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.ChatTeamRoomsMembership
-import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
 import com.lastasylum.alliance.data.chat.sync.CHAT_INITIAL_PAGE_SIZE
 import com.lastasylum.alliance.data.chat.sync.CHAT_PAGE_SIZE
 import com.lastasylum.alliance.data.chat.sync.CHAT_ROOMS_SYNC_ON_RESUME_TTL_MS
@@ -157,13 +156,9 @@ internal suspend fun ChatViewModel.primeFromLaunchDiskForOverlayImpl(): Boolean 
 
 internal fun ChatViewModel.readLaunchDiskPrimePayloadImpl(): LaunchDiskPrimePayload? {
         if (currentUserId.isBlank()) return null
-        val roomsRaw = if (ChatArchitectureFlags.useRoomMessageStore) {
-            kotlinx.coroutines.runBlocking(Dispatchers.IO) {
-                roomStoreBindings.loadRoomsSnapshot()
-            } ?: launchDiskCacheInternal.loadChatRooms(currentUserId)
-        } else {
-            launchDiskCacheInternal.loadChatRooms(currentUserId)
-        } ?: return null
+        val roomsRaw = kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+            roomStoreBindings.loadRoomsSnapshot()
+        } ?: launchDiskCacheInternal.loadChatRooms(currentUserId) ?: return null
         val rooms = applyRoomsFromServer(roomsRaw)
         if (rooms.isEmpty()) return null
         val selected = resolveStartupRoomId(rooms, preferOverlayRaidRoom = false)
@@ -172,32 +167,18 @@ internal fun ChatViewModel.readLaunchDiskPrimePayloadImpl(): LaunchDiskPrimePayl
         allianceRaidRoomId(rooms)?.let { roomIdsToPrime.add(it) }
         val roomCaches = linkedMapOf<String, ChatRoomMessageCache>()
         for (rid in roomIdsToPrime) {
-            val cache = if (ChatArchitectureFlags.useRoomMessageStore) {
-                kotlinx.coroutines.runBlocking(Dispatchers.IO) {
-                    chatSyncEngine.loadRoomSnapshotFromStore(currentUserId, rid)
-                }?.let { snapshot ->
-                    val scrubbed = filterMessagesForRoom(
-                        messagesWithoutLocallyRemoved(snapshot.messages),
-                        rid,
-                    )
-                    val capped = capNewestFirst(scrubbed, CHAT_PAGE_SIZE)
-                    ChatRoomMessageCache(
-                        messages = capped,
-                        hasMoreOlder = snapshot.hasMoreOlder || capped.size >= CHAT_PAGE_SIZE,
-                    )
-                }
-            } else {
-                launchDiskCacheInternal.loadRoomMessages(currentUserId, rid)?.let { disk ->
-                    val scrubbed = filterMessagesForRoom(
-                        messagesWithoutLocallyRemoved(disk.messages),
-                        rid,
-                    )
-                    val capped = capNewestFirst(scrubbed, CHAT_PAGE_SIZE)
-                    ChatRoomMessageCache(
-                        messages = capped,
-                        hasMoreOlder = disk.hasMoreOlder || capped.size >= CHAT_PAGE_SIZE,
-                    )
-                }
+            val cache = kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+                chatSyncEngine.loadRoomSnapshotFromStore(currentUserId, rid)
+            }?.let { snapshot ->
+                val scrubbed = filterMessagesForRoom(
+                    messagesWithoutLocallyRemoved(snapshot.messages),
+                    rid,
+                )
+                val capped = capNewestFirst(scrubbed, CHAT_PAGE_SIZE)
+                ChatRoomMessageCache(
+                    messages = capped,
+                    hasMoreOlder = snapshot.hasMoreOlder || capped.size >= CHAT_PAGE_SIZE,
+                )
             }
             cache?.let { roomCaches[rid] = it }
         }
@@ -295,6 +276,31 @@ internal fun ChatViewModel.bindRoomStoreObserversImpl() {
         }
         roomStoreBindings.startRoomsObserver()
         roomStoreBindings.bindSelectedRoom(vmState.value.selectedRoomId)
+        bindOutboxObservers(vmState.value.selectedRoomId)
+    }
+
+internal fun ChatViewModel.bindOutboxObserversImpl(roomId: String?) {
+        outboxObserverJob?.cancel()
+        val rid = roomId?.trim().orEmpty()
+        val uid = currentUserId.trim()
+        if (uid.isEmpty() || rid.isEmpty()) {
+            outboxRoomSnapshot = OutboxRoomSnapshot()
+            return
+        }
+        outboxObserverJob = vmScope.launch {
+            chatOutbox.observeActiveForRoom(uid, rid)
+                .distinctUntilChanged()
+                .collect { entries ->
+                    val pendingToClient = entries.associate { it.pendingMessageId to it.clientMessageId }
+                    val clientIds = entries.map { it.clientMessageId }.toSet()
+                    val newestPending = entries.maxByOrNull { it.createdAtMs }?.pendingMessageId
+                    outboxRoomSnapshot = OutboxRoomSnapshot(
+                        pendingToClientId = pendingToClient,
+                        activeClientMessageIds = clientIds,
+                        newestPendingId = newestPending,
+                    )
+                }
+        }
     }
 
 internal fun ChatViewModel.schedulePersistChatSnapshotImpl() {
@@ -313,83 +319,35 @@ internal fun ChatViewModel.persistChatSnapshotImpl() {
             launchDiskCacheInternal.saveChatRooms(currentUserId, rooms)
         }
         val selected = vmState.value.selectedRoomId?.trim().orEmpty()
-        if (selected.isNotEmpty() && !ChatArchitectureFlags.useRoomMessageStore) {
-            val entry = roomMessageCache[selected]
-            val raw = entry?.messages?.takeIf { it.isNotEmpty() }
-                ?: vmState.value.messages.takeIf { it.isNotEmpty() }
-            val messages = raw
-                ?.let { messagesWithoutLocallyRemoved(it) }
-                ?.let { filterMessagesForRoom(it, selected) }
-            if (!messages.isNullOrEmpty()) {
-                launchDiskCacheInternal.saveRoomMessages(
-                    userId = currentUserId,
-                    roomId = selected,
-                    messages = messages,
-                    hasMoreOlder = entry?.hasMoreOlder ?: vmState.value.hasMoreOlder,
-                )
+        val hubId = allianceHubRoomId(rooms)
+        val raidId = allianceRaidRoomId(rooms)
+        val messagesByRoom = buildMap<String, Pair<List<ChatMessage>, Boolean>> {
+            if (selected.isNotEmpty()) {
+                val entry = roomMessageCache[selected]
+                val raw = entry?.messages?.takeIf { it.isNotEmpty() }
+                    ?: vmState.value.messages.takeIf { it.isNotEmpty() }
+                val messages = raw
+                    ?.let { messagesWithoutLocallyRemoved(it) }
+                    ?.let { filterMessagesForRoom(it, selected) }
+                if (!messages.isNullOrEmpty()) {
+                    put(selected, messages to (entry?.hasMoreOlder ?: vmState.value.hasMoreOlder))
+                }
             }
-        }
-        if (!ChatArchitectureFlags.useRoomMessageStore) {
-            val hubId = allianceHubRoomId(rooms)
             if (!hubId.isNullOrBlank() && hubId != selected) {
                 roomMessageCache[hubId]?.let { entry ->
                     val messages = messagesWithoutLocallyRemoved(entry.messages)
-                    if (messages.isNotEmpty()) {
-                        launchDiskCacheInternal.saveRoomMessages(
-                            currentUserId,
-                            hubId,
-                            messages,
-                            entry.hasMoreOlder,
-                        )
-                    }
+                    if (messages.isNotEmpty()) put(hubId, messages to entry.hasMoreOlder)
                 }
             }
-            val raidId = allianceRaidRoomId(rooms)
             if (!raidId.isNullOrBlank() && raidId != selected && raidId != hubId) {
                 roomMessageCache[raidId]?.let { entry ->
                     val messages = messagesWithoutLocallyRemoved(entry.messages)
-                    if (messages.isNotEmpty()) {
-                        launchDiskCacheInternal.saveRoomMessages(
-                            currentUserId,
-                            raidId,
-                            messages,
-                            entry.hasMoreOlder,
-                        )
-                    }
+                    if (messages.isNotEmpty()) put(raidId, messages to entry.hasMoreOlder)
                 }
             }
         }
-        val hubId = allianceHubRoomId(rooms)
-        val raidId = allianceRaidRoomId(rooms)
-        if (ChatArchitectureFlags.useChatSyncEngine) {
-            val messagesByRoom = buildMap<String, Pair<List<ChatMessage>, Boolean>> {
-                if (selected.isNotEmpty()) {
-                    val entry = roomMessageCache[selected]
-                    val raw = entry?.messages?.takeIf { it.isNotEmpty() }
-                        ?: vmState.value.messages.takeIf { it.isNotEmpty() }
-                    val messages = raw
-                        ?.let { messagesWithoutLocallyRemoved(it) }
-                        ?.let { filterMessagesForRoom(it, selected) }
-                    if (!messages.isNullOrEmpty()) {
-                        put(selected, messages to (entry?.hasMoreOlder ?: vmState.value.hasMoreOlder))
-                    }
-                }
-                if (!hubId.isNullOrBlank() && hubId != selected) {
-                    roomMessageCache[hubId]?.let { entry ->
-                        val messages = messagesWithoutLocallyRemoved(entry.messages)
-                        if (messages.isNotEmpty()) put(hubId, messages to entry.hasMoreOlder)
-                    }
-                }
-                if (!raidId.isNullOrBlank() && raidId != selected && raidId != hubId) {
-                    roomMessageCache[raidId]?.let { entry ->
-                        val messages = messagesWithoutLocallyRemoved(entry.messages)
-                        if (messages.isNotEmpty()) put(raidId, messages to entry.hasMoreOlder)
-                    }
-                }
-            }
-            vmScope.launch(Dispatchers.IO) {
-                chatSyncEngine.dualWriteSnapshot(currentUserId, rooms, messagesByRoom)
-            }
+        vmScope.launch(Dispatchers.IO) {
+            chatSyncEngine.dualWriteSnapshot(currentUserId, rooms, messagesByRoom)
         }
     }
 

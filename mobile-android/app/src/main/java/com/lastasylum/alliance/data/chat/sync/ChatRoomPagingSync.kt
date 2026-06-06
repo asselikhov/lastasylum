@@ -3,7 +3,7 @@ package com.lastasylum.alliance.data.chat.sync
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatSessionCache
-import com.lastasylum.alliance.data.cache.LaunchDiskCache
+import com.lastasylum.alliance.data.chat.store.MessageStore
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.ui.OVERLAY_PANEL_LOAD_MAX_MS
 import com.lastasylum.alliance.ui.chat.chatMessagesListContentEqual
@@ -26,7 +26,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 class ChatRoomPagingSync(
     private val scope: CoroutineScope,
     private val repository: ChatRepository,
-    private val launchDiskCache: LaunchDiskCache,
+    private val messageStore: MessageStore,
     private val host: Host,
 ) {
     interface Host {
@@ -212,8 +212,10 @@ class ChatRoomPagingSync(
         if (!ignoreHiddenWatermark && snapshot.isLoading) return false
         host.applyLoadingOlder(true)
         if (host.currentUserId.isNotBlank()) {
-            val disk = launchDiskCache.loadRoomMessages(host.currentUserId, roomId)
-            val diskOlder = disk?.messages.orEmpty().filter { msg ->
+            val storeMessages = withContext(Dispatchers.IO) {
+                messageStore.getMessages(host.currentUserId, roomId)
+            }
+            val diskOlder = storeMessages.filter { msg ->
                 val id = msg._id?.trim().orEmpty()
                 id.isNotEmpty() &&
                     isObjectIdNewer(oldestId, id) &&

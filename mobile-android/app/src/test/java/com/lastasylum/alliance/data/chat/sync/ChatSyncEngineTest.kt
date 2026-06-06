@@ -7,7 +7,6 @@ import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.MarkRoomReadResponse
 import com.lastasylum.alliance.data.chat.outbox.ChatOutbox
 import com.lastasylum.alliance.data.chat.outbox.OutboxSendSource
-import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
 import com.lastasylum.alliance.data.chat.store.MessageStore
 import com.lastasylum.alliance.data.chat.store.SquadRelayDatabase
 import com.lastasylum.alliance.data.telemetry.DeliveryLatencyTracker
@@ -44,9 +43,6 @@ class ChatSyncEngineTest {
         val tracker = DeliveryLatencyTracker(db, scope)
         chatOutbox = ChatOutbox(db, messageStore, tracker)
         engine = ChatSyncEngine(messageStore, chatOutbox, fakeGateway, tracker)
-        ChatArchitectureFlags.useRoomMessageStore = true
-        ChatArchitectureFlags.useChatOutbox = true
-        ChatArchitectureFlags.useChatSyncEngine = true
     }
 
     @Test

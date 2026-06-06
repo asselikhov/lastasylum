@@ -11,7 +11,6 @@ import com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent
 import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.ChatTeamRoomsMembership
-import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
 import com.lastasylum.alliance.data.chat.sync.CHAT_INITIAL_PAGE_SIZE
 import com.lastasylum.alliance.data.chat.sync.CHAT_PAGE_SIZE
 import com.lastasylum.alliance.data.chat.sync.CHAT_ROOMS_SYNC_ON_RESUME_TTL_MS

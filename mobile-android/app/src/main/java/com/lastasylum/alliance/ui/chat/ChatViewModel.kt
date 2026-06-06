@@ -1,4 +1,4 @@
-﻿package com.lastasylum.alliance.ui.chat
+package com.lastasylum.alliance.ui.chat
 
 import android.app.ActivityManager
 import android.app.Application
@@ -36,7 +36,6 @@ import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
 import com.lastasylum.alliance.data.chat.ChatTeamRoomsMembership
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.data.teams.TeamMembershipNotifier
-import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
 import com.lastasylum.alliance.data.chat.store.ChatRoomStoreBindings
 import com.lastasylum.alliance.data.chat.store.MessageStore
 import com.lastasylum.alliance.data.chat.sync.CHAT_ACTIVE_ROOM_RECONCILE_INTERVAL_MS
@@ -56,6 +55,7 @@ import com.lastasylum.alliance.data.chat.sync.ChatRoomOpenSync
 import com.lastasylum.alliance.data.chat.sync.ChatRoomPagingSync
 import com.lastasylum.alliance.data.chat.sync.ChatRoomsListSync
 import com.lastasylum.alliance.data.chat.sync.LaunchDiskPrimePayload
+import com.lastasylum.alliance.data.chat.outbox.OutboxResumeScheduler
 import com.lastasylum.alliance.data.chat.outbox.OutboxSendSource
 import com.lastasylum.alliance.data.chat.sync.IncomingBatchWork
 import com.lastasylum.alliance.di.AppContainer
@@ -155,17 +155,14 @@ class ChatViewModel(
     internal val listDeriveDefer = ChatListDeriveDefer()
     internal val incomingApplyMutex = Mutex()
     internal val chatMutationLock = Any()
-    /** HTTP in-flight sends — socket echo must not insert a second row before [confirmPendingOutgoingMessage]. */
-    internal val inFlightOutgoingFingerprints =
-        java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
     /**
      * Stable LazyColumn keys: pending id → server id swap must not change Compose item identity.
      */
     internal val lazyColumnKeyByMessageId = mutableMapOf<String, String>()
-    /** While set, only HTTP confirm may replace the optimistic row — no socket second row. */
+    /** Flow-driven snapshot of active outbox sends for the selected room. */
     @Volatile
-    internal var activeOutgoingPendingId: String? = null
-    internal val outboxClientIdByPendingId = java.util.concurrent.ConcurrentHashMap<String, String>()
+    internal var outboxRoomSnapshot = OutboxRoomSnapshot()
+    internal var outboxObserverJob: Job? = null
 
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
     internal val _draftMessage = MutableStateFlow("")
@@ -253,9 +250,7 @@ class ChatViewModel(
         if (rid.isEmpty()) return
         if (messages.size > messageMemoryCap && currentUserId.isNotBlank()) {
             ChatDeliveryMetrics.logCapTrim(rid, messages.size, messageMemoryCap)
-            viewModelScope.launch(Dispatchers.IO) {
-                launchDiskCache.saveRoomMessages(currentUserId, rid, messages, hasMoreOlder)
-            }
+            schedulePersistChatSnapshot()
         }
         val capped = capMessagesForMemory(messages)
         roomMessageCache[rid] = ChatRoomMessageCache(
@@ -349,7 +344,7 @@ class ChatViewModel(
         override fun selectedRoomId(): String? = _state.value.selectedRoomId
         override fun stateSnapshot(): ChatState = _state.value
         override fun listDerived(): ChatMessagesListDerived = _listDerived.value
-        override fun activeOutgoingPendingId(): String? = this@ChatViewModel.activeOutgoingPendingId
+        override fun activeOutgoingPendingId(): String? = outboxRoomSnapshot.newestPendingId
 
         override fun knownMessageIds(): MutableSet<String> = this@ChatViewModel.knownMessageIds
         override fun messageIdIndex(): MutableMap<String, Int> = this@ChatViewModel.messageIdIndex
@@ -450,7 +445,7 @@ class ChatViewModel(
                 refreshMessagesInBackground(roomId, force = true)
             }
             scheduleMarkReadAfterIncomingBatch(roomId, scopedBatch, cappedMessages)
-            if (ChatArchitectureFlags.useChatSyncEngine && currentUserId.isNotBlank()) {
+            if (currentUserId.isNotBlank()) {
                 val mirrorBatch = scopedBatch.toList()
                 viewModelScope.launch(Dispatchers.IO) {
                     mirrorBatch.forEach { msg ->
@@ -497,10 +492,8 @@ class ChatViewModel(
         viewModelScope.launch {
             chatSyncEngine.bindUser(currentUserId)
             AppContainer.from(getApplication()).launchDiskCacheImporter.importIfNeeded(currentUserId)
-            if (ChatArchitectureFlags.useChatOutbox) {
-                chatSyncEngine.resumePendingOutbox(viewModelScope, currentUserId)
-            }
-            if (ChatArchitectureFlags.useRoomMessageStore && currentUserId.isNotBlank()) {
+            chatSyncEngine.resumePendingOutbox(viewModelScope, currentUserId)
+            if (currentUserId.isNotBlank()) {
                 bindRoomStoreObservers()
             }
         }
@@ -675,7 +668,6 @@ class ChatViewModel(
         if (pending.isNotEmpty()) {
             removePendingOutgoingMessage(pending)
         }
-        clearInFlightOutgoing(roomId, text, null)
     }
 
     /** Overlay socket while in-game chat panel is open (primary listener may be absent). */
@@ -891,6 +883,7 @@ class ChatViewModel(
     internal fun readLaunchDiskPrimePayload() = readLaunchDiskPrimePayloadImpl()
     internal fun applyLaunchDiskPrimePayload(payload: LaunchDiskPrimePayload) = applyLaunchDiskPrimePayloadImpl(payload)
     internal fun bindRoomStoreObservers() = bindRoomStoreObserversImpl()
+    internal fun bindOutboxObservers(roomId: String?) = bindOutboxObserversImpl(roomId)
     internal fun schedulePersistChatSnapshot() = schedulePersistChatSnapshotImpl()
     internal fun persistChatSnapshot() = persistChatSnapshotImpl()
     internal fun shouldAutoMarkReadSelectedRoom() = shouldAutoMarkReadSelectedRoomImpl()
@@ -1013,27 +1006,25 @@ class ChatViewModel(
 
     internal fun diskChatRoomsOrNull(): List<ChatRoomDto>? {
         if (currentUserId.isBlank()) return null
-        if (ChatArchitectureFlags.useRoomMessageStore) {
-            return kotlinx.coroutines.runBlocking(Dispatchers.IO) {
-                roomStoreBindings.loadRoomsSnapshot()
-            } ?: launchDiskCache.loadChatRooms(currentUserId)
-        }
-        return launchDiskCache.loadChatRooms(currentUserId)
+        return kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+            roomStoreBindings.loadRoomsSnapshot()
+        } ?: launchDiskCache.loadChatRooms(currentUserId)
     }
 
-    internal fun primeRoomMessagesFromDisk(roomId: String): ChatRoomMessageCache? {
-        if (ChatArchitectureFlags.useRoomMessageStore) return null
+    internal fun loadRoomSnapshotFromStore(roomId: String): ChatRoomMessageCache? {
         if (currentUserId.isBlank() || roomId.isBlank()) return null
-        val disk = launchDiskCache.loadRoomMessages(currentUserId, roomId) ?: return null
-        if (disk.messages.isEmpty()) return null
+        val snapshot = kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+            chatSyncEngine.loadRoomSnapshotFromStore(currentUserId, roomId)
+        } ?: return null
+        if (snapshot.messages.isEmpty()) return null
         val scrubbed = filterMessagesForRoom(
-            messagesWithoutLocallyRemoved(disk.messages),
+            messagesWithoutLocallyRemoved(snapshot.messages),
             roomId,
         )
         val capped = capNewestFirst(scrubbed, CHAT_PAGE_SIZE)
         return ChatRoomMessageCache(
             messages = capped,
-            hasMoreOlder = disk.hasMoreOlder,
+            hasMoreOlder = snapshot.hasMoreOlder,
         ).also { entry ->
             roomMessageCache[roomId] = entry
             ChatSessionCache.updateMessages(roomId, capped)
@@ -1227,10 +1218,9 @@ class ChatViewModel(
         forceBackgroundRefreshAfterReconnect = true
         rehydrateSelectedRoomMessagesFromCache()
         reconnectRealtimeIfNeeded()
-        if (ChatArchitectureFlags.useChatSyncEngine && ChatArchitectureFlags.useChatOutbox) {
-            viewModelScope.launch {
-                chatSyncEngine.reconnectOutboxResume(viewModelScope)
-            }
+        viewModelScope.launch {
+            chatSyncEngine.reconnectOutboxResume(viewModelScope)
+            OutboxResumeScheduler.schedule(getApplication(), currentUserId)
         }
         val selectedId = _state.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() } ?: return
         viewModelScope.launch { hydratePeerReadCursor(selectedId) }
@@ -1393,12 +1383,6 @@ class ChatViewModel(
 
     internal fun applyPinBarUi(state: ChatState): ChatState = applyPinBarUiImpl(state)
     internal fun updatePinBarUi() = updatePinBarUiImpl()
-    internal fun registerInFlightOutgoing(roomId: String, text: String, replyToMessageId: String?) =
-        registerInFlightOutgoingImpl(roomId, text, replyToMessageId)
-    internal fun clearInFlightOutgoing(roomId: String, text: String, replyToMessageId: String?) =
-        clearInFlightOutgoingImpl(roomId, text, replyToMessageId)
-    internal fun buildOptimisticOutgoingMessage(roomId: String, text: String, replyToMessageId: String?) =
-        buildOptimisticOutgoingMessageImpl(roomId, text, replyToMessageId)
     internal fun insertOptimisticOutgoingSynchronously(message: ChatMessage, clearComposer: Boolean) =
         insertOptimisticOutgoingSynchronouslyImpl(message, clearComposer)
     internal fun removePendingOutgoingMessage(pendingId: String?) = removePendingOutgoingMessageImpl(pendingId)
@@ -1520,6 +1504,13 @@ class ChatViewModel(
         const val PIN_DIAG_TAG = "PinDiag"
     }
 }
+
+/** Flow-driven active outbox sends for the selected room. */
+internal data class OutboxRoomSnapshot(
+    val pendingToClientId: Map<String, String> = emptyMap(),
+    val activeClientMessageIds: Set<String> = emptySet(),
+    val newestPendingId: String? = null,
+)
 
 /** Telegram-like instant feedback before REST round-trip. */
 

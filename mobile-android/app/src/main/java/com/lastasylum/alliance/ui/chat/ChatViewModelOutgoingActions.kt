@@ -10,7 +10,6 @@ import com.lastasylum.alliance.data.chat.ChatRaidRoomSync
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.data.chat.outbox.OutboxSendSource
-import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
 import com.lastasylum.alliance.data.chat.sync.ChatRoomMessageCache
 import com.lastasylum.alliance.data.chat.sync.IncomingBatchWork
 import com.lastasylum.alliance.overlay.CombatOverlayService
@@ -45,81 +44,44 @@ internal fun ChatViewModel.launchTextOutgoingSendImpl(
     ) {
         val trimmed = text.trim()
         vmState.value = vmState.value.copy(isSending = false, error = null, sendFailure = null)
-        registerInFlightOutgoing(roomId, trimmed, replyToMessageId)
         deriveJob?.cancel()
         deriveDebounceJob?.cancel()
 
-        if (ChatArchitectureFlags.useChatOutbox) {
-            vmScope.launch {
-                val enqueue = runCatching {
-                    withContext(Dispatchers.IO) {
-                        chatOutbox.enqueueSend(
-                            userId = currentUserId,
-                            roomId = roomId,
-                            text = trimmed,
-                            replyToMessageId = replyToMessageId,
-                            attachments = null,
-                            excavationAlert = false,
-                            source = source,
-                            currentUserId = currentUserId,
-                            currentUserRole = currentUserRole,
-                            senderUsername = "",
-                        )
-                    }
-                }.getOrElse { err ->
-                    clearInFlightOutgoing(roomId, trimmed, replyToMessageId)
-                    vmState.value = vmState.value.copy(
-                        sendFailure = ChatSendFailure(
-                            messageText = trimmed,
-                            replyToMessageId = replyToMessageId,
-                            errorMessage = err.toUserMessageRu(res),
-                        ),
-                    )
-                    return@launch
-                }
-                outboxClientIdByPendingId[enqueue.pendingMessageId] = enqueue.clientMessageId
-                activeOutgoingPendingId = enqueue.pendingMessageId
-                insertOptimisticOutgoingSynchronously(enqueue.optimisticMessage, clearComposer = true)
-                chatSyncEngine.sendEnqueuedOutbox(enqueue.clientMessageId)
-                    .onSuccess { sent ->
-                        withContext(Dispatchers.Main.immediate) {
-                            outboxClientIdByPendingId.remove(enqueue.pendingMessageId)
-                            confirmPendingOutgoingMessage(enqueue.pendingMessageId, sent)
-                        }
-                    }
-                    .onFailure { throwable ->
-                        activeOutgoingPendingId = null
-                        outboxClientIdByPendingId.remove(enqueue.pendingMessageId)
-                        clearInFlightOutgoing(roomId, trimmed, replyToMessageId)
-                        removePendingOutgoingMessage(enqueue.pendingMessageId)
-                        vmState.value = vmState.value.copy(
-                            isSending = false,
-                            sendFailure = ChatSendFailure(
-                                messageText = trimmed,
-                                replyToMessageId = replyToMessageId,
-                                errorMessage = throwable.toUserMessageRu(res),
-                            ),
-                        )
-                    }
-            }
-            return
-        }
-
-        val optimistic = buildOptimisticOutgoingMessage(roomId, trimmed, replyToMessageId)
-        val pendingId = optimistic._id
-        activeOutgoingPendingId = pendingId
-        insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
         vmScope.launch {
-            vmRepository.sendMessageWithRetriesForChatUi(trimmed, roomId, replyToMessageId)
+            val enqueue = runCatching {
+                withContext(Dispatchers.IO) {
+                    chatOutbox.enqueueSend(
+                        userId = currentUserId,
+                        roomId = roomId,
+                        text = trimmed,
+                        replyToMessageId = replyToMessageId,
+                        attachments = null,
+                        excavationAlert = false,
+                        source = source,
+                        currentUserId = currentUserId,
+                        currentUserRole = currentUserRole,
+                        senderUsername = "",
+                    )
+                }
+            }.getOrElse { err ->
+                vmState.value = vmState.value.copy(
+                    sendFailure = ChatSendFailure(
+                        messageText = trimmed,
+                        replyToMessageId = replyToMessageId,
+                        errorMessage = err.toUserMessageRu(res),
+                    ),
+                )
+                return@launch
+            }
+            insertOptimisticOutgoingSynchronously(enqueue.optimisticMessage, clearComposer = true)
+            chatSyncEngine.sendEnqueuedOutbox(enqueue.clientMessageId)
                 .onSuccess { sent ->
                     withContext(Dispatchers.Main.immediate) {
-                        confirmPendingOutgoingMessage(pendingId, sent)
+                        confirmPendingOutgoingMessage(enqueue.pendingMessageId, sent)
                     }
                 }
                 .onFailure { throwable ->
-                    activeOutgoingPendingId = null
-                    clearInFlightOutgoing(roomId, trimmed, replyToMessageId)
-                    removePendingOutgoingMessage(pendingId)
+                    removePendingOutgoingMessage(enqueue.pendingMessageId)
                     vmState.value = vmState.value.copy(
                         isSending = false,
                         sendFailure = ChatSendFailure(
@@ -172,34 +134,12 @@ internal fun ChatViewModel.sendDraftMessageImpl() {
                     uploadedIds.add(uploadedId)
                 }
                 val attachments = uploadedIds.takeIf { it.isNotEmpty() }
-                if (ChatArchitectureFlags.useChatOutbox) {
-                    launchAttachmentOutgoingSendImpl(
-                        roomId = roomId,
-                        text = text.trim(),
-                        replyToMessageId = replyToMessageId,
-                        attachments = attachments,
-                    )
-                    return@launch
-                }
-                vmRepository.sendMessageWithRetriesForChatUi(
-                    text = text.trim(),
+                launchAttachmentOutgoingSendImpl(
                     roomId = roomId,
+                    text = text.trim(),
                     replyToMessageId = replyToMessageId,
                     attachments = attachments,
                 )
-                    .onSuccess { sent ->
-                        applyIncomingMessageImpl(sent, clearComposer = true)
-                    }
-                    .onFailure { throwable ->
-                        vmState.value = vmState.value.copy(
-                            isSending = false,
-                            sendFailure = ChatSendFailure(
-                                messageText = text,
-                                replyToMessageId = replyToMessageId,
-                                errorMessage = throwable.toUserMessageRu(res),
-                            ),
-                        )
-                    }
             } catch (t: Throwable) {
                 vmState.value = vmState.value.copy(
                     isSending = false,
@@ -221,7 +161,6 @@ internal fun ChatViewModel.launchAttachmentOutgoingSendImpl(
         source: OutboxSendSource = OutboxSendSource.ChatUi,
     ) {
         val trimmed = text.trim()
-        registerInFlightOutgoing(roomId, trimmed, replyToMessageId)
         deriveJob?.cancel()
         deriveDebounceJob?.cancel()
         vmScope.launch {
@@ -241,7 +180,6 @@ internal fun ChatViewModel.launchAttachmentOutgoingSendImpl(
                     )
                 }
             }.getOrElse { err ->
-                clearInFlightOutgoing(roomId, trimmed, replyToMessageId)
                 vmState.value = vmState.value.copy(
                     isSending = false,
                     sendFailure = ChatSendFailure(
@@ -252,21 +190,15 @@ internal fun ChatViewModel.launchAttachmentOutgoingSendImpl(
                 )
                 return@launch
             }
-            outboxClientIdByPendingId[enqueue.pendingMessageId] = enqueue.clientMessageId
-            activeOutgoingPendingId = enqueue.pendingMessageId
             insertOptimisticOutgoingSynchronously(enqueue.optimisticMessage, clearComposer = true)
             clearPickedImagesImpl()
             chatSyncEngine.sendEnqueuedOutbox(enqueue.clientMessageId)
                 .onSuccess { sent ->
                     withContext(Dispatchers.Main.immediate) {
-                        outboxClientIdByPendingId.remove(enqueue.pendingMessageId)
                         confirmPendingOutgoingMessage(enqueue.pendingMessageId, sent)
                     }
                 }
                 .onFailure { throwable ->
-                    activeOutgoingPendingId = null
-                    outboxClientIdByPendingId.remove(enqueue.pendingMessageId)
-                    clearInFlightOutgoing(roomId, trimmed, replyToMessageId)
                     removePendingOutgoingMessage(enqueue.pendingMessageId)
                     vmState.value = vmState.value.copy(
                         isSending = false,
@@ -293,37 +225,29 @@ internal fun ChatViewModel.prepareOverlayRaidQuickCommandOutgoingImpl(
         if (vmState.value.selectedRoomId != rid) {
             selectRoom(rid)
         }
-        if (ChatArchitectureFlags.useChatOutbox) {
-            vmScope.launch {
-                val enqueue = runCatching {
-                    withContext(Dispatchers.IO) {
-                        chatOutbox.enqueueSend(
-                            userId = currentUserId,
-                            roomId = rid,
-                            text = body,
-                            replyToMessageId = null,
-                            attachments = null,
-                            excavationAlert = false,
-                            source = OutboxSendSource.OverlayRaid,
-                            currentUserId = currentUserId,
-                            currentUserRole = currentUserRole,
-                            senderUsername = "",
-                            pendingMessageId = pending,
-                        )
-                    }
-                }.getOrNull() ?: return@launch
-                outboxClientIdByPendingId[enqueue.pendingMessageId] = enqueue.clientMessageId
-                activeOutgoingPendingId = enqueue.pendingMessageId
-                insertOptimisticOutgoingSynchronously(
-                    enqueue.optimisticMessage.copy(_id = pending),
-                    clearComposer = false,
-                )
-            }
-            return
+        vmScope.launch {
+            val enqueue = runCatching {
+                withContext(Dispatchers.IO) {
+                    chatOutbox.enqueueSend(
+                        userId = currentUserId,
+                        roomId = rid,
+                        text = body,
+                        replyToMessageId = null,
+                        attachments = null,
+                        excavationAlert = false,
+                        source = OutboxSendSource.OverlayRaid,
+                        currentUserId = currentUserId,
+                        currentUserRole = currentUserRole,
+                        senderUsername = "",
+                        pendingMessageId = pending,
+                    )
+                }
+            }.getOrNull() ?: return@launch
+            insertOptimisticOutgoingSynchronously(
+                enqueue.optimisticMessage.copy(_id = pending),
+                clearComposer = false,
+            )
         }
-        registerInFlightOutgoing(rid, body, null)
-        val optimistic = buildOptimisticOutgoingMessage(rid, body, null).copy(_id = pending)
-        insertOptimisticOutgoingSynchronously(optimistic, clearComposer = false)
     }
 
 internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
@@ -341,69 +265,44 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
         if (vmState.value.selectedRoomId != rid) {
             withContext(Dispatchers.Main.immediate) { selectRoom(rid) }
         }
-        if (ChatArchitectureFlags.useChatOutbox) {
-            if (messageIdIndex.containsKey(pending) || knownMessageIds.contains(pending)) {
-                return sendOverlayRaidQuickCommandViaOutboxImpl(pending)
-            }
-            val enqueue = runCatching {
-                withContext(Dispatchers.IO) {
-                    chatOutbox.enqueueSend(
-                        userId = currentUserId,
-                        roomId = rid,
-                        text = body,
-                        replyToMessageId = null,
-                        attachments = null,
-                        excavationAlert = false,
-                        source = OutboxSendSource.OverlayRaid,
-                        currentUserId = currentUserId,
-                        currentUserRole = currentUserRole,
-                        senderUsername = "",
-                        pendingMessageId = pending,
-                    )
-                }
-            }.getOrElse { return Result.failure(it) }
-            outboxClientIdByPendingId[enqueue.pendingMessageId] = enqueue.clientMessageId
-            activeOutgoingPendingId = enqueue.pendingMessageId
-            withContext(Dispatchers.Main.immediate) {
-                insertOptimisticOutgoingSynchronously(
-                    enqueue.optimisticMessage.copy(_id = pending),
-                    clearComposer = false,
+        if (messageIdIndex.containsKey(pending) || knownMessageIds.contains(pending)) {
+            return sendOverlayRaidQuickCommandViaOutboxImpl(pending)
+        }
+        val enqueue = runCatching {
+            withContext(Dispatchers.IO) {
+                chatOutbox.enqueueSend(
+                    userId = currentUserId,
+                    roomId = rid,
+                    text = body,
+                    replyToMessageId = null,
+                    attachments = null,
+                    excavationAlert = false,
+                    source = OutboxSendSource.OverlayRaid,
+                    currentUserId = currentUserId,
+                    currentUserRole = currentUserRole,
+                    senderUsername = "",
+                    pendingMessageId = pending,
                 )
             }
-            return chatSyncEngine.sendEnqueuedOutbox(enqueue.clientMessageId)
-                .also { result ->
-                    result.onSuccess { sent ->
-                        withContext(Dispatchers.Main.immediate) {
-                            outboxClientIdByPendingId.remove(enqueue.pendingMessageId)
-                            confirmPendingOutgoingMessage(enqueue.pendingMessageId, sent)
-                        }
-                    }.onFailure {
-                        activeOutgoingPendingId = null
-                        outboxClientIdByPendingId.remove(enqueue.pendingMessageId)
-                        withContext(Dispatchers.Main.immediate) {
-                            removePendingOutgoingMessage(enqueue.pendingMessageId)
-                        }
+        }.getOrElse { return Result.failure(it) }
+        withContext(Dispatchers.Main.immediate) {
+            insertOptimisticOutgoingSynchronously(
+                enqueue.optimisticMessage.copy(_id = pending),
+                clearComposer = false,
+            )
+        }
+        return chatSyncEngine.sendEnqueuedOutbox(enqueue.clientMessageId)
+            .also { result ->
+                result.onSuccess { sent ->
+                    withContext(Dispatchers.Main.immediate) {
+                        confirmPendingOutgoingMessage(enqueue.pendingMessageId, sent)
+                    }
+                }.onFailure {
+                    withContext(Dispatchers.Main.immediate) {
+                        removePendingOutgoingMessage(enqueue.pendingMessageId)
                     }
                 }
-        }
-        withContext(Dispatchers.Main.immediate) {
-            prepareOverlayRaidQuickCommandOutgoingImpl(pending, rid, body)
-        }
-        return vmRepository.sendOverlayRaidCommandFast(
-            text = body,
-            roomId = rid,
-            gameEventAlert = gameEventAlert,
-        ).also { result ->
-            result.onSuccess { sent ->
-                withContext(Dispatchers.Main.immediate) {
-                    confirmOverlayRaidQuickCommandHttp(pending, sent)
-                }
-            }.onFailure {
-                withContext(Dispatchers.Main.immediate) {
-                    cancelOverlayRaidQuickCommandOutgoing(pending, rid, body)
-                }
             }
-        }
     }
 
 internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandViaOutboxImpl(
@@ -413,7 +312,7 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandViaOutboxImpl(
         if (pending.isEmpty()) {
             return Result.failure(IllegalStateException("missing_pending"))
         }
-        val clientMessageId = outboxClientIdByPendingId[pending]
+        val clientMessageId = outboxRoomSnapshot.pendingToClientId[pending]
             ?: withContext(Dispatchers.IO) {
                 chatOutbox.observeActive(currentUserId)
                     .first()
@@ -639,23 +538,6 @@ internal fun ChatViewModel.toggleReactionImpl(messageId: String, emoji: String) 
         }
     }
 
-internal fun ChatViewModel.buildOptimisticOutgoingMessageImpl(
-        roomId: String,
-        text: String,
-        replyToMessageId: String?,
-    ): ChatMessage =
-        ChatMessage(
-            _id = "pending-${UUID.randomUUID()}",
-            allianceId = "",
-            roomId = roomId,
-            senderId = currentUserId,
-            senderUsername = "",
-            senderRole = currentUserRole,
-            text = text,
-            replyToMessageId = replyToMessageId,
-            createdAt = java.time.Instant.now().toString(),
-        )
-
 internal fun ChatViewModel.publishRaidMessageToOverlayStripImpl(message: ChatMessage) {
         val roomId = message.roomId.trim().ifBlank { vmState.value.selectedRoomId?.trim().orEmpty() }
         if (roomId.isEmpty()) return
@@ -693,7 +575,6 @@ internal fun ChatViewModel.insertOptimisticOutgoingSynchronouslyImpl(
             Triple(snapshot, capped, update.newestMessageKey ?: message._id?.trim().orEmpty())
         }
         val (snapshot, capped, newestKey) = work
-        activeOutgoingPendingId = message._id
         message._id?.let { registerOutgoingLazyColumnKey(it) }
         var nextState = snapshot.copy(
             messages = capped,
@@ -729,7 +610,6 @@ internal fun ChatViewModel.insertOptimisticOutgoingSynchronouslyImpl(
 internal fun ChatViewModel.removePendingOutgoingMessageImpl(pendingId: String?) {
         val id = pendingId?.trim().orEmpty()
         if (id.isEmpty()) return
-        if (activeOutgoingPendingId == id) activeOutgoingPendingId = null
         dropOutgoingLazyColumnKey(id)
         knownMessageIds.remove(id)
         messageIdIndex.remove(id)
@@ -744,35 +624,14 @@ internal fun ChatViewModel.removePendingOutgoingMessageImpl(pendingId: String?) 
         ChatSessionCache.updateMessages(rid, vmState.value.messages)
     }
 
-    /**
-     * Пока в ленте есть optimistic `pending-*` с тем же текстом, не вставляем свой socket-echo —
-     * иначе кратко видны две строки до [confirmPendingOutgoingMessage].
-     */
-internal fun ChatViewModel.registerInFlightOutgoingImpl(roomId: String, text: String, replyToMessageId: String?) {
-        if (ChatArchitectureFlags.useChatOutbox) return
-        inFlightOutgoingFingerprints.add(
-            outgoingMessageFingerprint(roomId, text, replyToMessageId),
-        )
-    }
-
-internal fun ChatViewModel.clearInFlightOutgoingImpl(roomId: String, text: String, replyToMessageId: String?) {
-        if (ChatArchitectureFlags.useChatOutbox) return
-        inFlightOutgoingFingerprints.remove(
-            outgoingMessageFingerprint(roomId, text, replyToMessageId),
-        )
-    }
-
 internal fun ChatViewModel.shouldDeferOwnOutgoingSocketEchoImpl(message: ChatMessage): Boolean =
         shouldBlockOwnOutgoingRealtime(message)
-
-
 
     /** Replace optimistic row in-place (no remove+insert, no extra scroll). */
 internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?, sent: ChatMessage) {
         val pending = pendingId?.trim().orEmpty()
         val serverId = sent._id?.trim().orEmpty()
         if (pending.isEmpty() || serverId.isEmpty()) {
-            clearInFlightOutgoing(sent.roomId, sent.text, sent.replyToMessageId)
             applyIncomingMessage(sent, clearComposer = false)
             return
         }
@@ -827,8 +686,6 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
             )
         }
         if (roomId != null && vmState.value.selectedRoomId != roomId) {
-            activeOutgoingPendingId = null
-            clearInFlightOutgoing(sent.roomId, sent.text, sent.replyToMessageId)
             stashIncomingMessageForRoom(sent)
             return
         }
@@ -860,8 +717,6 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
             ),
         )
         _listDerived.value = derived
-        activeOutgoingPendingId = null
-        clearInFlightOutgoing(sent.roomId, sent.text, sent.replyToMessageId)
         val rid = vmState.value.selectedRoomId
         if (!rid.isNullOrBlank()) {
             acknowledgeOwnOutgoingInActiveRoom(rid, serverId)
@@ -899,4 +754,3 @@ internal fun ChatViewModel.applyIncomingBatchImpl(
     ) {
         chatIncomingSync.applyIncomingBatch(batch, clearComposer)
     }
-

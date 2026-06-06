@@ -12,7 +12,6 @@ import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.chat.ChatTeamRoomsMembership
-import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
 import com.lastasylum.alliance.data.chat.sync.CHAT_INITIAL_PAGE_SIZE
 import com.lastasylum.alliance.data.chat.sync.CHAT_PAGE_SIZE
 import com.lastasylum.alliance.data.chat.sync.CHAT_ROOMS_SYNC_ON_RESUME_TTL_MS
@@ -745,6 +744,8 @@ internal fun ChatViewModel.selectRoomImpl(roomId: String) {
         }
         vmRepository.ensureRoomJoined(roomId)
         _otherReadUptoMessageId.value = otherReadUptoByRoom[roomId]
+        roomStoreBindings.bindSelectedRoom(roomId)
+        bindOutboxObservers(roomId)
         openRoomJob = vmScope.launch {
             chatRoomPreferencesInternal.setSelectedRoomId(roomId)
             if (previousRoomId != null && !previousNewestId.isNullOrBlank()) {
@@ -1019,42 +1020,22 @@ internal suspend fun ChatViewModel.markRoomReadUpToImpl(
             if (ChatRoomKindResolver.allianceHubRoom(vmState.value.rooms)?.id == roomId) {
                 syncOverlayAllianceHubBadge(vmState.value.rooms)
             }
-            if (ChatArchitectureFlags.useChatSyncEngine) {
-                chatSyncEngine.markRoomRead(currentUserId, roomId, messageId)
-                    .onSuccess {
-                        mergeReadCursor(roomId, messageId)
-                        ChatSessionCache.patchRoomRead(roomId, messageId)
-                        vmState.update { st ->
-                            st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
-                        }
-                        syncTabUnreadBadge()
-                        ChatSessionCache.update(vmState.value.rooms)
-                        if (ChatRoomKindResolver.allianceHubRoom(vmState.value.rooms)?.id == roomId) {
-                            syncOverlayAllianceHubBadge(vmState.value.rooms)
-                        }
+            chatSyncEngine.markRoomRead(currentUserId, roomId, messageId)
+                .onSuccess {
+                    mergeReadCursor(roomId, messageId)
+                    ChatSessionCache.patchRoomRead(roomId, messageId)
+                    vmState.update { st ->
+                        st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
                     }
-                    .onFailure {
-                        scheduleUnreadSyncFromServer()
+                    syncTabUnreadBadge()
+                    ChatSessionCache.update(vmState.value.rooms)
+                    if (ChatRoomKindResolver.allianceHubRoom(vmState.value.rooms)?.id == roomId) {
+                        syncOverlayAllianceHubBadge(vmState.value.rooms)
                     }
-            } else {
-                vmRepository.markRoomRead(roomId, messageId)
-                    .onSuccess { response ->
-                        mergeReadCursor(roomId, messageId)
-                        ChatSessionCache.patchRoomRead(roomId, messageId)
-                        if (response.unreadCount <= 0) {
-                            vmState.update { st ->
-                                st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
-                            }
-                            syncTabUnreadBadge()
-                            ChatSessionCache.update(vmState.value.rooms)
-                            if (ChatRoomKindResolver.allianceHubRoom(vmState.value.rooms)?.id == roomId) {
-                                syncOverlayAllianceHubBadge(vmState.value.rooms)
-                            }
-                        } else {
-                            scheduleUnreadSyncFromServer()
-                        }
-                    }
-            }
+                }
+                .onFailure {
+                    scheduleUnreadSyncFromServer()
+                }
         }
         markReadInFlight.add(job)
         job.invokeOnCompletion { markReadInFlight.remove(job) }

@@ -388,11 +388,12 @@ class TeamForumSocketManager {
                     if (activeTopic == null) {
                         if (msg.topicId.isNotBlank()) {
                             ForumMessageStash.stash(msg)
-                            com.lastasylum.alliance.ui.chat.ForumDeliveryMetrics.logStash(
-                                msg.teamId,
-                                msg.topicId,
-                                msg.id,
-                            )
+                            if (com.lastasylum.alliance.BuildConfig.DEBUG) {
+                                android.util.Log.d(
+                                    "SR_Forum",
+                                    "stash team=${msg.teamId} topic=${msg.topicId} id=${msg.id}",
+                                )
+                            }
                         }
                         return@on
                     }

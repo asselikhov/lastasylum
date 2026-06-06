@@ -1,4 +1,4 @@
-﻿package com.lastasylum.alliance.ui.screens.teamforum
+package com.lastasylum.alliance.ui.screens.teamforum
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -43,7 +43,6 @@ import com.lastasylum.alliance.ui.chat.mergeForumMessagesPage
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
 import com.lastasylum.alliance.ui.chat.ACTIVE_FORUM_RECONCILE_INTERVAL_MS
 import com.lastasylum.alliance.ui.chat.buildOptimisticForumMessage
-import com.lastasylum.alliance.ui.chat.ForumDeliveryMetrics
 import com.lastasylum.alliance.ui.chat.removePendingForumOutgoing
 import com.lastasylum.alliance.ui.chat.replaceMatchingPendingForumOutgoing
 import com.lastasylum.alliance.ui.chat.shouldBlockOwnForumOutgoingRealtime
