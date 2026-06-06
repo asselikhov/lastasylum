@@ -122,7 +122,7 @@ internal fun ForumTopicMessagesLazyList(
                     val timelineIdx =
                         forumLazyIndexToTimelineIndex(lazyIdx, timeline.lastIndex) ?: lazyIdx
                     when (val e = timeline[timelineIdx]) {
-                        is ForumTimelineEntry.DaySeparator -> "day:${e.label}"
+                        is ForumTimelineEntry.DaySeparator -> "day:$timelineIdx:${e.label}"
                         is ForumTimelineEntry.Message -> "msg:${e.messageId}"
                     }
                 },

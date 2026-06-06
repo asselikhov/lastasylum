@@ -60,6 +60,27 @@ class ChatMessagesListDeriverTest {
     }
 
     @Test
+    fun buildChatTimeline_duplicateDayLabels_haveUniqueLazyKeys() {
+        val messages = listOf(
+            msg("4", createdAt = "2026-06-08T10:00:00.000Z"),
+            msg("3", createdAt = "2026-06-07T10:00:00.000Z"),
+            msg("2", createdAt = "2026-06-06T10:00:00.000Z"),
+            msg("1", createdAt = "2026-06-07T09:00:00.000Z"),
+        )
+        val derived = buildChatMessagesListDerived(messages)
+        val dayLabels = derived.timeline.filterIsInstance<ChatTimelineEntry.DaySeparator>()
+        assertTrue(dayLabels.size >= 2)
+        val keys = derived.timeline.mapIndexed { index, entry ->
+            when (entry) {
+                is ChatTimelineEntry.DaySeparator -> chatTimelineDaySeparatorKey(index, entry.label)
+                else -> entry.toString()
+            }
+        }
+        val dayKeys = keys.filter { it.startsWith("day:") }
+        assertEquals(dayKeys.size, dayKeys.toSet().size)
+    }
+
+    @Test
     fun buildChatMessagesListDerivedAfterPrepend_fallsBackWhenNotSimplePrepend() {
         val previous = listOf(msg("1"), msg("2"))
         val previousDerived = buildChatMessagesListDerived(previous)

@@ -27,8 +27,8 @@ data class ChatMessagesListDerived(
 fun clusterTopSpacingAt(derived: ChatMessagesListDerived, timelineIndex: Int): Int =
     derived.clusterTopSpacingDp.getOrElse(timelineIndex) { 10 }
 
-fun chatTimelineDaySeparatorKey(label: String): String =
-    "day:${label.trim()}"
+fun chatTimelineDaySeparatorKey(timelineIndex: Int, label: String): String =
+    "day:$timelineIndex:${label.trim()}"
 
 fun resolveChatListDerivedAfterMessagesUpdate(
     previousDerived: ChatMessagesListDerived,

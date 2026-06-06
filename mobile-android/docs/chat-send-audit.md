@@ -19,6 +19,7 @@
 | Badges | IO/main race on seed vs refresh, stale `prev` | Cancel seed on refresh; merge on main; sync coordinator cache |
 | Badges | Hub optimistic floor mutated on IO | Clear floor only on main thread |
 | Notifications | Stale badge when HUD hidden during hold | Collector starts on HUD attach; refresh respects hold |
+| Overlay chat crash | Duplicate LazyColumn key `day:7 июня` when same date label appears twice | `chatTimelineDaySeparatorKey(index, label)` includes timeline index |
 
 ## Remaining risks (low)
 
