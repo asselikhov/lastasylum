@@ -28,4 +28,33 @@ class OverlayHudBadgeBusTest {
         assertEquals(2, flow.value.teamNewsUnread)
         assertEquals(1, flow.value.forumUnread)
     }
+
+    @Test
+    fun emit_laterHubUnreadWinsWithinBatch() {
+        val flow = MutableStateFlow(OverlayGameStatusHudState(allianceChatUnread = 5))
+        val reducer = OverlayHudBadgeReducer(flow)
+        val bus = OverlayHudBadgeBus(
+            reducer = reducer,
+            mergeNews = { auth, prev, _ -> maxOf(auth, prev) },
+            mergeForum = { auth, prev, _, _ -> maxOf(auth, prev) },
+        )
+        bus.emit(OverlayHudBadgeEvent.HubUnread(1))
+        bus.emit(OverlayHudBadgeEvent.HubUnread(4))
+        ShadowLooper.idleMainLooper()
+        assertEquals(4, flow.value.allianceChatUnread)
+    }
+
+    @Test
+    fun emit_clearHub_resetsAllianceUnread() {
+        val flow = MutableStateFlow(OverlayGameStatusHudState(allianceChatUnread = 9))
+        val reducer = OverlayHudBadgeReducer(flow)
+        val bus = OverlayHudBadgeBus(
+            reducer = reducer,
+            mergeNews = { auth, prev, _ -> maxOf(auth, prev) },
+            mergeForum = { auth, prev, _, _ -> maxOf(auth, prev) },
+        )
+        bus.emit(OverlayHudBadgeEvent.ClearHub)
+        ShadowLooper.idleMainLooper()
+        assertEquals(0, flow.value.allianceChatUnread)
+    }
 }

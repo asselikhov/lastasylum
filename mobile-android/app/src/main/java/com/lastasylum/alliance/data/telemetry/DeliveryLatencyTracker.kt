@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.data.telemetry
 
 import android.util.Log
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.chat.store.LatencySampleEntity
 import com.lastasylum.alliance.data.chat.store.SquadRelayDatabase
@@ -77,6 +78,22 @@ class DeliveryLatencyTracker(
         Log.i(TAG, snap.toLogLine())
     }
 
+    fun logSnapshotReleaseSummary() {
+        if (BuildConfig.DEBUG) return
+        val snap = snapshot()
+        if (snap.sampleCount == 0) return
+        Log.i(TAG, snap.toLogLine())
+        val chatSend = snap.byType[LatencySpanType.ChatSendToSocket]
+        if (chatSend != null && chatSend.p95Ms > P95_CRASHLYTICS_THRESHOLD_MS) {
+            runCatching {
+                FirebaseCrashlytics.getInstance().setCustomKey(
+                    "chat_send_to_socket_p95_ms",
+                    chatSend.p95Ms,
+                )
+            }
+        }
+    }
+
     private fun record(type: LatencySpanType, correlationId: String, startedAtMs: Long, outcome: String) {
         val durationMs = (System.currentTimeMillis() - startedAtMs).coerceAtLeast(0L)
         val sample = CompletedSample(
@@ -123,5 +140,6 @@ class DeliveryLatencyTracker(
         private const val TAG = "SR_Latency"
         private const val RING_CAPACITY = 500
         private const val FIVE_MIN_MS = 5 * 60_000L
+        private const val P95_CRASHLYTICS_THRESHOLD_MS = 5_000L
     }
 }

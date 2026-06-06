@@ -94,6 +94,5 @@ class OverlayHudBadgeBus(
             prev.copy(appUpdateDownloadUrl = event.url?.trim()?.takeIf { it.isNotEmpty() })
         OverlayHudBadgeEvent.ClearHub ->
             prev.copy(allianceChatUnread = 0)
-        is OverlayHudBadgeEvent.ForumFromTopics -> prev
     }
 }

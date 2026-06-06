@@ -6,6 +6,7 @@ import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.chat.ChatApi
 import com.lastasylum.alliance.data.admin.AdminApi
 import com.lastasylum.alliance.data.teams.TeamsApi
+import com.lastasylum.alliance.data.telemetry.TelemetryApi
 import com.lastasylum.alliance.data.users.UsersApi
 import com.lastasylum.alliance.data.chat.SquadRelayMoshi
 import com.squareup.moshi.Moshi
@@ -126,6 +127,7 @@ object NetworkModule {
             usersApi = authorizedRetrofit.create(UsersApi::class.java),
             adminApi = authorizedRetrofit.create(AdminApi::class.java),
             teamsApi = authorizedRetrofit.create(TeamsApi::class.java),
+            telemetryApi = authorizedRetrofit.create(TelemetryApi::class.java),
         )
     }
 }
@@ -137,4 +139,5 @@ data class AuthorizedClients(
     val usersApi: UsersApi,
     val adminApi: AdminApi,
     val teamsApi: TeamsApi,
+    val telemetryApi: TelemetryApi,
 )

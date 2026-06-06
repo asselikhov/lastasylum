@@ -138,6 +138,8 @@ data class ChatMessage(
     val replyTo: ChatMessageReplyPreview? = null,
     val deletedAt: String? = null,
     val deletedByUserId: String? = null,
+    /** Client-generated id for outbox dedup and delivery latency correlation. */
+    val clientMessageId: String? = null,
 )
 
 @Immutable

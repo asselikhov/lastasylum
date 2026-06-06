@@ -35,6 +35,25 @@ class MessageStoreTest {
         assertEquals("507f1f77bcf86cd799439099", observed.first()._id)
     }
 
+    @Test
+    fun setReadCursor_observedByRoom() = runBlocking {
+        val roomId = "room1"
+        val userId = "user1"
+        store.setReadCursor(userId, roomId, "507f1f77bcf86cd799439099")
+        val cursor = store.observeReadCursor(userId, roomId).first()
+        assertEquals("507f1f77bcf86cd799439099", cursor)
+    }
+
+    @Test
+    fun readCursor_mergeKeepsNewer() = runBlocking {
+        val roomId = "room1"
+        val userId = "user1"
+        store.setReadCursor(userId, roomId, "507f1f77bcf86cd799439010")
+        store.setReadCursor(userId, roomId, "507f1f77bcf86cd799439099")
+        val cursor = store.observeReadCursor(userId, roomId).first()
+        assertEquals("507f1f77bcf86cd799439099", cursor)
+    }
+
     private fun sampleMessage(id: String, roomId: String, text: String, createdAt: String) = ChatMessage(
         _id = id,
         allianceId = "a1",

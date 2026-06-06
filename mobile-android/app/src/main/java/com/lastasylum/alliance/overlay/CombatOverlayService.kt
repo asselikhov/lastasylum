@@ -4484,15 +4484,18 @@ class CombatOverlayService : Service() {
         text: String,
         gameEventAlert: String? = null,
     ): Result<ChatMessage> {
-        val pendingId = pendingOverlayQuickCommandId
-        ensureChatViewModelForQuickCommandSend()
-        val repo = AppContainer.from(this@CombatOverlayService).chatRepository
+        val pendingId = pendingOverlayQuickCommandId?.trim().orEmpty()
+        val vm = ensureChatViewModelForQuickCommandSend()
+            ?: return Result.failure(IllegalStateException("no_vm"))
         val roomId = ensureOverlayRaidRoomReadyForSend()
             ?: return Result.failure(IllegalStateException("no_raid"))
-        prepareOverlayRaidQuickCommandSend(roomId, pendingId, text)
-        val result = repo.sendOverlayRaidCommandFast(
-            text = text,
+        if (overlayChatTeamPanelVisible) {
+            withContext(Dispatchers.Main) { showOverlayHudPane(OverlayHudPane.Chat) }
+        }
+        val result = vm.sendOverlayRaidQuickCommand(
+            pendingId = pendingId.ifEmpty { "overlay-pending-${System.nanoTime()}" },
             roomId = roomId,
+            text = text,
             gameEventAlert = gameEventAlert,
         )
         result.onSuccess { sent ->
@@ -4502,7 +4505,7 @@ class CombatOverlayService : Service() {
                     raidRoomId = roomId,
                     fallbackText = text,
                     suppressSenderStrip = true,
-                    pendingId = pendingId,
+                    pendingId = pendingId.takeIf { it.isNotEmpty() },
                 )
                 pendingOverlayQuickCommandId = null
             }

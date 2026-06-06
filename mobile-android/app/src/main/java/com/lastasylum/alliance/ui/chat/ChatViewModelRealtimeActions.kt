@@ -1,0 +1,424 @@
+package com.lastasylum.alliance.ui.chat
+
+import android.util.Log
+import com.lastasylum.alliance.BuildConfig
+import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent
+import com.lastasylum.alliance.data.chat.ChatRoomPinChangedEvent
+import com.lastasylum.alliance.data.chat.ChatRoomReadEvent
+import com.lastasylum.alliance.data.chat.ChatRaidRoomSync
+import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
+import com.lastasylum.alliance.data.chat.ChatSessionCache
+import com.lastasylum.alliance.data.chat.ChatTypingEvent
+import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
+import com.lastasylum.alliance.data.chat.sync.ChatRoomMessageCache
+import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.ui.util.toUserMessageRu
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import retrofit2.HttpException
+
+
+internal fun ChatViewModel.shouldSuppressOwnOutgoingRealtimeEchoImpl(message: ChatMessage): Boolean =
+        shouldBlockOwnOutgoingRealtime(message)
+
+internal fun ChatViewModel.shouldBlockOwnOutgoingRealtimeImpl(message: ChatMessage): Boolean {
+        val selfId = currentUserId.trim()
+        if (selfId.isEmpty() || message.senderId.trim() != selfId) return false
+        message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { cid ->
+            if (outboxClientIdByPendingId.containsValue(cid)) return true
+        }
+        if (hasMatchingPendingOutgoing(vmState.value.messages, message, currentUserId)) return true
+        if (!ChatArchitectureFlags.useChatOutbox) {
+            val fingerprint = outgoingMessageFingerprint(
+                message.roomId,
+                message.text,
+                message.replyToMessageId,
+            )
+            if (inFlightOutgoingFingerprints.contains(fingerprint)) return true
+        }
+        val pendingId = message._id?.trim().orEmpty()
+        if (pendingId.isNotEmpty() && outboxClientIdByPendingId.containsKey(pendingId)) return true
+        return isDuplicateOwnOutgoingDelivery(
+            vmState.value.messages,
+            message,
+            messageIdIndex,
+        )
+    }
+
+internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
+        val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
+        if (cid != null && message.senderId.trim() == currentUserId.trim()) {
+            vmScope.launch(Dispatchers.IO) {
+                chatSyncEngine.onSocketMessageConfirmed(
+                    currentUserId,
+                    message.roomId,
+                    message,
+                    cid,
+                )
+            }
+        }
+        if (shouldBlockOwnOutgoingRealtime(message)) return
+        if (!isIncomingMessageVisible(message)) return
+        if (!incomingMessages.trySend(message).isSuccess) {
+            vmScope.launch(Dispatchers.Main) {
+                if (shouldBlockOwnOutgoingRealtime(message) || !isIncomingMessageVisible(message)) return@launch
+                dispatchIncomingBatch(listOf(message))
+            }
+            val roomId = message.roomId.trim()
+            if (roomId.isNotEmpty()) {
+                refreshMessagesInBackground(roomId, force = true)
+            }
+        }
+    }
+
+internal fun ChatViewModel.onRoomReadEventImpl(event: ChatRoomReadEvent) {
+        if (event.userId.isBlank() || event.messageId.isBlank()) return
+        if (event.userId == currentUserId) {
+            if (event.roomId.isNotBlank()) {
+                mergeReadCursor(event.roomId, event.messageId)
+                vmState.update { st ->
+                    st.copy(rooms = clearUnreadForRoom(st.rooms, event.roomId))
+                }
+            }
+            return
+        }
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d(
+                "ChatReadReceipt",
+                "room:read peer=${event.userId} room=${event.roomId} upto=${event.messageId} " +
+                    "selected=${vmState.value.selectedRoomId}",
+            )
+        }
+        val publishUpto = PeerReadCursorLogic.mergePeerReadEvent(
+            otherReadUptoByRoom = otherReadUptoByRoom,
+            selectedRoomId = vmState.value.selectedRoomId,
+            event = event,
+            currentUserId = currentUserId,
+        )
+        if (publishUpto != null) {
+            _otherReadUptoMessageId.value = publishUpto
+            deliveryLatencyTracker.endSpanByCorrelation(
+                com.lastasylum.alliance.data.telemetry.LatencySpanType.ChatReadReceipt,
+                event.messageId,
+                "ok",
+            )
+        }
+    }
+
+internal fun ChatViewModel.onTypingFromPeerImpl(event: ChatTypingEvent) {
+        vmScope.launch {
+            if (event.userId.isBlank() || event.userId == currentUserId) return@launch
+            val roomId = vmState.value.selectedRoomId ?: return@launch
+            if (event.roomId.isNotBlank() && event.roomId != roomId) return@launch
+            val username = event.username.ifBlank { "…" }
+            synchronized(typingPeerJobsLock) {
+                typingPeerJobs[event.userId]?.cancel()
+            }
+            val job = launch {
+                try {
+                    _typingPeers.update { current ->
+                        current.toMutableMap().apply { put(event.userId, username) }
+                    }
+                    delay(3200)
+                    _typingPeers.update { current ->
+                        current.toMutableMap().apply { remove(event.userId) }
+                    }
+                } catch (_: CancellationException) {
+                    // superseded by a newer typing event for the same user
+                }
+            }
+            synchronized(typingPeerJobsLock) {
+                typingPeerJobs[event.userId] = job
+            }
+            job.invokeOnCompletion {
+                synchronized(typingPeerJobsLock) {
+                    if (typingPeerJobs[event.userId] === job) {
+                        typingPeerJobs.remove(event.userId)
+                    }
+                }
+            }
+        }
+    }
+
+internal fun ChatViewModel.onDeletedMessageImpl(event: ChatMessageDeletedEvent) {
+        vmScope.launch {
+            val removedId = event.messageId.trim()
+            if (removedId.isEmpty()) return@launch
+            val eventRoomId = event.roomId.trim()
+            val selected = vmState.value.selectedRoomId
+            if (eventRoomId.isBlank() || eventRoomId == selected) {
+                val scrubbed = scrubRemovedMessage(vmState.value, removedId)
+                vmState.value = syncSelections(
+                    scrubbed.copy(
+                        deletingMessageId = if (scrubbed.deletingMessageId == removedId) {
+                            null
+                        } else {
+                            scrubbed.deletingMessageId
+                        },
+                    ),
+                )
+            } else if (eventRoomId.isNotEmpty()) {
+                vmState.update { st ->
+                    clearRoomPinAfterMessageRemoved(st, removedId, eventRoomId)
+                }
+            }
+            persistMessageRemoved(removedId, eventRoomId)
+        }
+    }
+
+internal fun ChatViewModel.persistMessageRemovedImpl(removedId: String, roomId: String) {
+        val id = removedId.trim()
+        if (id.isEmpty()) return
+        markMessageRemovedLocally(id)
+        val rid = roomId.trim().ifBlank { vmState.value.selectedRoomId?.trim().orEmpty() }
+        if (rid.isEmpty()) {
+            schedulePersistChatSnapshot()
+            return
+        }
+        val cached = roomMessageCache[rid]
+        val nextMessages = when {
+            cached != null -> {
+                val cacheKnown = cached.messages.mapNotNull { it._id }.toMutableSet()
+                scrubMessagesAfterRemove(cached.messages, id, cacheKnown)
+            }
+            vmState.value.selectedRoomId == rid -> vmState.value.messages
+            else -> null
+        }
+        if (nextMessages != null) {
+            val capped = capMessagesForMemory(nextMessages)
+            roomMessageCache[rid] = ChatRoomMessageCache(
+                messages = capped,
+                hasMoreOlder = cached?.hasMoreOlder ?: vmState.value.hasMoreOlder,
+            )
+            ChatSessionCache.updateMessages(rid, capped)
+        }
+        flushRoomMessagesToDiskNow(rid)
+        schedulePersistChatSnapshot()
+    }
+
+internal fun ChatViewModel.markMessageRemovedLocallyImpl(messageId: String) {
+        val id = messageId.trim()
+        if (id.isEmpty()) return
+        locallyRemovedMessageIds.add(id)
+        while (locallyRemovedMessageIds.size > 512) {
+            locallyRemovedMessageIds.remove(locallyRemovedMessageIds.first())
+        }
+        if (currentUserId.isNotBlank()) {
+            vmScope.launch(Dispatchers.IO) {
+                launchDiskCache.saveRemovedMessageIds(currentUserId, locallyRemovedMessageIds)
+            }
+        }
+    }
+
+internal fun ChatViewModel.messagesWithoutLocallyRemovedImpl(messages: List<ChatMessage>): List<ChatMessage> {
+        if (locallyRemovedMessageIds.isEmpty()) return messages
+        var out = messages
+        val known = out.mapNotNull { it._id }.toMutableSet()
+        for (removedId in locallyRemovedMessageIds) {
+            if (removedId.isBlank()) continue
+            out = scrubMessagesAfterRemove(out, removedId, known)
+        }
+        return out
+    }
+
+internal fun ChatViewModel.applyLocallyRemovedFilterToLoadedCachesImpl() {
+        if (locallyRemovedMessageIds.isEmpty()) return
+        for ((rid, entry) in roomMessageCache.toList()) {
+            val filtered = messagesWithoutLocallyRemoved(entry.messages)
+            if (filtered.size == entry.messages.size) continue
+            val capped = capMessagesForMemory(filtered)
+            roomMessageCache[rid] = entry.copy(messages = capped)
+            ChatSessionCache.updateMessages(rid, capped)
+        }
+        val roomId = vmState.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty()) return
+        val current = messagesWithoutLocallyRemoved(vmState.value.messages)
+        if (current.size == vmState.value.messages.size) return
+        knownMessageIds.clear()
+        messageIdIndex.clear()
+        knownMessageIds.addAll(current.mapNotNull { it._id })
+        rebuildMessageIdIndex(current, messageIdIndex)
+        vmState.update { st -> syncSelections(st.copy(messages = current)) }
+        publishMessagesDerived(current)
+    }
+
+internal fun ChatViewModel.flushRoomMessagesToDiskNowImpl(roomId: String) {
+        if (currentUserId.isBlank()) return
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return
+        vmScope.launch(Dispatchers.IO) {
+            val snapshot = withContext(Dispatchers.Main) {
+                val entry = roomMessageCache[rid]
+                val raw = entry?.messages?.takeIf { it.isNotEmpty() }
+                    ?: if (vmState.value.selectedRoomId == rid) {
+                        vmState.value.messages
+                    } else {
+                        null
+                    }
+                if (raw == null) return@withContext null
+                Triple(
+                    messagesWithoutLocallyRemoved(raw),
+                    entry?.hasMoreOlder ?: vmState.value.hasMoreOlder,
+                    raw,
+                )
+            } ?: return@launch
+            val (messages, hasMoreOlder, _) = snapshot
+            if (messages.isEmpty()) return@launch
+            launchDiskCache.saveRoomMessages(currentUserId, rid, messages, hasMoreOlder)
+        }
+    }
+
+internal fun ChatViewModel.scrubRemovedMessageImpl(state: ChatState, removedId: String): ChatState {
+        val nextMessages = scrubMessagesAfterRemove(state.messages, removedId, knownMessageIds)
+        rebuildMessageIdIndex(nextMessages, messageIdIndex)
+        publishMessagesDerived(nextMessages)
+        return clearRoomPinAfterMessageRemoved(
+            state = state.copy(messages = nextMessages),
+            removedId = removedId,
+            roomId = state.selectedRoomId.orEmpty(),
+        )
+    }
+
+internal fun ChatViewModel.clearRoomPinAfterMessageRemovedImpl(
+        state: ChatState,
+        removedId: String,
+        roomId: String,
+    ): ChatState {
+        val rid = roomId.trim()
+        val removed = removedId.trim()
+        if (rid.isEmpty() || removed.isEmpty()) return state
+        pinHistoryByRoomInternal[rid] = removePinFromHistory(
+            pinHistoryByRoomInternal[rid].orEmpty(),
+            removed,
+        )
+        persistPinHistory(rid)
+        val room = state.rooms.find { it.id == rid } ?: return state
+        if (room.pinnedMessageId?.trim() != removed) return state
+        val cleared = room.withOptimisticUnpin()
+        return applyPinBarUiImpl(state.copy(rooms = applyRoomPinToRoomsImpl(state.rooms, cleared)))
+    }
+
+internal fun ChatViewModel.applyRoomPinChangedEventImpl(event: ChatRoomPinChangedEvent) {
+        vmState.update { st ->
+            val withRooms = st.copy(rooms = applyRoomPinEvent(st.rooms, event))
+            if (st.selectedRoomId == event.roomId) applyPinBarUiImpl(withRooms) else withRooms
+        }
+        ChatSessionCache.update(vmState.value.rooms)
+    }
+
+internal fun ChatViewModel.applyMessageReplaceSynchronouslyImpl(updated: ChatMessage) {
+        val id = updated._id?.trim().orEmpty()
+        if (id.isEmpty()) return
+        synchronized(chatMutationLock) {
+            val idx = messageIdIndex[id] ?: vmState.value.messages.indexOfFirst { it._id?.trim() == id }
+            if (idx < 0) return
+            val messages = vmState.value.messages.toMutableList()
+            if (idx !in messages.indices) return
+            messages[idx] = updated.mergeIncomingChatUpdate(messages[idx])
+            rebuildMessageIdIndex(messages, messageIdIndex)
+            publishMessagesDerivedAfterPatch(messages, idx)
+            val roomId = vmState.value.selectedRoomId?.trim().orEmpty()
+            vmState.value = syncSelections(vmState.value.copy(messages = messages))
+            if (roomId.isNotEmpty()) {
+                val cached = roomMessageCache[roomId]
+                roomMessageCache[roomId] = ChatRoomMessageCache(
+                    messages = messages,
+                    hasMoreOlder = cached?.hasMoreOlder ?: vmState.value.hasMoreOlder,
+                )
+                ChatSessionCache.updateMessages(roomId, messages)
+            }
+            val room = vmState.value.rooms.find { it.id == roomId }
+            if (room != null && room.pinnedMessageId?.trim() == id) {
+                updated.toPinnedPreview()?.let { preview ->
+                    val pinnedRoom = room.withOptimisticPin(id, preview, room.pinnedByUserId.orEmpty())
+                    publishRoomPinImpl(pinnedRoom)
+                }
+            }
+        }
+    }
+
+internal fun ChatViewModel.messagesForRoomMergeImpl(roomId: String): List<ChatMessage> {
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return emptyList()
+        val visible = if (vmState.value.selectedRoomId == rid) {
+            filterMessagesForRoom(vmState.value.messages, rid)
+        } else {
+            emptyList()
+        }
+        val cached = messagesWithoutLocallyRemoved(
+            filterMessagesForRoom(roomMessageCache[rid]?.messages.orEmpty(), rid),
+        )
+        return mergeVisibleMessagesWithRoomCache(
+            visible = visible,
+            cached = cached,
+            roomId = rid,
+            maxMessages = messageMemoryCap,
+            excludedMessageIds = locallyRemovedMessageIds,
+            hiddenBeforeMessageId = hiddenBeforeForRoom(rid),
+        )
+    }
+
+internal fun ChatViewModel.stashIncomingMessageForRoomImpl(message: ChatMessage) {
+        val roomId = message.roomId.trim()
+        if (roomId.isBlank()) return
+        if (!isIncomingMessageVisible(message)) {
+            ChatDeliveryMetrics.logDrop(roomId, message._id, "hidden")
+            return
+        }
+        val messageId = message._id?.trim().orEmpty()
+        if (messageId.isEmpty()) {
+            val fp = incomingMessageFingerprint(
+                message.senderId,
+                message.text,
+                message.createdAt,
+            )
+            pendingIdlessStash[fp] = message
+            ChatDeliveryMetrics.logStash(roomId, null, "no_id")
+            return
+        }
+        trackRecentSocketMessageId(messageId)
+        pendingIdlessStash.keys.removeIf { key ->
+            val pending = pendingIdlessStash[key] ?: return@removeIf false
+            pending.senderId == message.senderId &&
+                pending.text == message.text &&
+                pending.createdAt == message.createdAt
+        }
+        val cached = roomMessageCache[roomId]
+        val existing = cached?.messages ?: emptyList()
+        val localKnown = existing.mapNotNull { it._id }.toMutableSet()
+        val update = upsertMessage(existing, message, localKnown, idIndex = null)
+        roomMessageCache[roomId] = ChatRoomMessageCache(
+            messages = capMessagesForMemory(update.messages),
+            hasMoreOlder = cached?.hasMoreOlder ?: true,
+        )
+        ChatSessionCache.updateMessages(roomId, roomMessageCache[roomId]!!.messages)
+        ChatDeliveryMetrics.logStash(roomId, messageId)
+        scheduleRehydrateSelectedRoomFromStash(roomId)
+    }
+
+internal fun ChatViewModel.scheduleRehydrateSelectedRoomFromStashImpl(roomId: String) {
+        val rid = roomId.trim()
+        if (rid.isEmpty() || vmState.value.selectedRoomId != rid) return
+        stashRehydrateJob?.cancel()
+        stashRehydrateJob = vmScope.launch {
+            delay(32)
+            if (vmState.value.selectedRoomId != rid) return@launch
+            rehydrateRoomMessagesFromCache(rid)
+        }
+    }
+
+internal fun ChatViewModel.isAllianceRaidRoomImpl(roomId: String): Boolean {
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return false
+        chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            if (it == rid) return true
+        }
+        val room = vmState.value.rooms.find { it.id == rid } ?: return false
+        return ChatRaidRoomSync.isAllianceRaidRoom(room)
+    }
+

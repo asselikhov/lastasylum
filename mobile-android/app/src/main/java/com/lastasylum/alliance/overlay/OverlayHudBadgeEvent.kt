@@ -1,7 +1,5 @@
 package com.lastasylum.alliance.overlay
 
-import com.lastasylum.alliance.data.teams.TeamForumTopicDto
-
 sealed class OverlayHudBadgeEvent {
     data class HubUnread(val displayed: Int) : OverlayHudBadgeEvent()
 
@@ -29,6 +27,4 @@ sealed class OverlayHudBadgeEvent {
     data class AppUpdateUrl(val url: String?) : OverlayHudBadgeEvent()
 
     data object ClearHub : OverlayHudBadgeEvent()
-
-    data class ForumFromTopics(val topics: List<TeamForumTopicDto>, val teamId: String) : OverlayHudBadgeEvent()
 }

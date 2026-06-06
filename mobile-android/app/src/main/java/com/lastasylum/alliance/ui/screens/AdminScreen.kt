@@ -60,6 +60,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.admin.AdminTeamMemberDto
 import com.lastasylum.alliance.data.admin.AdminUserOnServerDto
@@ -70,6 +71,7 @@ import com.lastasylum.alliance.ui.util.formatServerLabel
 import com.lastasylum.alliance.ui.util.teamTagWithServerPrefix
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.ui.admin.AdminPlayersSegment
+import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.admin.AdminRoute
 import com.lastasylum.alliance.ui.admin.AdminUiState
 import com.lastasylum.alliance.ui.admin.routeRefreshing
@@ -148,6 +150,7 @@ fun AdminScreen(
         is AdminRoute.ForumTopicViewer -> route.topicTitle
         AdminRoute.Players -> stringResource(R.string.admin_hub_players)
         AdminRoute.ChatRouting -> stringResource(R.string.admin_hub_chat_routing)
+        AdminRoute.LatencyDebug -> "Delivery latency"
     }
     val showBack = state.route != AdminRoute.Hub
 
@@ -170,6 +173,7 @@ fun AdminScreen(
                 is AdminRoute.ForumTopicViewer -> null
                 AdminRoute.Players -> onRefreshPlayers
                 AdminRoute.ChatRouting -> onRefreshAlliances
+                AdminRoute.LatencyDebug -> null
             },
             refreshing = state.routeRefreshing(),
         )
@@ -249,6 +253,13 @@ fun AdminScreen(
                 },
                 onLoadMore = onLoadMorePlayers,
             )
+            AdminRoute.LatencyDebug -> {
+                if (BuildConfig.DEBUG) {
+                    DeliveryLatencyDebugScreen(
+                        tracker = AppContainer.from(context).deliveryLatencyTracker,
+                    )
+                }
+            }
         }
     }
 
@@ -492,6 +503,16 @@ private fun AdminHubContent(
                 subtitle = stringResource(R.string.admin_hub_chat_routing_sub),
                 onClick = { onOpenRoute(AdminRoute.ChatRouting) },
             )
+        }
+        if (BuildConfig.DEBUG) {
+            item {
+                AdminHubTile(
+                    icon = { Icon(Icons.AutoMirrored.Outlined.Chat, null, tint = MaterialTheme.colorScheme.primary) },
+                    title = "Delivery latency",
+                    subtitle = "p50/p95 span snapshot (debug)",
+                    onClick = { onOpenRoute(AdminRoute.LatencyDebug) },
+                )
+            }
         }
         item {
             AdminHubTile(

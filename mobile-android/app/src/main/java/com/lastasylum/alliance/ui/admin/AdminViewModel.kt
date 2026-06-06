@@ -58,6 +58,7 @@ sealed interface AdminRoute {
         val topicId: String,
         val topicTitle: String,
     ) : AdminRoute
+    data object LatencyDebug : AdminRoute
 }
 
 data class AdminUiState(
@@ -140,6 +141,7 @@ fun AdminUiState.routeRefreshing(): Boolean = when (route) {
     }
     is AdminRoute.ChatRoomViewer -> chatRoomMessagesLoading
     is AdminRoute.ForumTopicViewer -> forumTopicMessagesLoading
+    AdminRoute.LatencyDebug -> false
 }
 
 /** Unified player row for admin lists and edit sheet. */

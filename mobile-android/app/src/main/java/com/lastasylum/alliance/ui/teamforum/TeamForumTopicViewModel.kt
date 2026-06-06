@@ -3,8 +3,10 @@ package com.lastasylum.alliance.ui.teamforum
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
-import com.lastasylum.alliance.data.teams.TeamsRepository
+import com.lastasylum.alliance.data.teams.forum.ForumRepository
+import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.chat.ForumMessagesListDerived
 import com.lastasylum.alliance.ui.chat.buildForumMessagesListDerived
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
@@ -36,7 +38,8 @@ data class TeamForumTopicUiState(
  */
 class TeamForumTopicViewModel(
     application: Application,
-    private val teamsRepository: TeamsRepository,
+    private val forumRepository: ForumRepository,
+    private val currentUserId: String,
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(TeamForumTopicUiState())
@@ -97,7 +100,13 @@ class TeamForumTopicViewModel(
         before: String?,
         appendOlder: Boolean,
     ) {
-        teamsRepository.listForumMessages(teamId, topicId, before = before, limit = 50)
+        forumRepository.listForumMessages(
+            userId = currentUserId,
+            teamId = teamId,
+            topicId = topicId,
+            before = before,
+            limit = 50,
+        )
             .onSuccess { page ->
                 val visible = page.filter { m ->
                     m.deletedAt.isNullOrBlank() || m.deletedAt.equals("null", ignoreCase = true)
@@ -139,7 +148,17 @@ class TeamForumTopicViewModel(
         }
     }
 
-    private companion object {
-        const val DERIVE_DEBOUNCE_MS = 32L
+    companion object {
+        private const val DERIVE_DEBOUNCE_MS = 32L
+
+        fun create(application: Application, teamId: String, topicId: String): TeamForumTopicViewModel {
+            val container = AppContainer.from(application)
+            val userId = JwtAccessTokenClaims.sub(container.tokenStore.getAccessToken()).orEmpty()
+            return TeamForumTopicViewModel(
+                application = application,
+                forumRepository = container.forumRepository,
+                currentUserId = userId,
+            ).also { it.bindTopic(teamId, topicId) }
+        }
     }
 }

@@ -1,7 +1,6 @@
 package com.lastasylum.alliance.data.chat.outbox
 
 import com.lastasylum.alliance.data.chat.ChatMessage
-import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.store.ChatOutboxEntity
 import com.lastasylum.alliance.data.chat.store.ChatStoreJson
 import com.lastasylum.alliance.data.chat.store.MessageStore
@@ -21,7 +20,6 @@ import java.util.UUID
 class ChatOutbox(
     private val db: SquadRelayDatabase,
     private val messageStore: MessageStore,
-    private val repository: ChatRepository,
     private val latencyTracker: DeliveryLatencyTracker,
 ) {
     private val dao get() = db.chatOutboxDao()

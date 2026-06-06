@@ -2,8 +2,13 @@ package com.lastasylum.alliance.data.chat.outbox
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.store.ChatOutboxEntity
+import com.lastasylum.alliance.data.chat.store.MessageStore
 import com.lastasylum.alliance.data.chat.store.SquadRelayDatabase
+import com.lastasylum.alliance.data.telemetry.DeliveryLatencyTracker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -76,5 +81,46 @@ class ChatOutboxTest {
         val resumable = reloadedDb.chatOutboxDao().getResumable("user1")
         assertEquals(1, resumable.size)
         assertTrue(OutboxSendState.fromWire(resumable.first().state) == OutboxSendState.Pending)
+    }
+
+    @Test
+    fun resumePending_idempotentConfirm() = runBlocking {
+        val dao = db.chatOutboxDao()
+        val clientId = "client-idem"
+        dao.upsert(
+            ChatOutboxEntity(
+                clientMessageId = clientId,
+                userId = "user1",
+                roomId = "room1",
+                pendingMessageId = "pending-idem",
+                text = "hello",
+                replyToMessageId = null,
+                attachmentsJson = null,
+                excavationAlert = false,
+                source = OutboxSendSource.ChatUi.wire,
+                state = OutboxSendState.Pending.wire,
+                attempts = 0,
+                createdAtMs = 3L,
+            ),
+        )
+        val outbox = ChatOutbox(
+            db = db,
+            messageStore = MessageStore(db),
+            latencyTracker = DeliveryLatencyTracker(db, CoroutineScope(Dispatchers.Unconfined)),
+        )
+        val sent = ChatMessage(
+            _id = "507f1f77bcf86cd799439099",
+            allianceId = "a1",
+            roomId = "room1",
+            senderId = "user1",
+            senderUsername = "u",
+            senderRole = "R1",
+            text = "hello",
+            createdAt = "2026-01-01T00:00:00Z",
+        )
+        outbox.confirmSend("user1", clientId, sent)
+        outbox.confirmSend("user1", clientId, sent)
+        val active = dao.observeActive("user1").first()
+        assertEquals(0, active.size)
     }
 }

@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
 import { MobileModule } from './mobile/mobile.module';
+import { TelemetryModule } from './telemetry/telemetry.module';
 import { UsersModule } from './users/users.module';
 import { VoiceModule } from './voice/voice.module';
 
@@ -26,6 +27,7 @@ import { VoiceModule } from './voice/voice.module';
     ChatModule,
     VoiceModule,
     MobileModule,
+    TelemetryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -11,7 +11,9 @@ import com.lastasylum.alliance.data.chat.store.LaunchDiskCacheImporter
 import com.lastasylum.alliance.data.chat.store.MessageStore
 import com.lastasylum.alliance.data.chat.store.SquadRelayDatabase
 import com.lastasylum.alliance.data.chat.sync.ChatSyncEngine
+import com.lastasylum.alliance.data.chat.sync.asSyncGateway
 import com.lastasylum.alliance.data.telemetry.DeliveryLatencyTracker
+import com.lastasylum.alliance.data.telemetry.DeliveryTelemetryUploader
 import com.lastasylum.alliance.data.teams.forum.ForumRepository
 import com.lastasylum.alliance.overlay.OverlayHudBadgeBus
 import com.lastasylum.alliance.overlay.OverlayHudBadgeReducer
@@ -19,6 +21,8 @@ import com.lastasylum.alliance.overlay.OverlayInboxBadgeCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.lastasylum.alliance.data.chat.OverlayReactionLogPreferences
 import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
 import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
@@ -59,6 +63,14 @@ class AppContainer private constructor(context: Context) {
     val messageStore: MessageStore by lazy { MessageStore(squadRelayDatabase) }
     val deliveryLatencyTracker: DeliveryLatencyTracker by lazy {
         DeliveryLatencyTracker(squadRelayDatabase, appScope)
+    }
+
+    val deliveryTelemetryUploader: DeliveryTelemetryUploader by lazy {
+        DeliveryTelemetryUploader(
+            telemetryApi = authorizedClients.telemetryApi,
+            tracker = deliveryLatencyTracker,
+            scope = appScope,
+        ).also { it.startPeriodicUpload() }
     }
     val inboxBadgeCoordinator: OverlayInboxBadgeCoordinator = OverlayInboxBadgeCoordinator()
 
@@ -118,6 +130,15 @@ class AppContainer private constructor(context: Context) {
         realtimeCoordinator.registerReconnect {
             teamPresenceSocketManager.reconnectWithFreshToken()
         }
+        appScope.launch(Dispatchers.IO) {
+            delay(5_000L)
+            deliveryTelemetryUploader
+            while (true) {
+                delay(10 * 60_000L)
+                deliveryLatencyTracker.logSnapshotIfDebug()
+                deliveryLatencyTracker.logSnapshotReleaseSummary()
+            }
+        }
     }
 
     /** Set by [com.lastasylum.alliance.overlay.CombatOverlayService] while overlay voice is active. */
@@ -147,7 +168,6 @@ class AppContainer private constructor(context: Context) {
         ChatOutbox(
             db = squadRelayDatabase,
             messageStore = messageStore,
-            repository = chatRepository,
             latencyTracker = deliveryLatencyTracker,
         )
     }
@@ -156,7 +176,7 @@ class AppContainer private constructor(context: Context) {
         ChatSyncEngine(
             messageStore = messageStore,
             chatOutbox = chatOutbox,
-            repository = chatRepository,
+            repository = chatRepository.asSyncGateway(),
             latencyTracker = deliveryLatencyTracker,
         )
     }

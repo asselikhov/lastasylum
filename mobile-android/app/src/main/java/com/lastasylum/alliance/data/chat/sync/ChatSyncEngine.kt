@@ -7,6 +7,7 @@ import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
 import com.lastasylum.alliance.data.chat.store.MessageStore
 import com.lastasylum.alliance.data.chat.outbox.ChatOutbox
 import com.lastasylum.alliance.data.chat.outbox.OutboxEntry
+import com.lastasylum.alliance.data.chat.outbox.OutboxSendSource
 import com.lastasylum.alliance.data.telemetry.DeliveryLatencyTracker
 import com.lastasylum.alliance.data.telemetry.LatencySpanType
 import kotlinx.coroutines.CoroutineScope
@@ -35,7 +36,7 @@ data class ChatSyncState(
 class ChatSyncEngine(
     private val messageStore: MessageStore,
     private val chatOutbox: ChatOutbox,
-    private val repository: ChatRepository,
+    private val repository: ChatSyncRestGateway,
     private val latencyTracker: DeliveryLatencyTracker,
 ) {
     private val _state = MutableStateFlow(ChatSyncState())
@@ -94,16 +95,34 @@ class ChatSyncEngine(
         }
     }
 
+    /** After socket reconnect: retry durable outbox sends for the bound user. */
+    suspend fun reconnectOutboxResume(scope: CoroutineScope) {
+        if (!ChatArchitectureFlags.useChatOutbox) return
+        val uid = _state.value.boundUserId?.trim().orEmpty()
+        if (uid.isEmpty()) return
+        resumePendingOutbox(scope, uid)
+    }
+
     suspend fun sendOutboxEntry(entry: OutboxEntry): Result<ChatMessage> {
         latencyTracker.startSpan(LatencySpanType.ChatSendToSocket, entry.clientMessageId)
-        val result = repository.sendMessageWithRetriesForChatUi(
-            text = entry.text,
-            roomId = entry.roomId,
-            replyToMessageId = entry.replyToMessageId,
-            attachments = entry.attachments,
-            excavationAlert = entry.excavationAlert,
-            clientMessageId = entry.clientMessageId,
-        )
+        val result = when (entry.source) {
+            OutboxSendSource.OverlayRaid ->
+                repository.sendOverlayRaidCommandFast(
+                    text = entry.text,
+                    roomId = entry.roomId,
+                    gameEventAlert = null,
+                    clientMessageId = entry.clientMessageId,
+                )
+            OutboxSendSource.ChatUi ->
+                repository.sendMessageWithRetriesForChatUi(
+                    text = entry.text,
+                    roomId = entry.roomId,
+                    replyToMessageId = entry.replyToMessageId,
+                    attachments = entry.attachments,
+                    excavationAlert = entry.excavationAlert,
+                    clientMessageId = entry.clientMessageId,
+                )
+        }
         result.onSuccess { sent ->
             chatOutbox.confirmSend(
                 userId = _state.value.boundUserId.orEmpty(),
@@ -138,6 +157,16 @@ class ChatSyncEngine(
             messages = messages,
             hasMoreOlder = messageStore.getHasMoreOlderHint(uid, rid),
         )
+    }
+
+    suspend fun bootstrapLoadRooms(userId: String): Result<List<ChatRoomDto>> {
+        val uid = userId.trim()
+        if (uid.isEmpty()) return Result.failure(IllegalArgumentException("user_required"))
+        return repository.listRooms().onSuccess { rooms ->
+            if (ChatArchitectureFlags.useRoomMessageStore && rooms.isNotEmpty()) {
+                messageStore.upsertRooms(uid, rooms)
+            }
+        }
     }
 
     suspend fun loadRoomFromStore(userId: String, roomId: String): List<ChatMessage>? =

@@ -409,6 +409,9 @@ class ChatSocketManager(
                         deletedByUserId = payload.optString("deletedByUserId")
                             .takeIf { it.isNotBlank() },
                         attachments = payload.parseChatAttachments(),
+                        clientMessageId = payload.optString("clientMessageId")
+                            .trim()
+                            .takeIf { it.isNotEmpty() },
                     )
                     payload.optString("clientMessageId").trim().takeIf { it.isNotEmpty() }?.let { cid ->
                         latencyTracker?.endSpanByCorrelation(LatencySpanType.ChatSendToSocket, cid, "ok")

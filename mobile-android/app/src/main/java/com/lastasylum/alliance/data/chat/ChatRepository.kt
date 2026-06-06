@@ -103,19 +103,21 @@ class ChatRepository(
         text: String,
         roomId: String,
         gameEventAlert: String? = null,
+        clientMessageId: String? = null,
     ): Result<ChatMessage> {
-        val clientMessageId = java.util.UUID.randomUUID().toString()
+        val id = clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: java.util.UUID.randomUUID().toString()
         realtime.sendOverlayRaidCommandViaSocket(
             text = text,
             roomId = roomId,
-            clientMessageId = clientMessageId,
+            clientMessageId = id,
             gameEventAlert = gameEventAlert,
         )
         return rest.sendOverlayRaidCommandFast(
             text = text,
             roomId = roomId,
             gameEventAlert = gameEventAlert,
-            clientMessageId = clientMessageId,
+            clientMessageId = id,
         )
     }
 
