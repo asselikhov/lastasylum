@@ -114,11 +114,16 @@ export class Message {
   @Prop({ type: Date, default: null, index: true })
   deletedAt: Date | null;
 
-  @Prop({ type: String, default: null })
+  @Prop({ type: String, default: null, trim: true })
   deletedByUserId: string | null;
+
+  /** Client-generated id for HTTP retry idempotency (optional). */
+  @Prop({ type: String, default: null, trim: true })
+  clientMessageId: string | null;
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);
+MessageSchema.index({ senderId: 1, clientMessageId: 1 }, { unique: true, sparse: true });
 MessageSchema.index({ allianceId: 1, createdAt: -1 });
 MessageSchema.index({ allianceId: 1, roomId: 1, createdAt: -1 });
 /**

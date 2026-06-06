@@ -261,6 +261,7 @@ export class ChatGateway {
       replyToMessageId: payload.replyToMessageId,
       author: client.data.user,
       attachments: resolvedAttachments,
+      clientMessageId: payload.clientMessageId,
     });
     const messageId =
       typeof (message as { _id?: unknown })._id === 'string'
@@ -783,14 +784,54 @@ export class ChatGateway {
     );
   }
 
+  broadcastNewMessageWithOverlayFanout(
+    roomId: string,
+    message: unknown,
+    senderUserId: string,
+  ): void {
+    this.broadcastNewMessage(roomId, message);
+    void this.fanOutNewMessageToEligibleOverlayClients(
+      roomId,
+      message,
+      senderUserId,
+    );
+  }
+
+  /** Paths B (eligible personal) + C (raid ingame teammates) without duplicate delivery. */
+  private async fanOutNewMessageToEligibleOverlayClients(
+    roomId: string,
+    message: unknown,
+    senderUserId: string,
+  ): Promise<void> {
+    const rid = roomId.trim();
+    const uid = senderUserId.trim();
+    if (!rid || !uid) return;
+    const inRoom = this.userIdsInChatRoom(rid);
+    const personalTargets = await this.fanOutChatEventToEligibleUsersNotInRoom(
+      rid,
+      'message:new',
+      message,
+      uid,
+      inRoom,
+    );
+    await this.fanOutRaidMessageToIngameOverlayTeammates(
+      rid,
+      message,
+      uid,
+      inRoom,
+      personalTargets,
+    );
+  }
+
   private async fanOutChatEventToEligibleUsersNotInRoom(
     roomId: string,
     event: string,
     payload: unknown,
     excludeUserId?: string,
-  ): Promise<void> {
+    inRoomOverride?: Set<string>,
+  ): Promise<Set<string>> {
     const eligible = await this.listEligibleUserIdsForRoom(roomId);
-    const inRoom = this.userIdsInChatRoom(roomId);
+    const inRoom = inRoomOverride ?? this.userIdsInChatRoom(roomId);
     const targets = filterPersonalChatFanoutUserIds(
       eligible,
       inRoom,
@@ -800,6 +841,7 @@ export class ChatGateway {
       // Personal socket for overlay/FGS clients that missed `chat:room` join.
       this.server?.to(`user:${userId}`).emit(event, payload);
     }
+    return new Set(targets);
   }
 
   private userIdsInChatRoom(roomId: string): Set<string> {
@@ -826,33 +868,12 @@ export class ChatGateway {
     this.server?.to(`chat:${roomId}`).emit('message:new', message);
   }
 
-  /**
-   * Raid strip: teammates in-game with a fresh overlay heartbeat may not have joined
-   * `chat:roomId` yet — also push `message:new` on their personal `user:` socket room.
-   */
-  broadcastNewMessageWithOverlayFanout(
-    roomId: string,
-    message: unknown,
-    senderUserId: string,
-  ): void {
-    this.broadcastNewMessage(roomId, message);
-    void this.fanOutChatEventToEligibleUsersNotInRoom(
-      roomId,
-      'message:new',
-      message,
-      senderUserId,
-    );
-    void this.fanOutRaidMessageToIngameOverlayTeammates(
-      roomId,
-      message,
-      senderUserId,
-    );
-  }
-
   private async fanOutRaidMessageToIngameOverlayTeammates(
     roomId: string,
     message: unknown,
     senderUserId: string,
+    inRoom: Set<string>,
+    personalTargets: Set<string>,
   ): Promise<void> {
     const rid = roomId?.trim();
     const uid = senderUserId?.trim();
@@ -862,12 +883,24 @@ export class ChatGateway {
     const teammateIds =
       await this.usersService.listOverlayIngameTeammateIds(uid);
     let fanoutCount = 0;
+    let skippedInRoom = 0;
+    let skippedPersonal = 0;
     for (const teammateId of teammateIds) {
+      if (teammateId === uid) continue;
+      if (inRoom.has(teammateId)) {
+        skippedInRoom++;
+        continue;
+      }
+      if (personalTargets.has(teammateId)) {
+        skippedPersonal++;
+        continue;
+      }
       this.server?.to(`user:${teammateId}`).emit('message:new', message);
       fanoutCount++;
     }
     this.logger.debug(
-      `raid overlay fanout room=${rid} teammates=${teammateIds.length} emitted=${fanoutCount}`,
+      `raid overlay fanout room=${rid} teammates=${teammateIds.length} ` +
+        `emitted=${fanoutCount} skippedInRoom=${skippedInRoom} skippedPersonal=${skippedPersonal}`,
     );
   }
 

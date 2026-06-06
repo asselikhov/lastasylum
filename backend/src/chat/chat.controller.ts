@@ -254,6 +254,7 @@ export class ChatController {
       replyToMessageId: dto.replyToMessageId,
       author: req.user,
       attachments: resolvedAttachments,
+      clientMessageId: dto.clientMessageId,
     });
     const messageId =
       typeof (message as { _id?: unknown })._id === 'string'

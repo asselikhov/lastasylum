@@ -83,6 +83,8 @@ import java.util.UUID
 private const val INITIAL_PAGE_SIZE = 20
 private const val PAGE_SIZE = 30
 private const val INCOMING_SOCKET_DEBOUNCE_MS = 24L
+private const val INCOMING_SOCKET_DEBOUNCE_BURST_MS = 8L
+private const val ACTIVE_ROOM_RECONCILE_INTERVAL_MS = 60_000L
 private const val CHAT_DERIVE_DEBOUNCE_MS = 24L
 private const val PROFILE_GATE_TTL_MS = 5 * 60_000L
 /** Отложить reconcile с сервером, если сообщения уже в кэше после splash/bootstrap. */
@@ -236,6 +238,12 @@ class ChatViewModel(
     ) {
         val rid = roomId.trim()
         if (rid.isEmpty()) return
+        if (messages.size > messageMemoryCap && currentUserId.isNotBlank()) {
+            ChatDeliveryMetrics.logCapTrim(rid, messages.size, messageMemoryCap)
+            viewModelScope.launch(Dispatchers.IO) {
+                launchDiskCache.saveRoomMessages(currentUserId, rid, messages, hasMoreOlder)
+            }
+        }
         val capped = capMessagesForMemory(messages)
         roomMessageCache[rid] = RoomMessageCache(
             messages = capped,
@@ -262,6 +270,32 @@ class ChatViewModel(
 
     @Volatile
     private var profileGateLoadedAtMs: Long = 0L
+
+    private val pendingIdlessStash = java.util.concurrent.ConcurrentHashMap<String, ChatMessage>()
+    private val recentSocketMessageIds = LinkedHashSet<String>()
+    private val lastBackgroundRefreshAtMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    @Volatile
+    private var forceBackgroundRefreshAfterReconnect = false
+    private var periodicReconcileJob: Job? = null
+
+    private fun trackRecentSocketMessageId(id: String?) {
+        val trimmed = id?.trim().orEmpty()
+        if (trimmed.isEmpty() || trimmed.startsWith("pending-")) return
+        synchronized(recentSocketMessageIds) {
+            recentSocketMessageIds.add(trimmed)
+            while (recentSocketMessageIds.size > 256) {
+                val oldest = recentSocketMessageIds.first()
+                recentSocketMessageIds.remove(oldest)
+            }
+        }
+    }
+
+    private fun protectedSocketMessageIds(): Set<String> =
+        synchronized(recentSocketMessageIds) { recentSocketMessageIds.toSet() }
+
+    private fun mergeAnchorDropLogger(roomId: String): (String) -> Unit = { id ->
+        ChatDeliveryMetrics.logMergeAnchorDrop(roomId, id)
+    }
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var chatVoiceRecognizer: ChatVoiceRecognizer? = null
@@ -297,9 +331,23 @@ class ChatViewModel(
                 pending.add(message)
                 flushJob?.cancel()
                 flushJob = launch {
-                    delay(INCOMING_SOCKET_DEBOUNCE_MS)
+                    val debounceMs = when {
+                        pending.size >= 4 -> INCOMING_SOCKET_DEBOUNCE_BURST_MS
+                        pending.size >= 2 -> INCOMING_SOCKET_DEBOUNCE_MS / 2
+                        else -> INCOMING_SOCKET_DEBOUNCE_MS
+                    }
+                    delay(debounceMs)
                     flushPending()
                 }
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                delay(ACTIVE_ROOM_RECONCILE_INTERVAL_MS)
+                if (!isChatTabActive && !overlayChatPanelVisible) continue
+                val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+                if (roomId.isEmpty()) continue
+                refreshMessagesInBackground(roomId, force = false)
             }
         }
         viewModelScope.launch {
@@ -1630,7 +1678,8 @@ class ChatViewModel(
             }
             val activeRoomId = _state.value.selectedRoomId
             val newestId = _state.value.messages.firstOrNull()?._id
-            if (!activeRoomId.isNullOrBlank() && !newestId.isNullOrBlank()) {
+            val roomUnread = _state.value.rooms.find { it.id == activeRoomId }?.unreadCount ?: 0
+            if (!activeRoomId.isNullOrBlank() && !newestId.isNullOrBlank() && roomUnread <= 0) {
                 markRoomReadUpTo(activeRoomId, newestId)
             }
         }
@@ -2267,12 +2316,18 @@ class ChatViewModel(
             messagesWithoutLocallyRemoved(filterMessagesForRoom(it, rid))
         }
         if (!roomCache.isNullOrEmpty() && roomCache.size > visible.size) return false
-        return shouldSkipBackgroundMessageRefresh(
+        val skip = shouldSkipBackgroundMessageRefresh(
             visible = visible,
             sessionCache = sessionCache,
             roomCache = roomCache,
             pageSize = PAGE_SIZE,
+            lastRestSyncAtMs = lastBackgroundRefreshAtMs[rid] ?: 0L,
+            forceAfterReconnect = forceBackgroundRefreshAfterReconnect,
         )
+        if (skip) {
+            ChatDeliveryMetrics.logSkipRefresh(rid)
+        }
+        return skip
     }
 
     /** Pull peer rows from [roomMessageCache] into visible UI after tab/foreground resume. */
@@ -2546,8 +2601,12 @@ class ChatViewModel(
 
     /** Gap-fill after socket reconnect: merge stash + REST for subscribed rooms. */
     private fun onChatSocketConnected() {
+        forceBackgroundRefreshAfterReconnect = true
         rehydrateSelectedRoomMessagesFromCache()
         reconnectRealtimeIfNeeded()
+        _state.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let { rid ->
+            viewModelScope.launch { hydratePeerReadCursor(rid) }
+        }
         val rooms = _state.value.rooms
         val roomIds = if (rooms.isNotEmpty()) {
             realtimeSubscriptionRoomIds(rooms)
@@ -2742,6 +2801,8 @@ class ChatViewModel(
             }
             loadResult
                 .onSuccess { loaded ->
+                    lastBackgroundRefreshAtMs[roomId] = System.currentTimeMillis()
+                    forceBackgroundRefreshAfterReconnect = false
                     val hasMoreOlder = loaded.size >= PAGE_SIZE
                     val current = messagesForRoomMerge(roomId)
                     val merged = withContext(Dispatchers.Default) {
@@ -2751,6 +2812,8 @@ class ChatViewModel(
                             maxMessages = messageMemoryCap,
                             excludedMessageIds = locallyRemovedMessageIds,
                             roomId = roomId,
+                            protectedSocketMessageIds = protectedSocketMessageIds(),
+                            onAnchorDrop = mergeAnchorDropLogger(roomId),
                         )
                     }
                     roomMessageCache[roomId] = RoomMessageCache(
@@ -2810,6 +2873,8 @@ class ChatViewModel(
             maxMessages = messageMemoryCap,
             excludedMessageIds = locallyRemovedMessageIds,
             roomId = roomId,
+            protectedSocketMessageIds = protectedSocketMessageIds(),
+            onAnchorDrop = mergeAnchorDropLogger(roomId),
         )
         ChatSessionCache.updateMessages(roomId, merged)
         knownMessageIds.clear()
@@ -3004,6 +3069,21 @@ class ChatViewModel(
             return false
         }
         _state.value = _state.value.copy(isLoadingOlder = true)
+        if (currentUserId.isNotBlank()) {
+            val disk = launchDiskCache.loadRoomMessages(currentUserId, roomId)
+            val diskOlder = disk?.messages.orEmpty().filter { msg ->
+                val id = msg._id?.trim().orEmpty()
+                id.isNotEmpty() &&
+                    isObjectIdNewer(oldestId, id) &&
+                    id !in knownMessageIds
+            }
+            if (diskOlder.isNotEmpty()) {
+                val merged = mergeOlderPage(_state.value.messages, diskOlder, knownMessageIds)
+                rebuildMessageIdIndex(merged, messageIdIndex)
+                _state.value = _state.value.copy(messages = merged)
+                publishMessagesDerived(merged)
+            }
+        }
         val result = repository.loadRecentMessages(
             roomId = roomId,
             beforeMessageId = oldestId,
@@ -4465,8 +4545,28 @@ class ChatViewModel(
     private fun stashIncomingMessageForRoom(message: ChatMessage) {
         val roomId = message.roomId.trim()
         if (roomId.isBlank()) return
-        if (!isIncomingMessageVisible(message)) return
-        if (message._id == null) return
+        if (!isIncomingMessageVisible(message)) {
+            ChatDeliveryMetrics.logDrop(roomId, message._id, "hidden")
+            return
+        }
+        val messageId = message._id?.trim().orEmpty()
+        if (messageId.isEmpty()) {
+            val fp = incomingMessageFingerprint(
+                message.senderId,
+                message.text,
+                message.createdAt,
+            )
+            pendingIdlessStash[fp] = message
+            ChatDeliveryMetrics.logStash(roomId, null, "no_id")
+            return
+        }
+        trackRecentSocketMessageId(messageId)
+        pendingIdlessStash.keys.removeIf { key ->
+            val pending = pendingIdlessStash[key] ?: return@removeIf false
+            pending.senderId == message.senderId &&
+                pending.text == message.text &&
+                pending.createdAt == message.createdAt
+        }
         val cached = roomMessageCache[roomId]
         val existing = cached?.messages ?: emptyList()
         val localKnown = existing.mapNotNull { it._id }.toMutableSet()
@@ -4476,6 +4576,7 @@ class ChatViewModel(
             hasMoreOlder = cached?.hasMoreOlder ?: true,
         )
         ChatSessionCache.updateMessages(roomId, roomMessageCache[roomId]!!.messages)
+        ChatDeliveryMetrics.logStash(roomId, messageId)
         scheduleRehydrateSelectedRoomFromStash(roomId)
     }
 
@@ -4832,6 +4933,7 @@ class ChatViewModel(
                 var newestFromPendingReplace: String? = null
                 val stillFresh = ArrayList<ChatMessage>(fresh.size)
                 for (message in fresh) {
+                    trackRecentSocketMessageId(message._id)
                     if (shouldDeferOwnOutgoingSocketEcho(message)) {
                         stashIncomingMessageForRoom(message)
                         continue
@@ -4953,11 +5055,18 @@ class ChatViewModel(
                 _listDerived.value = derived
                 val rid = _state.value.selectedRoomId
                 if (!rid.isNullOrBlank()) {
+                    ChatDeliveryMetrics.logApply(rid, scopedBatch.size)
                     roomMessageCache[rid] = RoomMessageCache(
                         messages = cappedMessages,
                         hasMoreOlder = _state.value.hasMoreOlder,
                     )
                     ChatSessionCache.updateMessages(rid, cappedMessages)
+                    val prevHead = work.previousMessages.firstOrNull()?._id
+                    val incomingHead = scopedBatch.firstOrNull()?._id
+                    if (shouldTriggerGapReconcile(prevHead, incomingHead, knownMessageIds)) {
+                        ChatDeliveryMetrics.logGapReconcile(rid, "socket_jump")
+                        refreshMessagesInBackground(rid, force = true)
+                    }
                 }
                 scheduleMarkReadAfterIncomingBatch(rid, scopedBatch, cappedMessages)
             }

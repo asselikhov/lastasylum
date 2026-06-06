@@ -973,6 +973,7 @@ export class ChatService {
     roomId: string;
     replyToMessageId?: string;
     attachments?: MessageAttachment[];
+    clientMessageId?: string;
   }): Promise<ChatMessageView> {
     const authorUser = await this.usersService.findById(input.author.userId);
     if (
@@ -1008,6 +1009,21 @@ export class ChatService {
       trimmedText,
     );
 
+    const clientMessageId = input.clientMessageId?.trim().slice(0, 64) || null;
+    if (clientMessageId) {
+      const existing = await this.messageModel
+        .findOne({
+          senderId: input.author.userId,
+          clientMessageId,
+          deletedAt: null,
+        })
+        .lean<MessageLean | null>()
+        .exec();
+      if (existing) {
+        return this.viewMessageForUser(existing, input.author.userId);
+      }
+    }
+
     const squadRoleMap = await this.teamsService.resolveSquadRolesByUserIds([
       input.author.userId,
     ]);
@@ -1030,6 +1046,7 @@ export class ChatService {
       deletedByUserId: null,
       editedAt: null,
       reactions: [],
+      clientMessageId,
     });
     return this.viewMessageForUser(
       created.toObject<MessageLean>(),

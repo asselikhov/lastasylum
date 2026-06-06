@@ -114,6 +114,7 @@ import com.lastasylum.alliance.ui.screens.ChatScreen
 import com.lastasylum.alliance.ui.screens.TeamMainSection
 import com.lastasylum.alliance.ui.screens.TeamScreen
 import com.lastasylum.alliance.di.ChatViewModelRegistry
+import com.lastasylum.alliance.ui.chat.ChatDeliveryMetrics
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -4556,6 +4557,18 @@ class CombatOverlayService : Service() {
         val id = roomId?.trim()?.takeIf { it.isNotEmpty() } ?: return
         trustedOverlayRaidRoomId = id
         AppContainer.from(this).chatRoomPreferences.setRaidRoomId(id)
+        flushPendingStripIngest()
+    }
+
+    private fun flushPendingStripIngest() {
+        OverlayStripPendingIngest.flush { pending ->
+            ingestOverlayRaidMessage(
+                pending,
+                refreshNow = true,
+                forceIngest = true,
+                inbound = true,
+            )
+        }
     }
 
     private fun trustedOverlayRaidRoomIds(): Set<String> = buildSet {
@@ -4658,6 +4671,7 @@ class CombatOverlayService : Service() {
                 OverlayRaidStripIngestPolicy.shouldIngestOutbound(isOverlayRaidStripEligible())
             }
             if (!allowed) {
+                ChatDeliveryMetrics.logStripDrop(normalized._id, "not_eligible")
                 if (BuildConfig.DEBUG) {
                     Log.d(
                         OVERLAY_DIAG_TAG,
@@ -4669,12 +4683,14 @@ class CombatOverlayService : Service() {
         }
         val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
         if (!OverlayStripRecipientPolicy.shouldShowIncomingStripCard(normalized, selfId)) {
+            ChatDeliveryMetrics.logStripDrop(normalized._id, "sender_self")
             if (BuildConfig.DEBUG) {
                 Log.d(OVERLAY_DIAG_TAG, "stripDrop reason=sender_self id=${normalized._id}")
             }
             return
         }
         if (!forceIngest && isStaleOverlayStripMessage(normalized)) {
+            ChatDeliveryMetrics.logStripDrop(normalized._id, "stale")
             if (BuildConfig.DEBUG) {
                 Log.d(OVERLAY_DIAG_TAG, "stripDrop reason=stale id=${normalized._id}")
             }
@@ -4732,6 +4748,8 @@ class CombatOverlayService : Service() {
                     },
                     STRIP_INGEST_RETRY_DELAYS_MS[retryIndex],
                 )
+            } else {
+                OverlayStripPendingIngest.enqueue(normalized)
             }
             return
         }
@@ -6975,7 +6993,7 @@ class CombatOverlayService : Service() {
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 0L
         /** После present не поднимаем панель remove/add — только NOT_TOUCHABLE aux; lift ленты — force. */
         private const val PANEL_PRESENT_ZORDER_GRACE_MS = 500L
-        private val STRIP_INGEST_RETRY_DELAYS_MS = longArrayOf(0L, 120L)
+        private val STRIP_INGEST_RETRY_DELAYS_MS = longArrayOf(0L, 120L, 500L, 1_500L)
         /** Симметричный отступ HUD от края игрового экрана (левый START / правый END). */
         private const val OVERLAY_HUD_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP
         private const val OVERLAY_HUD_LEFT_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP

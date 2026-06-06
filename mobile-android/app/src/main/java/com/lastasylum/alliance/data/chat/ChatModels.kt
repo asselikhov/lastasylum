@@ -174,6 +174,7 @@ data class SendMessageRequest(
     val attachments: List<String>? = null,
     val excavationAlert: Boolean? = null,
     val gameEventAlert: String? = null,
+    val clientMessageId: String? = null,
 )
 
 data class EditMessageRequest(

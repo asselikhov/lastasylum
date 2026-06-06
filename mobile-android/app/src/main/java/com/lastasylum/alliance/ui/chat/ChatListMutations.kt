@@ -168,6 +168,8 @@ internal fun mergeLoadedPageWithExisting(
     maxMessages: Int = CHAT_MAX_MESSAGES_IN_MEMORY,
     excludedMessageIds: Set<String> = emptySet(),
     roomId: String? = null,
+    protectedSocketMessageIds: Set<String> = emptySet(),
+    onAnchorDrop: ((String) -> Unit)? = null,
 ): List<ChatMessage> {
     val scopedExisting = roomId?.let { filterMessagesForRoom(existing, it) } ?: existing
     if (loaded.isEmpty()) {
@@ -196,7 +198,14 @@ internal fun mergeLoadedPageWithExisting(
                 pageOldest != pageAnchor &&
                 isObjectIdNewer(id, pageOldest) &&
                 !isObjectIdNewer(id, pageAnchor)
-            if (!aheadOfRest && !inRestGap) continue
+            if (!aheadOfRest && !inRestGap) {
+                if (id in protectedSocketMessageIds) {
+                    // Keep recent socket rows even when REST page anchor would scrub them.
+                } else {
+                    onAnchorDrop?.invoke(id)
+                    continue
+                }
+            }
         }
         val update = upsertMessage(
             current = messages,
@@ -246,7 +255,15 @@ internal fun shouldSkipBackgroundMessageRefresh(
     sessionCache: List<ChatMessage>?,
     roomCache: List<ChatMessage>?,
     pageSize: Int,
+    lastRestSyncAtMs: Long = 0L,
+    nowMs: Long = System.currentTimeMillis(),
+    activeRoomReconcileIntervalMs: Long = 60_000L,
+    forceAfterReconnect: Boolean = false,
 ): Boolean {
+    if (forceAfterReconnect) return false
+    if (lastRestSyncAtMs > 0L && nowMs - lastRestSyncAtMs >= activeRoomReconcileIntervalMs) {
+        return false
+    }
     if (sessionCache == null) return false
     if (visible.isEmpty()) return false
     if (sessionCache.size < pageSize || visible.size < pageSize) return false

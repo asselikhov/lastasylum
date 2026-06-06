@@ -45,4 +45,10 @@ export class CreateMessageDto {
   @IsString()
   @MaxLength(64)
   gameEventAlert?: string;
+
+  /** Optional client id for HTTP send retry idempotency. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  clientMessageId?: string;
 }

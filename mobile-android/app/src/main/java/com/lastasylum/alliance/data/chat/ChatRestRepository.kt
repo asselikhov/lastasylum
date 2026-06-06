@@ -31,6 +31,7 @@ class ChatRestRepository(
         attachments: List<String>? = null,
         gameEventAlert: String? = null,
         excavationAlert: Boolean = false,
+        clientMessageId: String? = null,
     ): Result<ChatMessage> =
         runCatching {
             chatApi.sendMessage(
@@ -41,6 +42,7 @@ class ChatRestRepository(
                     attachments = attachments,
                     gameEventAlert = gameEventAlert,
                     excavationAlert = if (gameEventAlert == null && excavationAlert) true else null,
+                    clientMessageId = clientMessageId,
                 ),
             )
         }
@@ -59,6 +61,7 @@ class ChatRestRepository(
         attachments: List<String>? = null,
         excavationAlert: Boolean = false,
         onHttpSuccess: ((ChatMessage) -> Unit)? = null,
+        clientMessageId: String = java.util.UUID.randomUUID().toString(),
     ): Result<ChatMessage> {
         var last: Throwable? = null
         repeat(3) { attempt ->
@@ -68,6 +71,7 @@ class ChatRestRepository(
                 replyToMessageId = replyToMessageId,
                 attachments = attachments,
                 excavationAlert = excavationAlert,
+                clientMessageId = clientMessageId,
             )
             if (r.isSuccess) {
                 r.getOrNull()?.let { sent -> onHttpSuccess?.invoke(sent) }
@@ -86,10 +90,16 @@ class ChatRestRepository(
         text: String,
         roomId: String,
         gameEventAlert: String? = null,
+        clientMessageId: String = java.util.UUID.randomUUID().toString(),
     ): Result<ChatMessage> {
         var last: Throwable? = null
         repeat(2) { attempt ->
-            val r = sendMessage(text, roomId, gameEventAlert = gameEventAlert)
+            val r = sendMessage(
+                text = text,
+                roomId = roomId,
+                gameEventAlert = gameEventAlert,
+                clientMessageId = clientMessageId,
+            )
             if (r.isSuccess) return r
             last = r.exceptionOrNull()
             if (attempt < 1) delay(80L)
