@@ -10,10 +10,22 @@ internal object OverlayMainAppPresencePolicy {
     fun shouldSkipAwayPing(
         inGameOverlayUiActive: Boolean,
         targetGameForeground: Boolean,
-    ): Boolean = inGameOverlayUiActive || targetGameForeground
+        overlayForegroundServiceActive: Boolean = false,
+        overlayIngamePresenceActive: Boolean = false,
+    ): Boolean =
+        inGameOverlayUiActive ||
+            targetGameForeground ||
+            overlayForegroundServiceActive ||
+            overlayIngamePresenceActive
 
     fun shouldSkipOnlinePing(
         inGameOverlayUiActive: Boolean,
         targetGameForeground: Boolean,
-    ): Boolean = inGameOverlayUiActive || targetGameForeground
+        overlayForegroundServiceActive: Boolean = false,
+        overlayIngamePresenceActive: Boolean = false,
+    ): Boolean =
+        inGameOverlayUiActive ||
+            targetGameForeground ||
+            overlayForegroundServiceActive ||
+            overlayIngamePresenceActive
 }

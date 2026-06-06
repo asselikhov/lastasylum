@@ -59,7 +59,7 @@ import androidx.compose.foundation.BorderStroke
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.ChatSessionCache
-import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.ui.components.AtmosphericBackground
 import com.lastasylum.alliance.ui.components.premium.PremiumGlassBar
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -67,6 +67,7 @@ import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 import com.lastasylum.alliance.ui.theme.premium.PremiumMotion
 import android.content.Intent
 import com.lastasylum.alliance.MainActivity
+import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.di.ChatViewModelRegistry
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayMainAppPresencePolicy
@@ -162,6 +163,11 @@ fun AppNavigation(
                             val skipAway = OverlayMainAppPresencePolicy.shouldSkipAwayPing(
                                 inGameOverlayUiActive = CombatOverlayService.inGameOverlayUiActive.value,
                                 targetGameForeground = CombatOverlayService.isTargetGameForeground(),
+                                overlayForegroundServiceActive =
+                                    CombatOverlayService.isServiceInstanceActive &&
+                                    UserSettingsPreferences(appContext).isOverlayPanelEnabled(),
+                                overlayIngamePresenceActive =
+                                    CombatOverlayService.isOverlayIngamePresenceActive(),
                             )
                             if (!skipAway) {
                                 runCatching {
@@ -195,6 +201,11 @@ fun AppNavigation(
             if (OverlayMainAppPresencePolicy.shouldSkipOnlinePing(
                     inGameOverlayUiActive = inGameOverlayUiActive,
                     targetGameForeground = CombatOverlayService.isTargetGameForeground(),
+                    overlayForegroundServiceActive =
+                        CombatOverlayService.isServiceInstanceActive &&
+                        UserSettingsPreferences(activity.applicationContext).isOverlayPanelEnabled(),
+                    overlayIngamePresenceActive =
+                        CombatOverlayService.isOverlayIngamePresenceActive(),
                 )
             ) {
                 continue

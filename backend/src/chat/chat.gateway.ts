@@ -677,21 +677,11 @@ export class ChatGateway {
     const senderUserId = input.senderUserId.trim();
     if (!roomId || !senderUserId) return;
     const eventId = input.gameEventId?.trim();
-    if (eventId) {
-      // Game events: raid strip only for ingame overlay teammates; offline allies get push only.
-      this.broadcastNewMessage(roomId, input.message);
-      void this.fanOutRaidMessageToIngameOverlayTeammates(
-        roomId,
-        input.message,
-        senderUserId,
-      );
-    } else {
-      this.broadcastNewMessageWithOverlayFanout(
-        roomId,
-        input.message,
-        senderUserId,
-      );
-    }
+    this.broadcastNewMessageWithOverlayFanout(
+      roomId,
+      input.message,
+      senderUserId,
+    );
     await this.notifyRoomUnreadAfterNewMessage(roomId, senderUserId);
     if (
       eventId &&

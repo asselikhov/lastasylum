@@ -27,6 +27,30 @@ class OverlayRaidChatForwardPolicyTest {
     }
 
     @Test
+    fun appliesForOwnQuickCommandWhenOverlayVisibleEvenIfHubSelected() {
+        assertTrue(
+            OverlayRaidChatForwardPolicy.shouldApplyToVisibleChat(
+                selectedRoomId = "room-hub",
+                messageRoomId = "room-raid",
+                overlayPanelVisible = true,
+                isOwnQuickCommandResponse = true,
+            ),
+        )
+    }
+
+    @Test
+    fun skipsForOwnQuickCommandWhenOverlayHiddenAndHubSelected() {
+        assertFalse(
+            OverlayRaidChatForwardPolicy.shouldApplyToVisibleChat(
+                selectedRoomId = "room-hub",
+                messageRoomId = "room-raid",
+                overlayPanelVisible = false,
+                isOwnQuickCommandResponse = true,
+            ),
+        )
+    }
+
+    @Test
     fun skipsWhenSelectedOrMessageRoomBlank() {
         assertFalse(
             OverlayRaidChatForwardPolicy.shouldApplyToVisibleChat(

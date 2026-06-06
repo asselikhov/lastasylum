@@ -39,11 +39,13 @@ internal class OverlayPresenceCoordinator(
             stop(markAway = false)
             return
         }
-        val keepIngamePing =
-            inGameProbe ||
-                isInGameOverlayUiActive() ||
-                isVoiceActive() ||
-                isOnlineParticipantsPanelVisible()
+        val keepIngamePing = computeOverlayKeepIngamePing(
+            inGameProbe = inGameProbe,
+            overlaySessionActive = isOverlaySessionActive(),
+            inGameOverlayUiActive = isInGameOverlayUiActive(),
+            isVoiceActive = isVoiceActive(),
+            isOnlineParticipantsPanelVisible = isOnlineParticipantsPanelVisible(),
+        )
         if (keepIngamePing) {
             missStreak = 0
             val firstStart = !ingamePresenceActive
@@ -66,10 +68,20 @@ internal class OverlayPresenceCoordinator(
         if (missStreak < AWAY_MISS_STREAK) {
             return
         }
-        if (isOverlaySessionActive() && isInGameOverlayUiActive()) {
+        if (isOverlaySessionActive()) {
             return
         }
         stop(markAway = true)
+    }
+
+    /** Immediate ingame ping when overlay session starts (before first heartbeat tick). */
+    fun pingIngameImmediate() {
+        if (!isOverlayEnabled() || !hasSession()) return
+        scope.launch {
+            runCatching {
+                usersRepository.updatePresence(PRESENCE_INGAME)
+            }
+        }
     }
 
     fun stop(markAway: Boolean) {
@@ -100,3 +112,16 @@ internal class OverlayPresenceCoordinator(
         private const val PRESENCE_AWAY = "away"
     }
 }
+
+internal fun computeOverlayKeepIngamePing(
+    inGameProbe: Boolean,
+    overlaySessionActive: Boolean,
+    inGameOverlayUiActive: Boolean,
+    isVoiceActive: Boolean,
+    isOnlineParticipantsPanelVisible: Boolean,
+): Boolean =
+    inGameProbe ||
+        overlaySessionActive ||
+        inGameOverlayUiActive ||
+        isVoiceActive ||
+        isOnlineParticipantsPanelVisible

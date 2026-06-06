@@ -36,11 +36,45 @@ class OverlayMainAppPresencePolicyTest {
     }
 
     @Test
-    fun skipOnline_whenTargetGameForeground() {
+    fun skipAway_whenOverlayForegroundServiceActive() {
+        assertTrue(
+            OverlayMainAppPresencePolicy.shouldSkipAwayPing(
+                inGameOverlayUiActive = false,
+                targetGameForeground = false,
+                overlayForegroundServiceActive = true,
+            ),
+        )
+    }
+
+    @Test
+    fun skipAway_whenOverlayIngamePresenceActive() {
+        assertTrue(
+            OverlayMainAppPresencePolicy.shouldSkipAwayPing(
+                inGameOverlayUiActive = false,
+                targetGameForeground = false,
+                overlayIngamePresenceActive = true,
+            ),
+        )
+    }
+
+    @Test
+    fun skipOnline_whenOverlayForegroundServiceActive() {
         assertTrue(
             OverlayMainAppPresencePolicy.shouldSkipOnlinePing(
                 inGameOverlayUiActive = false,
-                targetGameForeground = true,
+                targetGameForeground = false,
+                overlayForegroundServiceActive = true,
+            ),
+        )
+    }
+
+    @Test
+    fun skipOnline_whenOverlayIngamePresenceActive() {
+        assertTrue(
+            OverlayMainAppPresencePolicy.shouldSkipOnlinePing(
+                inGameOverlayUiActive = false,
+                targetGameForeground = false,
+                overlayIngamePresenceActive = true,
             ),
         )
     }

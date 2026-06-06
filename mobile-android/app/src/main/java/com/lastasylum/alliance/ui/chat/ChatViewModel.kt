@@ -208,6 +208,7 @@ class ChatViewModel(
     private var lastRoomsSyncedAtMs: Long = 0L
     private val markReadInFlight = CopyOnWriteArrayList<Job>()
     private var unreadSyncJob: Job? = null
+    private var stashRehydrateJob: Job? = null
     /** False when user left the Chat tab — must not auto mark-read or zero selected-room badge. */
     private var isChatTabActive = false
 
@@ -366,7 +367,7 @@ class ChatViewModel(
         for (message in batch) {
             val roomId = message.roomId.trim()
             if (roomId.isBlank()) continue
-            if (roomId == selected && isRoomActivelyViewed(roomId)) {
+            if (roomId == selected && isRoomActivelyViewed(roomId, message)) {
                 if (!shouldDeferOwnOutgoingSocketEcho(message)) {
                     applyQueue.add(message)
                 } else {
@@ -414,12 +415,52 @@ class ChatViewModel(
      * Unlike socket forward, does not skip apply when activity holds primary subscription.
      */
     fun applyOverlayRaidHttpMessage(message: ChatMessage) {
-        if (shouldSuppressOwnOutgoingRealtimeEcho(message)) return
         stashOverlayRealtimeMessage(message)
-        if (!OverlayRaidChatForwardPolicy.shouldApplyToVisibleChat(_state.value.selectedRoomId, message.roomId)) {
+        if (shouldSuppressOwnOutgoingRealtimeEcho(message)) return
+        val isOwnQuickCommand = message.senderId.trim() == currentUserId.trim()
+        if (!OverlayRaidChatForwardPolicy.shouldApplyToVisibleChat(
+                selectedRoomId = _state.value.selectedRoomId,
+                messageRoomId = message.roomId,
+                overlayPanelVisible = overlayChatPanelVisible,
+                isOwnQuickCommandResponse = isOwnQuickCommand,
+            )
+        ) {
             return
         }
         applyOverlayChatMessageFromSocket(message)
+    }
+
+    /** Optimistic row for overlay quick commands before HTTP confirm. */
+    fun prepareOverlayRaidQuickCommandOutgoing(pendingId: String, roomId: String, text: String) {
+        val rid = roomId.trim()
+        val body = text.trim()
+        val pending = pendingId.trim()
+        if (rid.isEmpty() || body.isEmpty() || pending.isEmpty()) return
+        if (messageIdIndex.containsKey(pending) || knownMessageIds.contains(pending)) return
+        if (_state.value.selectedRoomId != rid) {
+            selectRoom(rid)
+        }
+        registerInFlightOutgoing(rid, body, null)
+        val optimistic = buildOptimisticOutgoingMessage(rid, body, null).copy(_id = pending)
+        insertOptimisticOutgoingSynchronously(optimistic, clearComposer = false)
+    }
+
+    /** HTTP confirm for overlay quick command — replaces optimistic row when present. */
+    fun confirmOverlayRaidQuickCommandHttp(pendingId: String?, sent: ChatMessage) {
+        val pending = pendingId?.trim().orEmpty()
+        if (pending.startsWith("overlay-pending-")) {
+            confirmPendingOutgoingMessage(pending, sent)
+            return
+        }
+        applyOverlayRaidHttpMessage(sent)
+    }
+
+    fun cancelOverlayRaidQuickCommandOutgoing(pendingId: String?, roomId: String, text: String) {
+        val pending = pendingId?.trim().orEmpty()
+        if (pending.isNotEmpty()) {
+            removePendingOutgoingMessage(pending)
+        }
+        clearInFlightOutgoing(roomId, text, null)
     }
 
     /** Overlay socket while in-game chat panel is open (primary listener may be absent). */
@@ -464,17 +505,19 @@ class ChatViewModel(
         }
         val selected = _state.value.selectedRoomId
         if (roomId == selected) {
-            if (isRoomActivelyViewed(roomId)) {
+            if (isRoomActivelyViewed(roomId, message)) {
                 if (!shouldDeferOwnOutgoingSocketEcho(message)) {
                     applyIncomingMessage(message)
                     if (message.senderId.trim() != currentUserId.trim()) {
                         scheduleMarkReadForVisibleIncoming(message)
                     }
+                } else {
+                    stashIncomingMessageForRoom(message)
                 }
             } else {
                 stashIncomingMessageForRoom(message)
             }
-            if (!isRoomActivelyViewed(roomId) && message.senderId != currentUserId) {
+            if (!isRoomActivelyViewed(roomId, message) && message.senderId != currentUserId) {
                 val mid = message._id ?: return
                 if (shouldTrackUnreadForMessage(roomId, mid)) {
                     bumpRoomUnreadLocally(roomId, mid)
@@ -1134,9 +1177,17 @@ class ChatViewModel(
         }
     }
 
-    private fun isRoomActivelyViewed(roomId: String): Boolean {
+    private fun isRoomActivelyViewed(
+        roomId: String,
+        incomingMessage: ChatMessage? = null,
+    ): Boolean {
         if (_state.value.selectedRoomId != roomId) return false
         if (overlayChatPanelVisible) {
+            val selfId = currentUserId.trim()
+            val isPeer = incomingMessage?.let { msg ->
+                selfId.isNotEmpty() && msg.senderId.trim() != selfId
+            } ?: false
+            if (isPeer) return true
             if (!CombatOverlayService.isOverlayChatTabActive()) return false
             return appInForeground ||
                 com.lastasylum.alliance.overlay.OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
@@ -2215,6 +2266,7 @@ class ChatViewModel(
         val roomCache = roomMessageCache[rid]?.messages?.let {
             messagesWithoutLocallyRemoved(filterMessagesForRoom(it, rid))
         }
+        if (!roomCache.isNullOrEmpty() && roomCache.size > visible.size) return false
         return shouldSkipBackgroundMessageRefresh(
             visible = visible,
             sessionCache = sessionCache,
@@ -2661,10 +2713,10 @@ class ChatViewModel(
 
     private fun refreshMessagesInBackground(roomId: String, force: Boolean = false) {
         if (!force && shouldSkipBackgroundMessageRefreshForRoom(roomId)) return
-        val deferMs = if (ChatSessionCache.getFreshMessages(roomId) != null) {
-            BACKGROUND_MESSAGE_REFRESH_DEFER_MS
-        } else {
-            0L
+        val deferMs = when {
+            ChatSessionCache.getFreshMessages(roomId) == null -> 0L
+            overlayChatPanelVisible && isAllianceRaidRoom(roomId) -> 0L
+            else -> BACKGROUND_MESSAGE_REFRESH_DEFER_MS
         }
         viewModelScope.launch {
             if (deferMs > 0L) delay(deferMs)
@@ -4424,6 +4476,28 @@ class ChatViewModel(
             hasMoreOlder = cached?.hasMoreOlder ?: true,
         )
         ChatSessionCache.updateMessages(roomId, roomMessageCache[roomId]!!.messages)
+        scheduleRehydrateSelectedRoomFromStash(roomId)
+    }
+
+    private fun scheduleRehydrateSelectedRoomFromStash(roomId: String) {
+        val rid = roomId.trim()
+        if (rid.isEmpty() || _state.value.selectedRoomId != rid) return
+        stashRehydrateJob?.cancel()
+        stashRehydrateJob = viewModelScope.launch {
+            delay(32)
+            if (_state.value.selectedRoomId != rid) return@launch
+            rehydrateRoomMessagesFromCache(rid)
+        }
+    }
+
+    private fun isAllianceRaidRoom(roomId: String): Boolean {
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return false
+        chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            if (it == rid) return true
+        }
+        val room = _state.value.rooms.find { it.id == rid } ?: return false
+        return ChatRaidRoomSync.isAllianceRaidRoom(room)
     }
 
     private fun buildOptimisticOutgoingMessage(

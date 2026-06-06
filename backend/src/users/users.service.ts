@@ -634,8 +634,8 @@ export class UsersService implements OnModuleInit {
         .exec();
       return;
     }
-    // Main app pings "online" while overlay service still runs in the game — keep ingame for allies.
-    if (normalized === 'online') {
+    // Main app pings "online"/"away" while overlay FGS still heartbeats ingame — keep ingame for allies.
+    if (normalized === 'online' || normalized === 'away') {
       const row = await this.userModel
         .findById(userId)
         .select('presenceStatus lastPresenceAt')
