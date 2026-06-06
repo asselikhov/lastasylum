@@ -11,9 +11,13 @@ import kotlin.math.min
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.lastasylum.alliance.data.telemetry.DeliveryLatencyTracker
+import com.lastasylum.alliance.data.telemetry.LatencySpanType
 import org.json.JSONObject
 
-class ChatSocketManager {
+class ChatSocketManager(
+    private val latencyTracker: DeliveryLatencyTracker? = null,
+) {
     private var socket: Socket? = null
     private var subscribedRoomIds: List<String> = emptyList()
     private var lastBaseUrl: String? = null
@@ -406,6 +410,9 @@ class ChatSocketManager {
                             .takeIf { it.isNotBlank() },
                         attachments = payload.parseChatAttachments(),
                     )
+                    payload.optString("clientMessageId").trim().takeIf { it.isNotEmpty() }?.let { cid ->
+                        latencyTracker?.endSpanByCorrelation(LatencySpanType.ChatSendToSocket, cid, "ok")
+                    }
                     messageListeners.forEach { l ->
                         runCatching { l(message) }
                     }

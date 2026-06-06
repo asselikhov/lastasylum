@@ -155,6 +155,10 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.teams.TeamForumMessageDeletedEvent
 import com.lastasylum.alliance.data.teams.TeamForumMessageReactionEvent
 import com.lastasylum.alliance.data.teams.TeamForumSocketManager
+import com.lastasylum.alliance.ui.teamforum.ForumListViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.app.Application
 import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
@@ -253,6 +257,8 @@ fun TeamForumNavHost(
     onForumInboxChanged: () -> Unit = {},
     onRegisterMarkReadAction: ((() -> Unit)?) -> Unit = {},
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val nav = rememberNavController()
     val topicTitles = remember { mutableStateMapOf<String, String>() }
     val topicSnapshots = remember { mutableStateMapOf<String, TeamForumTopicDto>() }
@@ -302,6 +308,21 @@ fun TeamForumNavHost(
             val onTopicPin: (TeamForumTopicPinChangedEvent) -> Unit = { event ->
                 topicPinPatch = event
             }
+            val app = AppContainer.from(context.applicationContext)
+            val onForumMessage: (TeamForumMessageDto) -> Unit = { message ->
+                val uid = currentUserId.trim()
+                if (uid.isNotEmpty()) {
+                    scope.launch(Dispatchers.IO) {
+                        app.forumRepository.onForumSocketMessage(
+                            userId = uid,
+                            teamId = teamId,
+                            topicId = message.topicId,
+                            message = message,
+                        )
+                    }
+                }
+            }
+            forumSocket.addMessageListener(onForumMessage)
             forumSocket.addTopicActivityListener(onTopicActivity)
             forumSocket.addTopicPinChangedListener(onTopicPin)
             forumSocket.connectTeamInbox(
@@ -309,6 +330,7 @@ fun TeamForumNavHost(
                 teamId,
             ) { tokenStore.getAccessToken() }
             onDispose {
+                forumSocket.removeMessageListener(onForumMessage)
                 forumSocket.removeTopicActivityListener(onTopicActivity)
                 forumSocket.removeTopicPinChangedListener(onTopicPin)
             }
@@ -427,6 +449,10 @@ private fun TeamForumListRoute(
     val res = context.resources
     val overlayUi = LocalOverlayUiMode.current
     val scope = rememberCoroutineScope()
+    val listViewModel: ForumListViewModel = viewModel(key = "forum_list_$teamId") {
+        ForumListViewModel.create(context.applicationContext as Application, teamId)
+    }
+    val listUiState by listViewModel.state.collectAsStateWithLifecycle()
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     val topics = remember { mutableStateListOf<TeamForumTopicDto>() }
@@ -493,7 +519,7 @@ private fun TeamForumListRoute(
     var reloadJob by remember(teamId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var inboxSyncedForSection by remember(teamId) { mutableStateOf(false) }
 
-    fun reload() {
+    fun reload(force: Boolean = false) {
         reloadJob?.cancel()
         reloadJob = scope.launch {
             val (diskTopics, lastReadSnapshot) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -514,19 +540,30 @@ private fun TeamForumListRoute(
                 loading = true
             }
             error = null
-            teamsRepository.listForumTopics(teamId)
-                .onSuccess {
-                    if (currentUserId.isNotBlank()) {
-                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            app.launchDiskCache.saveForumTopics(currentUserId, teamId, it)
-                        }
+            if (currentUserId.isNotBlank()) {
+                listViewModel.reload(force = force)
+            } else {
+                teamsRepository.listForumTopics(teamId)
+                    .onSuccess { applyTopicRows(it) }
+                    .onFailure { e ->
+                        if (topics.isEmpty()) error = e.toUserMessageRu(res)
                     }
-                    applyTopicRows(it)
-                }
-                .onFailure { e ->
-                    if (topics.isEmpty()) error = e.toUserMessageRu(res)
-                }
-            loading = false
+                loading = false
+            }
+        }
+    }
+
+    LaunchedEffect(listUiState.topics) {
+        if (listUiState.topics.isNotEmpty()) {
+            applyTopicRows(listUiState.topics)
+        }
+    }
+    LaunchedEffect(listUiState.loading) {
+        loading = listUiState.loading
+    }
+    LaunchedEffect(listUiState.error) {
+        if (listUiState.error != null && topics.isEmpty()) {
+            error = listUiState.error
         }
     }
 
@@ -575,6 +612,7 @@ private fun TeamForumListRoute(
 
     LaunchedEffect(topicActivityPatch) {
         val event = topicActivityPatch ?: return@LaunchedEffect
+        listViewModel.applyTopicActivity(event)
         topicActivityDebounceJob?.cancel()
         topicActivityDebounceJob = scope.launch {
             kotlinx.coroutines.delay(300)
@@ -599,6 +637,7 @@ private fun TeamForumListRoute(
 
     LaunchedEffect(topicPinPatch) {
         val event = topicPinPatch ?: return@LaunchedEffect
+        listViewModel.applyTopicPin(event)
         val idx = topics.indexOfFirst { it.id == event.topicId }
         if (idx >= 0) {
             val row = topics[idx]

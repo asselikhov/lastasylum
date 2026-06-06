@@ -6,6 +6,19 @@ import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.auth.AuthRepository
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.chat.ChatRepository
+import com.lastasylum.alliance.data.chat.outbox.ChatOutbox
+import com.lastasylum.alliance.data.chat.store.LaunchDiskCacheImporter
+import com.lastasylum.alliance.data.chat.store.MessageStore
+import com.lastasylum.alliance.data.chat.store.SquadRelayDatabase
+import com.lastasylum.alliance.data.chat.sync.ChatSyncEngine
+import com.lastasylum.alliance.data.telemetry.DeliveryLatencyTracker
+import com.lastasylum.alliance.data.teams.forum.ForumRepository
+import com.lastasylum.alliance.overlay.OverlayHudBadgeBus
+import com.lastasylum.alliance.overlay.OverlayHudBadgeReducer
+import com.lastasylum.alliance.overlay.OverlayInboxBadgeCoordinator
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import com.lastasylum.alliance.data.chat.OverlayReactionLogPreferences
 import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
 import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
@@ -30,6 +43,7 @@ import com.lastasylum.alliance.data.voice.VoiceSocketManager
 
 class AppContainer private constructor(context: Context) {
     private val appContext = context.applicationContext
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     /** Encrypted prefs + KeyStore: создаём лениво; прогрев — в [SquadRelayApplication] на IO. */
     val tokenStore: TokenStore by lazy { TokenStore(appContext) }
@@ -41,7 +55,48 @@ class AppContainer private constructor(context: Context) {
     val onboardingPreferences: OnboardingPreferences = OnboardingPreferences(appContext)
     val launchDiskCache: LaunchDiskCache = LaunchDiskCache(appContext)
 
-    private val chatSocketManager = ChatSocketManager()
+    val squadRelayDatabase: SquadRelayDatabase by lazy { SquadRelayDatabase.get(appContext) }
+    val messageStore: MessageStore by lazy { MessageStore(squadRelayDatabase) }
+    val deliveryLatencyTracker: DeliveryLatencyTracker by lazy {
+        DeliveryLatencyTracker(squadRelayDatabase, appScope)
+    }
+    val inboxBadgeCoordinator: OverlayInboxBadgeCoordinator = OverlayInboxBadgeCoordinator()
+
+    @Volatile
+    private var overlayHudBadgeBusInstance: OverlayHudBadgeBus? = null
+
+    fun registerOverlayHudBadgeBus(bus: OverlayHudBadgeBus) {
+        overlayHudBadgeBusInstance = bus
+    }
+
+    fun overlayHudBadgeBusOrNull(): OverlayHudBadgeBus? = overlayHudBadgeBusInstance
+
+    fun createOverlayHudBadgeBus(
+        reducer: OverlayHudBadgeReducer,
+    ): OverlayHudBadgeBus = OverlayHudBadgeBus(
+        reducer = reducer,
+        mergeNews = inboxBadgeCoordinator::mergeHudNews,
+        mergeForum = { effective, prev, raw, useAuthoritative ->
+            if (useAuthoritative) {
+                inboxBadgeCoordinator.mergeForumDisplayed(effective, prev, raw)
+            } else {
+                inboxBadgeCoordinator.mergeHudForum(effective, prev, useAuthoritative)
+            }
+        },
+    ).also { registerOverlayHudBadgeBus(it) }
+
+    val launchDiskCacheImporter: LaunchDiskCacheImporter by lazy {
+        LaunchDiskCacheImporter(
+            context = appContext,
+            launchDiskCache = launchDiskCache,
+            chatRoomPreferences = chatRoomPreferences,
+            messageStore = messageStore,
+        )
+    }
+
+    private val chatSocketManager by lazy {
+        ChatSocketManager(latencyTracker = deliveryLatencyTracker)
+    }
     private val voiceSocketManager = VoiceSocketManager()
     private val teamForumSocketManager = TeamForumSocketManager()
     private val teamPresenceSocketManager = TeamPresenceSocketManager()
@@ -87,6 +142,34 @@ class AppContainer private constructor(context: Context) {
                 ).also { chatRepositoryInstance = it }
             }
         }
+
+    val chatOutbox: ChatOutbox by lazy {
+        ChatOutbox(
+            db = squadRelayDatabase,
+            messageStore = messageStore,
+            repository = chatRepository,
+            latencyTracker = deliveryLatencyTracker,
+        )
+    }
+
+    val chatSyncEngine: ChatSyncEngine by lazy {
+        ChatSyncEngine(
+            messageStore = messageStore,
+            chatOutbox = chatOutbox,
+            repository = chatRepository,
+            latencyTracker = deliveryLatencyTracker,
+        )
+    }
+
+    val forumRepository: ForumRepository by lazy {
+        ForumRepository(
+            db = squadRelayDatabase,
+            teamsRepository = teamsRepository,
+            launchDiskCache = launchDiskCache,
+            forumPrefs = teamForumPreferences,
+            latencyTracker = deliveryLatencyTracker,
+        )
+    }
 
     val overlayReactionLogPreferences: OverlayReactionLogPreferences =
         OverlayReactionLogPreferences(appContext)

@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
  * Single main-thread writer for [OverlayGameStatusHudState] inbox chips.
  * All partial/full badge updates should go through [commit] so [prevDisplayed] is read once per frame.
  */
-internal class OverlayHudBadgeReducer(
+class OverlayHudBadgeReducer(
     private val hudFlow: MutableStateFlow<OverlayGameStatusHudState>,
 ) {
     fun current(): OverlayGameStatusHudState = hudFlow.value

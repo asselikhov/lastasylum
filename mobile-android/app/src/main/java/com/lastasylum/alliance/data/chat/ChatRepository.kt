@@ -64,13 +64,15 @@ class ChatRepository(
         replyToMessageId: String? = null,
         attachments: List<String>? = null,
         excavationAlert: Boolean = false,
+        clientMessageId: String? = null,
     ): Result<ChatMessage> {
-        val clientMessageId = java.util.UUID.randomUUID().toString()
+        val id = clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: java.util.UUID.randomUUID().toString()
         realtime.sendChatMessageViaSocket(
             text = text,
             roomId = roomId,
             replyToMessageId = replyToMessageId,
-            clientMessageId = clientMessageId,
+            clientMessageId = id,
             excavationAlert = excavationAlert,
         )
         return rest.sendMessageWithRetries(
@@ -80,7 +82,7 @@ class ChatRepository(
             attachments,
             excavationAlert,
             onHttpSuccess = null,
-            clientMessageId = clientMessageId,
+            clientMessageId = id,
         )
     }
 

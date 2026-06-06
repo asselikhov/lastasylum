@@ -36,7 +36,11 @@ import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
 import com.lastasylum.alliance.data.chat.ChatTeamRoomsMembership
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.data.teams.TeamMembershipNotifier
+import com.lastasylum.alliance.data.chat.store.ChatArchitectureFlags
+import com.lastasylum.alliance.data.chat.outbox.OutboxSendSource
+import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
+import com.lastasylum.alliance.overlay.OverlayHudBadgeEvent
 import com.lastasylum.alliance.overlay.OverlayRaidChatForwardPolicy
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
@@ -155,6 +159,7 @@ class ChatViewModel(
     /** While set, only HTTP confirm may replace the optimistic row — no socket second row. */
     @Volatile
     private var activeOutgoingPendingId: String? = null
+    private val outboxClientIdByPendingId = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
     private val _draftMessage = MutableStateFlow("")
@@ -312,11 +317,21 @@ class ChatViewModel(
     private fun capMessagesForMemory(messages: List<ChatMessage>): List<ChatMessage> =
         capNewestFirst(messages, messageMemoryCap)
 
+    private val chatSyncEngine = AppContainer.from(application).chatSyncEngine
+    private val chatOutbox = AppContainer.from(application).chatOutbox
+
     init {
         TeamMembershipNotifier.addListener(onTeamMembershipChanged)
         hydrateReadCursorsFromPreferences()
         if (currentUserId.isNotBlank()) {
             locallyRemovedMessageIds.addAll(launchDiskCache.loadRemovedMessageIds(currentUserId))
+        }
+        viewModelScope.launch {
+            chatSyncEngine.bindUser(currentUserId)
+            AppContainer.from(getApplication()).launchDiskCacheImporter.importIfNeeded(currentUserId)
+            if (ChatArchitectureFlags.useChatOutbox) {
+                chatSyncEngine.resumePendingOutbox(viewModelScope, currentUserId)
+            }
         }
         viewModelScope.launch(Dispatchers.Default) {
             val pending = ArrayList<ChatMessage>(16)
@@ -633,6 +648,7 @@ class ChatViewModel(
             previouslyDisplayed = CombatOverlayService.currentAllianceHubBadgeDisplayed(),
         )
         CombatOverlayService.syncHubBadgeFromSharedReadState(displayed)
+        CombatOverlayService.emitOverlayHudBadgeEvent(OverlayHudBadgeEvent.HubUnread(displayed))
     }
 
     /** Called from overlay service when activity VM owns unread (socket hub path). */
@@ -977,6 +993,36 @@ class ChatViewModel(
                         entry.hasMoreOlder,
                     )
                 }
+            }
+        }
+        if (ChatArchitectureFlags.useChatSyncEngine) {
+            val messagesByRoom = buildMap<String, Pair<List<ChatMessage>, Boolean>> {
+                if (selected.isNotEmpty()) {
+                    val entry = roomMessageCache[selected]
+                    val raw = entry?.messages?.takeIf { it.isNotEmpty() }
+                        ?: _state.value.messages.takeIf { it.isNotEmpty() }
+                    val messages = raw
+                        ?.let { messagesWithoutLocallyRemoved(it) }
+                        ?.let { filterMessagesForRoom(it, selected) }
+                    if (!messages.isNullOrEmpty()) {
+                        put(selected, messages to (entry?.hasMoreOlder ?: _state.value.hasMoreOlder))
+                    }
+                }
+                if (!hubId.isNullOrBlank() && hubId != selected) {
+                    roomMessageCache[hubId]?.let { entry ->
+                        val messages = messagesWithoutLocallyRemoved(entry.messages)
+                        if (messages.isNotEmpty()) put(hubId, messages to entry.hasMoreOlder)
+                    }
+                }
+                if (!raidId.isNullOrBlank() && raidId != selected && raidId != hubId) {
+                    roomMessageCache[raidId]?.let { entry ->
+                        val messages = messagesWithoutLocallyRemoved(entry.messages)
+                        if (messages.isNotEmpty()) put(raidId, messages to entry.hasMoreOlder)
+                    }
+                }
+            }
+            viewModelScope.launch(Dispatchers.IO) {
+                chatSyncEngine.dualWriteSnapshot(currentUserId, rooms, messagesByRoom)
             }
         }
     }
@@ -2506,11 +2552,11 @@ class ChatViewModel(
             if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
                 syncOverlayAllianceHubBadge(_state.value.rooms)
             }
-            repository.markRoomRead(roomId, messageId)
-                .onSuccess { response ->
-                    mergeReadCursor(roomId, messageId)
-                    ChatSessionCache.patchRoomRead(roomId, messageId)
-                    if (response.unreadCount <= 0) {
+            if (ChatArchitectureFlags.useChatSyncEngine) {
+                chatSyncEngine.markRoomRead(currentUserId, roomId, messageId)
+                    .onSuccess {
+                        mergeReadCursor(roomId, messageId)
+                        ChatSessionCache.patchRoomRead(roomId, messageId)
                         _state.update { st ->
                             st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
                         }
@@ -2519,10 +2565,29 @@ class ChatViewModel(
                         if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
                             syncOverlayAllianceHubBadge(_state.value.rooms)
                         }
-                    } else {
+                    }
+                    .onFailure {
                         scheduleUnreadSyncFromServer()
                     }
-                }
+            } else {
+                repository.markRoomRead(roomId, messageId)
+                    .onSuccess { response ->
+                        mergeReadCursor(roomId, messageId)
+                        ChatSessionCache.patchRoomRead(roomId, messageId)
+                        if (response.unreadCount <= 0) {
+                            _state.update { st ->
+                                st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
+                            }
+                            syncTabUnreadBadge()
+                            ChatSessionCache.update(_state.value.rooms)
+                            if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
+                                syncOverlayAllianceHubBadge(_state.value.rooms)
+                            }
+                        } else {
+                            scheduleUnreadSyncFromServer()
+                        }
+                    }
+            }
         }
         markReadInFlight.add(job)
         job.invokeOnCompletion { markReadInFlight.remove(job) }
@@ -2742,8 +2807,25 @@ class ChatViewModel(
             onRoomPinChanged = ::onRoomPinChanged,
             onHistoryCleared = ::onChatHistoryClearedFromServer,
         )
+        var hadCachedMessagesLocal = hadCachedMessages
+        if (!hadCachedMessagesLocal && ChatArchitectureFlags.useRoomMessageStore && currentUserId.isNotBlank()) {
+            val storeSnapshot = chatSyncEngine.loadRoomSnapshotFromStore(currentUserId, rid)
+            if (storeSnapshot != null && storeSnapshot.messages.isNotEmpty()) {
+                val filteredStore = messagesWithoutLocallyRemoved(
+                    filterMessagesForRoom(storeSnapshot.messages, rid),
+                )
+                if (filteredStore.isNotEmpty()) {
+                    roomMessageCache[rid] = RoomMessageCache(
+                        messages = capMessagesForMemory(filteredStore),
+                        hasMoreOlder = storeSnapshot.hasMoreOlder,
+                    )
+                    ChatSessionCache.updateMessages(rid, roomMessageCache[rid]!!.messages)
+                    hadCachedMessagesLocal = true
+                }
+            }
+        }
         val cached = roomMessageCache[rid]
-        if (hadCachedMessages && cached != null && cached.messages.isNotEmpty()) {
+        if (hadCachedMessagesLocal && cached != null && cached.messages.isNotEmpty()) {
             rehydrateRoomMessagesFromCache(rid)
             if (!isActiveSelectedRoom(rid)) return
             val filteredCache = messagesWithoutLocallyRemoved(
@@ -3236,13 +3318,80 @@ class ChatViewModel(
         if (isRaidChatRoom(roomId) && StickerPacks.stemForMessage(trimmed) != null) return
         val replyToMessageId = replyOverride ?: _state.value.replyToMessage?._id
         if (globalSendBlocked(roomId, trimmed, replyToMessageId)) return
-        val optimistic = buildOptimisticOutgoingMessage(roomId, trimmed, replyToMessageId)
-        val pendingId = optimistic._id
+        launchTextOutgoingSend(roomId, trimmed, replyToMessageId)
+    }
+
+    private fun launchTextOutgoingSend(
+        roomId: String,
+        text: String,
+        replyToMessageId: String?,
+        source: OutboxSendSource = OutboxSendSource.ChatUi,
+    ) {
+        val trimmed = text.trim()
         _state.value = _state.value.copy(isSending = false, error = null, sendFailure = null)
         registerInFlightOutgoing(roomId, trimmed, replyToMessageId)
-        activeOutgoingPendingId = pendingId
         deriveJob?.cancel()
         deriveDebounceJob?.cancel()
+
+        if (ChatArchitectureFlags.useChatOutbox) {
+            viewModelScope.launch {
+                val enqueue = runCatching {
+                    withContext(Dispatchers.IO) {
+                        chatOutbox.enqueueSend(
+                            userId = currentUserId,
+                            roomId = roomId,
+                            text = trimmed,
+                            replyToMessageId = replyToMessageId,
+                            attachments = null,
+                            excavationAlert = false,
+                            source = source,
+                            currentUserId = currentUserId,
+                            currentUserRole = currentUserRole,
+                            senderUsername = "",
+                        )
+                    }
+                }.getOrElse { err ->
+                    clearInFlightOutgoing(roomId, trimmed, replyToMessageId)
+                    _state.value = _state.value.copy(
+                        sendFailure = ChatSendFailure(
+                            messageText = trimmed,
+                            replyToMessageId = replyToMessageId,
+                            errorMessage = err.toUserMessageRu(res),
+                        ),
+                    )
+                    return@launch
+                }
+                outboxClientIdByPendingId[enqueue.pendingMessageId] = enqueue.clientMessageId
+                activeOutgoingPendingId = enqueue.pendingMessageId
+                insertOptimisticOutgoingSynchronously(enqueue.optimisticMessage, clearComposer = true)
+                chatSyncEngine.sendEnqueuedOutbox(enqueue.clientMessageId)
+                    .onSuccess { sent ->
+                        withContext(Dispatchers.Main.immediate) {
+                            outboxClientIdByPendingId.remove(enqueue.pendingMessageId)
+                            confirmPendingOutgoingMessage(enqueue.pendingMessageId, sent)
+                        }
+                    }
+                    .onFailure { throwable ->
+                        activeOutgoingPendingId = null
+                        outboxClientIdByPendingId.remove(enqueue.pendingMessageId)
+                        clearInFlightOutgoing(roomId, trimmed, replyToMessageId)
+                        removePendingOutgoingMessage(enqueue.pendingMessageId)
+                        _state.value = _state.value.copy(
+                            isSending = false,
+                            sendFailure = ChatSendFailure(
+                                messageText = trimmed,
+                                replyToMessageId = replyToMessageId,
+                                errorMessage = throwable.toUserMessageRu(res),
+                            ),
+                        )
+                    }
+            }
+            return
+        }
+
+        val optimistic = buildOptimisticOutgoingMessage(roomId, trimmed, replyToMessageId)
+        val pendingId = optimistic._id
+        activeOutgoingPendingId = pendingId
         insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
         viewModelScope.launch {
             repository.sendMessageWithRetriesForChatUi(trimmed, roomId, replyToMessageId)
@@ -3285,39 +3434,7 @@ class ChatViewModel(
         if (globalSendBlocked(roomId, text, replyToMessageId)) return
 
         if (uris.isEmpty() && text.isNotBlank()) {
-            val optimistic = buildOptimisticOutgoingMessage(roomId, text, replyToMessageId)
-            val pendingId = optimistic._id
-            _state.value = _state.value.copy(isSending = false, error = null, sendFailure = null)
-            registerInFlightOutgoing(roomId, text, replyToMessageId)
-            activeOutgoingPendingId = pendingId
-            deriveJob?.cancel()
-            deriveDebounceJob?.cancel()
-            insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
-            viewModelScope.launch {
-                repository.sendMessageWithRetriesForChatUi(
-                    text = text.trim(),
-                    roomId = roomId,
-                    replyToMessageId = replyToMessageId,
-                )
-                    .onSuccess { sent ->
-                        withContext(Dispatchers.Main.immediate) {
-                            confirmPendingOutgoingMessage(pendingId, sent)
-                        }
-                    }
-                    .onFailure { throwable ->
-                        activeOutgoingPendingId = null
-                        clearInFlightOutgoing(roomId, text, replyToMessageId)
-                        removePendingOutgoingMessage(pendingId)
-                        _state.value = _state.value.copy(
-                            isSending = false,
-                            sendFailure = ChatSendFailure(
-                                messageText = text,
-                                replyToMessageId = replyToMessageId,
-                                errorMessage = throwable.toUserMessageRu(res),
-                            ),
-                        )
-                    }
-            }
+            launchTextOutgoingSend(roomId, text, replyToMessageId)
             return
         }
         viewModelScope.launch {
@@ -4282,6 +4399,8 @@ class ChatViewModel(
             message.replyToMessageId,
         )
         if (inFlightOutgoingFingerprints.contains(fingerprint)) return true
+        val pendingId = message._id?.trim().orEmpty()
+        if (pendingId.isNotEmpty() && outboxClientIdByPendingId.containsKey(pendingId)) return true
         return isDuplicateOwnOutgoingDelivery(
             _state.value.messages,
             message,
@@ -5125,6 +5244,15 @@ class ChatViewModel(
                     }
                 }
                 scheduleMarkReadAfterIncomingBatch(rid, scopedBatch, cappedMessages)
+                if (ChatArchitectureFlags.useChatSyncEngine && currentUserId.isNotBlank() && !rid.isNullOrBlank()) {
+                    val mirrorRoom = rid
+                    val mirrorBatch = scopedBatch.toList()
+                    viewModelScope.launch(Dispatchers.IO) {
+                        mirrorBatch.forEach { msg ->
+                            chatSyncEngine.onIncomingSocketMessage(currentUserId, msg)
+                        }
+                    }
+                }
             }
             }
         }

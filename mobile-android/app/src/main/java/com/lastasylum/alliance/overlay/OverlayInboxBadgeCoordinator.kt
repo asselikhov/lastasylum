@@ -13,7 +13,7 @@ import kotlinx.coroutines.withContext
 /**
  * Overlay HUD badges for team news/forum — independent caches, optimistic floors, and refresh.
  */
-internal class OverlayInboxBadgeCoordinator {
+class OverlayInboxBadgeCoordinator {
     @Volatile
     private var cachedNewsUnread: Int = 0
 
