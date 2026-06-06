@@ -22,18 +22,18 @@ enum class JournalFeedVariant {
 }
 
 object PremiumJournalFeedTokens {
-    val cardShape = RoundedCornerShape(22.dp)
-    val cardInnerShape = RoundedCornerShape(20.dp)
+    val cardShape = RoundedCornerShape(FeedCardDesignTokens.compactCornerRadius)
+    val cardInnerShape = RoundedCornerShape(FeedCardDesignTokens.compactInnerCornerRadius)
     val optionTileShape = RoundedCornerShape(12.dp)
     val chipShape = RoundedCornerShape(10.dp)
     val timePillShape = RoundedCornerShape(8.dp)
-    val borderWidth = 1.25.dp
-    val accentRailWidth = 4.dp
-    val cardPaddingH = 18.dp
-    val cardPaddingV = 16.dp
-    val pollCardPaddingV = 14.dp
-    val listSpacing = 14.dp
-    val sectionGap = 12.dp
+    val borderWidth = FeedCardDesignTokens.compactBorderWidth
+    val accentRailWidth = FeedCardDesignTokens.compactAccentRailWidth
+    val cardPaddingH = FeedCardDesignTokens.compactCardPadding
+    val cardPaddingV = FeedCardDesignTokens.compactCardPadding
+    val pollCardPaddingV = 12.dp
+    val listSpacing = FeedCardDesignTokens.compactListSpacing
+    val sectionGap = 10.dp
     val pollSectionGap = 8.dp
     val optionTilePaddingH = 12.dp
     val optionTilePaddingV = 8.dp
@@ -63,14 +63,16 @@ object PremiumJournalFeedTokens {
     val optionTileBottom = Color(0xFF121A28)
     val optionTrackColor = Color(0xFF1E2836)
 
-    val titleStyle: TextStyle = ForumTopicCardTokens.titleStyle
+    val titleStyle: TextStyle = ForumTopicCardTokens.titleStyle.copy(
+        fontWeight = FontWeight.SemiBold,
+    )
 
     val headlineStyle = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 19.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.12.sp,
+        fontSize = 17.sp,
+        lineHeight = 22.sp,
+        letterSpacing = 0.1.sp,
         color = titleColor,
         platformStyle = platformStyle,
     )

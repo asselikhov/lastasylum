@@ -51,6 +51,31 @@ fun FeedCardUnreadDot(modifier: Modifier = Modifier) {
 }
 
 @Composable
+fun FeedCardUnreadTonalBadge(
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = PremiumColors.accentCyan.copy(alpha = 0.14f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            PremiumColors.accentCyan.copy(alpha = 0.42f),
+        ),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = PremiumColors.accentCyanBright,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
 fun FeedCardTypePill(
     label: String,
     icon: ImageVector,
@@ -235,8 +260,8 @@ fun FeedCardHero(
     topOverlay: @Composable (() -> Unit)? = null,
 ) {
     val topShape = RoundedCornerShape(
-        topStart = 20.dp,
-        topEnd = 20.dp,
+        topStart = FeedCardDesignTokens.compactCornerRadius,
+        topEnd = FeedCardDesignTokens.compactCornerRadius,
         bottomStart = 0.dp,
         bottomEnd = 0.dp,
     )
@@ -260,9 +285,10 @@ fun FeedCardHero(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
+                            Color.Black.copy(alpha = 0.10f),
                             Color.Transparent,
-                            Color.Black.copy(alpha = 0.55f),
-                            Color.Black.copy(alpha = 0.78f),
+                            Color.Black.copy(alpha = 0.48f),
+                            Color.Black.copy(alpha = 0.84f),
                         ),
                     ),
                 ),
@@ -270,7 +296,7 @@ fun FeedCardHero(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(horizontal = FeedCardDesignTokens.contentPadding, vertical = 14.dp),
+                .padding(horizontal = FeedCardDesignTokens.compactCardPadding, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             topOverlay?.invoke()

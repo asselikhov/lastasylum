@@ -1,6 +1,13 @@
 package com.lastasylum.alliance.ui.components.team
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -34,6 +41,7 @@ fun PremiumJournalFeedShell(
     variant: JournalFeedVariant,
     modifier: Modifier = Modifier,
     isUnread: Boolean = false,
+    animationTier: FeedAnimationTier = if (isUnread) FeedAnimationTier.Lite else FeedAnimationTier.Off,
     contentTopPadding: androidx.compose.ui.unit.Dp = PremiumJournalFeedTokens.cardPaddingV,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     topContent: @Composable () -> Unit = {},
@@ -62,6 +70,40 @@ fun PremiumJournalFeedShell(
     val innerShape = PremiumJournalFeedTokens.cardInnerShape
     val railColor = PremiumJournalFeedTokens.railColor(variant, isUnread)
 
+    val animActive = isUnread && animationTier != FeedAnimationTier.Off
+    val drift: Float
+    val flicker: Float
+    if (animActive) {
+        val infinite = rememberInfiniteTransition(label = "journalUnreadAmbient")
+        drift = infinite.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    if (animationTier == FeedAnimationTier.Full) 12_000 else 16_000,
+                    easing = LinearEasing,
+                ),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "journalDrift",
+        ).value
+        flicker = infinite.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    if (animationTier == FeedAnimationTier.Full) 900 else 1_600,
+                    easing = FastOutSlowInEasing,
+                ),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "journalFlicker",
+        ).value
+    } else {
+        drift = 0f
+        flicker = 0.5f
+    }
+
     val clickModifier = if (onClick != null) {
         Modifier.clickable(
             interactionSource = interactionSource,
@@ -80,7 +122,7 @@ fun PremiumJournalFeedShell(
                 scaleY = scale
             }
             .drawBehind {
-                drawJournalCardShadow(accent, glowBoost)
+                drawJournalCardShadow(accent, glowBoost, isUnread && animActive)
             }
             .clip(outerShape)
             .background(Brush.linearGradient(borderColors), outerShape)
@@ -89,6 +131,13 @@ fun PremiumJournalFeedShell(
             .background(PremiumJournalFeedTokens.glassFill(glassAlpha), innerShape)
             .drawWithContent {
                 drawJournalInnerGlow(accent, glowBoost)
+                if (animActive) {
+                    drawJournalUnreadWave(
+                        drift = drift,
+                        flicker = flicker,
+                        lite = animationTier == FeedAnimationTier.Lite,
+                    )
+                }
                 drawContent()
             }
             .then(clickModifier),
@@ -129,26 +178,28 @@ fun PremiumJournalFeedShell(
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawJournalCardShadow(
     accent: PremiumJournalFeedTokens.Accent,
     glowBoost: Float,
+    unreadGlow: Boolean,
 ) {
+    val corner = FeedCardDesignTokens.compactCornerRadius.toPx()
     val boost = glowBoost.coerceAtMost(1.4f)
     drawRoundRect(
-        color = Color.Black.copy(alpha = 0.42f),
-        topLeft = Offset(0f, 6.dp.toPx()),
+        color = Color.Black.copy(alpha = 0.38f),
+        topLeft = Offset(0f, 5.dp.toPx()),
         size = size,
-        cornerRadius = CornerRadius(22.dp.toPx()),
+        cornerRadius = CornerRadius(corner),
     )
     drawRoundRect(
         brush = Brush.radialGradient(
             colors = listOf(
-                accent.primary.copy(alpha = 0.16f * boost),
-                accent.secondary.copy(alpha = 0.08f * boost),
+                accent.primary.copy(alpha = (if (unreadGlow) 0.20f else 0.14f) * boost),
+                accent.secondary.copy(alpha = (if (unreadGlow) 0.10f else 0.07f) * boost),
                 Color.Transparent,
             ),
             center = Offset(size.width * 0.2f, size.height * 0.1f),
-            radius = size.maxDimension * 0.9f,
+            radius = size.maxDimension * 0.85f,
         ),
         size = size,
-        cornerRadius = CornerRadius(22.dp.toPx()),
+        cornerRadius = CornerRadius(corner),
     )
 }
 
@@ -156,17 +207,18 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawJournalInnerGlo
     accent: PremiumJournalFeedTokens.Accent,
     glowBoost: Float,
 ) {
-    val edgeAlpha = 0.10f * glowBoost.coerceAtMost(1.35f)
+    val corner = FeedCardDesignTokens.compactInnerCornerRadius.toPx()
+    val edgeAlpha = 0.09f * glowBoost.coerceAtMost(1.35f)
     drawRoundRect(
         brush = Brush.verticalGradient(
             colors = listOf(
                 Color.White.copy(alpha = edgeAlpha),
-                accent.primary.copy(alpha = edgeAlpha * 0.4f),
+                accent.primary.copy(alpha = edgeAlpha * 0.35f),
                 Color.Transparent,
             ),
-            endY = size.height * 0.42f,
+            endY = size.height * 0.38f,
         ),
         size = size,
-        cornerRadius = CornerRadius(20.dp.toPx()),
+        cornerRadius = CornerRadius(corner),
     )
 }

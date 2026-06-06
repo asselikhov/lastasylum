@@ -164,6 +164,7 @@ import com.lastasylum.alliance.ui.chat.forumLazyIndexForMessageId
 import com.lastasylum.alliance.ui.chat.jumpToForumPinnedMessage
 import com.lastasylum.alliance.ui.chat.resolvedThumbnailUrl
 import com.lastasylum.alliance.ui.chat.toPinnedPreview
+import com.lastasylum.alliance.ui.util.formatForumTopicListTimeRu
 import com.lastasylum.alliance.ui.util.formatForumTopicTimeRu
 import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
 import com.lastasylum.alliance.data.teams.TeamForumMarkRead
@@ -200,6 +201,11 @@ import com.lastasylum.alliance.ui.components.CenteredScreenLoading
 import com.lastasylum.alliance.ui.components.team.ForumTopicCardTokens
 import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
 import com.lastasylum.alliance.ui.components.team.ForumTopicGhostIconButton
+import com.lastasylum.alliance.ui.components.team.ForumTopicListFilter
+import com.lastasylum.alliance.ui.components.team.ForumTopicListHeader
+import com.lastasylum.alliance.ui.components.team.buildVisibleUnreadRankMap
+import com.lastasylum.alliance.ui.components.team.filterForumTopics
+import com.lastasylum.alliance.ui.components.team.forumTopicAnimationTier
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import java.io.File
@@ -207,7 +213,6 @@ import java.io.InputStream
 import java.util.UUID
 import android.content.ContentResolver
 import android.os.ParcelFileDescriptor
-import com.lastasylum.alliance.ui.util.formatForumTopicTimeRu
 import java.util.Locale
 
 private object ForumRoutes {
@@ -589,6 +594,32 @@ private fun TeamForumListRoute(
         initialFirstVisibleItemIndex = 0,
         initialFirstVisibleItemScrollOffset = 0,
     )
+    var searchQuery by remember { mutableStateOf("") }
+    var listFilter by remember { mutableStateOf(ForumTopicListFilter.All) }
+    val filteredTopics by remember(topics, searchQuery, listFilter, lastReadByTopic.size) {
+        derivedStateOf {
+            filterForumTopics(
+                topics = topics.toList(),
+                query = searchQuery,
+                filter = listFilter,
+                unreadAt = { topic -> effectiveTopicUnread(topic) },
+            )
+        }
+    }
+    val visibleIndices by remember(topicListState) {
+        derivedStateOf {
+            topicListState.layoutInfo.visibleItemsInfo.map { it.index }.toSet()
+        }
+    }
+    val visibleUnreadRanks by remember(topicListState, filteredTopics, lastReadByTopic.size) {
+        derivedStateOf {
+            buildVisibleUnreadRankMap(
+                topicListState.layoutInfo.visibleItemsInfo.map { it.index }.sorted(),
+            ) { idx ->
+                idx in filteredTopics.indices && effectiveTopicUnread(filteredTopics[idx]) > 0
+            }
+        }
+    }
     val forumTopicUnreadTotal = remember(topics) {
         topics.sumOf { effectiveTopicUnread(it).coerceAtLeast(0) }
     }
@@ -650,8 +681,28 @@ private fun TeamForumListRoute(
                     )
                 }
                 else -> {
-                    val listTopPad = if (overlayUi) 0.dp else 8.dp
-                    Box(Modifier.fillMaxSize()) {
+                    val listTopPad = if (overlayUi) 0.dp else 4.dp
+                    Column(Modifier.fillMaxSize()) {
+                        ForumTopicListHeader(
+                            searchQuery = searchQuery,
+                            onSearchQueryChange = { searchQuery = it },
+                            activeFilter = listFilter,
+                            onFilterChange = { listFilter = it },
+                            showSearch = !overlayUi,
+                            compactFilters = overlayUi,
+                        )
+                        if (filteredTopics.isEmpty()) {
+                            PremiumEmptyState(
+                                icon = Icons.Outlined.Forum,
+                                title = stringResource(R.string.team_forum_filter_all),
+                                body = stringResource(R.string.team_forum_search_hint),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                            )
+                        } else {
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
                     LazyColumn(
                         state = topicListState,
                         contentPadding = PaddingValues(
@@ -663,16 +714,29 @@ private fun TeamForumListRoute(
                         verticalArrangement = Arrangement.spacedBy(ForumTopicCardTokens.listSpacing),
                     ) {
                         itemsIndexed(
-                            topics,
+                            filteredTopics,
                             key = { _, t -> t.id },
                             contentType = { _, _ -> "forum_topic" },
                         ) { index, t ->
+                            val unread = effectiveTopicUnread(t)
+                            val unreadRank = visibleUnreadRanks[index] ?: -1
+                            val animationTier = forumTopicAnimationTier(
+                                unread = unread > 0,
+                                isVisible = index in visibleIndices,
+                                visibleUnreadRank = unreadRank,
+                                listSize = filteredTopics.size,
+                                sectionActive = sectionActive,
+                                overlayMode = overlayUi,
+                                warmActivity = unread == 0 && t.messageCount >= 3,
+                            )
+                            val timeIso = t.lastMessageAt ?: t.createdAt
                             ForumTopicFeedCard(
                                 topic = t,
                                 listIndex = index,
-                                messageMeta = t.lastMessageAt?.let { formatForumTopicTimeRu(it) } ?: "—",
-                                displayUnreadCount = effectiveTopicUnread(t),
-                                animationsEnabled = sectionActive,
+                                messageMeta = formatForumTopicListTimeRu(timeIso),
+                                displayUnreadCount = unread,
+                                animationTier = animationTier,
+                                emberBoost = if (unreadRank == 0) 1.45f else 1f,
                                 onClick = {
                                     onOpenTopic(t)
                                 },
@@ -720,7 +784,12 @@ private fun TeamForumListRoute(
                             onClick = {
                                 if (firstUnreadTopicIndex >= 0) {
                                     scope.launch {
-                                        topicListState.animateScrollToItem(firstUnreadTopicIndex)
+                                        val filteredIdx = filteredTopics.indexOfFirst {
+                                            effectiveTopicUnread(it) > 0
+                                        }
+                                        if (filteredIdx >= 0) {
+                                            topicListState.animateScrollToItem(filteredIdx)
+                                        }
                                     }
                                 }
                             },
@@ -730,6 +799,8 @@ private fun TeamForumListRoute(
                                 .zIndex(6f),
                         )
                     }
+                    }
+                        }
                     }
                 }
             }

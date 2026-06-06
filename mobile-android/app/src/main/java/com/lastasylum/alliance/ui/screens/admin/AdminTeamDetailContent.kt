@@ -48,7 +48,7 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.adminAppVersionLine
 import com.lastasylum.alliance.ui.util.chatSenderDisplayLine
-import com.lastasylum.alliance.ui.util.formatForumTopicTimeRu
+import com.lastasylum.alliance.ui.util.formatForumTopicListTimeRu
 import com.lastasylum.alliance.ui.util.formatIsoDateShortRu
 import com.lastasylum.alliance.ui.util.formatIsoDateTimeRu
 import com.lastasylum.alliance.ui.util.formatServerLabel
@@ -295,8 +295,9 @@ private fun AdminTeamForumTab(
         itemSpacing = ForumTopicCardTokens.listSpacing,
     ) {
         itemsIndexed(state.teamForumTopics, key = { _, topic -> topic.id }) { index, topic ->
-            val messageMeta = topic.lastMessageAt?.let { formatForumTopicTimeRu(it) }
-                ?: formatForumTopicTimeRu(topic.createdAt)
+            val messageMeta = formatForumTopicListTimeRu(
+                topic.lastMessageAt ?: topic.createdAt,
+            ).ifBlank { "—" }
             ForumTopicFeedCard(
                 topic = topic,
                 listIndex = index,

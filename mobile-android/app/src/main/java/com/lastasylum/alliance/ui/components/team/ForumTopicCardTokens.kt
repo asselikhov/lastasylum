@@ -22,26 +22,27 @@ import com.lastasylum.alliance.ui.theme.SquadRelaySecondary
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 
 object ForumTopicCardTokens {
-    val cardShape = RoundedCornerShape(22.dp)
-    val cardInnerShape = RoundedCornerShape(20.dp)
-    val borderWidth = 1.25.dp
-    val cardPaddingH = 18.dp
-    val cardPaddingV = 18.dp
-    val listSpacing = 14.dp
-    val rowGap = 14.dp
-    val avatarOuter = 54.dp
-    val avatarInner = 46.dp
-    val avatarRingWidth = 2.dp
-    val titleMetaGap = 10.dp
-    val chipGap = 8.dp
-    val chipRadius = 12.dp
-    val chipPaddingH = 10.dp
-    val chipPaddingV = 5.dp
-    val ghostButtonSize = 36.dp
-    val ghostIconSize = 18.dp
+    val cardShape = RoundedCornerShape(FeedCardDesignTokens.compactCornerRadius)
+    val cardInnerShape = RoundedCornerShape(FeedCardDesignTokens.compactInnerCornerRadius)
+    val borderWidth = FeedCardDesignTokens.compactBorderWidth
+    val cardPaddingH = FeedCardDesignTokens.compactCardPadding
+    val cardPaddingV = FeedCardDesignTokens.compactCardPadding
+    val listSpacing = FeedCardDesignTokens.compactListSpacing
+    val rowGap = FeedCardDesignTokens.compactRowGap
+    val avatarOuter = FeedCardDesignTokens.compactAvatar
+    val avatarInner = 34.dp
+    val avatarRingWidth = 1.5.dp
+    val titleMetaGap = FeedCardDesignTokens.compactTitleMetaGap
+    val chipGap = 6.dp
+    val chipRadius = 10.dp
+    val chipPaddingH = 8.dp
+    val chipPaddingV = 3.dp
+    val ghostButtonSize = 32.dp
+    val ghostIconSize = 16.dp
     val activityStripHeight = 2.dp
-    val activityStripHeightHot = 3.dp
-    val activityDotSize = 7.dp
+    val activityStripHeightHot = 2.5.dp
+    val activityDotSize = 6.dp
+    val accentRailWidth = FeedCardDesignTokens.compactAccentRailWidth
 
     /** Shared fire colors for Hot card border + flame layers. */
     object FirePalette {
@@ -53,8 +54,8 @@ object ForumTopicCardTokens {
         val core = Color(0xFFFFF3D4)
     }
 
-    val pressScale = 0.982f
-    val pressAnimSpec = tween<Float>(durationMillis = 140, easing = FastOutSlowInEasing)
+    val pressScale = 0.985f
+    val pressAnimSpec = tween<Float>(durationMillis = 120, easing = FastOutSlowInEasing)
 
     val InterFamily = FontFamily(
         Font(R.font.inter, FontWeight.Normal),
@@ -67,10 +68,10 @@ object ForumTopicCardTokens {
 
     val titleStyle = TextStyle(
         fontFamily = InterFamily,
-        fontWeight = FontWeight.Bold,
-        fontSize = 17.sp,
-        lineHeight = 22.sp,
-        letterSpacing = 0.15.sp,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = FeedCardDesignTokens.compactTitleSize,
+        lineHeight = 19.sp,
+        letterSpacing = 0.1.sp,
         color = Color(0xFFF8FAFF),
         platformStyle = platformStyle,
     )
@@ -78,9 +79,9 @@ object ForumTopicCardTokens {
     val metaStyle = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Medium,
-        fontSize = 11.5.sp,
-        lineHeight = 15.sp,
-        letterSpacing = 0.25.sp,
+        fontSize = FeedCardDesignTokens.compactMetaSize,
+        lineHeight = 14.sp,
+        letterSpacing = 0.2.sp,
         color = Color(0xFF8FA4BC),
         platformStyle = platformStyle,
     )
@@ -113,8 +114,8 @@ object ForumTopicCardTokens {
     }
 
     fun glassAlpha(level: ActivityLevel): Float = when (level) {
-        ActivityLevel.Hot -> 0.94f
-        ActivityLevel.Warm -> 0.88f
+        ActivityLevel.Hot -> 0.92f
+        ActivityLevel.Warm -> 0.86f
         ActivityLevel.Calm -> 0.82f
     }
 
@@ -136,8 +137,8 @@ object ForumTopicCardTokens {
             )
         }
         val cyanA = when (level) {
-            ActivityLevel.Warm -> 0.52f
-            ActivityLevel.Calm -> 0.34f
+            ActivityLevel.Warm -> 0.48f
+            ActivityLevel.Calm -> 0.30f
             ActivityLevel.Hot -> 0.72f
         } * boost
         return listOf(

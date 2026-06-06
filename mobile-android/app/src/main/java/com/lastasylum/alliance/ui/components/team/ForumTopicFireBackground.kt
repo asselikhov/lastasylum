@@ -124,18 +124,78 @@ fun DrawScope.drawForumFireBackground(
     drift: Float,
     flicker: Float,
     heatPhase: Float,
+    emberBoost: Float = 1f,
 ) {
     val w = size.width
     val h = size.height
-    val corner = 20.dp.toPx()
+    val corner = FeedCardDesignTokens.compactInnerCornerRadius.toPx()
     val pulse = 0.72f + flicker * 0.28f
     val heatAngle = heatPhase * 2f * PI.toFloat()
 
     drawCoalBed(w, h, corner, pulse, heatAngle, flicker)
     drawSmokeVeils(w, h, heatPhase, heatAngle, pulse)
     drawFlameBodies(w, h, accent, drift, flicker, pulse)
-    drawEmberField(w, h, drift, flicker)
+    drawEmberField(w, h, drift, flicker, emberBoost)
     drawRimGlow(w, h, corner, accent, pulse, flicker)
+    drawForumEdgeShimmer(w, h, corner, drift, flicker, accent)
+}
+
+/** Lite tier: edge shimmer + bottom glow without full flame bodies. */
+fun DrawScope.drawForumFireBackgroundLite(
+    accent: ForumTopicCardTokens.Accent,
+    drift: Float,
+    flicker: Float,
+) {
+    val w = size.width
+    val h = size.height
+    val corner = FeedCardDesignTokens.compactInnerCornerRadius.toPx()
+    val pulse = 0.65f + flicker * 0.25f
+    drawRoundRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                Color.Transparent,
+                palette.smoke.copy(alpha = 0.08f),
+                palette.deep.copy(alpha = 0.22f * pulse),
+            ),
+            startY = h * 0.55f,
+            endY = h,
+        ),
+        size = size,
+        cornerRadius = CornerRadius(corner),
+    )
+    drawForumEdgeShimmer(w, h, corner, drift, flicker, accent, lite = true)
+}
+
+/** Horizontal shimmer sweep along top edge. */
+fun DrawScope.drawForumEdgeShimmer(
+    w: Float,
+    h: Float,
+    corner: Float,
+    drift: Float,
+    flicker: Float,
+    accent: ForumTopicCardTokens.Accent,
+    lite: Boolean = false,
+) {
+    val stripH = if (lite) 2.dp.toPx() else 3.dp.toPx()
+    val shift = drift * w * 0.6f
+    val alphaScale = if (lite) 0.55f else 1f
+    drawRoundRect(
+        brush = Brush.horizontalGradient(
+            colors = listOf(
+                Color.Transparent,
+                palette.amber.copy(alpha = (0.12f + flicker * 0.18f) * alphaScale),
+                palette.orange.copy(alpha = (0.28f + flicker * 0.22f) * alphaScale),
+                accent.primary.copy(alpha = (0.15f + flicker * 0.12f) * alphaScale),
+                palette.orange.copy(alpha = (0.22f + flicker * 0.18f) * alphaScale),
+                Color.Transparent,
+            ),
+            startX = -shift,
+            endX = w * 1.4f - shift,
+        ),
+        topLeft = Offset(0f, 0f),
+        size = Size(w, stripH),
+        cornerRadius = CornerRadius(corner, corner),
+    )
 }
 
 private fun DrawScope.drawCoalBed(
@@ -281,9 +341,11 @@ private fun DrawScope.drawEmberField(
     h: Float,
     drift: Float,
     flicker: Float,
+    emberBoost: Float = 1f,
 ) {
     val driftAngle = drift * 2f * PI.toFloat()
     val maxRise = h * 0.26f
+    val boost = emberBoost.coerceIn(0.5f, 1.6f)
 
     emberSpecs.forEach { ember ->
         val phase = driftAngle + ember.phaseOffset
@@ -291,7 +353,7 @@ private fun DrawScope.drawEmberField(
         val rise = riseNorm * maxRise
         val x = w * ember.baseX + sin(phase * 1.65f) * w * 0.045f
         val y = h * ember.baseY - rise
-        val alpha = emberOpacityAtRise(riseNorm) * (0.65f + flicker * 0.35f)
+        val alpha = emberOpacityAtRise(riseNorm) * (0.65f + flicker * 0.35f) * boost
         val radius = ember.radius * (0.75f + flicker * 0.35f)
         drawCircle(
             brush = Brush.radialGradient(

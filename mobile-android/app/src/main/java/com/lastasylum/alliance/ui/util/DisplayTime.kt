@@ -8,6 +8,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeFormatterBuilder
 import java.time.temporal.ChronoField
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 /** Единая зона отображения дат/времени в UI (МСК). Сервер отдаёт UTC в ISO-8601. */
@@ -93,6 +94,23 @@ fun formatTeamFeedDateRu(iso: String): String {
 fun formatForumTopicTimeRu(iso: String): String {
     val instant = parseIsoInstant(iso) ?: return iso.trim()
     return mskFormatter("d MMM, HH:mm").format(instant)
+}
+
+/** Compact relative time for forum topic list meta row. */
+fun formatForumTopicListTimeRu(iso: String?): String {
+    val instant = parseIsoInstant(iso) ?: return ""
+    val now = Instant.now()
+    val zoned = instant.atZone(APP_DISPLAY_ZONE)
+    val today = now.atZone(APP_DISPLAY_ZONE).toLocalDate()
+    val date = zoned.toLocalDate()
+    val minutes = ChronoUnit.MINUTES.between(instant, now).coerceAtLeast(0)
+    return when {
+        minutes < 1 -> "сейчас"
+        minutes < 60 -> "$minutes мин"
+        date == today -> mskFormatter("HH:mm").format(instant)
+        date == today.minusDays(1) -> "вчера"
+        else -> mskFormatter("d MMM, HH:mm").format(instant)
+    }
 }
 
 /** Дата без времени (компактные списки). */

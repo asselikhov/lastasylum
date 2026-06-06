@@ -39,7 +39,8 @@ import com.lastasylum.alliance.data.teams.TeamNewsPollOptionDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollTallyDto
 import com.lastasylum.alliance.ui.components.premium.FeedCardHero
 import com.lastasylum.alliance.ui.components.premium.FeedCardMetaRow
-import com.lastasylum.alliance.ui.components.premium.FeedCardUnreadDot
+import com.lastasylum.alliance.ui.components.premium.FeedCardUnreadTonalBadge
+import com.lastasylum.alliance.ui.components.team.FeedAnimationTier
 import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
 import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
 
@@ -330,6 +331,7 @@ fun TeamNewsFeedCard(
         modifier = modifier.semantics { contentDescription = cardDesc },
         variant = journalVariant,
         isUnread = isUnread,
+        animationTier = if (isUnread) FeedAnimationTier.Full else FeedAnimationTier.Off,
         contentTopPadding = PremiumJournalFeedTokens.contentPaddingTop(hasHero, journalVariant),
         topContent = {
             if (hasHero) {
@@ -338,7 +340,7 @@ fun TeamNewsFeedCard(
                     title = item.title,
                     contentDescription = item.title,
                     topOverlay = {
-                        if (isUnread) FeedCardUnreadDot()
+                        if (isUnread) FeedCardUnreadTonalBadge(label = unreadBadge)
                     },
                 )
                 HorizontalDivider(
@@ -363,7 +365,7 @@ fun TeamNewsFeedCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            if (!hasHero && isUnread) FeedCardUnreadDot()
+                            if (!hasHero && isUnread) FeedCardUnreadTonalBadge(label = unreadBadge)
                             Text(
                                 text = displayTitle,
                                 style = PremiumJournalFeedTokens.titleStyle,
@@ -394,7 +396,7 @@ fun TeamNewsFeedCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            if (isUnread) FeedCardUnreadDot()
+                            if (isUnread) FeedCardUnreadTonalBadge(label = unreadBadge)
                             Text(
                                 text = item.title,
                                 style = PremiumJournalFeedTokens.titleStyle,
@@ -427,8 +429,8 @@ fun TeamNewsFeedCard(
                         .padding(
                             start = PremiumJournalFeedTokens.accentRailWidth + 10.dp,
                             end = PremiumJournalFeedTokens.cardPaddingH,
-                            top = 10.dp,
-                            bottom = 10.dp,
+                            top = 8.dp,
+                            bottom = 8.dp,
                         ),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),

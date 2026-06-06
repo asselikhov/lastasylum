@@ -31,4 +31,16 @@ class DisplayTimeTest {
         assertEquals("15:00", formatChatTimeMsk("2024-06-01T12:00:00"))
         assertEquals("21:00", formatChatTimeMsk("2024-06-01T18:00:00.000"))
     }
+
+    @Test
+    fun formatForumTopicListTimeRu_oldDate_usesShortDateTime() {
+        val label = formatForumTopicListTimeRu("2024-01-15T10:30:00.000Z")
+        assertEquals("15 янв., 13:30", label)
+    }
+
+    @Test
+    fun formatForumTopicListTimeRu_blank_returnsEmpty() {
+        assertEquals("", formatForumTopicListTimeRu(null))
+        assertEquals("", formatForumTopicListTimeRu(""))
+    }
 }
