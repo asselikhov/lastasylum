@@ -6,6 +6,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
@@ -25,14 +26,24 @@ object ForumTopicCardTokens {
     val cardShape = RoundedCornerShape(FeedCardDesignTokens.compactCornerRadius)
     val cardInnerShape = RoundedCornerShape(FeedCardDesignTokens.compactInnerCornerRadius)
     val borderWidth = FeedCardDesignTokens.compactBorderWidth
-    val cardPaddingH = FeedCardDesignTokens.compactCardPadding
-    val cardPaddingV = FeedCardDesignTokens.compactCardPadding
+    val cardPaddingH = 10.dp
+    val cardPaddingV = 10.dp
     val listSpacing = FeedCardDesignTokens.compactListSpacing
     val rowGap = FeedCardDesignTokens.compactRowGap
     val avatarOuter = FeedCardDesignTokens.compactAvatar
     val avatarInner = 34.dp
     val avatarRingWidth = 1.5.dp
     val titleMetaGap = FeedCardDesignTokens.compactTitleMetaGap
+
+    /** Fixed card geometry — all cards share identical outer height. */
+    val cardFixedHeight = 84.dp
+    val cardContentHeight = 52.dp
+    val titleLineHeight = 20.dp
+    val subtitleLineHeight = 16.dp
+    val metaLineHeight = 14.dp
+    val textBlockGap = 1.dp
+    val actionsSlotWidth = 32.dp
+    val badgeSlotWidth = 28.dp
     val chipGap = 6.dp
     val chipRadius = 10.dp
     val chipPaddingH = 8.dp
@@ -92,6 +103,28 @@ object ForumTopicCardTokens {
     val metaText = Color(0xFF94A8C0)
     val metaIcon = Color(0xFF6E86A0)
 
+    val glassTop = Color(0xFF121A28)
+    val glassBottom = Color(0xFF0A101C)
+
+    fun glassFillBrush(alpha: Float): Brush =
+        Brush.verticalGradient(
+            colors = listOf(
+                glassTop.copy(alpha = alpha),
+                glassBottom.copy(alpha = alpha * 0.98f),
+            ),
+        )
+
+    fun titleStyleFor(unread: Boolean): TextStyle =
+        if (unread) {
+            titleStyle.copy(fontWeight = FontWeight.Bold)
+        } else {
+            titleStyle
+        }
+
+    /** Sum of the three text lines + gaps — must equal [cardContentHeight]. */
+    fun textBlockHeightSum(): Dp =
+        titleLineHeight + textBlockGap + subtitleLineHeight + textBlockGap + metaLineHeight
+
     enum class ActivityLevel { Calm, Warm, Hot }
 
     @Immutable
@@ -119,7 +152,7 @@ object ForumTopicCardTokens {
         ActivityLevel.Calm -> 0.82f
     }
 
-    fun glassFill(alpha: Float): Color = Color(0xFF0A101C).copy(alpha = alpha)
+    fun glassFill(alpha: Float): Color = glassBottom.copy(alpha = alpha)
 
     fun gradientBorderColors(
         accent: Accent,

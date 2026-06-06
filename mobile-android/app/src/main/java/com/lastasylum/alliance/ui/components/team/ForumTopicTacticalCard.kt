@@ -129,25 +129,23 @@ fun ForumTopicAnimatedShell(
     val outerShape = ForumTopicCardTokens.cardShape
     val innerShape = ForumTopicCardTokens.cardInnerShape
     val showActivityStrip = animActive && activityLevel != ForumTopicCardTokens.ActivityLevel.Calm
-    val firePalette = ForumTopicCardTokens.FirePalette
 
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .height(ForumTopicCardTokens.cardFixedHeight)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
             .drawBehind {
-                if (animActive) {
-                    drawTacticalCardShadow(activityLevel, accent, glowBoost, flicker)
-                }
+                drawTacticalCardShadow(activityLevel, accent, glowBoost, flicker)
             }
             .clip(outerShape)
             .background(Brush.linearGradient(borderColors), outerShape)
             .padding(ForumTopicCardTokens.borderWidth)
             .clip(innerShape)
-            .background(ForumTopicCardTokens.glassFill(glassAlpha), innerShape)
+            .background(ForumTopicCardTokens.glassFillBrush(glassAlpha), innerShape)
             .drawWithContent {
                 when {
                     fullAnim && isHot -> drawForumFireBackground(
@@ -156,9 +154,17 @@ fun ForumTopicAnimatedShell(
                     liteAnim && isHot -> drawForumFireBackgroundLite(accent, drift, flicker)
                     liteAnim && isWarm -> drawTacticalFogParticles(drift, accent)
                 }
-                if (animActive) {
-                    drawTacticalInnerEdgeGlow(accent, activityLevel, pulse)
+                if (showActivityStrip) {
+                    drawForumActivityStripOverlay(
+                        accent = accent,
+                        activityLevel = activityLevel,
+                        drift = drift,
+                        pulse = pulse,
+                        flicker = flicker,
+                        hot = isHot && (fullAnim || liteAnim),
+                    )
                 }
+                drawTacticalInnerEdgeGlow(accent, activityLevel, pulse)
                 drawContent()
             }
             .clickable(
@@ -182,53 +188,6 @@ fun ForumTopicAnimatedShell(
                     ),
                 ),
         )
-        if (showActivityStrip) {
-            val stripHeight = if (isHot && fullAnim) {
-                ForumTopicCardTokens.activityStripHeightHot
-            } else {
-                ForumTopicCardTokens.activityStripHeight
-            }
-            if (isHot && (fullAnim || liteAnim)) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(stripHeight)
-                        .drawBehind {
-                            val w = size.width
-                            val shift = drift * w * 0.35f
-                            drawRect(
-                                brush = Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        firePalette.amber.copy(alpha = 0.16f + pulse * 0.2f),
-                                        firePalette.orange.copy(alpha = 0.24f + flicker * 0.2f),
-                                        accent.primary.copy(alpha = 0.12f + pulse * 0.15f),
-                                        Color.Transparent,
-                                    ),
-                                    startX = -shift,
-                                    endX = w * 1.35f - shift,
-                                ),
-                            )
-                        },
-                )
-            } else if (isWarm && liteAnim) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(stripHeight)
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    accent.primary.copy(alpha = 0.12f),
-                                    accent.secondary.copy(alpha = 0.16f),
-                                    Color.Transparent,
-                                ),
-                            ),
-                        ),
-                )
-            }
-        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -238,6 +197,7 @@ fun ForumTopicAnimatedShell(
                     top = ForumTopicCardTokens.cardPaddingV,
                     bottom = ForumTopicCardTokens.cardPaddingV,
                 ),
+            contentAlignment = Alignment.CenterStart,
             content = content,
         )
     }
@@ -291,11 +251,12 @@ private fun DrawScope.drawTacticalCardShadow(
 ) {
     val firePalette = ForumTopicCardTokens.FirePalette
     val corner = FeedCardDesignTokens.compactCornerRadius.toPx()
-    val baseAlpha = when (activityLevel) {
-        ForumTopicCardTokens.ActivityLevel.Hot -> 0.32f
-        ForumTopicCardTokens.ActivityLevel.Warm -> 0.18f
-        ForumTopicCardTokens.ActivityLevel.Calm -> 0.12f
-    } * glowBoost.coerceAtMost(1.4f)
+    val intensity = when (activityLevel) {
+        ForumTopicCardTokens.ActivityLevel.Hot -> 1.15f
+        ForumTopicCardTokens.ActivityLevel.Warm -> 1.0f
+        ForumTopicCardTokens.ActivityLevel.Calm -> 0.85f
+    }
+    val baseAlpha = 0.14f * intensity * glowBoost.coerceAtMost(1.4f)
     drawRoundRect(
         color = Color.Black.copy(alpha = 0.36f),
         topLeft = Offset(0f, 6.dp.toPx()),
@@ -310,22 +271,23 @@ private fun DrawScope.drawTacticalCardShadow(
     } else {
         Offset(size.width * 0.18f, size.height * 0.12f)
     }
-    val glowColors = if (activityLevel == ForumTopicCardTokens.ActivityLevel.Hot) {
-        listOf(
-            firePalette.orange.copy(alpha = baseAlpha),
-            firePalette.deep.copy(alpha = baseAlpha * 0.5f),
-            Color.Transparent,
-        )
+    val glowPrimary = if (activityLevel == ForumTopicCardTokens.ActivityLevel.Hot) {
+        firePalette.orange
     } else {
-        listOf(
-            accent.primary.copy(alpha = baseAlpha),
-            accent.secondary.copy(alpha = baseAlpha * 0.4f),
-            Color.Transparent,
-        )
+        accent.primary
+    }
+    val glowSecondary = if (activityLevel == ForumTopicCardTokens.ActivityLevel.Hot) {
+        firePalette.deep
+    } else {
+        accent.secondary
     }
     drawRoundRect(
         brush = Brush.radialGradient(
-            colors = glowColors,
+            colors = listOf(
+                glowPrimary.copy(alpha = baseAlpha),
+                glowSecondary.copy(alpha = baseAlpha * 0.45f),
+                Color.Transparent,
+            ),
             center = glowCenter,
             radius = size.maxDimension * 0.85f,
         ),
@@ -362,21 +324,34 @@ private fun DrawScope.drawTacticalInnerEdgeGlow(
 ) {
     val corner = FeedCardDesignTokens.compactInnerCornerRadius.toPx()
     val edgeAlpha = when (activityLevel) {
-        ForumTopicCardTokens.ActivityLevel.Hot -> 0.12f + pulse * 0.06f
-        ForumTopicCardTokens.ActivityLevel.Warm -> 0.08f + pulse * 0.04f
-        ForumTopicCardTokens.ActivityLevel.Calm -> 0.05f
+        ForumTopicCardTokens.ActivityLevel.Hot -> 0.10f + pulse * 0.05f
+        ForumTopicCardTokens.ActivityLevel.Warm -> 0.08f + pulse * 0.03f
+        ForumTopicCardTokens.ActivityLevel.Calm -> 0.06f
     }
     drawRoundRect(
         brush = Brush.verticalGradient(
             colors = listOf(
                 Color.White.copy(alpha = edgeAlpha),
-                accent.primary.copy(alpha = edgeAlpha * 0.3f),
+                accent.primary.copy(alpha = edgeAlpha * 0.35f),
                 Color.Transparent,
             ),
             endY = size.height * 0.4f,
         ),
         size = size,
         cornerRadius = CornerRadius(corner),
+    )
+    drawRoundRect(
+        brush = Brush.horizontalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.08f + pulse * 0.04f),
+                Color.White.copy(alpha = 0.03f),
+                Color.Transparent,
+            ),
+            endX = size.width * 0.55f,
+        ),
+        topLeft = Offset(0f, 0f),
+        size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx()),
+        cornerRadius = CornerRadius(corner, corner),
     )
 }
 

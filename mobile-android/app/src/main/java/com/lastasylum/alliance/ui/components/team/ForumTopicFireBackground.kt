@@ -198,6 +198,51 @@ fun DrawScope.drawForumEdgeShimmer(
     )
 }
 
+/** Top activity strip drawn in canvas — zero layout height impact. */
+fun DrawScope.drawForumActivityStripOverlay(
+    accent: ForumTopicCardTokens.Accent,
+    activityLevel: ForumTopicCardTokens.ActivityLevel,
+    drift: Float,
+    pulse: Float,
+    flicker: Float,
+    hot: Boolean,
+) {
+    val w = size.width
+    val corner = FeedCardDesignTokens.compactInnerCornerRadius.toPx()
+    val stripH = if (hot) {
+        ForumTopicCardTokens.activityStripHeightHot.toPx()
+    } else {
+        ForumTopicCardTokens.activityStripHeight.toPx()
+    }
+    val shift = drift * w * 0.35f
+    val colors = when {
+        hot -> listOf(
+            Color.Transparent,
+            palette.amber.copy(alpha = 0.16f + pulse * 0.2f),
+            palette.orange.copy(alpha = 0.24f + flicker * 0.2f),
+            accent.primary.copy(alpha = 0.12f + pulse * 0.15f),
+            Color.Transparent,
+        )
+        activityLevel == ForumTopicCardTokens.ActivityLevel.Warm -> listOf(
+            Color.Transparent,
+            accent.primary.copy(alpha = 0.12f + pulse * 0.1f),
+            accent.secondary.copy(alpha = 0.16f + pulse * 0.08f),
+            Color.Transparent,
+        )
+        else -> return
+    }
+    drawRoundRect(
+        brush = Brush.horizontalGradient(
+            colors = colors,
+            startX = -shift,
+            endX = w * 1.35f - shift,
+        ),
+        topLeft = Offset(0f, 0f),
+        size = Size(w, stripH),
+        cornerRadius = CornerRadius(corner, corner),
+    )
+}
+
 private fun DrawScope.drawCoalBed(
     w: Float,
     h: Float,

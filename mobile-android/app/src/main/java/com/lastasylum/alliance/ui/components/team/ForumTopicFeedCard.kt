@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -64,6 +67,7 @@ fun ForumTopicFeedCard(
     val badgeUnread = (displayUnreadCount ?: topic.unreadCount).coerceAtLeast(0)
     val activityLevel = ForumTopicCardTokens.activityLevel(badgeUnread, topic.messageCount)
     val hasUnread = badgeUnread > 0
+    val hasPin = topic.pinnedMessageId != null && topic.pinnedMessage != null
     val metaDesc = remember(topic.id, topic.title, topic.messageCount, badgeUnread, messageMeta) {
         buildString {
             append(topic.title)
@@ -77,6 +81,7 @@ fun ForumTopicFeedCard(
         timeMeta = messageMeta,
         unreadCount = badgeUnread,
     )
+    val titleStyle = ForumTopicCardTokens.titleStyleFor(hasUnread)
 
     ForumTopicAnimatedShell(
         onClick = onClick,
@@ -87,8 +92,10 @@ fun ForumTopicFeedCard(
         modifier = modifier.semantics { contentDescription = metaDesc },
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ForumTopicCardTokens.cardContentHeight),
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ForumTopicCardTokens.rowGap),
         ) {
             ForumTopicCompactAvatar(
@@ -99,55 +106,106 @@ fun ForumTopicFeedCard(
                     activityLevel == ForumTopicCardTokens.ActivityLevel.Hot,
             )
             Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(ForumTopicCardTokens.titleMetaGap),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(ForumTopicCardTokens.cardContentHeight),
+                verticalArrangement = Arrangement.spacedBy(ForumTopicCardTokens.textBlockGap),
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(ForumTopicCardTokens.titleLineHeight),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
                         text = topic.title,
-                        style = ForumTopicCardTokens.titleStyle,
+                        style = titleStyle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(
+                                if (hasUnread) {
+                                    Modifier.drawBehind {
+                                        drawRect(
+                                            brush = Brush.horizontalGradient(
+                                                colors = listOf(
+                                                    PremiumColors.accentCyan.copy(alpha = 0.14f),
+                                                    Color.Transparent,
+                                                ),
+                                                endX = size.width * 0.65f,
+                                            ),
+                                        )
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            ),
                     )
-                    if (hasUnread) {
-                        ForumTopicUnreadBadge(count = badgeUnread)
-                    }
-                    menu()
-                }
-                if (topic.pinnedMessageId != null && topic.pinnedMessage != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    Box(
+                        modifier = Modifier
+                            .width(ForumTopicCardTokens.badgeSlotWidth)
+                            .height(ForumTopicCardTokens.titleLineHeight),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.PushPin,
-                            contentDescription = stringResource(R.string.forum_topic_pinned_preview),
-                            modifier = Modifier.size(12.dp),
-                            tint = PremiumColors.accentCyan.copy(alpha = 0.85f),
-                        )
-                        Text(
-                            text = pinnedPreviewLabel(topic.pinnedMessage),
-                            style = ForumTopicCardTokens.metaStyle,
-                            color = ForumTopicCardTokens.metaIcon,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
+                        if (hasUnread) {
+                            ForumTopicUnreadBadge(count = badgeUnread)
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .width(ForumTopicCardTokens.actionsSlotWidth)
+                            .height(ForumTopicCardTokens.titleLineHeight),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        menu()
                     }
                 }
-                Text(
-                    text = metaLine,
-                    style = ForumTopicCardTokens.metaStyle,
-                    color = ForumTopicCardTokens.metaText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(ForumTopicCardTokens.subtitleLineHeight),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (hasPin) {
+                        val pinPreview = topic.pinnedMessage!!
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.PushPin,
+                                contentDescription = stringResource(R.string.forum_topic_pinned_preview),
+                                modifier = Modifier.size(12.dp),
+                                tint = PremiumColors.accentCyan.copy(alpha = 0.85f),
+                            )
+                            Text(
+                                text = pinnedPreviewLabel(pinPreview),
+                                style = ForumTopicCardTokens.metaStyle,
+                                color = ForumTopicCardTokens.metaIcon,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                        }
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(ForumTopicCardTokens.metaLineHeight),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text(
+                        text = metaLine,
+                        style = ForumTopicCardTokens.metaStyle,
+                        color = ForumTopicCardTokens.metaText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }

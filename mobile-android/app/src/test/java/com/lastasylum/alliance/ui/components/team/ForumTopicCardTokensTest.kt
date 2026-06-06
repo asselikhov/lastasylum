@@ -27,4 +27,12 @@ class ForumTopicCardTokensTest {
             ForumTopicCardTokens.activityLevel(unreadCount = 0, messageCount = 0),
         )
     }
+
+    @Test
+    fun layoutConstants_textBlockFitsContentHeight() {
+        assertEquals(
+            ForumTopicCardTokens.cardContentHeight,
+            ForumTopicCardTokens.textBlockHeightSum(),
+        )
+    }
 }

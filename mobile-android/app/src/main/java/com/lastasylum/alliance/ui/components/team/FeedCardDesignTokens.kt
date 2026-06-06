@@ -20,6 +20,7 @@ object FeedCardDesignTokens {
     val compactAccentRailWidth = 3.dp
     val compactRowGap = 10.dp
     val compactTitleMetaGap = 4.dp
+    val forumCardFixedHeight = 84.dp
     val heroHeightNews = 180.dp
     val pollHeaderHeight = 56.dp
     val avatarList = 40.dp
