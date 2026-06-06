@@ -124,8 +124,13 @@ class ChatOutbox(
     }
 
     suspend fun markSending(clientMessageId: String) = withContext(Dispatchers.IO) {
-        val row = dao.getByClientId(clientMessageId) ?: return@withContext
-        dao.upsert(row.copy(state = OutboxSendState.Sending.wire))
+        if (dao.tryMarkSending(clientMessageId) == 0) return@withContext
+    }
+
+    /** Atomically claim a pending/failed row for HTTP send (prevents duplicate sends). */
+    suspend fun tryClaimForSend(clientMessageId: String): OutboxEntry? = withContext(Dispatchers.IO) {
+        if (dao.tryMarkSending(clientMessageId) == 0) return@withContext null
+        dao.getByClientId(clientMessageId)?.let(::toEntry)
     }
 
     suspend fun confirmSend(
@@ -169,6 +174,12 @@ class ChatOutbox(
             dao.getByClientId(clientMessageId)?.let(::toEntry)
         }
 
+    suspend fun clearForUser(userId: String) = withContext(Dispatchers.IO) {
+        val uid = userId.trim()
+        if (uid.isEmpty()) return@withContext
+        dao.deleteForUser(uid)
+    }
+
     suspend fun resumePending(
         scope: CoroutineScope,
         userId: String,
@@ -191,8 +202,7 @@ class ChatOutbox(
     ) = resumeMutex.withLock {
         val pending = withContext(Dispatchers.IO) { dao.getResumable(userId) }
         pending.forEach { row ->
-            val entry = toEntry(row)
-            markSending(entry.clientMessageId)
+            val entry = tryClaimForSend(row.clientMessageId) ?: return@forEach
             sendBlock(entry)
         }
     }

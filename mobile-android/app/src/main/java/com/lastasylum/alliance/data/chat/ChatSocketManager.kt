@@ -55,6 +55,16 @@ class ChatSocketManager(
     private val _connectionState = MutableStateFlow(ChatConnectionState.Disconnected)
     val connectionState: StateFlow<ChatConnectionState> = _connectionState.asStateFlow()
 
+    private fun dispatchMessageOnMain(message: ChatMessage) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            messageListeners.forEach { l -> runCatching { l(message) } }
+        } else {
+            mainHandler.post {
+                messageListeners.forEach { l -> runCatching { l(message) } }
+            }
+        }
+    }
+
     private fun isSubscribedRoom(roomId: String): Boolean =
         roomId.isNotBlank() && subscribedRoomIds.contains(roomId)
 
@@ -416,9 +426,7 @@ class ChatSocketManager(
                     payload.optString("clientMessageId").trim().takeIf { it.isNotEmpty() }?.let { cid ->
                         latencyTracker?.endSpanByCorrelation(LatencySpanType.ChatSendToSocket, cid, "ok")
                     }
-                    messageListeners.forEach { l ->
-                        runCatching { l(message) }
-                    }
+                    dispatchMessageOnMain(message)
                 }
                 on("message:edited") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
@@ -427,7 +435,7 @@ class ChatSocketManager(
                         opportunisticallyJoinRoom(msgRoom)
                     }
                     val message = payload.toChatMessage()
-                    messageListeners.forEach { l -> runCatching { l(message) } }
+                    dispatchMessageOnMain(message)
                 }
                 on("message:reaction") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
@@ -437,7 +445,7 @@ class ChatSocketManager(
                     }
                     val viewerUserId = JwtAccessTokenClaims.sub(tokenProvider?.invoke())
                     val message = payload.toReactionSocketMessage(viewerUserId)
-                    messageListeners.forEach { l -> runCatching { l(message) } }
+                    dispatchMessageOnMain(message)
                 }
                 on("message:deleted") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on

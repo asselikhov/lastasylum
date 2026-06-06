@@ -247,6 +247,7 @@ internal fun ChatViewModel.bindRoomStoreObserversImpl() {
             }
         }
         roomStoreBindings.onMessagesFromStore = messagesFromStore@{ roomId, messages, hasMoreOlder ->
+            if (postHistoryWipeAuthoritativeEmpty) return@messagesFromStore
             if (!isActiveSelectedRoom(roomId)) return@messagesFromStore
             val filtered = messagesWithoutLocallyRemoved(
                 filterMessagesForRoom(messages, roomId),

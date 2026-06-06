@@ -151,7 +151,34 @@ class OverlayCommandsPopover(
         }
         attachedWindowManager = null
         surfaceTransitionDepth = 0
-        clearGameGateSuppress()
+        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(isOverlayUi = true)
+        releasePopoverSuppressAfterUiClosed()
+    }
+
+    /** Close menu scrim after send without immediately dropping game-gate suppress. */
+    private fun hideMenuOnly() {
+        stopHeartPreviewPulse()
+        reactionBurstPresenter.clear()
+        hideReactionPickOnly()
+        hideReactionBurstOnly()
+        hideCoordOnly()
+        clearPreselectedReactionContext()
+        removePopoverLayoutListener()
+        val cachedMenu = menuScrim
+        if (cachedMenu != null && cachedMenu.isAttachedToWindow) {
+            cachedMenu.visibility = View.GONE
+        } else {
+            removeShell(menuScrim)
+            menuScrim = null
+            popoverCard = null
+            reactionGridScroll = null
+            reactionRow = null
+            menuRevealCategory = null
+        }
+        attachedWindowManager = null
+        surfaceTransitionDepth = 0
+        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(isOverlayUi = true)
+        releasePopoverSuppressAfterUiClosed()
     }
 
     /** Снять кэш меню (выход из игры / removeOverlayControl). */
@@ -1578,7 +1605,7 @@ class OverlayCommandsPopover(
                         onNotify = { event ->
                             val pendingId = prepareOptimisticGameEvent(event.id)
                             CombatOverlayService.extendInGameOverlayUiHold()
-                            hide()
+                            hideMenuOnly()
                             scope.launch {
                                 CombatOverlayService.warmupRaidForQuickCommandSend()
                                 val result = notifyGameEvent(event.id)

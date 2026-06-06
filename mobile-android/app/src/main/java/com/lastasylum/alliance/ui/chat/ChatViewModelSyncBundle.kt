@@ -84,6 +84,8 @@ internal class ChatViewModelSyncBundle(
         override fun setForceBackgroundRefreshAfterReconnect(value: Boolean) {
             vm.forceBackgroundRefreshAfterReconnect = value
         }
+        override fun postHistoryWipeAuthoritativeEmpty(): Boolean = vm.postHistoryWipeAuthoritativeEmpty
+        override fun clearPostHistoryWipeAuthoritativeEmpty() = vm.clearPostHistoryWipeAuthoritativeEmpty()
         override fun applyLoadedPageToUi(roomId: String, capped: List<ChatMessage>, hasMoreOlder: Boolean) {
             vm.vmState.value = vm.vmState.value.copy(
                 isLoading = false,

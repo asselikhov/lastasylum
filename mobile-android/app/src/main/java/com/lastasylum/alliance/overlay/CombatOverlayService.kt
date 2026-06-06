@@ -1029,6 +1029,8 @@ class CombatOverlayService : Service() {
     private val pendingQuickCommandTexts = java.util.concurrent.ConcurrentHashMap<String, String>()
     @Volatile
     private var pendingOverlayQuickCommandId: String? = null
+    /** Stable VM for prepare → send → confirm of one quick-command tap. */
+    private var overlayQuickCommandSendViewModel: ChatViewModel? = null
 
     private var cachedAllianceHubRoomId: String? = null
     private var lastGateBlockReason: OverlayGateUserNotifier.BlockReason? = null
@@ -1056,7 +1058,6 @@ class CombatOverlayService : Service() {
     ): Int {
         val localRead = AppContainer.from(this).chatRoomPreferences.loadAllLastReadMessageIds()
         if (ChatUnreadCounts.isAllianceHubLocallyReadSuppressed(rooms, localRead)) {
-            hubUnreadOptimisticFloor = 0
             return 0
         }
         return ChatUnreadCounts.overlayAllianceHubBadge(
@@ -1070,6 +1071,24 @@ class CombatOverlayService : Service() {
     /** After raid send / quick commands — block game-gate dismiss that removes HUD windows. */
     @Volatile
     private var overlayUiHoldUntilMs: Long = 0L
+
+    /** In-flight overlay quick-command HTTP sends — block game-gate hard dismiss. */
+    @Volatile
+    private var overlayQuickCommandSendInFlight: Int = 0
+
+    private var overlayBadgeSeedJob: Job? = null
+
+    private fun isOverlayQuickCommandSendInFlight(): Boolean = overlayQuickCommandSendInFlight > 0
+
+    private fun beginOverlayQuickCommandSendInFlight() {
+        overlayQuickCommandSendInFlight++
+        extendOverlayUiHold(OVERLAY_UI_HOLD_AFTER_RAID_SEND_MS)
+    }
+
+    private fun endOverlayQuickCommandSendInFlight() {
+        overlayQuickCommandSendInFlight = (overlayQuickCommandSendInFlight - 1).coerceAtLeast(0)
+        extendOverlayUiHold(OVERLAY_UI_HOLD_AFTER_RAID_SEND_MS)
+    }
 
     private val hudBadgeRefreshRunnable = Runnable {
         hudBadgeRefreshPosted = false
@@ -1654,7 +1673,8 @@ class CombatOverlayService : Service() {
     }
 
     private fun shouldKeepOverlayWindows(): Boolean =
-        overlayTouchPassthroughSnaps.isNotEmpty() ||
+        isOverlayQuickCommandSendInFlight() ||
+            overlayTouchPassthroughSnaps.isNotEmpty() ||
             OverlayChatInteractionHold.isOverlaySystemPickerSessionActive() ||
             overlayChatTeamPanelVisible ||
             OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
@@ -1965,6 +1985,7 @@ class CombatOverlayService : Service() {
         }
         hudRefreshInFlight = true
         hudRefreshJob?.cancel()
+        overlayBadgeSeedJob?.cancel()
         OverlayPerfDiag.logHudRefreshScheduled()
         val startedAt = android.os.SystemClock.elapsedRealtime()
         hudRefreshJob = serviceScope.launch(Dispatchers.IO) {
@@ -1995,33 +2016,9 @@ class CombatOverlayService : Service() {
                 } else {
                     state.allianceChatUnread
                 }
-                val prevHud = overlayStatusHudFlow.value
                 val refreshTeamInboxBadges = force || refreshNewsForum
                 val hubLocallyRead = rooms != null && isAllianceHubLocallyReadSuppressedNow()
-                val hubBumpGraceActive = !hubLocallyRead &&
-                    hubUnreadOptimisticFloor > 0 &&
-                    System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
-                val hubMerged = when {
-                    hubLocallyRead -> 0
-                    hubBumpGraceActive || shouldDeferHubUnreadReconcile() ->
-                        maxOf(hubDisplayed, hubUnreadOptimisticFloor)
-                    rooms != null -> hubDisplayed
-                    else -> maxOf(hubDisplayed, hubUnreadOptimisticFloor)
-                }
                 val nowMs = System.currentTimeMillis()
-                val mergedState = state.copy(
-                    allianceChatUnread = hubMerged,
-                    forumUnread = inboxBadgeCoordinator.mergeHudForum(
-                        authoritative = state.forumUnread,
-                        prevDisplayed = prevHud.forumUnread,
-                        useAuthoritative = refreshTeamInboxBadges,
-                    ),
-                    teamNewsUnread = inboxBadgeCoordinator.mergeHudNews(
-                        authoritative = state.teamNewsUnread,
-                        prevDisplayed = prevHud.teamNewsUnread,
-                        useAuthoritative = refreshTeamInboxBadges,
-                    ),
-                )
                 val refreshPresenceCounts = force ||
                     nowMs - lastHudPresenceCountRefreshAtMs >= HUD_PRESENCE_COUNT_REFRESH_MS
                 val onlineIngameCount = if (refreshPresenceCounts) {
@@ -2043,8 +2040,44 @@ class CombatOverlayService : Service() {
                 } else {
                     overlayTopRightHudFlow.value.teamJoinRequestCount
                 }
+                val teamId = container.usersRepository.resolveMyProfilePreferCache()
+                    ?.playerTeamId?.trim().orEmpty()
                 mainHandler.post {
-                    if (!isInGameOverlayUiActive()) return@post
+                    if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return@post
+                    val prevHud = overlayHudBadgeBus.current()
+                    if (hubLocallyRead && hubUnreadOptimisticFloor > 0) {
+                        hubUnreadOptimisticFloor = 0
+                    }
+                    val hubBumpGraceActive = !hubLocallyRead &&
+                        hubUnreadOptimisticFloor > 0 &&
+                        System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
+                    val hubMerged = when {
+                        hubLocallyRead -> 0
+                        hubBumpGraceActive || shouldDeferHubUnreadReconcile() ->
+                            maxOf(hubDisplayed, hubUnreadOptimisticFloor)
+                        rooms != null -> hubDisplayed
+                        else -> maxOf(hubDisplayed, hubUnreadOptimisticFloor)
+                    }
+                    val mergedState = state.copy(
+                        allianceChatUnread = hubMerged,
+                        forumUnread = inboxBadgeCoordinator.mergeHudForum(
+                            authoritative = state.forumUnread,
+                            prevDisplayed = prevHud.forumUnread,
+                            useAuthoritative = refreshTeamInboxBadges,
+                        ),
+                        teamNewsUnread = inboxBadgeCoordinator.mergeHudNews(
+                            authoritative = state.teamNewsUnread,
+                            prevDisplayed = prevHud.teamNewsUnread,
+                            useAuthoritative = refreshTeamInboxBadges,
+                        ),
+                    )
+                    if (teamId.isNotEmpty()) {
+                        inboxBadgeCoordinator.cacheNewsForum(
+                            teamId,
+                            mergedState.teamNewsUnread,
+                            mergedState.forumUnread,
+                        )
+                    }
                     overlayHudBadgeBus.emit(
                         OverlayHudBadgeEvent.FullRefreshResult(
                             allianceChatUnread = mergedState.allianceChatUnread,
@@ -2326,15 +2359,17 @@ class CombatOverlayService : Service() {
      * Uses in-memory coordinator cache and local read cursors (no zero flash).
      */
     private fun seedOverlayInboxBadgesBeforeRefresh() {
+        if (hudRefreshInFlight) return
         ensureOverlayReadCursorsBound()
         bindOverlayReadCursorsIfPossible()
-        serviceScope.launch(Dispatchers.IO) {
+        overlayBadgeSeedJob?.cancel()
+        overlayBadgeSeedJob = serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
             val profile = container.usersRepository.resolveMyProfilePreferCache() ?: return@launch
             val teamId = profile.playerTeamId?.trim().orEmpty()
             if (teamId.isEmpty()) return@launch
             val userId = profile.id.trim()
-            val prev = overlayStatusHudFlow.value
+            val instant = OverlayGameStatusHudRefresh.buildInstantLocalState(this@CombatOverlayService)
             val cachedNews = inboxBadgeCoordinator.readCachedNews(teamId)
             val cachedForum = inboxBadgeCoordinator.readCachedForum(teamId)
             val localForumRead = container.teamForumPreferences.loadAllLastReadMessageIds(teamId)
@@ -2345,25 +2380,31 @@ class CombatOverlayService : Service() {
                     ?.let { TeamInboxBadgeDeriver.computeForumUnread(it, localForumRead) }
             val hubPair = computeAllianceHubUnreadFromCache()
             mainHandler.post {
-                if (!isInGameOverlayUiActive()) return@post
-                val forumEffective = maxOf(cachedForum ?: 0, forumFromTopics ?: 0)
+                if (!isInGameOverlayUiActive() || hudRefreshInFlight) return@post
+                val prev = overlayHudBadgeBus.current()
+                val forumEffective = maxOf(
+                    cachedForum ?: instant?.forumUnread ?: 0,
+                    forumFromTopics ?: 0,
+                )
                 val forumSeed = TeamInboxBadgeDeriver.mergeForDisplay(
                     effectiveUnread = forumEffective,
                     previouslyDisplayed = prev.forumUnread,
                     optimisticFloor = inboxBadgeCoordinator.forumOptimisticFloor,
                 )
+                val newsEffective = cachedNews ?: instant?.teamNewsUnread ?: prev.teamNewsUnread
                 val newsSeed = TeamInboxBadgeDeriver.mergeForDisplay(
-                    effectiveUnread = cachedNews ?: prev.teamNewsUnread,
+                    effectiveUnread = newsEffective,
                     previouslyDisplayed = prev.teamNewsUnread,
                     optimisticFloor = inboxBadgeCoordinator.newsOptimisticFloor,
                 )
-                val hubEffective = hubPair?.first ?: prev.allianceChatUnread
+                val hubEffective = hubPair?.first ?: instant?.allianceChatUnread ?: prev.allianceChatUnread
                 val hubSeed = TeamInboxBadgeDeriver.mergeForDisplay(
                     effectiveUnread = hubEffective,
                     previouslyDisplayed = prev.allianceChatUnread,
                     rawServerUnread = hubPair?.second ?: hubEffective,
                     optimisticFloor = hubUnreadOptimisticFloor,
                 )
+                inboxBadgeCoordinator.cacheNewsForum(teamId, newsSeed, forumSeed)
                 overlayHudBadgeBus.emit(
                     OverlayHudBadgeEvent.SeedFromLocal(
                         allianceChatUnread = hubSeed,
@@ -2408,7 +2449,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun refreshOverlayReactionLogUnreadBadge() {
-        if (!isInGameOverlayUiActive()) return
+        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
         val count = AppContainer.from(this).overlayReactionLogRepository.unreadCount.value
         val cur = overlayTopRightHudFlow.value
         if (cur.reactionLogUnreadCount != count) {
@@ -2424,7 +2465,7 @@ class CombatOverlayService : Service() {
                 .unreadCount
                 .collect { count ->
                     mainHandler.post {
-                        if (!isInGameOverlayUiActive()) return@post
+                        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return@post
                         val cur = overlayTopRightHudFlow.value
                         if (cur.reactionLogUnreadCount != count) {
                             overlayTopRightHudFlow.value = cur.copy(reactionLogUnreadCount = count)
@@ -2950,12 +2991,21 @@ class CombatOverlayService : Service() {
             mainHandler.post { restoreOverlayInGameWindowVisibility() }
             return
         }
-        if (!isOverlayHudAttachAllowed()) return
+        if (!isOverlayHudAttachAllowed()) {
+            if (isOverlayUiHoldActive() || isOverlayQuickCommandSendInFlight()) {
+                extendOverlayUiHold()
+            }
+            return
+        }
         val prefs = AppContainer.from(this).userSettingsPreferences
         if (!canDrawOverlaysNow()) return
         repairDetachedOverlayShellIfNeeded()
         if (!isOverlayFullscreenPanelObscuringHud()) {
             applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = false)
+            overlayStatusHudHost?.visibility = View.VISIBLE
+            if (!isOverlayAppUpdateGateActive()) {
+                overlayTopRightHudHost?.visibility = View.VISIBLE
+            }
             applyOverlayAppUpdateGateChrome()
         }
         applyOverlayStripVisibility()
@@ -3062,7 +3112,8 @@ class CombatOverlayService : Service() {
         refreshOverlayTopRightHudState()
         applyOverlayStripVisibility()
         ensureOverlayRaidRealtimeIfNeeded()
-        seedOverlayInboxBadgesBeforeRefresh()
+        startOverlayReactionLogUnreadCollector()
+        refreshOverlayReactionLogUnreadBadge()
         refreshOverlayStatusHudData(force = true)
         if (!overlayChatWarmupCompleted && !overlayChatTeamPanelVisible) {
             scheduleOverlayChatWarmup()
@@ -3250,7 +3301,9 @@ class CombatOverlayService : Service() {
         }
         val wasShowing = overlayCommandsPopover.isShowing()
         overlayCommandsPopover.toggle(mgr)
-        if (!wasShowing && !overlayCommandsPopover.isShowing()) {
+        if (overlayCommandsPopover.isShowing()) {
+            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(isOverlayUi = true)
+        } else if (!wasShowing) {
             OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(isOverlayUi = true)
         }
         if (isOverlayChatStripEnabled() && chatStripHost?.isAttachedToWindow != true) {
@@ -3355,7 +3408,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun ensureOverlayStatusHudWindow(allowDuringFullscreenPanel: Boolean = false) {
-        if (!isInGameOverlayUiActive()) return
+        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
         if (isOverlayFullscreenPanelObscuringHud() && !allowDuringFullscreenPanel) return
         val manager = windowManager ?: systemWindowManager() ?: return
@@ -3440,7 +3493,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun ensureOverlayTopRightHudWindow(allowDuringFullscreenPanel: Boolean = false) {
-        if (!isInGameOverlayUiActive()) return
+        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
         if (isOverlayFullscreenPanelObscuringHud() && !allowDuringFullscreenPanel) return
         val manager = windowManager ?: systemWindowManager() ?: return
@@ -3624,18 +3677,11 @@ class CombatOverlayService : Service() {
                 return
             }
             // После закрытия «Чат»/HUD-панели: не прятать кнопки по краткому ложному «не в игре».
-            if (isOverlayUiHoldActive()) {
+            if (isOverlayUiHoldActive() || isOverlayQuickCommandSendInFlight()) {
                 gateSoftHideStartedAtMs = 0L
                 return
             }
             softHideOverlayUiBecauseNotInGame()
-            if (!overlayInGameProbeActive) {
-                gateSoftHideStartedAtMs = 0L
-                if (!isOverlayUiHoldActive()) {
-                    dismissOverlayUiBecauseNotInGame(logWaitingForGame = true)
-                }
-                return
-            }
             if (overlayCommandsPopover.isBlockingGameGateDismiss()) {
                 gateSoftHideStartedAtMs = 0L
                 return
@@ -3648,14 +3694,15 @@ class CombatOverlayService : Service() {
                 Log.d(
                     OVERLAY_DIAG_TAG,
                     "overlayGate softHide hideStreak=$gateUiHideStreak hold=${isOverlayUiHoldActive()} " +
-                        "softMs=${nowMs - gateSoftHideStartedAtMs}",
+                        "softMs=${nowMs - gateSoftHideStartedAtMs} inFlight=${isOverlayQuickCommandSendInFlight()}",
                 )
             }
             if (nowMs - gateSoftHideStartedAtMs >= GATE_DISMISS_AFTER_MS) {
                 gateSoftHideStartedAtMs = 0L
                 if (!overlayChatTeamPanelVisible &&
                     !OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible &&
-                    !isOverlayUiHoldActive()
+                    !isOverlayUiHoldActive() &&
+                    !isOverlayQuickCommandSendInFlight()
                 ) {
                     dismissOverlayUiBecauseNotInGame(logWaitingForGame = true)
                 }
@@ -3756,7 +3803,7 @@ class CombatOverlayService : Service() {
      * иначе оставляют оверлей «висеть» после сворачивания или закрытия игры.
      */
     private fun dismissOverlayUiBecauseNotInGame(logWaitingForGame: Boolean) {
-        if (isOverlayUiHoldActive()) return
+        if (isOverlayUiHoldActive() || isOverlayQuickCommandSendInFlight()) return
         bumpOverlayTeardownGeneration()
         if (OverlayChatInteractionHold.isOverlaySystemPickerSessionActive()) {
             deferredDismissWhenPickerEnds = true
@@ -4404,9 +4451,10 @@ class CombatOverlayService : Service() {
         serviceScope.launch {
             val container = AppContainer.from(this@CombatOverlayService)
             if (!container.authRepository.hasSession()) return@launch
-            val repo = container.chatRepository
-            val roomId = ensureOverlayRaidRoomReadyForSend()
-            if (roomId == null) {
+            val pendingId = withContext(Dispatchers.Main.immediate) {
+                postOptimisticOverlayRaidQuickCommand(text)
+            }
+            if (pendingId == null) {
                 mainHandler.post {
                     Toast.makeText(
                         this@CombatOverlayService,
@@ -4416,25 +4464,27 @@ class CombatOverlayService : Service() {
                 }
                 return@launch
             }
-            rememberOverlayRaidRoomId(roomId)
-            mainHandler.post {
-                applyLocalSentMessageToStrip(
-                    buildOptimisticRaidCommandMessage(roomId, text),
-                    trustedRaidRoomId = roomId,
-                    displayText = text,
-                )
+            val roomId = resolveCachedRaidRoomIdForSend()
+            if (roomId != null) {
+                mainHandler.post {
+                    applyLocalSentMessageToStrip(
+                        buildOptimisticRaidCommandMessage(roomId, text),
+                        trustedRaidRoomId = roomId,
+                        displayText = text,
+                    )
+                }
             }
-            val result = repo.sendOverlayRaidCommandFast(text = text, roomId = roomId)
+            CombatOverlayService.warmupRaidForQuickCommandSend()
+            val result = sendOverlayRaidQuickCommandHttp(text = text)
             mainHandler.post {
-                result.onSuccess { sent ->
-                    publishQuickCommandToStrip(sent, roomId, text)
-                    extendInGameOverlayUiHold()
+                result.onSuccess {
                     Toast.makeText(
                         this@CombatOverlayService,
                         R.string.share_coord_sent_raid,
                         Toast.LENGTH_SHORT,
                     ).show()
                 }.onFailure { e ->
+                    pendingId.let { removeOptimisticRaidSendFromShare(it, text) }
                     val msg = when (e.message) {
                         "no_room" -> getString(R.string.overlay_strip_no_room)
                         "no_raid" -> getString(R.string.overlay_strip_no_raid)
@@ -4446,6 +4496,21 @@ class CombatOverlayService : Service() {
                 }
             }
         }
+    }
+
+    private fun removeOptimisticRaidSendFromShare(pendingId: String, text: String) {
+        pendingQuickCommandTexts.remove(pendingId)?.let { stored ->
+            OverlayQuickCommandStripPolicy.clearOutgoingQuickCommand(stored)
+        }
+        resolveChatViewModel()?.cancelOverlayRaidQuickCommandOutgoing(
+            pendingId = pendingId,
+            roomId = resolveCachedRaidRoomIdForSend().orEmpty(),
+            text = text,
+        )
+        if (pendingOverlayQuickCommandId == pendingId) {
+            pendingOverlayQuickCommandId = null
+        }
+        removeStripMessageByKey(pendingId)
     }
 
     private fun warmupOverlayRaidForQuickCommands() {
@@ -4496,10 +4561,20 @@ class CombatOverlayService : Service() {
     }
 
     private fun ensureChatViewModelForQuickCommandSend(): ChatViewModel? {
-        resolveChatViewModel()?.let { return it }
+        overlayQuickCommandSendViewModel?.let { return it }
+        resolveChatViewModel()?.let {
+            overlayQuickCommandSendViewModel = it
+            return it
+        }
         val uid = jwtSubFromAccessToken()?.trim().orEmpty()
         if (uid.isEmpty()) return null
-        return ensureOverlayFallbackChatViewModel(uid, jwtRoleFromAccessToken())
+        return ensureOverlayFallbackChatViewModel(uid, jwtRoleFromAccessToken()).also {
+            overlayQuickCommandSendViewModel = it
+        }
+    }
+
+    private fun clearOverlayQuickCommandSendViewModel() {
+        overlayQuickCommandSendViewModel = null
     }
 
     private fun prepareOverlayRaidQuickCommandChatOptimistic(
@@ -4558,41 +4633,52 @@ class CombatOverlayService : Service() {
         text: String,
         gameEventAlert: String? = null,
     ): Result<ChatMessage> {
-        val pendingId = pendingOverlayQuickCommandId?.trim().orEmpty()
-        val vm = withContext(Dispatchers.Main.immediate) {
-            ensureChatViewModelForQuickCommandSend()
-        } ?: return Result.failure(IllegalStateException("no_vm"))
-        val roomId = ensureOverlayRaidRoomReadyForSend()
-            ?: return Result.failure(IllegalStateException("no_raid"))
-        if (overlayChatTeamPanelVisible) {
-            withContext(Dispatchers.Main) { showOverlayHudPane(OverlayHudPane.Chat) }
-        }
-        val result = vm.sendOverlayRaidQuickCommand(
-            pendingId = pendingId.ifEmpty { "overlay-pending-${System.nanoTime()}" },
-            roomId = roomId,
-            text = text,
-            gameEventAlert = gameEventAlert,
-        )
-        result.onSuccess { sent ->
-            mainHandler.post {
-                publishQuickCommandToStrip(
-                    sent = sent,
-                    raidRoomId = roomId,
-                    fallbackText = text,
-                    suppressSenderStrip = true,
-                    pendingId = pendingId.takeIf { it.isNotEmpty() },
-                )
-                pendingOverlayQuickCommandId = null
-                restoreOverlayInGameWindowVisibility()
+        withContext(Dispatchers.Main.immediate) { beginOverlayQuickCommandSendInFlight() }
+        try {
+            val pendingId = pendingOverlayQuickCommandId?.trim().orEmpty()
+            val vm = withContext(Dispatchers.Main.immediate) {
+                ensureChatViewModelForQuickCommandSend()
+            } ?: return Result.failure(IllegalStateException("no_vm"))
+            val roomId = ensureOverlayRaidRoomReadyForSend()
+                ?: return Result.failure(IllegalStateException("no_raid"))
+            if (overlayChatTeamPanelVisible) {
+                withContext(Dispatchers.Main) { showOverlayHudPane(OverlayHudPane.Chat) }
             }
-        }.onFailure {
-            pendingOverlayQuickCommandId = null
-            mainHandler.post { restoreOverlayInGameWindowVisibility() }
+            val result = vm.sendOverlayRaidQuickCommand(
+                pendingId = pendingId.ifEmpty { "overlay-pending-${System.nanoTime()}" },
+                roomId = roomId,
+                text = text,
+                gameEventAlert = gameEventAlert,
+            )
+            result.onSuccess { sent ->
+                mainHandler.post {
+                    publishQuickCommandToStrip(
+                        sent = sent,
+                        raidRoomId = roomId,
+                        fallbackText = text,
+                        suppressSenderStrip = true,
+                        pendingId = pendingId.takeIf { it.isNotEmpty() },
+                    )
+                    pendingOverlayQuickCommandId = null
+                    clearOverlayQuickCommandSendViewModel()
+                    extendOverlayUiHold(OVERLAY_UI_HOLD_AFTER_RAID_SEND_MS)
+                    restoreOverlayInGameWindowVisibility()
+                }
+            }.onFailure {
+                pendingOverlayQuickCommandId = null
+                clearOverlayQuickCommandSendViewModel()
+                mainHandler.post {
+                    extendOverlayUiHold(OVERLAY_UI_HOLD_AFTER_RAID_SEND_MS)
+                    restoreOverlayInGameWindowVisibility()
+                }
+            }
+            jwtSubFromAccessToken()?.trim()?.takeIf { it.isNotEmpty() }?.let { uid ->
+                OutboxResumeScheduler.schedule(this@CombatOverlayService, uid)
+            }
+            return result
+        } finally {
+            withContext(Dispatchers.Main.immediate) { endOverlayQuickCommandSendInFlight() }
         }
-        jwtSubFromAccessToken()?.trim()?.takeIf { it.isNotEmpty() }?.let { uid ->
-            OutboxResumeScheduler.schedule(this@CombatOverlayService, uid)
-        }
-        return result
     }
 
     private fun buildOptimisticRaidCommandMessage(roomId: String, text: String): ChatMessage {
@@ -4711,8 +4797,8 @@ class CombatOverlayService : Service() {
                 trustedRaidRoomId = raid,
                 displayText = fallbackText,
             )
+            forwardOverlayRaidMessageToViewModel(normalized, pendingId)
         }
-        forwardOverlayRaidMessageToViewModel(normalized, pendingId)
     }
 
     private fun resolveOverlayReactionSenderDisplayName(event: OverlayReactionEvent): String {

@@ -25,7 +25,12 @@ import retrofit2.HttpException
 internal fun ChatViewModel.shouldSuppressOwnOutgoingRealtimeEchoImpl(message: ChatMessage): Boolean =
         shouldBlockOwnOutgoingRealtime(message)
 
-internal fun ChatViewModel.shouldBlockOwnOutgoingRealtimeImpl(message: ChatMessage): Boolean {
+internal fun ChatViewModel.shouldBlockOwnOutgoingRealtimeImpl(message: ChatMessage): Boolean =
+        synchronized(chatMutationLock) {
+            shouldBlockOwnOutgoingRealtimeUnlocked(message)
+        }
+
+private fun ChatViewModel.shouldBlockOwnOutgoingRealtimeUnlocked(message: ChatMessage): Boolean {
         val selfId = currentUserId.trim()
         if (selfId.isEmpty() || message.senderId.trim() != selfId) return false
         message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { cid ->

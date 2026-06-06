@@ -234,9 +234,11 @@ internal fun mergeLoadedPageWithExisting(
     roomId: String? = null,
     protectedSocketMessageIds: Set<String> = emptySet(),
     onAnchorDrop: ((String) -> Unit)? = null,
+    authoritativeEmpty: Boolean = false,
 ): List<ChatMessage> {
     val scopedExisting = roomId?.let { filterMessagesForRoom(existing, it) } ?: existing
     if (loaded.isEmpty()) {
+        if (authoritativeEmpty) return emptyList()
         val kept = scopedExisting.filter { msg ->
             val id = msg._id?.trim().orEmpty()
             id.isNotEmpty() && id !in excludedMessageIds

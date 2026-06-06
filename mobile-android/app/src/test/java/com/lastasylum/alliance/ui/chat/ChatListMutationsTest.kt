@@ -191,6 +191,17 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun mergeLoadedPageWithExisting_authoritativeEmpty_clearsLocalRows() {
+        val existing = listOf(msg("stale-1", "old"), msg("pending-1", "sending"))
+        val merged = mergeLoadedPageWithExisting(
+            existing = existing,
+            loaded = emptyList(),
+            authoritativeEmpty = true,
+        )
+        assertTrue(merged.isEmpty())
+    }
+
+    @Test
     fun outgoingMessageFingerprint_includesRoomTextAndReply() {
         val a = outgoingMessageFingerprint("room-a", "hi", "reply-1")
         val b = outgoingMessageFingerprint("room-a", "hi", "reply-1")

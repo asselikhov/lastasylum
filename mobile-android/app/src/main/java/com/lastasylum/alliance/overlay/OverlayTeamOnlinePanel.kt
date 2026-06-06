@@ -12,7 +12,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.PersonAdd
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -305,7 +304,6 @@ fun OverlayTeamOnlinePanel(
         onRefresh = { controller.refresh(force = true) },
         onMemberLongClick = { longPressMember = it },
         topBar = {
-            val tokens = OverlayOnlineMemberTokens
             val realtimeLabel = when (presenceSocketState) {
                 TeamPresenceSocketState.Connected ->
                     stringResource(R.string.overlay_online_realtime_live)
@@ -322,20 +320,8 @@ fun OverlayTeamOnlinePanel(
                     uiState.ingameCount,
                 ) + " · $realtimeLabel",
                 onClose = onClose,
-                subtitleTrailing = {
-                    IconButton(
-                        onClick = { controller.refresh(force = true) },
-                        enabled = !uiState.refreshing,
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Refresh,
-                            contentDescription = stringResource(R.string.overlay_online_refresh_cd),
-                            tint = tokens.borderLive,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    if (team != null && isLeader) {
+                subtitleTrailing = if (team != null && isLeader) {
+                    {
                         OverlayOnlineLeaderToolbarActions(
                             pendingJoinRequests = joinRequestCount,
                             membersBusy = leaderUi.membersBusy,
@@ -352,6 +338,8 @@ fun OverlayTeamOnlinePanel(
                             onOpenInbox = openJoinInbox,
                         )
                     }
+                } else {
+                    null
                 },
             )
         },

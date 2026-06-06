@@ -19,6 +19,7 @@ import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.users.UsersRepository
+import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -574,6 +575,7 @@ class AdminViewModel(
             )
             adminRepository.clearAllChatMessages()
                 .onSuccess { result ->
+                    CombatOverlayService.resolveChatViewModel()?.applyChatHistoryClearedFromServer()
                     _state.value = _state.value.copy(
                         clearAllChatHistoryLoading = false,
                         chatRoomMessages = emptyList(),

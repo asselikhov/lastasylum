@@ -10,6 +10,8 @@ import com.lastasylum.alliance.data.chat.outbox.OutboxSendSource
 import com.lastasylum.alliance.data.chat.store.MessageStore
 import com.lastasylum.alliance.data.chat.store.SquadRelayDatabase
 import com.lastasylum.alliance.data.telemetry.DeliveryLatencyTracker
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -92,6 +94,38 @@ class ChatSyncEngineTest {
         engine.resumePendingOutbox(scope, userId)
         delay(300)
 
+        assertEquals(1, fakeGateway.sendCalls.get())
+    }
+
+    @Test
+    fun sendEnqueuedOutbox_concurrentClaim_sendsOnce() = runBlocking {
+        engine.bindUser(userId)
+        fakeGateway.sendResult = Result.success(
+            sampleMessage("507f1f77bcf86cd799439010", roomId, "hello"),
+        )
+        val prepared = chatOutbox.prepareEnqueue(
+            userId = userId,
+            roomId = roomId,
+            text = "hello",
+            replyToMessageId = null,
+            attachments = null,
+            excavationAlert = false,
+            source = OutboxSendSource.ChatUi,
+            currentUserId = userId,
+            currentUserRole = "R1",
+            senderUsername = "me",
+            pendingMessageId = "pending-claim",
+        )
+        chatOutbox.persistEnqueue(prepared)
+
+        val results = coroutineScope {
+            val first = async { engine.sendEnqueuedOutbox(prepared.clientMessageId, skipSocket = true) }
+            val second = async { engine.sendEnqueuedOutbox(prepared.clientMessageId, skipSocket = true) }
+            listOf(first.await(), second.await())
+        }
+
+        assertEquals(1, results.count { it.isSuccess })
+        assertEquals(1, results.count { it.isFailure })
         assertEquals(1, fakeGateway.sendCalls.get())
     }
 

@@ -97,6 +97,17 @@ interface ChatOutboxDao {
 
     @Query("DELETE FROM chat_outbox WHERE userId = :userId AND state = 'sent'")
     suspend fun pruneSent(userId: String)
+
+    @Query("DELETE FROM chat_outbox WHERE userId = :userId")
+    suspend fun deleteForUser(userId: String)
+
+    @Query(
+        """
+        UPDATE chat_outbox SET state = 'sending'
+        WHERE clientMessageId = :clientMessageId AND state IN ('pending','failed')
+        """,
+    )
+    suspend fun tryMarkSending(clientMessageId: String): Int
 }
 
 @Dao

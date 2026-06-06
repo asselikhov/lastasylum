@@ -168,6 +168,9 @@ class ChatViewModel(
     /** Optimistic overlay quick commands waiting for [sendOverlayRaidQuickCommandImpl]. */
     internal val overlayQuickCommandPrepared =
         java.util.concurrent.ConcurrentHashMap<String, com.lastasylum.alliance.data.chat.outbox.OutboxEnqueueResult>()
+    /** While true, Room observer and merge must not resurrect stale local rows after admin wipe. */
+    @Volatile
+    internal var postHistoryWipeAuthoritativeEmpty = false
     internal var outboxObserverJob: Job? = null
 
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
@@ -546,7 +549,30 @@ class ChatViewModel(
 
     /** Admin wiped all chat history (socket or overlay forward). */
     fun applyChatHistoryClearedFromServer() {
-        ChatHistoryWipe.wipeCaches(currentUserId, launchDiskCache, chatRoomPreferences)
+        val selected = _state.value.selectedRoomId
+        viewModelScope.launch {
+            postHistoryWipeAuthoritativeEmpty = true
+            runCatching {
+                ChatHistoryWipe.wipeAllLocalChatData(
+                    userId = currentUserId,
+                    messageStore = messageStore,
+                    chatOutbox = chatOutbox,
+                    launchDiskCache = launchDiskCacheInternal,
+                    chatRoomPreferences = chatRoomPreferences,
+                )
+            }
+            resetChatStateAfterHistoryWipe()
+            syncRoomsFromServer(reconfirmVisibleRoom = !selected.isNullOrBlank())
+            selected?.let { refreshMessagesInBackground(it, force = true) }
+            schedulePersistChatSnapshot()
+        }
+    }
+
+    internal fun clearPostHistoryWipeAuthoritativeEmpty() {
+        postHistoryWipeAuthoritativeEmpty = false
+    }
+
+    private fun resetChatStateAfterHistoryWipe() {
         roomMessageCache.clear()
         knownMessageIds.clear()
         messageIdIndex.clear()
@@ -560,8 +586,9 @@ class ChatViewModel(
         pinHistoryByRoom.clear()
         pinBarIndexByRoom.clear()
         pinStateAuthoritativeRoomIds.clear()
+        activeOutgoingClientMessageIds.clear()
+        overlayQuickCommandPrepared.clear()
 
-        val selected = _state.value.selectedRoomId
         _state.update { st ->
             st.copy(
                 messages = emptyList(),
@@ -583,12 +610,6 @@ class ChatViewModel(
         _otherReadUptoMessageId.value = null
         _listDerived.value = ChatMessagesListDerived.Empty
         publishMessagesDerived(emptyList())
-
-        viewModelScope.launch {
-            syncRoomsFromServer(reconfirmVisibleRoom = !selected.isNullOrBlank())
-            selected?.let { refreshMessagesInBackground(it, force = true) }
-        }
-        schedulePersistChatSnapshot()
     }
 
     internal fun onChatHistoryClearedFromServer() {

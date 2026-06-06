@@ -83,6 +83,8 @@ class ChatRoomPagingSync(
         fun publishMessagesDerivedImmediate(messages: List<ChatMessage>)
         fun loadErrorString(throwable: Throwable): String
         fun overlayTimeoutString(): String
+        fun postHistoryWipeAuthoritativeEmpty(): Boolean
+        fun clearPostHistoryWipeAuthoritativeEmpty()
     }
 
     fun refreshMessagesInBackground(roomId: String, force: Boolean = false) {
@@ -93,6 +95,7 @@ class ChatRoomPagingSync(
             else -> CHAT_BACKGROUND_MESSAGE_REFRESH_DEFER_MS
         }
         scope.launch {
+            try {
             if (deferMs > 0L) delay(deferMs)
             val isSelectedRoom = host.selectedRoomId() == roomId
             val overlayEmptyLoad = isSelectedRoom &&
@@ -131,6 +134,7 @@ class ChatRoomPagingSync(
                             roomId = roomId,
                             protectedSocketMessageIds = host.protectedSocketMessageIds(),
                             onAnchorDrop = host.mergeAnchorDropLogger(roomId),
+                            authoritativeEmpty = host.postHistoryWipeAuthoritativeEmpty(),
                         )
                     }
                     host.updateRoomMessageCache(
@@ -168,6 +172,11 @@ class ChatRoomPagingSync(
                         }
                     }
                 }
+            } finally {
+                if (host.postHistoryWipeAuthoritativeEmpty()) {
+                    host.clearPostHistoryWipeAuthoritativeEmpty()
+                }
+            }
         }
     }
 

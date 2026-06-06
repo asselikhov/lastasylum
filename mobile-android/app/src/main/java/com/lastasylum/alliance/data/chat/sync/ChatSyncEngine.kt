@@ -149,8 +149,8 @@ class ChatSyncEngine(
         clientMessageId: String,
         skipSocket: Boolean = false,
     ): Result<ChatMessage> {
-        val entry = chatOutbox.getByClientId(clientMessageId)
-            ?: return Result.failure(IllegalStateException("outbox_missing"))
+        val entry = chatOutbox.tryClaimForSend(clientMessageId)
+            ?: return Result.failure(IllegalStateException("outbox_claim_failed"))
         return sendOutboxEntry(entry, skipSocket = skipSocket)
     }
 
