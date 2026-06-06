@@ -150,8 +150,10 @@ internal class ChatViewModelSyncBundle(
         override fun publishRooms(next: List<ChatRoomDto>) = vm.publishRooms(next)
         override fun syncTabUnreadBadge(rooms: List<ChatRoomDto>) = vm.syncTabUnreadBadge(rooms)
         override fun syncRaidRoomPreference(rooms: List<ChatRoomDto>) = vm.syncRaidRoomPreference(rooms)
-        override suspend fun reconcileStaleServerUnread(merged: List<ChatRoomDto>, raw: List<ChatRoomDto>) =
-            vm.reconcileStaleServerUnread(merged, raw)
+        override suspend fun reconcileStaleServerUnread(
+            mergedRooms: List<ChatRoomDto>,
+            rawServerRooms: List<ChatRoomDto>,
+        ) = vm.reconcileStaleServerUnread(mergedRooms, rawServerRooms)
         override suspend fun reconfirmReadForVisibleRoom() = vm.reconfirmReadForVisibleRoom()
         override fun syncOverlayAllianceHubBadge(rooms: List<ChatRoomDto>) =
             vm.syncOverlayAllianceHubBadge(rooms)

@@ -46,7 +46,7 @@ class LaunchDiskCacheImporter(
             messageStore.setReadCursor(uid, roomId, lastRead)
         }
 
-        launchDiskCache.loadRemovedMessageIds(uid)?.forEach { id ->
+        launchDiskCache.loadRemovedMessageIds(uid).forEach { id ->
             messageStore.addTombstone(uid, id)
         }
 

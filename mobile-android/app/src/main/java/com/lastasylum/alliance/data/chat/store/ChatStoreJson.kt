@@ -50,7 +50,7 @@ internal object ChatStoreJson {
         message.createdAt?.let { parseIsoMs(it) } ?: System.currentTimeMillis()
 
     fun forumMessageCreatedAtMs(message: TeamForumMessageDto): Long =
-        message.createdAt?.let { parseIsoMs(it) } ?: System.currentTimeMillis()
+        parseIsoMs(message.createdAt) ?: System.currentTimeMillis()
 
     private fun parseIsoMs(iso: String): Long? =
         runCatching { java.time.Instant.parse(iso.trim()).toEpochMilli() }.getOrNull()
