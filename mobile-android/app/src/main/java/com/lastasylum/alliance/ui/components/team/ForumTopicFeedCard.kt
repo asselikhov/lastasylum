@@ -67,7 +67,7 @@ fun ForumTopicFeedCard(
     val badgeUnread = (displayUnreadCount ?: topic.unreadCount).coerceAtLeast(0)
     val activityLevel = ForumTopicCardTokens.activityLevel(badgeUnread, topic.messageCount)
     val hasUnread = badgeUnread > 0
-    val hasPin = topic.pinnedMessageId != null && topic.pinnedMessage != null
+    val pinPreview = topic.pinnedMessage
     val metaDesc = remember(topic.id, topic.title, topic.messageCount, badgeUnread, messageMeta) {
         buildString {
             append(topic.title)
@@ -168,8 +168,7 @@ fun ForumTopicFeedCard(
                         .height(ForumTopicCardTokens.subtitleLineHeight),
                     contentAlignment = Alignment.CenterStart,
                 ) {
-                    if (hasPin) {
-                        val pinPreview = topic.pinnedMessage!!
+                    if (pinPreview != null) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
