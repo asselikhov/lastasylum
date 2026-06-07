@@ -95,6 +95,7 @@ import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.OverlaySocketMessageStash
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.isCompactReactionSocketUpdate
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
@@ -2228,7 +2229,10 @@ class CombatOverlayService : Service() {
      * One IO pass + one reducer commit for hub/news/forum after overlay panel close.
      * Avoids parallel partial refreshes racing on [overlayStatusHudFlow].
      */
-    private fun refreshOverlayInboxBadgesCoalesced(includeReactionLog: Boolean = false) {
+    private fun refreshOverlayInboxBadgesCoalesced(
+        includeReactionLog: Boolean = false,
+        forceForumReconcile: Boolean = false,
+    ) {
         if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
         if (hudRefreshInFlight) {
             hudRefreshPending = true
@@ -2255,8 +2259,9 @@ class CombatOverlayService : Service() {
                     null
                 }
                 val forumCounts = if (teamId.isNotEmpty() &&
-                    !inboxBadgeCoordinator.shouldDeferForumReconcile() &&
-                    !inboxBadgeCoordinator.isForumOptimisticActive()
+                    (forceForumReconcile ||
+                        (!inboxBadgeCoordinator.shouldDeferForumReconcile() &&
+                            !inboxBadgeCoordinator.isForumOptimisticActive()))
                 ) {
                     inboxBadgeCoordinator.fetchForumUnreadCounts(this@CombatOverlayService, teamId)
                 } else {
@@ -2478,10 +2483,11 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun refreshOverlayForumBadgeOnly() {
-        if (!isInGameOverlayUiActive()) return
-        if (inboxBadgeCoordinator.shouldDeferForumReconcile() ||
-            inboxBadgeCoordinator.isForumOptimisticActive()
+    private fun refreshOverlayForumBadgeOnly(force: Boolean = false) {
+        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
+        if (!force &&
+            (inboxBadgeCoordinator.shouldDeferForumReconcile() ||
+                inboxBadgeCoordinator.isForumOptimisticActive())
         ) {
             return
         }
@@ -2491,7 +2497,7 @@ class CombatOverlayService : Service() {
             if (teamId.isEmpty()) return@launch
             val counts = inboxBadgeCoordinator.fetchForumUnreadCounts(this@CombatOverlayService, teamId)
             mainHandler.post {
-                if (!isInGameOverlayUiActive()) return@post
+                if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return@post
                 inboxBadgeCoordinator.cacheAuthoritativeForum(
                     teamId,
                     counts.effective,
@@ -2893,19 +2899,40 @@ class CombatOverlayService : Service() {
     }
 
     private fun forwardOverlaySocketMessageToViewModel(msg: ChatMessage) {
-        val vm = resolveChatViewModel() ?: return
-        vm.stashOverlayRealtimeMessage(msg)
+        OverlaySocketMessageStash.stash(msg)
+        val vm = resolveChatViewModel()
+        vm?.stashOverlayRealtimeMessage(msg)
+        if (vm == null) return
         if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
         val selectedId = vm.state.value.selectedRoomId?.trim().orEmpty()
         val msgRoomId = msg.roomId.trim()
-        val roomSelected = selectedId.isNotEmpty() && selectedId == msgRoomId
-        val applyViaOverlayPanel = overlayChatTeamPanelVisible &&
-            (!activityChatViewModelHandlesUnread() || selectedId == msgRoomId)
-        if (!roomSelected && !applyViaOverlayPanel) return
-        if (roomSelected && activityChatViewModelHandlesUnread()) {
+        val hubId = resolveOverlayHubRoomId()
+        if (OverlayHubChatForwardPolicy.shouldApplyToVisibleChat(
+                overlayPanelVisible = overlayChatTeamPanelVisible,
+                overlayChatContentActive = isOverlayChatContentActive(),
+                selectedRoomId = selectedId,
+                messageRoomId = msgRoomId,
+                hubRoomId = hubId,
+            )
+        ) {
+            vm.applyOverlayIncomingMessage(msg)
             return
         }
+        val roomSelected = selectedId.isNotEmpty() && selectedId == msgRoomId
+        if (!roomSelected) return
+        if (roomSelected && shouldDeferHubApplyToPrimaryListener(vm)) return
         vm.applyOverlayIncomingMessage(msg)
+    }
+
+    /**
+     * Skip overlay apply only when the primary socket listener is on the same VM instance
+     * that already received the message via [ChatViewModel.onIncomingMessage].
+     */
+    private fun shouldDeferHubApplyToPrimaryListener(vm: ChatViewModel): Boolean {
+        if (!activityChatViewModelHandlesUnread()) return false
+        val fallback = overlayFallbackChatViewModel
+        if (fallback != null && fallback !== vm) return false
+        return true
     }
 
     private fun forwardOverlayRaidMessageToViewModel(msg: ChatMessage, pendingId: String? = null) {
@@ -5996,6 +6023,11 @@ class CombatOverlayService : Service() {
         closingPane: OverlayHudPane?,
         legacyChatTabIndex: Int,
     ) {
+        val forumFlush = if (closingPane == OverlayHudPane.Forum) {
+            overlayForumFlushPendingRead
+        } else {
+            null
+        }
         serviceScope.launch(Dispatchers.IO) {
             runCatching {
                 when (closingPane) {
@@ -6025,11 +6057,12 @@ class CombatOverlayService : Service() {
                             teamId = ctx.teamId,
                         )
                     }
-                    OverlayHudPane.Forum -> {
-                        overlayForumFlushPendingRead?.invoke()
-                    }
+                    OverlayHudPane.Forum -> forumFlush?.invoke()
                     OverlayHudPane.Participants -> Unit
                 }
+            }
+            if (closingPane == OverlayHudPane.Forum) {
+                overlayForumFlushPendingRead = null
             }
             mainHandler.post {
                 refreshOverlayBadgesAfterPaneClose(closingPane, legacyChatTabIndex)
@@ -6060,6 +6093,7 @@ class CombatOverlayService : Service() {
         }
         refreshOverlayInboxBadgesCoalesced(
             includeReactionLog = closingPane == OverlayHudPane.Notifications,
+            forceForumReconcile = closingPane == OverlayHudPane.Forum,
         )
     }
 
@@ -6088,7 +6122,6 @@ class CombatOverlayService : Service() {
         }
         overlayChatTeamPanelVisible = false
         currentOverlayHudPane = null
-        overlayForumFlushPendingRead = null
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
         root?.let { hideOverlayIme(it) }
         if (root != null && root.isAttachedToWindow) {
@@ -6310,6 +6343,8 @@ class CombatOverlayService : Service() {
                         .notifyOverlayChatPanelClosed()
                 }
                 if (clearFallback) {
+                    val canonical = activityScopedChatViewModel ?: ChatViewModelRegistry.shared
+                    canonical?.reconnectRealtimeIfNeeded()
                     overlayFallbackChatViewModel = null
                 }
             }
@@ -7565,7 +7600,7 @@ class CombatOverlayService : Service() {
                 val localRead = container.teamForumPreferences.loadAllLastReadMessageIds(teamId)
                 val counts = TeamInboxBadgeDeriver.computeForumUnreadCounts(topics, localRead)
                 service.mainHandler.post {
-                    if (!service.isInGameOverlayUiActive()) return@post
+                    if (!service.isInGameOverlayUiActive() && !service.isOverlayUiHoldActive()) return@post
                     service.inboxBadgeCoordinator.cacheAuthoritativeForum(
                         teamId,
                         counts.effective,

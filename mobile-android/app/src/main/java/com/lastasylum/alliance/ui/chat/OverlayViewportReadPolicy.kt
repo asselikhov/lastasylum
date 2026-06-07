@@ -32,6 +32,20 @@ internal fun computeOverlayViewportReadWatermark(
     return markId
 }
 
+/**
+ * Main-app delivery/mark-read gate for the selected room (overlay panel uses [isOverlayRoomActivelyViewed]).
+ * Peer traffic applies live on the chat tab even while the game overlay probe is active.
+ */
+internal fun isMainAppRoomActivelyViewed(
+    isChatTabActive: Boolean,
+    isTargetGameForeground: Boolean,
+    isPeerMessage: Boolean?,
+): Boolean {
+    if (isPeerMessage == true) return isChatTabActive
+    if (isTargetGameForeground) return false
+    return isChatTabActive
+}
+
 /** Whether overlay panel counts as actively viewing the selected room for mark-read. */
 internal fun isOverlayRoomActivelyViewed(
     overlayChatTabActive: Boolean,

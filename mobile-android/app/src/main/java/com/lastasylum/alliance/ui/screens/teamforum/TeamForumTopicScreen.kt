@@ -228,6 +228,7 @@ fun TeamForumTopicScreen(
     onBack: () -> Unit,
     enabledStickerPackKeys: Set<String> = emptySet(),
     onProvideMarkReadAction: (String, (() -> Unit)?) -> Unit = { _, _ -> },
+    onRegisterOverlayFlush: ((suspend () -> Unit)?) -> Unit = {},
     onTopicSnapshotUpdate: (TeamForumTopicDto) -> Unit = {},
     onInboxChanged: () -> Unit = {},
 ) {
@@ -1076,10 +1077,10 @@ fun TeamForumTopicScreen(
     }
     LaunchedEffect(overlayUi, teamId, topicId) {
         if (!overlayUi) {
-            com.lastasylum.alliance.overlay.CombatOverlayService.registerOverlayForumFlushPendingRead(null)
+            onRegisterOverlayFlush(null)
             return@LaunchedEffect
         }
-        com.lastasylum.alliance.overlay.CombatOverlayService.registerOverlayForumFlushPendingRead {
+        onRegisterOverlayFlush {
             forumMarkReadCoalescer.flushAndAwait(topicId)
         }
     }
@@ -1087,7 +1088,7 @@ fun TeamForumTopicScreen(
         onDispose {
             if (!overlayUi) return@onDispose
             scope.launch { forumMarkReadCoalescer.flushAndAwait(topicId) }
-            com.lastasylum.alliance.overlay.CombatOverlayService.registerOverlayForumFlushPendingRead(null)
+            onRegisterOverlayFlush(null)
         }
     }
 

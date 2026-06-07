@@ -86,6 +86,39 @@ class OverlayReadCursorPolicyTest {
     }
 
     @Test
+    fun isMainAppRoomActivelyViewed_peerDeliveredOnChatTabDespiteGameProbe() {
+        assertTrue(
+            isMainAppRoomActivelyViewed(
+                isChatTabActive = true,
+                isTargetGameForeground = true,
+                isPeerMessage = true,
+            ),
+        )
+    }
+
+    @Test
+    fun isMainAppRoomActivelyViewed_peerStashedOffChatTab() {
+        assertFalse(
+            isMainAppRoomActivelyViewed(
+                isChatTabActive = false,
+                isTargetGameForeground = true,
+                isPeerMessage = true,
+            ),
+        )
+    }
+
+    @Test
+    fun isMainAppRoomActivelyViewed_ownMessageBlockedInGame() {
+        assertFalse(
+            isMainAppRoomActivelyViewed(
+                isChatTabActive = true,
+                isTargetGameForeground = true,
+                isPeerMessage = false,
+            ),
+        )
+    }
+
+    @Test
     fun effectiveTopicUnread_keepsServerUnreadWithoutLocalCursorPoisoning() {
         val topic = com.lastasylum.alliance.data.teams.TeamForumTopicDto(
             id = "topic1",

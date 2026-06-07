@@ -717,12 +717,16 @@ class ChatViewModel(
         }
         val roomId = message.roomId.trim()
         if (roomId.isBlank() || message._id.isNullOrBlank()) return
+        com.lastasylum.alliance.data.chat.OverlaySocketMessageStash.stash(message)
         if (isKnownChatMessageId(message._id)) {
             applyKnownChatMessageUpdate(message)
             return
         }
         stashIncomingMessageForRoom(message)
     }
+
+    /** Pull overlay service-level session stash into per-room RAM cache before rehydrate. */
+    internal fun mergeSessionCacheForSelectedRoom() = mergeSessionCacheForSelectedRoomImpl()
 
     /**
      * Overlay quick-command HTTP: cache + visible list when «Рейд» (or matching room) is selected.
@@ -1236,12 +1240,8 @@ class ChatViewModel(
             refreshStickerPackAccess()
             refreshTeamProfileGateLight()
             syncReadStateFromPreferences()
-            val hubReady = overlayHubReadyForPanel()
-            if (!hubReady) {
-                primeOverlayChatFromCache(preferAllianceHubRoom = true)
-            } else {
-                _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
-            }
+            mergeSessionCacheForSelectedRoom()
+            primeOverlayChatFromCache(preferAllianceHubRoom = true)
             rehydrateSelectedRoomMessagesFromCache()
             refreshPinBarForSelectedRoom()
             reconnectRealtimeIfNeeded()
@@ -1249,6 +1249,7 @@ class ChatViewModel(
                 if (!overlayChatPanelVisible) return@launch
                 delay(32)
                 if (!overlayChatPanelVisible) return@launch
+                mergeSessionCacheForSelectedRoom()
                 rehydrateSelectedRoomMessagesFromCache()
                 refreshPinBarForSelectedRoom()
                 if (_state.value.selectedRoomId.isNullOrBlank()) {
@@ -1259,12 +1260,14 @@ class ChatViewModel(
                 if (!roomId.isNullOrBlank()) {
                     refreshMessagesInBackground(roomId, force = true)
                 }
-                if (!hubReady && !overlayHubReadyForPanel()) {
+                if (!overlayHubReadyForPanel()) {
                     scheduleBootstrap(preferAllianceHubRoom = true, force = false)
                 }
             }
             return
         }
+        mergeSessionCacheForSelectedRoom()
+        rehydrateSelectedRoomMessagesFromCache()
         flushOverlayChatViewportMarkRead()
         lastOverlayVisibleMessageIds = emptyList()
         snapshotSelectedRoomToMessageCache()
@@ -1332,15 +1335,16 @@ class ChatViewModel(
                 overlayChatPanelOpenInGame = CombatOverlayService.isOverlayChatPanelOpenInGame(),
             )
         }
-        // Main-app chat tab must not mark-read while the in-game overlay owns the session.
-        if (CombatOverlayService.isTargetGameForeground()) return false
         if (!appInForeground) return false
         val selfId = currentUserId.trim()
         val isPeer = incomingMessage?.let { msg ->
             selfId.isNotEmpty() && msg.senderId.trim() != selfId
         }
-        if (isPeer == true) return true
-        return isChatTabActive
+        return isMainAppRoomActivelyViewed(
+            isChatTabActive = isChatTabActive,
+            isTargetGameForeground = CombatOverlayService.isTargetGameForeground(),
+            isPeerMessage = isPeer,
+        )
     }
 
     internal fun hasPendingUnreadReconcile(): Boolean =

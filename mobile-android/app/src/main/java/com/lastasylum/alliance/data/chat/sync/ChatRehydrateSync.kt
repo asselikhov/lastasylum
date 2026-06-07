@@ -50,6 +50,7 @@ class ChatRehydrateSync(
         val rid = roomId.trim()
         if (rid.isEmpty()) return false
         val cachedEntry = host.roomMessageCache(rid)
+            ?: sessionCacheEntry(rid)
         val visible = host.messagesWithoutLocallyRemoved(
             host.filterMessagesForRoom(host.stateSnapshot().messages, rid),
         )
@@ -116,5 +117,11 @@ class ChatRehydrateSync(
             ),
         )
         ChatSessionCache.updateMessages(roomId, capped)
+    }
+
+    private fun sessionCacheEntry(roomId: String): ChatRoomMessageCache? {
+        val messages = ChatSessionCache.getFreshMessages(roomId) ?: return null
+        if (messages.isEmpty()) return null
+        return ChatRoomMessageCache(messages = messages, hasMoreOlder = true)
     }
 }

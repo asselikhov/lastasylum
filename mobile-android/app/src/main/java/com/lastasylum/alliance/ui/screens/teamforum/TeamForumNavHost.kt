@@ -252,6 +252,7 @@ fun TeamForumNavHost(
     onRegisterMarkReadAction: ((() -> Unit)?) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val overlayUi = LocalOverlayUiMode.current
     val scope = rememberCoroutineScope()
     val nav = rememberNavController()
     val topicTitles = remember { mutableStateMapOf<String, String>() }
@@ -262,6 +263,7 @@ fun TeamForumNavHost(
     }
     var topicPinPatch by remember { mutableStateOf<TeamForumTopicPinChangedEvent?>(null) }
     var markReadHandlers by remember { mutableStateOf<Map<String, () -> Unit>>(emptyMap()) }
+    var overlayTopicFlush by remember { mutableStateOf<(suspend () -> Unit)?>(null) }
     val registerMarkReadAction: (String, (() -> Unit)?) -> Unit = { key, action ->
         markReadHandlers = if (action == null) {
             markReadHandlers - key
@@ -285,6 +287,21 @@ fun TeamForumNavHost(
     }
     LaunchedEffect(activeMarkReadAction) {
         onRegisterMarkReadAction(activeMarkReadAction)
+    }
+    LaunchedEffect(overlayUi, overlayTopicFlush, navBackStackEntry?.destination?.route) {
+        if (!overlayUi) {
+            com.lastasylum.alliance.overlay.CombatOverlayService.registerOverlayForumFlushPendingRead(null)
+            return@LaunchedEffect
+        }
+        val route = navBackStackEntry?.destination?.route
+        val onTopic = route != null && route.startsWith("forum_topic/")
+        com.lastasylum.alliance.overlay.CombatOverlayService.registerOverlayForumFlushPendingRead(
+            if (onTopic) {
+                { overlayTopicFlush?.invoke() }
+            } else {
+                null
+            },
+        )
     }
     LaunchedEffect(teamId, currentUserId) {
         val app = AppContainer.from(context.applicationContext)
@@ -429,6 +446,7 @@ fun TeamForumNavHost(
                 },
                 onInboxChanged = onForumInboxChanged,
                 onProvideMarkReadAction = registerMarkReadAction,
+                onRegisterOverlayFlush = { overlayTopicFlush = it },
                 onTopicSnapshotUpdate = { topicSnapshots[topicId] = it },
             )
         }

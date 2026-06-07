@@ -101,6 +101,9 @@ internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
             if (serverId.isNotEmpty() && messageIdIndex.containsKey(serverId)) return
         }
         if (!isIncomingMessageVisible(message)) return
+        if (!isOwn && mid.isNotEmpty()) {
+            com.lastasylum.alliance.data.chat.OverlaySocketMessageStash.stash(message)
+        }
         if (!incomingMessages.trySend(message).isSuccess) {
             vmScope.launch(Dispatchers.Main) {
                 if (shouldBlockOwnOutgoingRealtime(message) || !isIncomingMessageVisible(message)) return@launch
@@ -375,6 +378,29 @@ internal fun ChatViewModel.messagesForRoomMergeImpl(roomId: String): List<ChatMe
             excludedMessageIds = locallyRemovedMessageIds,
             hiddenBeforeMessageId = hiddenBeforeForRoom(rid),
             currentUserId = currentUserId,
+        )
+    }
+
+internal fun ChatViewModel.mergeSessionCacheForSelectedRoomImpl() {
+        val rid = vmState.value.selectedRoomId?.trim().orEmpty()
+        if (rid.isEmpty()) return
+        val session = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshMessages(rid)
+            ?: return
+        if (session.isEmpty()) return
+        val cached = roomMessageCache[rid]?.messages.orEmpty()
+        val merged = mergeVisibleMessagesWithRoomCache(
+            visible = cached,
+            cached = session,
+            roomId = rid,
+            maxMessages = messageMemoryCap,
+            excludedMessageIds = locallyRemovedMessageIds,
+            hiddenBeforeMessageId = hiddenBeforeForRoom(rid),
+            currentUserId = currentUserId,
+        )
+        if (merged.isEmpty()) return
+        roomMessageCache[rid] = ChatRoomMessageCache(
+            messages = capMessagesForMemory(merged),
+            hasMoreOlder = roomMessageCache[rid]?.hasMoreOlder ?: true,
         )
     }
 
