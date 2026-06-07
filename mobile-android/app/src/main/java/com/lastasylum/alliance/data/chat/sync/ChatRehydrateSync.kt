@@ -14,6 +14,7 @@ class ChatRehydrateSync(
 ) {
     interface Host {
         val messageMemoryCap: Int
+        val currentUserId: String
 
         fun stateSnapshot(): ChatState
         fun selectedRoomId(): String?
@@ -36,6 +37,7 @@ class ChatRehydrateSync(
             hasMoreOlder: Boolean,
         )
         fun publishMessagesDerived(messages: List<ChatMessage>)
+        fun publishMessagesDerivedImmediate(messages: List<ChatMessage>)
     }
 
     fun rehydrateSelectedRoomMessagesFromCache(): Boolean {
@@ -73,6 +75,7 @@ class ChatRehydrateSync(
             maxMessages = host.messageMemoryCap,
             excludedMessageIds = host.locallyRemovedMessageIds(),
             hiddenBeforeMessageId = host.hiddenBeforeForRoom(rid),
+            currentUserId = host.currentUserId,
         )
         if (chatMessagesListContentEqual(cached, merged) &&
             chatMessagesListContentEqual(visible, merged)
@@ -90,7 +93,9 @@ class ChatRehydrateSync(
         known.addAll(merged.mapNotNull { it._id })
         rebuildMessageIdIndex(merged, index)
         host.applyRehydratedMessages(rid, merged, hasMoreOlder)
-        host.publishMessagesDerived(merged)
+        host.publishMessagesDerivedImmediate(
+            host.filterMessagesForRoom(host.stateSnapshot().messages, rid),
+        )
         return true
     }
 

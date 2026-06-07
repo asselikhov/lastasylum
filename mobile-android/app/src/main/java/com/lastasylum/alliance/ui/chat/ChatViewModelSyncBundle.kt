@@ -20,6 +20,7 @@ internal class ChatViewModelSyncBundle(
 ) {
     val rehydrateSyncHost = object : com.lastasylum.alliance.data.chat.sync.ChatRehydrateSync.Host {
         override val messageMemoryCap: Int get() = vm.messageMemoryCap
+        override val currentUserId: String get() = vm.currentUserIdInternal
         override fun stateSnapshot(): ChatState = vm.vmState.value
         override fun selectedRoomId(): String? = vm.vmState.value.selectedRoomId
         override fun isActiveSelectedRoom(roomId: String): Boolean = vm.isActiveSelectedRoom(roomId)
@@ -48,6 +49,8 @@ internal class ChatViewModelSyncBundle(
             }
         }
         override fun publishMessagesDerived(messages: List<ChatMessage>) = vm.publishMessagesDerived(messages)
+        override fun publishMessagesDerivedImmediate(messages: List<ChatMessage>) =
+            vm.publishMessagesDerivedImmediate(messages)
     }
 
     val rehydrateSync = com.lastasylum.alliance.data.chat.sync.ChatRehydrateSync(rehydrateSyncHost)
@@ -98,8 +101,13 @@ internal class ChatViewModelSyncBundle(
         }
         override fun applyMergedPageToUi(roomId: String, merged: List<ChatMessage>, hasMoreOlder: Boolean) {
             val filtered = vm.filterMessagesForRoom(merged, roomId)
+            val safe = sanitizeMessagesForUiList(
+                messages = filtered,
+                currentUserId = vm.currentUserIdInternal,
+                activeOutgoingPendingId = vm.outboxRoomSnapshot.newestPendingId,
+            )
             vm.vmState.update {
-                it.copy(messages = filtered, hasMoreOlder = hasMoreOlder, newestMessageKey = filtered.firstOrNull()?._id)
+                it.copy(messages = safe, hasMoreOlder = hasMoreOlder, newestMessageKey = safe.firstOrNull()?._id)
             }
         }
         override fun applyLoadingOlder(loading: Boolean) {
@@ -145,6 +153,7 @@ internal class ChatViewModelSyncBundle(
     val roomsListSyncHost = object : com.lastasylum.alliance.data.chat.sync.ChatRoomsListSync.Host {
         override fun isChatTabActive(): Boolean = vm.isChatTabActive
         override fun overlayChatPanelVisible(): Boolean = vm.overlayChatPanelVisible
+        override fun hasPendingUnreadReconcile(): Boolean = vm.hasPendingUnreadReconcile()
         override fun stateRooms(): List<ChatRoomDto> = vm.vmState.value.rooms
         override suspend fun applyRoomsFromServer(serverRooms: List<ChatRoomDto>) =
             vm.applyRoomsFromServer(serverRooms)

@@ -150,7 +150,7 @@ private fun ChatViewModel.applyOutgoingConfirmation(
         confirmPendingOutgoingMessageImpl(pendingId, sent)
         return
     }
-    if (serverId.isNotEmpty() && messageIdIndex.containsKey(serverId)) return
+    if (serverId.isNotEmpty() && vmState.value.messages.any { it._id?.trim() == serverId }) return
     confirmPendingOutgoingMessageImpl(pendingId = null, sent = sent)
 }
 
@@ -168,7 +168,9 @@ private fun ChatViewModel.reconcileAlreadyConfirmedOutgoing(
         return
     }
     if (!hasOwnOutgoingRowPairByClientMessageId(snapshot, clientMessageId, currentUserId)) {
-        if (serverId.isNotEmpty() && !messageIdIndex.containsKey(serverId)) {
+        val serverVisible = serverId.isNotEmpty() &&
+            snapshot.any { it._id?.trim() == serverId }
+        if (!serverVisible) {
             confirmPendingOutgoingMessageImpl(pendingId = null, sent = sent)
         }
         return
@@ -852,7 +854,15 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
         val pending = pendingId?.trim().orEmpty()
         val serverId = sent._id?.trim().orEmpty()
         if (pending.isEmpty()) {
-            if (serverId.isNotEmpty() && messageIdIndex.containsKey(serverId)) return
+            val cid = sent.clientMessageId?.trim().orEmpty()
+            if (cid.isNotEmpty()) {
+                findOptimisticOutgoingPendingId(vmState.value.messages, cid, currentUserId)
+                    ?.let { resolvedPending ->
+                        confirmPendingOutgoingMessageImpl(resolvedPending, sent)
+                        return
+                    }
+            }
+            if (serverId.isNotEmpty() && vmState.value.messages.any { it._id?.trim() == serverId }) return
             applyIncomingMessage(sent, clearComposer = false, skipOutgoingEchoBlock = true)
             return
         }

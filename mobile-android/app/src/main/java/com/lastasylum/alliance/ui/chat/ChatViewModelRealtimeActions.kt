@@ -400,8 +400,17 @@ internal fun ChatViewModel.stashIncomingMessageForRoomImpl(message: ChatMessage)
         val existing = cached?.messages ?: emptyList()
         val localKnown = existing.mapNotNull { it._id }.toMutableSet()
         val update = upsertMessage(existing, message, localKnown, idIndex = null)
+        val sanitized = capMessagesForMemory(
+            dedupeOwnOutgoingByClientMessageId(
+                stripRedundantOwnOutgoingByClientMessageId(
+                    dedupeMessagesByIdNewestFirst(update.messages),
+                    currentUserId,
+                ),
+                currentUserId,
+            ),
+        )
         roomMessageCache[roomId] = ChatRoomMessageCache(
-            messages = capMessagesForMemory(update.messages),
+            messages = sanitized,
             hasMoreOlder = cached?.hasMoreOlder ?: true,
         )
         ChatSessionCache.updateMessages(roomId, roomMessageCache[roomId]!!.messages)
@@ -414,7 +423,7 @@ internal fun ChatViewModel.scheduleRehydrateSelectedRoomFromStashImpl(roomId: St
         if (rid.isEmpty() || vmState.value.selectedRoomId != rid) return
         stashRehydrateJob?.cancel()
         stashRehydrateJob = vmScope.launch {
-            delay(32)
+            delay(0L)
             if (vmState.value.selectedRoomId != rid) return@launch
             rehydrateRoomMessagesFromCache(rid)
         }

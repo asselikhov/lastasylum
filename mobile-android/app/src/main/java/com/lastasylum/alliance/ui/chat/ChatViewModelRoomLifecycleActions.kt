@@ -750,6 +750,7 @@ internal fun ChatViewModel.selectRoomImpl(roomId: String) {
                 maxMessages = messageMemoryCap,
                 excludedMessageIds = locallyRemovedMessageIds,
                 hiddenBeforeMessageId = hiddenBeforeForRoom(roomId),
+                currentUserId = currentUserId,
             )
         }
         val hasCachedMessages = cachedMessages.isNotEmpty()
@@ -969,7 +970,7 @@ internal fun ChatViewModel.bumpRoomUnreadLocallyImpl(roomId: String, messageId: 
         val displayed = displayedUnreadCount(
             effectiveUnread = effectiveBase + 1,
             previouslyDisplayed = prevDisplayed,
-            rawServerUnread = room?.unreadCount ?: 0,
+            rawServerUnread = 0,
             optimisticFloor = nextFloor,
         )
         vmState.update { st ->
@@ -1095,15 +1096,17 @@ internal fun ChatViewModel.applyOptimisticMarkReadLocal(roomId: String, messageI
     syncTabUnreadBadge()
     ChatSessionCache.update(vmState.value.rooms)
     if (ChatRoomKindResolver.allianceHubRoom(vmState.value.rooms)?.id == roomId) {
+        com.lastasylum.alliance.overlay.CombatOverlayService.clearHubUnreadState()
         syncOverlayAllianceHubBadge(vmState.value.rooms)
     }
 }
 
-internal suspend fun ChatViewModel.performNetworkMarkRead(roomId: String, messageId: String) {
-    chatSyncEngine.markRoomRead(currentUserId, roomId, messageId)
-        .onFailure {
-            scheduleUnreadSyncFromServer()
-        }
+internal suspend fun ChatViewModel.performNetworkMarkRead(roomId: String, messageId: String): Boolean {
+    val result = chatSyncEngine.markRoomRead(currentUserId, roomId, messageId)
+    result.onFailure {
+        scheduleUnreadSyncFromServer()
+    }
+    return result.isSuccess
 }
 
 internal fun ChatViewModel.onRoomUnreadFromServerImpl(event: ChatRoomUnreadEvent) {

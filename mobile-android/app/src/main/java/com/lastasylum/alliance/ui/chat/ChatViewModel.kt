@@ -400,7 +400,7 @@ class ChatViewModel(
             work: IncomingBatchWork,
             derived: ChatMessagesListDerived,
             clearComposer: Boolean,
-        ) {
+        ): List<ChatMessage>? {
             val snapshot = _state.value
             val safeMessages = sanitizeMessagesForUiList(
                 messages = cappedMessages,
@@ -414,10 +414,10 @@ class ChatViewModel(
                 isOptimisticOutgoingMessageId(it._id?.trim().orEmpty())
             }
             if (!pendingInSnapshot && pendingInBatch && work.previousMessages !== snapshot.messages) {
-                return
+                return null
             }
             if (hasDuplicateMessageIds(safeMessages) && !hasDuplicateMessageIds(snapshot.messages)) {
-                return
+                return null
             }
             val safeDerived = reconcileDerivedWithMessages(
                 derived = if (safeMessages == cappedMessages) {
@@ -455,21 +455,22 @@ class ChatViewModel(
             }
             _state.value = syncSelections(nextState)
             _listDerived.value = safeDerived
+            return safeMessages
         }
 
         override fun onIncomingBatchSideEffects(
             roomId: String,
             scopedBatch: List<ChatMessage>,
-            cappedMessages: List<ChatMessage>,
+            committedMessages: List<ChatMessage>,
             work: IncomingBatchWork,
             clearComposer: Boolean,
         ) {
             ChatDeliveryMetrics.logApply(roomId, scopedBatch.size)
             roomMessageCache[roomId] = ChatRoomMessageCache(
-                messages = cappedMessages,
+                messages = committedMessages,
                 hasMoreOlder = _state.value.hasMoreOlder,
             )
-            ChatSessionCache.updateMessages(roomId, cappedMessages)
+            ChatSessionCache.updateMessages(roomId, committedMessages)
             val prevHead = work.previousMessages.firstOrNull()?._id
             val incomingHead = scopedBatch.firstOrNull()?._id
             val gapThreshold = if (isAllianceRaidRoom(roomId)) {
@@ -487,7 +488,7 @@ class ChatViewModel(
                 ChatDeliveryMetrics.logGapReconcile(roomId, "socket_jump")
                 refreshMessagesInBackground(roomId, force = true)
             }
-            scheduleMarkReadAfterIncomingBatch(roomId, scopedBatch, cappedMessages)
+            scheduleMarkReadAfterIncomingBatch(roomId, scopedBatch, committedMessages)
             if (currentUserId.isNotBlank()) {
                 val mirrorBatch = scopedBatch.toList()
                 viewModelScope.launch(Dispatchers.IO) {
@@ -772,8 +773,11 @@ class ChatViewModel(
             applyKnownChatMessageUpdate(message)
             return
         }
+        val selfId = currentUserId.trim()
+        val isOwn = selfId.isNotEmpty() && message.senderId.trim() == selfId
         val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
-        if (cid != null && message.senderId.trim() == currentUserId.trim()) {
+        if (isOwn && cid != null) {
+            confirmOutgoingByClientMessageId(cid, message)
             vmScope.launch(Dispatchers.IO) {
                 chatSyncEngine.onSocketMessageConfirmed(
                     currentUserId,
@@ -782,6 +786,7 @@ class ChatViewModel(
                     cid,
                 )
             }
+            return
         }
         if (shouldBlockOwnOutgoingRealtime(message)) return
         if (!isIncomingMessageVisible(message)) return
@@ -1317,8 +1322,16 @@ class ChatViewModel(
                 CombatOverlayService.isOverlayChatPanelOpenInGame()
         }
         if (!appInForeground) return false
+        val selfId = currentUserId.trim()
+        val isPeer = incomingMessage?.let { msg ->
+            selfId.isNotEmpty() && msg.senderId.trim() != selfId
+        }
+        if (isPeer == true) return true
         return isChatTabActive
     }
+
+    internal fun hasPendingUnreadReconcile(): Boolean =
+        pendingUnreadBumps.isNotEmpty() || optimisticUnreadFloorByRoom.values.any { it > 0 }
 
 
     internal fun reconnectRealtimeIfNeeded() {

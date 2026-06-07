@@ -75,6 +75,7 @@ class ChatIncomingSync(
         fun overlayChatPanelVisible(): Boolean
         fun filterMessagesForRoom(messages: List<ChatMessage>, roomId: String): List<ChatMessage>
 
+        /** @return sanitized messages written to UI, or null when commit was skipped. */
         fun commitIncomingBatchUi(
             roomId: String?,
             scopedBatch: List<ChatMessage>,
@@ -82,12 +83,12 @@ class ChatIncomingSync(
             work: IncomingBatchWork,
             derived: ChatMessagesListDerived,
             clearComposer: Boolean,
-        )
+        ): List<ChatMessage>?
 
         fun onIncomingBatchSideEffects(
             roomId: String,
             scopedBatch: List<ChatMessage>,
-            cappedMessages: List<ChatMessage>,
+            committedMessages: List<ChatMessage>,
             work: IncomingBatchWork,
             clearComposer: Boolean,
         )
@@ -167,7 +168,7 @@ class ChatIncomingSync(
                     ) {
                         return@withContext
                     }
-                    host.commitIncomingBatchUi(
+                    val committedMessages = host.commitIncomingBatchUi(
                         roomId = roomId,
                         scopedBatch = scopedBatch,
                         cappedMessages = cappedMessages,
@@ -176,11 +177,11 @@ class ChatIncomingSync(
                         clearComposer = clearComposer,
                     )
                     val rid = host.selectedRoomId()?.trim().orEmpty()
-                    if (rid.isNotEmpty()) {
+                    if (rid.isNotEmpty() && committedMessages != null) {
                         host.onIncomingBatchSideEffects(
                             roomId = rid,
                             scopedBatch = scopedBatch,
-                            cappedMessages = cappedMessages,
+                            committedMessages = committedMessages,
                             work = work,
                             clearComposer = clearComposer,
                         )

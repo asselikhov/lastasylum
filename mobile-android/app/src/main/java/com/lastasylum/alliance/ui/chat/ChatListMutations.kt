@@ -292,6 +292,8 @@ internal fun mergeOutgoingConfirmation(
     confirmed.copy(
         editedAt = null,
         createdAt = confirmed.createdAt ?: optimistic.createdAt,
+        clientMessageId = confirmed.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: optimistic.clientMessageId?.trim()?.takeIf { it.isNotEmpty() },
         attachments = if (confirmed.attachments.isNotEmpty()) {
             confirmed.attachments
         } else {

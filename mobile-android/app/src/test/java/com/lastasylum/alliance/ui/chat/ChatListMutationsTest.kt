@@ -247,6 +247,25 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun mergeVisibleMessagesWithRoomCache_stripsPendingWhenCurrentUserIdSet() {
+        val pending = msg("pending-1", "hello").copy(
+            senderId = "u1",
+            clientMessageId = "cid-1",
+        )
+        val confirmed = msg("server-1", "hello").copy(
+            senderId = "u1",
+            clientMessageId = "cid-1",
+        )
+        val merged = mergeVisibleMessagesWithRoomCache(
+            visible = listOf(pending),
+            cached = listOf(confirmed, pending),
+            roomId = "room",
+            currentUserId = "u1",
+        )
+        assertEquals(listOf("server-1"), merged.map { it._id })
+    }
+
+    @Test
     fun mergeVisibleMessagesWithRoomCache_addsCachedPeerRowsWhileVisibleStale() {
         val oldA = msg("507f1f77bcf86cd799439011", "old")
         val newB = msg("507f1f77bcf86cd799439013", "from peer")

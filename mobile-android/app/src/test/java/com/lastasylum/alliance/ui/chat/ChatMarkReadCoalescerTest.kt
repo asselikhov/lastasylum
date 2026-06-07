@@ -26,7 +26,7 @@ class ChatMarkReadCoalescerTest {
                 optimistic.add(mid)
                 cursor = mid
             },
-            onNetworkMarkRead = { _, mid -> network.add(mid) },
+            onNetworkMarkRead = { _, mid -> network.add(mid); true },
         )
         coalescer.schedule(
             roomId = "room-1",
@@ -37,7 +37,7 @@ class ChatMarkReadCoalescerTest {
                 optimistic.add(mid)
                 cursor = mid
             },
-            onNetworkMarkRead = { _, mid -> network.add(mid) },
+            onNetworkMarkRead = { _, mid -> network.add(mid); true },
         )
 
         assertTrue(optimistic.isNotEmpty())
@@ -57,7 +57,7 @@ class ChatMarkReadCoalescerTest {
             forceSync = false,
             getCurrentCursor = { cursor },
             onOptimisticAdvance = { _, _ -> },
-            onNetworkMarkRead = { _, mid -> network.add(mid) },
+            onNetworkMarkRead = { _, mid -> network.add(mid); true },
         )
 
         advanceTimeBy(MARK_READ_NETWORK_DEBOUNCE_MS + 100)
@@ -81,6 +81,7 @@ class ChatMarkReadCoalescerTest {
             },
             onNetworkMarkRead = { _, _ ->
                 events.add("net")
+                true
             },
         )
 
@@ -99,7 +100,7 @@ class ChatMarkReadCoalescerTest {
             forceSync = false,
             getCurrentCursor = { null },
             onOptimisticAdvance = { _, _ -> },
-            onNetworkMarkRead = { _, mid -> network.add(mid) },
+            onNetworkMarkRead = { _, mid -> network.add(mid); true },
         )
         assertTrue(network.isEmpty())
         coalescer.flushAndAwait("room-1")
@@ -116,7 +117,7 @@ class ChatMarkReadCoalescerTest {
             forceSync = false,
             getCurrentCursor = { null },
             onOptimisticAdvance = { _, _ -> },
-            onNetworkMarkRead = { rid, mid -> network.add(rid to mid) },
+            onNetworkMarkRead = { rid, mid -> network.add(rid to mid); true },
         )
         coalescer.schedule(
             roomId = "room-b",
@@ -124,12 +125,46 @@ class ChatMarkReadCoalescerTest {
             forceSync = false,
             getCurrentCursor = { null },
             onOptimisticAdvance = { _, _ -> },
-            onNetworkMarkRead = { rid, mid -> network.add(rid to mid) },
+            onNetworkMarkRead = { rid, mid -> network.add(rid to mid); true },
         )
         coalescer.flushAndAwait()
         assertEquals(2, network.size)
         assertTrue(network.any { it.first == "room-a" })
         assertTrue(network.any { it.first == "room-b" })
+    }
+
+    @Test
+    fun networkFailure_retainsPendingForRetry() = runTest {
+        val coalescer = ChatMarkReadCoalescer(this)
+        var attempts = 0
+        coalescer.schedule(
+            roomId = "room-1",
+            messageId = "507f1f77bcf86cd799439011",
+            forceSync = false,
+            getCurrentCursor = { null },
+            onOptimisticAdvance = { _, _ -> },
+            onNetworkMarkRead = { _, _ ->
+                attempts++
+                false
+            },
+        )
+        advanceTimeBy(MARK_READ_NETWORK_DEBOUNCE_MS + 100)
+        assertEquals(1, attempts)
+        assertTrue(coalescer.hasPending("room-1"))
+        coalescer.schedule(
+            roomId = "room-1",
+            messageId = "507f1f77bcf86cd799439012",
+            forceSync = false,
+            getCurrentCursor = { "507f1f77bcf86cd799439011" },
+            onOptimisticAdvance = { _, _ -> },
+            onNetworkMarkRead = { _, mid ->
+                attempts++
+                mid == "507f1f77bcf86cd799439012"
+            },
+        )
+        advanceTimeBy(MARK_READ_NETWORK_DEBOUNCE_MS + 100)
+        assertEquals(2, attempts)
+        assertFalse(coalescer.hasPending("room-1"))
     }
 
     @Test

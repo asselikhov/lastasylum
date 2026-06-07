@@ -20,6 +20,7 @@ class ChatRoomsListSync(
     interface Host {
         fun isChatTabActive(): Boolean
         fun overlayChatPanelVisible(): Boolean
+        fun hasPendingUnreadReconcile(): Boolean
         fun stateRooms(): List<ChatRoomDto>
 
         suspend fun applyRoomsFromServer(serverRooms: List<ChatRoomDto>): List<ChatRoomDto>
@@ -39,9 +40,19 @@ class ChatRoomsListSync(
     }
 
     fun syncRoomsFromServer(reconfirmVisibleRoom: Boolean = true) {
-        if (!host.isChatTabActive() && !host.overlayChatPanelVisible()) return
+        if (!host.isChatTabActive() &&
+            !host.overlayChatPanelVisible() &&
+            !host.hasPendingUnreadReconcile()
+        ) {
+            return
+        }
         scope.launch {
-            if (!host.isChatTabActive() && !host.overlayChatPanelVisible()) return@launch
+            if (!host.isChatTabActive() &&
+                !host.overlayChatPanelVisible() &&
+                !host.hasPendingUnreadReconcile()
+            ) {
+                return@launch
+            }
             com.lastasylum.alliance.data.chat.ChatHistorySync.reconcileIfNeeded(
                 repository = repository,
                 chatRoomPreferences = chatRoomPreferences,

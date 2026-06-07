@@ -28,7 +28,7 @@ internal class ChatMarkReadCoalescer(
     )
 
     private val rooms = ConcurrentHashMap<String, RoomState>()
-    private var networkHandler: (suspend (roomId: String, messageId: String) -> Unit)? = null
+    private var networkHandler: (suspend (roomId: String, messageId: String) -> Boolean)? = null
 
     fun clear() {
         rooms.values.forEach { state ->
@@ -69,7 +69,7 @@ internal class ChatMarkReadCoalescer(
         forceSync: Boolean,
         getCurrentCursor: () -> String?,
         onOptimisticAdvance: (roomId: String, messageId: String) -> Unit,
-        onNetworkMarkRead: suspend (roomId: String, messageId: String) -> Unit,
+        onNetworkMarkRead: suspend (roomId: String, messageId: String) -> Boolean,
     ) {
         val rid = roomId.trim()
         val mid = messageId.trim()
@@ -118,7 +118,7 @@ internal class ChatMarkReadCoalescer(
 
     private suspend fun flushRoom(
         roomId: String,
-        onNetworkMarkRead: suspend (roomId: String, messageId: String) -> Unit,
+        onNetworkMarkRead: suspend (roomId: String, messageId: String) -> Boolean,
     ) {
         val state = rooms[roomId] ?: return
         state.flushMutex.withLock {
@@ -130,8 +130,12 @@ internal class ChatMarkReadCoalescer(
                 return
             }
             state.pendingMessageId = null
-            onNetworkMarkRead(roomId, messageId)
-            state.lastPostedMessageId = messageId
+            val postedOk = onNetworkMarkRead(roomId, messageId)
+            if (postedOk) {
+                state.lastPostedMessageId = messageId
+            } else {
+                state.pendingMessageId = messageId
+            }
         }
     }
 }

@@ -2728,10 +2728,18 @@ class CombatOverlayService : Service() {
     private fun applyOverlayRoomUnreadFromSocket(event: com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) {
         val roomId = event.roomId.trim()
         if (roomId.isEmpty()) return
+        val container = AppContainer.from(this)
+        val localRead = container.chatRoomPreferences.getLastReadMessageId(roomId)
+        val serverUnread = event.unreadCount.coerceAtLeast(0)
+        val effective = com.lastasylum.alliance.data.effectiveUnreadCount(
+            serverUnread = serverUnread,
+            lastReadMessageId = event.lastReadMessageId,
+            localLastReadMessageId = localRead,
+        )
         ChatSessionCache.patchRoomUnread(
             roomId,
-            event.unreadCount.coerceAtLeast(0),
-            event.lastReadMessageId,
+            effective,
+            event.lastReadMessageId?.trim()?.takeIf { it.isNotEmpty() } ?: localRead,
         )
         val hubId = resolveOverlayHubRoomId().trim()
         val isHubEvent = hubId.isNotEmpty() && roomId == hubId
