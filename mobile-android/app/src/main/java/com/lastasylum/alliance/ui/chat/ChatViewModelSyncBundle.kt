@@ -72,6 +72,7 @@ internal class ChatViewModelSyncBundle(
         override fun capMessagesForMemory(messages: List<ChatMessage>) = vm.capMessagesForMemory(messages)
         override fun isActiveSelectedRoom(roomId: String): Boolean = vm.isActiveSelectedRoom(roomId)
         override fun shouldAutoMarkReadSelectedRoom(): Boolean = vm.shouldAutoMarkReadSelectedRoom()
+        override fun resolvedLastReadForRoom(roomId: String): String? = vm.deviceLastReadMessageId(roomId)
         override fun updateRoomMessageCache(roomId: String, cache: ChatRoomMessageCache) {
             vm.roomMessageCache[roomId] = cache
         }
@@ -179,7 +180,8 @@ internal class ChatViewModelSyncBundle(
         override fun setOtherReadUpto(roomId: String) {
             vm._otherReadUptoMessageId.value = vm.otherReadUptoByRoom[roomId]
         }
-        override suspend fun hydratePeerReadCursor(roomId: String) = vm.hydratePeerReadCursor(roomId)
+        override suspend fun hydratePeerReadCursor(roomId: String, force: Boolean) =
+            vm.hydratePeerReadCursor(roomId, force)
         override fun isAllianceRaidRoom(roomId: String): Boolean = vm.isAllianceRaidRoom(roomId)
         override fun isGlobalChatRoom(roomId: String, rooms: List<ChatRoomDto>): Boolean =
             vm.isGlobalChatRoom(roomId, rooms)

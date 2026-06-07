@@ -364,6 +364,34 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun shouldSkipBackgroundMessageRefresh_overlayUsesLongerReconcileInterval() {
+        val visible = listOf(msg("507f1f77bcf86cd799439013", "new"))
+        val now = 200_000L
+        assertFalse(
+            shouldSkipBackgroundMessageRefresh(
+                visible = visible,
+                sessionCache = visible,
+                roomCache = visible,
+                pageSize = 1,
+                lastRestSyncAtMs = now - 70_000L,
+                nowMs = now,
+                overlayPanelVisible = false,
+            ),
+        )
+        assertTrue(
+            shouldSkipBackgroundMessageRefresh(
+                visible = visible,
+                sessionCache = visible,
+                roomCache = visible,
+                pageSize = 1,
+                lastRestSyncAtMs = now - 70_000L,
+                nowMs = now,
+                overlayPanelVisible = true,
+            ),
+        )
+    }
+
+    @Test
     fun stripRedundantPendingOutgoing_removesPendingWhenServerEchoExists() {
         val pending = msg("pending-1", "hello").copy(clientMessageId = "client-1")
         val server = msg("server-1", "hello").copy(clientMessageId = "client-1")

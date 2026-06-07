@@ -149,7 +149,7 @@ internal suspend fun loadOverlayIngameReactionRecipients(
                             teamId = tid,
                             teamsRepository = teamsRepository,
                             launchDiskCache = launchDiskCache,
-                            userId = uid.ifEmpty { peekCtx?.currentUserId.orEmpty() },
+                            userId = uid.ifEmpty { peekCtx.currentUserId.orEmpty() },
                             forceRefresh = false,
                         )
                     }

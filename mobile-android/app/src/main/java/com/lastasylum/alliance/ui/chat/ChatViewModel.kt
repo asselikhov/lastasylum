@@ -222,6 +222,8 @@ class ChatViewModel(
     internal val locallyRemovedMessageIds = LinkedHashSet<String>()
     /** Latest message id we successfully marked read per room (avoids regress + duplicate bumps). */
     internal val lastMarkedReadByRoom = mutableMapOf<String, String>()
+    internal val markReadCoalescer = ChatMarkReadCoalescer(viewModelScope)
+    internal val lastPeerReadFetchAtMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
     /** Socket can deliver the same message via new + reaction/edited; count unread once per id. */
     internal val unreadBumpedMessageIds = LinkedHashSet<String>()
     /** Realtime before listRooms — applied after [applyRoomsFromServer]. */
@@ -625,6 +627,8 @@ class ChatViewModel(
         optimisticUnreadFloorByRoom.clear()
         otherReadUptoByRoom.clear()
         lastMarkedReadByRoom.clear()
+        markReadCoalescer.clear()
+        lastPeerReadFetchAtMs.clear()
         pinHistoryByRoom.clear()
         pinBarIndexByRoom.clear()
         pinStateAuthoritativeRoomIds.clear()
@@ -887,17 +891,7 @@ class ChatViewModel(
             val current = otherReadUptoByRoom[rid]
             if (current != null && isObjectIdNewer(current, baseline)) return@launch
             if (current != null && isObjectIdNewer(current, sentId)) return@launch
-            repository.getPeerReadCursor(rid).getOrNull()?.let { peerUpto ->
-                val publish = PeerReadCursorLogic.hydratePeerRead(
-                    otherReadUptoByRoom = otherReadUptoByRoom,
-                    selectedRoomId = _state.value.selectedRoomId,
-                    roomId = rid,
-                    peerUptoMessageId = peerUpto,
-                )
-                if (publish != null) {
-                    _otherReadUptoMessageId.value = publish
-                }
-            }
+            hydratePeerReadCursor(rid, force = false)
         }
     }
 
@@ -968,7 +962,8 @@ class ChatViewModel(
     internal fun shouldAutoMarkReadSelectedRoom() = shouldAutoMarkReadSelectedRoomImpl()
     internal fun shouldOverlayAutoMarkReadSelectedRoom() = shouldOverlayAutoMarkReadSelectedRoomImpl()
     internal fun markOverlayPanelReadToNewestIncoming() = markOverlayPanelReadToNewestIncomingImpl()
-    internal suspend fun hydratePeerReadCursor(roomId: String) = hydratePeerReadCursorImpl(roomId)
+    internal suspend fun hydratePeerReadCursor(roomId: String, force: Boolean = false) =
+        hydratePeerReadCursorImpl(roomId, force)
     fun markOverlayVisibleMessagesAsRead(messageIds: List<String>) = markOverlayVisibleMessagesAsReadImpl(messageIds)
     fun jumpToFirstUnreadInSelectedRoom() = jumpToFirstUnreadInSelectedRoomImpl()
     internal fun isValidMarkReadMessageId(messageId: String?) = isValidMarkReadMessageIdImpl(messageId)

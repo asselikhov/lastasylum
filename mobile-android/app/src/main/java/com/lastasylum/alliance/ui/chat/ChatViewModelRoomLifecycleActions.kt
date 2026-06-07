@@ -69,9 +69,12 @@ internal fun ChatViewModel.markOverlayPanelReadToNewestIncomingImpl() {
         }
     }
 
-internal suspend fun ChatViewModel.hydratePeerReadCursorImpl(roomId: String) {
+internal suspend fun ChatViewModel.hydratePeerReadCursorImpl(roomId: String, force: Boolean = false) {
         val rid = roomId.trim()
         if (rid.isEmpty()) return
+        val lastAt = lastPeerReadFetchAtMs[rid] ?: 0L
+        if (!shouldFetchPeerReadCursor(lastAtMs = lastAt, force = force)) return
+        lastPeerReadFetchAtMs[rid] = System.currentTimeMillis()
         vmRepository.getPeerReadCursor(rid)
             .onSuccess { peerUpto ->
                 val publish = PeerReadCursorLogic.hydratePeerRead(
@@ -107,6 +110,8 @@ internal fun ChatViewModel.markOverlayVisibleMessagesAsReadImpl(messageIds: List
             }
         }
         val markId = watermark ?: return
+        val cursor = lastRead
+        if (cursor.isNotEmpty() && !isObjectIdNewer(markId, cursor)) return
         vmScope.launch { markRoomReadUpTo(roomId, markId) }
     }
 
@@ -976,6 +981,10 @@ internal fun ChatViewModel.snapshotSelectedRoomToMessageCacheImpl() {
 internal suspend fun ChatViewModel.reconfirmReadForVisibleRoomImpl() {
         val roomId = vmState.value.selectedRoomId ?: return
         val newestId = vmState.value.messages.firstOrNull()?._id ?: return
+        if (!isValidMarkReadMessageId(newestId)) return
+        val room = vmState.value.rooms.find { it.id == roomId }
+        val cursor = room?.let { resolvedLastReadMessageId(it) } ?: deviceLastReadMessageId(roomId)
+        if (!cursor.isNullOrBlank() && !isObjectIdNewer(newestId, cursor)) return
         markRoomReadUpTo(roomId, newestId)
     }
 
@@ -1014,40 +1023,37 @@ internal suspend fun ChatViewModel.markRoomReadUpToImpl(
         forceSync: Boolean = false,
     ) {
         if (roomId.isBlank() || messageId.isBlank()) return
-        val prev = lastMarkedReadByRoom[roomId]
-        if (!forceSync && prev != null && !isObjectIdNewer(messageId, prev)) return
-        clearOptimisticUnreadFloor(roomId)
-        val job = vmScope.launch {
-            mergeReadCursor(roomId, messageId)
-            ChatSessionCache.patchRoomRead(roomId, messageId)
-            vmState.update { st ->
-                st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
-            }
-            syncTabUnreadBadge()
-            ChatSessionCache.update(vmState.value.rooms)
-            if (ChatRoomKindResolver.allianceHubRoom(vmState.value.rooms)?.id == roomId) {
-                syncOverlayAllianceHubBadge(vmState.value.rooms)
-            }
-            chatSyncEngine.markRoomRead(currentUserId, roomId, messageId)
-                .onSuccess {
-                    mergeReadCursor(roomId, messageId)
-                    ChatSessionCache.patchRoomRead(roomId, messageId)
-                    vmState.update { st ->
-                        st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
-                    }
-                    syncTabUnreadBadge()
-                    ChatSessionCache.update(vmState.value.rooms)
-                    if (ChatRoomKindResolver.allianceHubRoom(vmState.value.rooms)?.id == roomId) {
-                        syncOverlayAllianceHubBadge(vmState.value.rooms)
-                    }
-                }
-                .onFailure {
-                    scheduleUnreadSyncFromServer()
-                }
-        }
-        markReadInFlight.add(job)
-        job.invokeOnCompletion { markReadInFlight.remove(job) }
+        if (!isValidMarkReadMessageId(messageId)) return
+        markReadCoalescer.schedule(
+            roomId = roomId,
+            messageId = messageId,
+            forceSync = forceSync,
+            getCurrentCursor = { deviceLastReadMessageId(roomId) },
+            onOptimisticAdvance = { rid, mid -> applyOptimisticMarkReadLocal(rid, mid) },
+            onNetworkMarkRead = { rid, mid -> performNetworkMarkRead(rid, mid) },
+        )
     }
+
+internal fun ChatViewModel.applyOptimisticMarkReadLocal(roomId: String, messageId: String) {
+    clearOptimisticUnreadFloor(roomId)
+    mergeReadCursor(roomId, messageId)
+    ChatSessionCache.patchRoomRead(roomId, messageId)
+    vmState.update { st ->
+        st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
+    }
+    syncTabUnreadBadge()
+    ChatSessionCache.update(vmState.value.rooms)
+    if (ChatRoomKindResolver.allianceHubRoom(vmState.value.rooms)?.id == roomId) {
+        syncOverlayAllianceHubBadge(vmState.value.rooms)
+    }
+}
+
+internal suspend fun ChatViewModel.performNetworkMarkRead(roomId: String, messageId: String) {
+    chatSyncEngine.markRoomRead(currentUserId, roomId, messageId)
+        .onFailure {
+            scheduleUnreadSyncFromServer()
+        }
+}
 
 internal fun ChatViewModel.onRoomUnreadFromServerImpl(event: ChatRoomUnreadEvent) {
         val roomId = event.roomId.trim()

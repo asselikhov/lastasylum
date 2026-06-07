@@ -50,6 +50,7 @@ class ChatRoomPagingSync(
 
         fun isActiveSelectedRoom(roomId: String): Boolean
         fun shouldAutoMarkReadSelectedRoom(): Boolean
+        fun resolvedLastReadForRoom(roomId: String): String?
 
         fun updateRoomMessageCache(roomId: String, cache: ChatRoomMessageCache)
         fun roomMessageCache(roomId: String): ChatRoomMessageCache?
@@ -97,13 +98,19 @@ class ChatRoomPagingSync(
 
     fun refreshMessagesInBackground(roomId: String, force: Boolean = false) {
         if (!force && shouldSkipBackgroundMessageRefreshForRoom(roomId)) return
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return
+        val inFlight = backgroundRefreshJobs[rid]
+        if (!force && inFlight?.isActive == true) return
+        if (force) {
+            cancelBackgroundRefresh(roomId)
+        }
         val deferMs = when {
             ChatSessionCache.getFreshMessages(roomId) == null -> 0L
             host.overlayChatPanelVisible() && host.isAllianceRaidRoom(roomId) -> 0L
             else -> CHAT_BACKGROUND_MESSAGE_REFRESH_DEFER_MS
         }
-        cancelBackgroundRefresh(roomId)
-        backgroundRefreshJobs[roomId.trim()] = scope.launch {
+        backgroundRefreshJobs[rid] = scope.launch {
             try {
             if (deferMs > 0L) delay(deferMs)
             val isSelectedRoom = host.selectedRoomId() == roomId
@@ -231,7 +238,10 @@ class ChatRoomPagingSync(
         host.publishMessagesDerived(capped)
         if (host.shouldAutoMarkReadSelectedRoom()) {
             capped.firstOrNull()?._id?.let { newestId ->
-                scope.launch { host.markRoomReadUpTo(roomId, newestId) }
+                val cursor = host.resolvedLastReadForRoom(roomId)?.trim().orEmpty()
+                if (cursor.isEmpty() || isObjectIdNewer(newestId, cursor)) {
+                    scope.launch { host.markRoomReadUpTo(roomId, newestId) }
+                }
             }
         }
         host.schedulePersistChatSnapshot()
@@ -311,6 +321,7 @@ class ChatRoomPagingSync(
             pageSize = CHAT_PAGE_SIZE,
             lastRestSyncAtMs = host.lastBackgroundRefreshAtMs(rid),
             forceAfterReconnect = host.forceBackgroundRefreshAfterReconnect(),
+            overlayPanelVisible = host.overlayChatPanelVisible(),
         )
     }
 }

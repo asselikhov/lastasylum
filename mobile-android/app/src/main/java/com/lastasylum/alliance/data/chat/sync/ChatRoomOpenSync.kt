@@ -29,7 +29,7 @@ class ChatRoomOpenSync(
 
         fun clearTypingForRoomOpen()
         fun setOtherReadUpto(roomId: String)
-        suspend fun hydratePeerReadCursor(roomId: String)
+        suspend fun hydratePeerReadCursor(roomId: String, force: Boolean = false)
         fun isAllianceRaidRoom(roomId: String): Boolean
         fun isGlobalChatRoom(roomId: String, rooms: List<ChatRoomDto>): Boolean
         suspend fun loadTeamProfileGate(
@@ -87,7 +87,7 @@ class ChatRoomOpenSync(
         if (rid.isEmpty()) return
         if (!host.isActiveSelectedRoom(rid)) return
         roomStoreBindings.bindSelectedRoom(rid)
-        host.hydratePeerReadCursor(rid)
+        host.hydratePeerReadCursor(rid, force = true)
         if (host.isAllianceRaidRoom(rid)) {
             rehydrateSync.rehydrateSelectedRoomMessagesFromCache()
         }

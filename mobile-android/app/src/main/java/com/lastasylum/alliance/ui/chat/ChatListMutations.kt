@@ -339,10 +339,16 @@ internal fun shouldSkipBackgroundMessageRefresh(
     lastRestSyncAtMs: Long = 0L,
     nowMs: Long = System.currentTimeMillis(),
     activeRoomReconcileIntervalMs: Long = 60_000L,
+    overlayPanelVisible: Boolean = false,
     forceAfterReconnect: Boolean = false,
 ): Boolean {
     if (forceAfterReconnect) return false
-    if (lastRestSyncAtMs > 0L && nowMs - lastRestSyncAtMs >= activeRoomReconcileIntervalMs) {
+    val reconcileInterval = if (overlayPanelVisible) {
+        CHAT_OVERLAY_ACTIVE_ROOM_RECONCILE_INTERVAL_MS
+    } else {
+        activeRoomReconcileIntervalMs
+    }
+    if (lastRestSyncAtMs > 0L && nowMs - lastRestSyncAtMs >= reconcileInterval) {
         return false
     }
     if (sessionCache == null) return false
