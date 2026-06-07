@@ -6,6 +6,7 @@ import com.lastasylum.alliance.data.chat.ChatMessageVisibilityPolicy
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
+import com.lastasylum.alliance.ui.util.parseIsoInstantEpochMilli
 
 /** Newest-first in-memory cap to keep scroll/diff bounded for very long threads. */
 internal const val CHAT_MAX_MESSAGES_IN_MEMORY = 800
@@ -66,6 +67,19 @@ internal fun outgoingTextsMatch(a: ChatMessage, b: ChatMessage): Boolean =
         normalizeOutgoingReplyToId(a.replyToMessageId) ==
         normalizeOutgoingReplyToId(b.replyToMessageId)
 
+private const val OUTGOING_SAME_SEND_MAX_SKEW_MS = 120_000L
+
+/** Same in-flight send when [clientMessageId] matches or text and timestamps are close. */
+internal fun isLikelySameOutgoingSend(pending: ChatMessage, confirmed: ChatMessage): Boolean {
+    val pendingCid = pending.clientMessageId?.trim().orEmpty()
+    val confirmedCid = confirmed.clientMessageId?.trim().orEmpty()
+    if (pendingCid.isNotEmpty() && confirmedCid == pendingCid) return true
+    if (!outgoingTextsMatch(pending, confirmed)) return false
+    val pendingTs = parseIsoInstantEpochMilli(pending.createdAt) ?: return false
+    val confirmedTs = parseIsoInstantEpochMilli(confirmed.createdAt) ?: return false
+    return kotlin.math.abs(confirmedTs - pendingTs) <= OUTGOING_SAME_SEND_MAX_SKEW_MS
+}
+
 /** Socket/HTTP ack may omit [ChatMessage.clientMessageId]; keep the outbox id for dedupe. */
 internal fun ChatMessage.withOutgoingClientMessageId(clientMessageId: String): ChatMessage {
     val cid = clientMessageId.trim()
@@ -101,6 +115,21 @@ internal fun stripRacingServerEchoForPending(
         }
     }
     val pendingIndex = out.indexOfFirst { it._id?.trim() == pendingId }
+    if (pendingIndex < 0) return out
+    if (pendingIndex == 0 && out.size > 1) {
+        val below = out[1]
+        val belowId = below._id?.trim().orEmpty()
+        if (!isOptimisticOutgoingMessageId(belowId) &&
+            belowId.isNotEmpty() &&
+            below.senderId.trim() == selfId &&
+            (
+                (pendingCid.isNotEmpty() && below.clientMessageId?.trim() == pendingCid) ||
+                    isLikelySameOutgoingSend(pending, below)
+                )
+        ) {
+            out = out.filterIndexed { index, _ -> index != 1 }
+        }
+    }
     if (pendingIndex <= 0) return out
     val racingIds = out.withIndex()
         .filter { (idx, msg) ->
@@ -138,12 +167,63 @@ internal fun attachPendingClientMessageIdsToOwnConfirmed(
         if (msg.senderId.trim() != selfId) return@mapIndexed msg
         if (!msg.clientMessageId.isNullOrBlank()) return@mapIndexed msg
         val pending = pendingEntries.firstOrNull { (pendingIdx, pendingMsg) ->
-            index < pendingIdx && outgoingTextsMatch(pendingMsg, msg)
+            val adjacent = kotlin.math.abs(pendingIdx - index) <= 1
+            if (!adjacent) return@firstOrNull false
+            val pendingCid = pendingMsg.clientMessageId?.trim().orEmpty()
+            val msgCid = msg.clientMessageId?.trim().orEmpty()
+            when {
+                pendingCid.isNotEmpty() && msgCid == pendingCid -> true
+                isLikelySameOutgoingSend(pendingMsg, msg) -> true
+                else -> false
+            }
         }?.value ?: return@mapIndexed msg
         val cid = pending.clientMessageId?.trim().orEmpty()
         if (cid.isEmpty()) return@mapIndexed msg
         msg.withOutgoingClientMessageId(cid)
     }
+}
+
+/** Drop optimistic rows at the head when a confirmed own row for the same send is adjacent. */
+internal fun collapseOwnOutgoingHeadDuplicates(
+    messages: List<ChatMessage>,
+    currentUserId: String,
+    headScan: Int = 8,
+): List<ChatMessage> {
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty() || messages.size < 2) return messages
+    val limit = minOf(messages.size, headScan)
+    val dropPending = HashSet<Int>()
+    for (pIdx in 0 until limit) {
+        if (pIdx in dropPending) continue
+        val pending = messages[pIdx]
+        val pendingId = pending._id?.trim().orEmpty()
+        if (!isOptimisticOutgoingMessageId(pendingId) || pending.senderId.trim() != selfId) continue
+        val pendingCid = pending.clientMessageId?.trim().orEmpty()
+        for (cIdx in 0 until limit) {
+            if (cIdx == pIdx || cIdx in dropPending) continue
+            val confirmed = messages[cIdx]
+            val confirmedId = confirmed._id?.trim().orEmpty()
+            if (isOptimisticOutgoingMessageId(confirmedId) ||
+                confirmedId.isEmpty() ||
+                confirmed.senderId.trim() != selfId
+            ) {
+                continue
+            }
+            val confirmedCid = confirmed.clientMessageId?.trim().orEmpty()
+            val sameSend = when {
+                pendingCid.isNotEmpty() && confirmedCid == pendingCid -> true
+                isLikelySameOutgoingSend(pending, confirmed) &&
+                    kotlin.math.abs(cIdx - pIdx) <= 1 -> true
+                else -> false
+            }
+            if (sameSend) {
+                dropPending.add(pIdx)
+                break
+            }
+        }
+    }
+    if (dropPending.isEmpty()) return messages
+    return messages.filterIndexed { index, _ -> index !in dropPending }
 }
 
 /**
@@ -166,6 +246,7 @@ internal fun sanitizeMessagesAfterRealtimeApply(
     out = stripRedundantPendingOutgoing(out, currentUserId)
     out = stripRedundantOwnOutgoingByClientMessageId(out, currentUserId)
     out = dedupeOwnOutgoingByClientMessageId(out, currentUserId)
+    out = collapseOwnOutgoingHeadDuplicates(out, currentUserId)
     return dedupeMessagesByIdNewestFirst(out)
 }
 

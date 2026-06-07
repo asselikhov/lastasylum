@@ -508,9 +508,57 @@ class ChatListMutationsTest {
     }
 
     @Test
-    fun attachPendingClientMessageIdsToOwnConfirmed_linksRacingServerEcho() {
+    fun stripRacingServerEchoForPending_dropsEchoBelowOptimisticAtHead() {
+        val now = "2026-06-07T12:00:00.000Z"
+        val pending = msg("pending-1", "hello").copy(
+            clientMessageId = "client-1",
+            createdAt = now,
+        )
+        val echo = msg("507f1f77bcf86cd799439099", "hello").copy(createdAt = now)
+        val out = stripRacingServerEchoForPending(
+            messages = listOf(pending, echo),
+            pending = pending,
+            currentUserId = "u1",
+        )
+        assertEquals(listOf("pending-1"), out.map { it._id })
+    }
+
+    @Test
+    fun attachPendingClientMessageIdsToOwnConfirmed_linksEchoBelowPending() {
+        val now = "2026-06-07T12:00:00.000Z"
+        val pending = msg("pending-1", "hello").copy(
+            clientMessageId = "client-abc",
+            createdAt = now,
+        )
+        val server = msg("server-1", "hello").copy(createdAt = now)
+        val linked = attachPendingClientMessageIdsToOwnConfirmed(
+            messages = listOf(pending, server),
+            currentUserId = "u1",
+        )
+        assertEquals("client-abc", linked[1].clientMessageId)
+        val stripped = stripRedundantOwnOutgoingByClientMessageId(linked, "u1")
+        assertEquals(listOf("server-1"), stripped.map { it._id })
+    }
+
+    @Test
+    fun collapseOwnOutgoingHeadDuplicates_removesPendingWhenConfirmedBelow() {
         val pending = msg("pending-1", "hello").copy(clientMessageId = "client-abc")
-        val server = msg("server-1", "hello")
+        val server = msg("server-1", "hello").copy(clientMessageId = "client-abc")
+        val out = collapseOwnOutgoingHeadDuplicates(
+            messages = listOf(pending, server),
+            currentUserId = "u1",
+        )
+        assertEquals(listOf("server-1"), out.map { it._id })
+    }
+
+    @Test
+    fun attachPendingClientMessageIdsToOwnConfirmed_linksRacingServerEcho() {
+        val now = "2026-06-07T12:00:00.000Z"
+        val pending = msg("pending-1", "hello").copy(
+            clientMessageId = "client-abc",
+            createdAt = now,
+        )
+        val server = msg("server-1", "hello").copy(createdAt = now)
         val linked = attachPendingClientMessageIdsToOwnConfirmed(
             messages = listOf(server, pending),
             currentUserId = "u1",

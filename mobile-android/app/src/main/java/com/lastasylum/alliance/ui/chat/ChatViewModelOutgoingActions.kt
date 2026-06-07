@@ -1052,11 +1052,38 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
 private fun ChatViewModel.prependConfirmedOutgoingMessage(sent: ChatMessage) {
     val serverId = sent._id?.trim().orEmpty()
     if (serverId.isEmpty()) return
-    if (vmState.value.messages.any { it._id?.trim() == serverId }) return
+    val normalized = sent.withOutgoingClientMessageId(
+        sent.clientMessageId?.trim().orEmpty().ifEmpty {
+            activeOutgoingClientMessageIds.singleOrNull()?.trim().orEmpty()
+        },
+    )
+    replaceMatchingPendingOutgoing(
+        current = vmState.value.messages,
+        incoming = normalized,
+        currentUserId = currentUserId,
+    )?.let { replacement ->
+        confirmPendingOutgoingMessageImpl(replacement.pendingId, normalized)
+        return
+    }
+    findOptimisticOutgoingPendingForConfirm(
+        messages = vmState.value.messages,
+        clientMessageId = normalized.clientMessageId.orEmpty(),
+        confirmed = normalized,
+        currentUserId = currentUserId,
+    )?.let { pendingId ->
+        confirmPendingOutgoingMessageImpl(pendingId, normalized)
+        return
+    }
+    if (vmState.value.messages.any { it._id?.trim() == serverId }) {
+        normalized.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            repairOwnOutgoingRowPairIfNeeded(it, normalized)
+        }
+        return
+    }
     val work = synchronized(chatMutationLock) {
         val update = upsertMessage(
             current = vmState.value.messages,
-            incoming = sent.copy(editedAt = null),
+            incoming = normalized.copy(editedAt = null),
             knownMessageIds = knownMessageIds,
             idIndex = messageIdIndex,
         )
