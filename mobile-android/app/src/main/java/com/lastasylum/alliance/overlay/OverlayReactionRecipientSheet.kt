@@ -70,6 +70,10 @@ import com.lastasylum.alliance.data.users.UsersRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_FAST_MS
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -116,6 +120,7 @@ internal fun prefetchOverlayReactionRecipients(
                 usersRepository = usersRepository,
                 teamsRepository = teamsRepository,
                 launchDiskCache = launchDiskCache,
+                forceRefresh = true,
             )
         }
     }
@@ -125,6 +130,7 @@ internal suspend fun loadOverlayIngameReactionRecipients(
     usersRepository: UsersRepository,
     teamsRepository: TeamsRepository,
     launchDiskCache: com.lastasylum.alliance.data.cache.LaunchDiskCache? = null,
+    forceRefresh: Boolean = false,
 ): Result<List<PlayerTeamMemberDto>> =
     withContext(Dispatchers.IO) {
         runCatching {
@@ -150,7 +156,7 @@ internal suspend fun loadOverlayIngameReactionRecipients(
                             teamsRepository = teamsRepository,
                             launchDiskCache = launchDiskCache,
                             userId = uid.ifEmpty { peekCtx.currentUserId.orEmpty() },
-                            forceRefresh = false,
+                            forceRefresh = forceRefresh,
                         )
                     }
                 }
@@ -164,12 +170,18 @@ internal suspend fun loadOverlayIngameReactionRecipients(
                         teamsRepository = teamsRepository,
                         launchDiskCache = launchDiskCache,
                         userId = uid.ifEmpty { self },
-                        forceRefresh = false,
+                        forceRefresh = forceRefresh,
                     ).getOrThrow()
                 filterFreshIngameRecipients(presence.ingame, selfUserId = self)
             }
         }
     }
+
+internal suspend fun refreshOverlayIngameReactionRecipientsFromCache(
+    usersRepository: UsersRepository,
+    launchDiskCache: com.lastasylum.alliance.data.cache.LaunchDiskCache? = null,
+): List<PlayerTeamMemberDto>? =
+    peekOverlayIngameReactionRecipientsFromCache(usersRepository, launchDiskCache)
 
 @Composable
 fun OverlayReactionRecipientSheet(
@@ -226,6 +238,41 @@ fun OverlayReactionRecipientSheet(
                 }
             }
         loading = false
+    }
+
+    LaunchedEffect(reactionId) {
+        OverlayTeamPresenceCache.revision.collectLatest {
+            if (it == 0) return@collectLatest
+            val refreshed = withContext(Dispatchers.IO) {
+                refreshOverlayIngameReactionRecipientsFromCache(
+                    usersRepository = appContainer.usersRepository,
+                    launchDiskCache = appContainer.launchDiskCache,
+                )
+            } ?: return@collectLatest
+            members = refreshed
+            if (refreshed.isNotEmpty()) {
+                error = null
+            }
+        }
+    }
+
+    LaunchedEffect(reactionId) {
+        while (isActive) {
+            delay(OVERLAY_ONLINE_PANEL_POLL_FAST_MS)
+            withContext(Dispatchers.IO) {
+                loadOverlayIngameReactionRecipients(
+                    usersRepository = appContainer.usersRepository,
+                    teamsRepository = appContainer.teamsRepository,
+                    launchDiskCache = appContainer.launchDiskCache,
+                    forceRefresh = false,
+                )
+            }.onSuccess { fresh ->
+                members = fresh
+                if (fresh.isNotEmpty()) {
+                    error = null
+                }
+            }
+        }
     }
 
     val filteredMembers by remember(members, searchQuery) {

@@ -84,7 +84,8 @@ export class PushNotificationsService implements OnModuleInit {
       this.logger.warn(
         `FCM game event: no device tokens for allianceId=${input.allianceId} ` +
           `eventId=${input.eventId} excludeUserId=${input.excludeUserId} ` +
-          `(check Mongo pushFcmTokens, gameEventPushEnabled, overlay-ingame filter)`,
+          `(see prior FCM game event log for candidate/exclusion breakdown; ` +
+          `check Mongo pushFcmTokens, gameEventPushEnabled, overlay-ingame filter, FIREBASE_SERVICE_ACCOUNT_JSON)`,
       );
       return;
     }

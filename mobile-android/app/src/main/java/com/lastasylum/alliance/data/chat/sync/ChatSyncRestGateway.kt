@@ -26,6 +26,14 @@ interface ChatSyncRestGateway {
         clientMessageId: String,
         maxAttempts: Int = 3,
     ): Result<ChatMessage>
+
+    suspend fun sendOverlayRaidCommandRestOnly(
+        text: String,
+        roomId: String,
+        gameEventAlert: String?,
+        clientMessageId: String,
+        maxAttempts: Int = 3,
+    ): Result<ChatMessage>
 }
 
 fun ChatRepository.asSyncGateway(): ChatSyncRestGateway = object : ChatSyncRestGateway {
@@ -57,6 +65,20 @@ fun ChatRepository.asSyncGateway(): ChatSyncRestGateway = object : ChatSyncRestG
         clientMessageId: String,
         maxAttempts: Int,
     ): Result<ChatMessage> = this@asSyncGateway.sendOverlayRaidCommandFast(
+        text = text,
+        roomId = roomId,
+        gameEventAlert = gameEventAlert,
+        clientMessageId = clientMessageId,
+        maxAttempts = maxAttempts,
+    )
+
+    override suspend fun sendOverlayRaidCommandRestOnly(
+        text: String,
+        roomId: String,
+        gameEventAlert: String?,
+        clientMessageId: String,
+        maxAttempts: Int,
+    ): Result<ChatMessage> = this@asSyncGateway.sendOverlayRaidCommandRestOnly(
         text = text,
         roomId = roomId,
         gameEventAlert = gameEventAlert,

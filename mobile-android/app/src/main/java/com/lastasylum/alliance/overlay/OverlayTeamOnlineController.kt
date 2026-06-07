@@ -83,23 +83,22 @@ class OverlayTeamOnlineController(
     private val presenceSocketListener: (TeamPresenceSocketEvent) -> Unit = { event ->
         scope.launch {
             presenceMergeMutex.withLock {
+                val tid = teamId?.trim().orEmpty()
+                if (tid.isEmpty()) return@withLock
                 val current = _state.value
                 val fallback = current.team?.members?.firstOrNull { it.userId == event.userId }
                     ?: OverlayTeamContextCache.memberDto(event.userId)
-                val merged = mergePresenceSocketEvent(
-                    lists = OverlayOnlinePresenceLists(current.ingameRaw, current.recentRaw),
-                    event = event,
-                    fallbackMember = fallback,
-                )
+                OverlayTeamPresenceCache.applySocketEvent(tid, event, fallback)
+                val updated = OverlayTeamPresenceCache.peek(tid) ?: return@withLock
                 val knownUserIds = buildSet {
-                    merged.ingame.forEach { add(it.userId) }
-                    merged.recentlyActive.forEach { add(it.userId) }
+                    updated.ingame.forEach { add(it.userId) }
+                    updated.recentlyActive.forEach { add(it.userId) }
                 }
                 val needsFullRefresh = event.userId !in knownUserIds && fallback == null
                 if (needsFullRefresh) {
                     refreshPresenceOnly(showRefreshing = false)
                 } else {
-                    applyPresenceLists(merged.ingame, merged.recentlyActive)
+                    applyPresenceLists(updated.ingame, updated.recentlyActive)
                 }
             }
         }
@@ -542,6 +541,9 @@ class OverlayTeamOnlineController(
         }
         if (count != current.ingameCount) {
             onIngameCountChanged(count)
+        }
+        if (tid.isNotEmpty()) {
+            OverlayTeamPresenceCache.storeMergedLists(tid, ingame, recentlyActive)
         }
     }
 

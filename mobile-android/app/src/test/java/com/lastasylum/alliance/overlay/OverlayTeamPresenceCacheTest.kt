@@ -35,7 +35,7 @@ class OverlayTeamPresenceCacheTest {
             presence = TeamOverlayPresenceDto(ingame = emptyList()),
             atMs = now,
         )
-        assertFalse(OverlayTeamPresenceCache.isCacheValid("team-1", nowMs = now + 60_000L))
+        assertFalse(OverlayTeamPresenceCache.isCacheValid("team-1", nowMs = now + 66_000L))
     }
 
     @Test
@@ -111,5 +111,53 @@ class OverlayTeamPresenceCacheTest {
             ),
         )
         assertEquals(1, countFreshIngameMembers(members))
+    }
+
+    @Test
+    fun applySocketEvent_addsFreshIngameMember() {
+        val freshAt = Instant.now().minusSeconds(15).toString()
+        OverlayTeamPresenceCache.applySocketEvent(
+            teamId = "team-1",
+            event = com.lastasylum.alliance.data.teams.TeamPresenceSocketEvent(
+                userId = "u2",
+                presenceStatus = "ingame",
+                lastPresenceAt = freshAt,
+                username = "bob",
+            ),
+        )
+        val ingame = OverlayTeamPresenceCache.peek("team-1")?.ingame.orEmpty()
+        assertEquals(listOf("u2"), ingame.map { it.userId })
+        assertEquals("bob", ingame.first().username)
+    }
+
+    @Test
+    fun storeMergedLists_reconcilesStaleRows() {
+        val freshAt = Instant.now().minusSeconds(20).toString()
+        val staleAt = Instant.now()
+            .minusMillis(OVERLAY_INGAME_PRESENCE_STALE_MS + 1_000)
+            .toString()
+        OverlayTeamPresenceCache.storeMergedLists(
+            teamId = "team-1",
+            ingame = listOf(
+                PlayerTeamMemberDto(
+                    userId = "u1",
+                    username = "alice",
+                    isLeader = false,
+                    avatarRelativeUrl = null,
+                    presenceStatus = "ingame",
+                    lastPresenceAt = freshAt,
+                ),
+                PlayerTeamMemberDto(
+                    userId = "u2",
+                    username = "bob",
+                    isLeader = false,
+                    avatarRelativeUrl = null,
+                    presenceStatus = "ingame",
+                    lastPresenceAt = staleAt,
+                ),
+            ),
+            recentlyActive = emptyList(),
+        )
+        assertEquals(1, OverlayTeamPresenceCache.peek("team-1")?.ingame?.size)
     }
 }

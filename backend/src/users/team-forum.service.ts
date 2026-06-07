@@ -1699,15 +1699,17 @@ export class TeamForumService {
       size: number;
     }> = [];
     if (imgArr.length > 0) {
-      for (const fid of imgArr) {
-        albumMetas.push(
-          await this.teamNewsAttachments.assertForumAttachmentForSender(
-            teamOid,
-            fid,
-            userId,
+      albumMetas.push(
+        ...(await Promise.all(
+          imgArr.map((fid) =>
+            this.teamNewsAttachments.assertForumAttachmentForSender(
+              teamOid,
+              fid,
+              userId,
+            ),
           ),
-        );
-      }
+        )),
+      );
     }
     // Legacy single-file path (kept for old clients).
     const legacyMeta =

@@ -158,6 +158,34 @@ class ChatSyncEngineTest {
     }
 
     @Test
+    fun sendEnqueuedOutbox_overlayRaid_skipSocket_usesRestOnly() = runBlocking {
+        engine.bindUser(userId)
+        fakeGateway.sendResult = Result.success(
+            sampleMessage("507f1f77bcf86cd799439012", roomId, "cmd"),
+        )
+        val prepared = chatOutbox.prepareEnqueue(
+            userId = userId,
+            roomId = roomId,
+            text = "cmd",
+            replyToMessageId = null,
+            attachments = null,
+            excavationAlert = false,
+            source = OutboxSendSource.OverlayRaid,
+            currentUserId = userId,
+            currentUserRole = "R1",
+            senderUsername = "me",
+            pendingMessageId = "overlay-pending-2",
+        )
+        chatOutbox.persistEnqueue(prepared)
+
+        val result = engine.sendEnqueuedOutbox(prepared.clientMessageId, skipSocket = true)
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, fakeGateway.restOnlyCalls.get())
+        assertEquals(0, fakeGateway.sendCalls.get())
+    }
+
+    @Test
     fun loadRoomSnapshotFromStore_returnsEmptySnapshotForKnownRoomWithoutMessages() = runBlocking {
         messageStore.upsertRooms(userId, listOf(sampleRoom(roomId)))
 
@@ -193,6 +221,7 @@ class ChatSyncEngineTest {
             Result.success(MarkRoomReadResponse(success = true, unreadCount = 0))
         val markReadCalls = mutableListOf<Pair<String, String>>()
         val sendCalls = AtomicInteger(0)
+        val restOnlyCalls = AtomicInteger(0)
         var sendResult: Result<ChatMessage> = Result.failure(IllegalStateException("no_send_stub"))
         var lastOverlayGameEventAlert: String? = null
 
@@ -225,6 +254,18 @@ class ChatSyncEngineTest {
         ): Result<ChatMessage> {
             lastOverlayGameEventAlert = gameEventAlert
             sendCalls.incrementAndGet()
+            return sendResult
+        }
+
+        override suspend fun sendOverlayRaidCommandRestOnly(
+            text: String,
+            roomId: String,
+            gameEventAlert: String?,
+            clientMessageId: String,
+            maxAttempts: Int,
+        ): Result<ChatMessage> {
+            lastOverlayGameEventAlert = gameEventAlert
+            restOnlyCalls.incrementAndGet()
             return sendResult
         }
     }

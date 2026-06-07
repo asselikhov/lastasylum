@@ -143,6 +143,9 @@ import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
 import com.lastasylum.alliance.ui.util.forumMessageHasMenuCopyAction
 import com.lastasylum.alliance.ui.util.formatForumTopicTimeRu
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
@@ -923,7 +926,11 @@ fun TeamForumTopicScreen(
         }
         persistForumMessagesToDisk()
         if (!overlayUi || isNearBottom) {
-            markTopicReadToLatest()
+            if (msg.senderUserId.trim() == currentUserId.trim()) {
+                msg.id.trim().takeIf { it.isNotEmpty() && !isForumPendingId(it) }?.let { mergeReadCursor(it) }
+            } else {
+                markTopicReadToLatest()
+            }
         }
     }
 
@@ -951,7 +958,12 @@ fun TeamForumTopicScreen(
 
     LaunchedEffect(stableMessages.lastOrNull()?.id, isNearBottom) {
         if (!overlayUi && stableMessages.isNotEmpty() && isNearBottom) {
-            markTopicReadToLatest()
+            val newest = stableMessages.lastOrNull() ?: return@LaunchedEffect
+            if (newest.senderUserId.trim() == currentUserId.trim()) {
+                newest.id.trim().takeIf { it.isNotEmpty() && !isForumPendingId(it) }?.let { mergeReadCursor(it) }
+            } else {
+                markTopicReadToLatest()
+            }
         }
     }
 
@@ -1599,53 +1611,67 @@ fun TeamForumTopicScreen(
                             return@withLock
                         }
                         val trimmed = draft.trim()
-                        val urisToUpload = pickedImageUris
-                        if (trimmed.isEmpty() && urisToUpload.isEmpty() && pendingApkFileId == null) {
+                        val urisToUpload = pickedImageUris.toList()
+                        val apkFileId = pendingApkFileId
+                        if (trimmed.isEmpty() && urisToUpload.isEmpty() && apkFileId == null) {
                             return@withLock
                         }
                         if (uploadingImage || uploadingFile || sending) return@withLock
                         sending = true
-                        try {
+                        val clientMessageId = UUID.randomUUID().toString()
+                        val replyId = replyToMessage?.id
+                        val nowIso = Instant.now().toString()
+                        val optimistic = buildOptimisticForumMessage(
+                            teamId = teamId,
+                            topicId = topicId,
+                            senderUserId = currentUserId,
+                            senderUsername = selfForumUsername,
+                            text = trimmed,
+                            clientMessageId = clientMessageId,
+                            replyToMessageId = replyId,
+                            nowIso = nowIso,
+                        )
+                        inFlightForumClientMessageIds = inFlightForumClientMessageIds + clientMessageId
+                        mergeNew(optimistic, source = "optimistic")
+                        draft = ""
+                        replyToMessage = null
+                        clearPendingAttachment()
+                        sending = false
+                        scope.launch {
                             var imageFileIds: List<String>? = null
                             if (urisToUpload.isNotEmpty()) {
                                 uploadingImage = true
-                                uploadForumImagesFromUris(context, res, forumRepository, teamId, urisToUpload)
+                                uploadForumImagesFromUris(
+                                    context,
+                                    res,
+                                    forumRepository,
+                                    teamId,
+                                    urisToUpload,
+                                )
                                     .onSuccess { (ids, _) -> imageFileIds = ids.takeIf { it.isNotEmpty() } }
                                     .onFailure { e ->
+                                        uploadingImage = false
+                                        removePendingForumOutgoing(messages, clientMessageId)
+                                        inFlightForumClientMessageIds =
+                                            inFlightForumClientMessageIds - clientMessageId
+                                        bumpMessagesGeneration()
                                         error = e.toUserMessageRu(res)
-                                        return@withLock
+                                        return@launch
                                     }
                                 uploadingImage = false
                             }
-                            val clientMessageId = UUID.randomUUID().toString()
-                            val replyId = replyToMessage?.id
-                            val nowIso = Instant.now().toString()
-                            val optimistic = buildOptimisticForumMessage(
-                                teamId = teamId,
-                                topicId = topicId,
-                                senderUserId = currentUserId,
-                                senderUsername = selfForumUsername,
-                                text = trimmed,
-                                clientMessageId = clientMessageId,
-                                replyToMessageId = replyId,
-                                nowIso = nowIso,
-                            )
-                            inFlightForumClientMessageIds = inFlightForumClientMessageIds + clientMessageId
-                            mergeNew(optimistic, source = "optimistic")
-                            forumRepository.postForumMessageWithRetries(currentUserId, teamId, topicId,
+                            forumRepository.postForumMessageWithRetries(
+                                currentUserId,
+                                teamId,
+                                topicId,
                                 trimmed,
                                 replyToMessageId = replyId,
                                 imageFileId = null,
                                 imageFileIds = imageFileIds,
-                                fileFileId = pendingApkFileId,
+                                fileFileId = apkFileId,
                                 clientMessageId = clientMessageId,
                             )
-                                .onSuccess {
-                                    mergeNew(it, source = "http")
-                                    draft = ""
-                                    replyToMessage = null
-                                    clearPendingAttachment()
-                                }
+                                .onSuccess { mergeNew(it, source = "http") }
                                 .onFailure { e ->
                                     removePendingForumOutgoing(messages, clientMessageId)
                                     inFlightForumClientMessageIds =
@@ -1653,9 +1679,6 @@ fun TeamForumTopicScreen(
                                     bumpMessagesGeneration()
                                     error = e.toUserMessageRu(res)
                                 }
-                        } finally {
-                            sending = false
-                            uploadingImage = false
                         }
                     }
                 }
@@ -1665,28 +1688,31 @@ fun TeamForumTopicScreen(
                     forumSendMutex.withLock {
                         if (sending) return@withLock
                         sending = true
-                        try {
-                            clearPendingAttachment()
-                            val clientMessageId = UUID.randomUUID().toString()
-                            val nowIso = Instant.now().toString()
-                            val optimistic = buildOptimisticForumMessage(
-                                teamId = teamId,
-                                topicId = topicId,
-                                senderUserId = currentUserId,
-                                senderUsername = selfForumUsername,
-                                text = payload,
-                                clientMessageId = clientMessageId,
-                                replyToMessageId = replyToMessage?.id,
-                                nowIso = nowIso,
-                            )
-                            inFlightForumClientMessageIds = inFlightForumClientMessageIds + clientMessageId
-                            mergeNew(optimistic, source = "optimistic")
+                        clearPendingAttachment()
+                        val clientMessageId = UUID.randomUUID().toString()
+                        val nowIso = Instant.now().toString()
+                        val optimistic = buildOptimisticForumMessage(
+                            teamId = teamId,
+                            topicId = topicId,
+                            senderUserId = currentUserId,
+                            senderUsername = selfForumUsername,
+                            text = payload,
+                            clientMessageId = clientMessageId,
+                            replyToMessageId = replyToMessage?.id,
+                            nowIso = nowIso,
+                        )
+                        val replyId = replyToMessage?.id
+                        inFlightForumClientMessageIds = inFlightForumClientMessageIds + clientMessageId
+                        mergeNew(optimistic, source = "optimistic")
+                        replyToMessage = null
+                        sending = false
+                        scope.launch {
                             forumRepository.postForumMessageWithRetries(
                                 userId = currentUserId,
                                 teamId = teamId,
                                 topicId = topicId,
                                 text = payload,
-                                replyToMessageId = replyToMessage?.id,
+                                replyToMessageId = replyId,
                                 imageFileId = null,
                                 imageFileIds = null,
                                 clientMessageId = clientMessageId,
@@ -1699,9 +1725,6 @@ fun TeamForumTopicScreen(
                                     bumpMessagesGeneration()
                                     error = e.toUserMessageRu(res)
                                 }
-                            replyToMessage = null
-                        } finally {
-                            sending = false
                         }
                     }
                 }
@@ -1969,49 +1992,73 @@ private suspend fun uploadForumImagesFromUris(
     forumRepository: ForumRepository,
     teamId: String,
     uris: List<Uri>,
-): Result<Pair<List<String>, String?>> = withContext(Dispatchers.IO) {
+): Result<Pair<List<String>, String?>> = coroutineScope {
     val cr = context.contentResolver
     val cacheDir = context.cacheDir
-    val fileIds = mutableListOf<String>()
-    var lastPreview: String? = null
-    for (uri in uris) {
-        val tmp = File.createTempFile("forum_upload_${UUID.randomUUID()}", ".part", cacheDir)
-        try {
-            val input = openUriInputStream(cr, uri)
-                ?: return@withContext Result.failure(
-                    IllegalStateException(
-                        res.getString(R.string.chat_attachment_read_failed),
-                    ),
-                )
-            input.use { inp -> tmp.outputStream().use { out -> inp.copyTo(out) } }
-            if (tmp.length() == 0L) continue
-            val header = ByteArray(32)
-            tmp.inputStream().use { it.read(header) }
-            val sniffed = sniffImageMimeFromHeader(header)
-            val mime = resolveUploadImageMime(cr.getType(uri)?.trim().orEmpty(), sniffed)
-                ?: return@withContext Result.failure(
-                    IllegalStateException(
-                        res.getString(R.string.chat_attachment_unsupported),
-                    ),
-                )
-            val bytes = tmp.readBytes()
-            val name =
-                "forum_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}.${guessExt(mime)}"
-            val uploaded = forumRepository.uploadForumImage(teamId, bytes, name, mime).getOrElse { err ->
-                return@withContext Result.failure(err)
-            }
-            fileIds.add(uploaded.fileId)
-            lastPreview = uploaded.url
-        } finally {
-            runCatching { tmp.delete() }
+    val uploads = uris.map { uri ->
+        async(Dispatchers.IO) {
+            uploadSingleForumImageFromUri(cr, cacheDir, res, forumRepository, teamId, uri)
+        }
+    }.awaitAll()
+    for (result in uploads) {
+        if (result.isFailure) {
+            return@coroutineScope Result.failure(
+                result.exceptionOrNull()
+                    ?: IllegalStateException(res.getString(R.string.chat_attachment_read_failed)),
+            )
         }
     }
+    val fileIds = uploads.mapNotNull { it.getOrNull()?.first }
+    val lastPreview = uploads.mapNotNull { it.getOrNull()?.second }.lastOrNull()
     if (fileIds.isEmpty() && uris.isNotEmpty()) {
-        return@withContext Result.failure(
+        return@coroutineScope Result.failure(
             IllegalStateException(res.getString(R.string.chat_attachment_read_failed)),
         )
     }
     Result.success(fileIds to lastPreview)
+}
+
+private suspend fun uploadSingleForumImageFromUri(
+    cr: ContentResolver,
+    cacheDir: java.io.File,
+    res: android.content.res.Resources,
+    forumRepository: ForumRepository,
+    teamId: String,
+    uri: Uri,
+): Result<Pair<String, String?>> = withContext(Dispatchers.IO) {
+    val tmp = File.createTempFile("forum_upload_${UUID.randomUUID()}", ".part", cacheDir)
+    try {
+        val input = openUriInputStream(cr, uri)
+            ?: return@withContext Result.failure(
+                IllegalStateException(
+                    res.getString(R.string.chat_attachment_read_failed),
+                ),
+            )
+        input.use { inp -> tmp.outputStream().use { out -> inp.copyTo(out) } }
+        if (tmp.length() == 0L) {
+            return@withContext Result.failure(
+                IllegalStateException(res.getString(R.string.chat_attachment_read_failed)),
+            )
+        }
+        val header = ByteArray(32)
+        tmp.inputStream().use { it.read(header) }
+        val sniffed = sniffImageMimeFromHeader(header)
+        val mime = resolveUploadImageMime(cr.getType(uri)?.trim().orEmpty(), sniffed)
+            ?: return@withContext Result.failure(
+                IllegalStateException(
+                    res.getString(R.string.chat_attachment_unsupported),
+                ),
+            )
+        val bytes = tmp.readBytes()
+        val name =
+            "forum_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}.${guessExt(mime)}"
+        val uploaded = forumRepository.uploadForumImage(teamId, bytes, name, mime).getOrElse { err ->
+            return@withContext Result.failure(err)
+        }
+        Result.success(uploaded.fileId to uploaded.url)
+    } finally {
+        runCatching { tmp.delete() }
+    }
 }
 
 private suspend fun uploadForumApkFromUri(

@@ -1884,14 +1884,15 @@ class OverlayCommandsPopover(
         val menuToRemove = menuScrim
 
         val container = AppContainer.from(context)
+        val overlayService = context as CombatOverlayService
         prefetchOverlayReactionRecipients(
             scope = scope,
             usersRepository = container.usersRepository,
             teamsRepository = container.teamsRepository,
             launchDiskCache = container.launchDiskCache,
         )
+        overlayService.ensureOverlaySessionPresenceStartedForRecipients()
         val cardW = minOf(dp(360), context.resources.displayMetrics.widthPixels - dp(16))
-        val overlayService = context as CombatOverlayService
         val composeOwner = overlayService.obtainOverlayPopoverComposeOwner()
         val initialSelected = preselectedReactionUserIds
         val replyMode = preselectedReplyMode
@@ -2007,6 +2008,7 @@ class OverlayCommandsPopover(
                                 usersRepository = container.usersRepository,
                                 teamsRepository = container.teamsRepository,
                                 launchDiskCache = container.launchDiskCache,
+                                forceRefresh = true,
                             )
                         },
                     )

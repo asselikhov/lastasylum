@@ -62,6 +62,16 @@ private fun ChatViewModel.shouldBlockOwnOutgoingRealtimeUnlocked(message: ChatMe
     }
 
 internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
+        val mid = message._id?.trim().orEmpty()
+        val rid = message.roomId.trim()
+        if (mid.isNotEmpty() && rid.isNotEmpty()) {
+            if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.markMessageNewSeen(rid, mid)) {
+                return
+            }
+        }
+        if (rid.isNotEmpty()) {
+            vmRepository.ensureRoomJoined(rid)
+        }
         val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
         if (cid != null && message.senderId.trim() == currentUserId.trim()) {
             vmScope.launch(Dispatchers.IO) {

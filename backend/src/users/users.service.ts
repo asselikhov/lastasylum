@@ -938,31 +938,9 @@ export class UsersService implements OnModuleInit {
       pushFcmTokens: { $exists: true, $ne: [] },
     };
     if (allianceId.startsWith('pt:')) {
-      const teamId = allianceId.slice(3);
-      if (!Types.ObjectId.isValid(teamId)) return [];
-      const teamOid = new Types.ObjectId(teamId);
-      const orClauses: Record<string, unknown>[] = [
-        { playerTeamId: teamOid },
-        { 'gameIdentities.playerTeamId': teamOid },
-      ];
-      // Legacy users may only have allianceName set (no playerTeamId) — include routing keys
-      // already used by confirmed members of this team.
-      const legacyAllianceNames = await this.userModel
-        .distinct('allianceName', {
-          membershipStatus: TeamMembershipStatus.ACTIVE,
-          $or: [
-            { playerTeamId: teamOid },
-            { 'gameIdentities.playerTeamId': teamOid },
-          ],
-        })
-        .exec();
-      for (const name of legacyAllianceNames) {
-        const trimmed = String(name ?? '').trim();
-        if (trimmed) {
-          orClauses.push({ allianceName: trimmed });
-        }
-      }
-      filter.$or = orClauses;
+      const teamFilter = await this.buildPlayerTeamPushFilter(allianceId);
+      if (!teamFilter) return [];
+      Object.assign(filter, teamFilter);
     } else {
       filter.allianceName = allianceId;
     }
@@ -1010,13 +988,46 @@ export class UsersService implements OnModuleInit {
       const arr = u.pushFcmTokens;
       if (Array.isArray(arr)) out.push(...arr);
     }
-    if (excludedOverlayIngame > 0 || excludedOptOut > 0) {
-      this.logger.debug(
-        `FCM game event ${eventId}: excluded overlay-ingame=${excludedOverlayIngame} ` +
-          `opt-out=${excludedOptOut} (allianceId=${allianceId})`,
+    if (excludedOverlayIngame > 0 || excludedOptOut > 0 || out.length === 0) {
+      this.logger.warn(
+        `FCM game event ${eventId}: tokens=${out.length} candidates=${users.length} ` +
+          `excluded overlay-ingame=${excludedOverlayIngame} opt-out=${excludedOptOut} ` +
+          `(allianceId=${allianceId})`,
       );
     }
     return out;
+  }
+
+  /** Shared pt: team filter including legacy allianceName routing keys. */
+  private async buildPlayerTeamPushFilter(
+    allianceId: string,
+  ): Promise<Record<string, unknown> | null> {
+    if (!allianceId.startsWith('pt:')) {
+      return { allianceName: allianceId };
+    }
+    const teamId = allianceId.slice(3);
+    if (!Types.ObjectId.isValid(teamId)) return null;
+    const teamOid = new Types.ObjectId(teamId);
+    const orClauses: Record<string, unknown>[] = [
+      { playerTeamId: teamOid },
+      { 'gameIdentities.playerTeamId': teamOid },
+    ];
+    const legacyAllianceNames = await this.userModel
+      .distinct('allianceName', {
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+        $or: [
+          { playerTeamId: teamOid },
+          { 'gameIdentities.playerTeamId': teamOid },
+        ],
+      })
+      .exec();
+    for (const name of legacyAllianceNames) {
+      const trimmed = String(name ?? '').trim();
+      if (trimmed) {
+        orClauses.push({ allianceName: trimmed });
+      }
+    }
+    return { $or: orClauses };
   }
 
   /** Full team name for expanded game-event push banner. */
@@ -1067,9 +1078,9 @@ export class UsersService implements OnModuleInit {
       pushFcmTokens: { $exists: true, $ne: [] },
     };
     if (allianceId.startsWith('pt:')) {
-      const teamId = allianceId.slice(3);
-      if (!Types.ObjectId.isValid(teamId)) return [];
-      filter.playerTeamId = new Types.ObjectId(teamId);
+      const teamFilter = await this.buildPlayerTeamPushFilter(allianceId);
+      if (!teamFilter) return [];
+      Object.assign(filter, teamFilter);
     } else {
       filter.allianceName = allianceId;
     }

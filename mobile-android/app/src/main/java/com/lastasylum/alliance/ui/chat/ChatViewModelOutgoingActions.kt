@@ -667,7 +667,12 @@ internal fun ChatViewModel.insertOptimisticOutgoingSynchronouslyImpl(
             )
             ChatSessionCache.updateMessages(rid, capped)
         }
-        publishRaidMessageToOverlayStripImpl(message)
+        val pendingKey = message._id?.trim().orEmpty()
+        val isOverlayQuickCommand = pendingKey.isNotEmpty() &&
+            overlayQuickCommandPrepared.containsKey(pendingKey)
+        if (!isOverlayQuickCommand) {
+            publishRaidMessageToOverlayStripImpl(message)
+        }
     }
 
 internal fun ChatViewModel.removePendingOutgoingMessageImpl(pendingId: String?) {

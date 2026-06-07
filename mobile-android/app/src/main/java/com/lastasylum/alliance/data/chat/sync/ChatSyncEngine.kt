@@ -115,13 +115,23 @@ class ChatSyncEngine(
         }
         val result = when (entry.source) {
             OutboxSendSource.OverlayRaid ->
-                repository.sendOverlayRaidCommandFast(
-                    text = entry.text,
-                    roomId = entry.roomId,
-                    gameEventAlert = entry.gameEventAlert,
-                    clientMessageId = entry.clientMessageId,
-                    maxAttempts = 1,
-                )
+                if (skipSocket) {
+                    repository.sendOverlayRaidCommandRestOnly(
+                        text = entry.text,
+                        roomId = entry.roomId,
+                        gameEventAlert = entry.gameEventAlert,
+                        clientMessageId = entry.clientMessageId,
+                        maxAttempts = 1,
+                    )
+                } else {
+                    repository.sendOverlayRaidCommandFast(
+                        text = entry.text,
+                        roomId = entry.roomId,
+                        gameEventAlert = entry.gameEventAlert,
+                        clientMessageId = entry.clientMessageId,
+                        maxAttempts = 1,
+                    )
+                }
             OutboxSendSource.ChatUi ->
                 repository.sendMessageWithRetriesForChatUi(
                     text = entry.text,

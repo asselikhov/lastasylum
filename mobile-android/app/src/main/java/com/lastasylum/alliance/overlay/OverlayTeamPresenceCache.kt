@@ -3,6 +3,7 @@ package com.lastasylum.alliance.overlay
 import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamOverlayPresenceDto
+import com.lastasylum.alliance.data.teams.TeamPresenceSocketEvent
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -120,6 +121,42 @@ internal object OverlayTeamPresenceCache {
         cachedPresence = presence
         cachedAtMs = atMs
         bumpRevision()
+    }
+
+    /** Keep HTTP poll + socket merges in one cache for all overlay presence consumers. */
+    fun storeMergedLists(
+        teamId: String,
+        ingame: List<PlayerTeamMemberDto>,
+        recentlyActive: List<PlayerTeamMemberDto>,
+        atMs: Long = System.currentTimeMillis(),
+    ) {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
+        val reconciled = reconcilePresenceLists(ingame, recentlyActive)
+        store(
+            tid,
+            TeamOverlayPresenceDto(
+                ingame = reconciled.ingame,
+                recentlyActive = reconciled.recentlyActive,
+            ),
+            atMs,
+        )
+    }
+
+    fun applySocketEvent(
+        teamId: String,
+        event: TeamPresenceSocketEvent,
+        fallbackMember: PlayerTeamMemberDto? = null,
+    ) {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
+        val current = peek(tid) ?: TeamOverlayPresenceDto()
+        val merged = mergePresenceSocketEvent(
+            lists = OverlayOnlinePresenceLists(current.ingame, current.recentlyActive),
+            event = event,
+            fallbackMember = fallbackMember,
+        )
+        storeMergedLists(tid, merged.ingame, merged.recentlyActive)
     }
 
     private fun persistToDisk(

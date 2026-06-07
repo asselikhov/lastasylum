@@ -158,6 +158,21 @@ class ChatRepository(
         )
     }
 
+    /** REST-only after [prefireOverlayRaidSocket] — avoids duplicate socket emit. */
+    suspend fun sendOverlayRaidCommandRestOnly(
+        text: String,
+        roomId: String,
+        gameEventAlert: String? = null,
+        clientMessageId: String,
+        maxAttempts: Int = 3,
+    ): Result<ChatMessage> = rest.sendOverlayRaidCommandFast(
+        text = text,
+        roomId = roomId,
+        gameEventAlert = gameEventAlert,
+        clientMessageId = clientMessageId,
+        maxAttempts = maxAttempts,
+    )
+
     suspend fun uploadImageFile(roomId: String, file: File, mimeType: String): Result<UploadChatAttachmentResponse> =
         rest.uploadImageFile(roomId, file, mimeType)
 

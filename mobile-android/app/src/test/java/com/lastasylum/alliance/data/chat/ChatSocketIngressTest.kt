@@ -18,6 +18,14 @@ class ChatSocketIngressTest {
     }
 
     @Test
+    fun markMessageNewSeen_blocksDualListenerSecondPath() {
+        val room = "raid-room"
+        val id = "507f1f77bcf86cd799439011"
+        assertTrue(ChatSocketIngress.markMessageNewSeen(room, id))
+        assertFalse(ChatSocketIngress.markMessageNewSeen(room, id))
+    }
+
+    @Test
     fun markMessageNewSeen_allowsDifferentRooms() {
         assertTrue(ChatSocketIngress.markMessageNewSeen("room-a", "507f1f77bcf86cd799439011"))
         assertTrue(ChatSocketIngress.markMessageNewSeen("room-b", "507f1f77bcf86cd799439011"))

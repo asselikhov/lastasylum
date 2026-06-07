@@ -981,6 +981,7 @@ class CombatOverlayService : Service() {
     private var overlayAppUpdateGateChromeApplied: Boolean = false
     @Volatile
     private var overlaySessionPresenceBootstrapped: Boolean = false
+    private var overlayPresenceCacheSocketListenerRegistered: Boolean = false
     /** Не вызывать [NotificationManager.notify] с тем же текстом подряд (лишние всплытия на части OEM). */
     private var lastForegroundNotificationText: String? = null
     private var lastForegroundMicActive: Boolean = false
@@ -1175,6 +1176,10 @@ class CombatOverlayService : Service() {
     /** When gate first went false — hard dismiss only after [GATE_DISMISS_AFTER_MS]. */
     private var gateSoftHideStartedAtMs: Long = 0L
 
+    /** Usage-stats quick probe saw a non-target foreground app — skip dismiss grace. */
+    @Volatile
+    private var gateQuickProbeNotInTarget: Boolean = false
+
     /** Keep raid strip visible after local send despite brief gate flap. */
     @Volatile
     private var forceShowStripUntilMs: Long = 0L
@@ -1246,10 +1251,17 @@ class CombatOverlayService : Service() {
         fcmRegistrationJob?.cancel()
         fcmRegistrationJob = serviceScope.launch {
             val bootstrapDelaysMs = longArrayOf(0L, 2_000L, 10_000L, 30_000L, 120_000L)
+            var registered = false
             for (delayMs in bootstrapDelaysMs) {
                 if (!isActive) return@launch
                 if (delayMs > 0) delay(delayMs)
-                if (FcmTokenManager.registerWithBackend(this@CombatOverlayService).isSuccess) break
+                if (FcmTokenManager.registerWithBackend(this@CombatOverlayService).isSuccess) {
+                    registered = true
+                    break
+                }
+            }
+            if (!registered) {
+                Log.w(TAG, "overlay FCM: token registration failed after bootstrap retries")
             }
             val intervalMs = 20 * 60 * 1000L
             while (isActive) {
@@ -1578,9 +1590,15 @@ class CombatOverlayService : Service() {
         ensureOverlaySessionPresenceSocket()
     }
 
+    /** Presence socket + ingame ping before reaction recipient picker. */
+    internal fun ensureOverlaySessionPresenceStartedForRecipients() {
+        ensureOverlaySessionPresenceStarted()
+    }
+
     private fun ensureOverlaySessionPresenceSocket() {
         if (overlaySessionPresenceBootstrapped) return
         overlaySessionPresenceBootstrapped = true
+        registerOverlayPresenceCacheSocketListener()
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
             if (!container.authRepository.hasSession()) return@launch
@@ -1605,6 +1623,21 @@ class CombatOverlayService : Service() {
         overlaySessionPresenceBootstrapped = false
         runCatching {
             AppContainer.from(this).teamPresenceSocket.disconnect()
+        }
+    }
+
+    private fun registerOverlayPresenceCacheSocketListener() {
+        if (overlayPresenceCacheSocketListenerRegistered) return
+        overlayPresenceCacheSocketListenerRegistered = true
+        val container = AppContainer.from(this)
+        container.teamPresenceSocket.addPresenceListener { event ->
+            val teamId = OverlayTeamContextCache.peekForPanel()?.teamId?.trim().orEmpty()
+            if (teamId.isEmpty()) return@addPresenceListener
+            OverlayTeamPresenceCache.applySocketEvent(
+                teamId = teamId,
+                event = event,
+                fallbackMember = OverlayTeamContextCache.memberDto(event.userId),
+            )
         }
     }
 
@@ -1793,12 +1826,14 @@ class CombatOverlayService : Service() {
                 } else {
                     when (quickProbe ?: GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS) {
                         GameForegroundGate.QuickForegroundProbe.IN_TARGET -> {
+                            gateQuickProbeNotInTarget = false
                             lastForegroundHintPkg = freshResumePkg?.takeIf { it in targetSet }
                                 ?: targets.firstOrNull()
                             true
                         }
                         GameForegroundGate.QuickForegroundProbe.NOT_IN_TARGET -> {
                             lastForegroundHintPkg = null
+                            gateQuickProbeNotInTarget = true
                             GameForegroundGate.invalidateForegroundHintCache()
                             false
                         }
@@ -1903,6 +1938,7 @@ class CombatOverlayService : Service() {
                     applyGameGateState(
                         hasUsageAccess = hasUsageAccess,
                         shouldShow = stableShowInGameOverlayUi,
+                        confirmedNotInTarget = gateQuickProbeNotInTarget,
                     )
                     gateCheckInFlight = false
                     scheduleGameGateTick(nextGameGateDelayMs())
@@ -2873,12 +2909,16 @@ class CombatOverlayService : Service() {
         if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
         val selectedId = vm.state.value.selectedRoomId?.trim().orEmpty()
         val msgRoomId = msg.roomId.trim()
-        val raidId = resolveOverlayRaidRoomId()?.trim().orEmpty()
-        val isRaidMessage = raidId.isNotEmpty() && msgRoomId == raidId
-        val raidSelected = isRaidMessage && selectedId.isNotEmpty() && selectedId == msgRoomId
+        val roomSelected = selectedId.isNotEmpty() && selectedId == msgRoomId
         val applyViaOverlayPanel = overlayChatTeamPanelVisible &&
             (!activityChatViewModelHandlesUnread() || selectedId == msgRoomId)
-        if (!raidSelected && !applyViaOverlayPanel) return
+        if (!roomSelected && !applyViaOverlayPanel) return
+        val mid = msg._id?.trim().orEmpty()
+        if (mid.isNotEmpty() && msgRoomId.isNotEmpty()) {
+            if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.markMessageNewSeen(msgRoomId, mid)) {
+                return
+            }
+        }
         vm.applyOverlayChatMessageFromSocket(msg)
     }
 
@@ -3056,6 +3096,7 @@ class CombatOverlayService : Service() {
 
     /** Краткий «не в игре» — GONE, окна остаются attached (без removeOverlayControl). */
     private fun softHideOverlayUiBecauseNotInGame() {
+        resetHudWindowTouchPolicy()
         overlayCommandsPopover.hide()
         overlayStatusHudHost?.visibility = View.GONE
         overlayTopRightHudHost?.visibility = View.GONE
@@ -3078,8 +3119,9 @@ class CombatOverlayService : Service() {
         val prefs = AppContainer.from(this).userSettingsPreferences
         if (!canDrawOverlaysNow()) return
         repairDetachedOverlayShellIfNeeded()
-        if (!isOverlayFullscreenPanelObscuringHud()) {
-            applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = false)
+        val panelObscuring = isOverlayFullscreenPanelObscuringHud()
+        if (!panelObscuring) {
+            resetHudWindowTouchPolicy()
             overlayStatusHudHost?.visibility = View.VISIBLE
             if (!isOverlayAppUpdateGateActive()) {
                 overlayTopRightHudHost?.visibility = View.VISIBLE
@@ -3097,6 +3139,11 @@ class CombatOverlayService : Service() {
 
     private fun hideOverlayHudChromeForFullscreenPanel() {
         applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = true)
+    }
+
+    /** Restore HUD window flags after fullscreen panel / soft-hide cycles. */
+    private fun resetHudWindowTouchPolicy() {
+        applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = false)
     }
 
     /**
@@ -3490,7 +3537,11 @@ class CombatOverlayService : Service() {
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
         if (isOverlayFullscreenPanelObscuringHud() && !allowDuringFullscreenPanel) return
         val manager = windowManager ?: systemWindowManager() ?: return
-        if (overlayStatusHudHost != null) return
+        if (overlayStatusHudHost?.isAttachedToWindow == true) return
+        if (overlayStatusHudHost != null && overlayStatusHudHost?.isAttachedToWindow != true) {
+            overlayStatusHudHost = null
+            overlayStatusHudParams = null
+        }
         prefetchOverlayRaidRoomForStrip()
 
         val owner = overlayStatusHudComposeOwner
@@ -3575,7 +3626,11 @@ class CombatOverlayService : Service() {
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
         if (isOverlayFullscreenPanelObscuringHud() && !allowDuringFullscreenPanel) return
         val manager = windowManager ?: systemWindowManager() ?: return
-        if (overlayTopRightHudHost != null) return
+        if (overlayTopRightHudHost?.isAttachedToWindow == true) return
+        if (overlayTopRightHudHost != null && overlayTopRightHudHost?.isAttachedToWindow != true) {
+            overlayTopRightHudHost = null
+            overlayTopRightHudParams = null
+        }
 
         val owner = overlayTopRightHudComposeOwner
             ?: OverlayChatComposeOwner().also { overlayTopRightHudComposeOwner = it }
@@ -3730,6 +3785,7 @@ class CombatOverlayService : Service() {
     private fun applyGameGateState(
         hasUsageAccess: Boolean,
         shouldShow: Boolean,
+        confirmedNotInTarget: Boolean = false,
     ) {
         val wasInGame = lastAppliedGateShouldShow == true
         stableGatePollTicks = if (shouldShow == lastAppliedGateShouldShow) {
@@ -3764,6 +3820,16 @@ class CombatOverlayService : Service() {
                 gateSoftHideStartedAtMs = 0L
                 return
             }
+            if (confirmedNotInTarget &&
+                !overlayChatTeamPanelVisible &&
+                !OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible &&
+                !isOverlayUiHoldActive() &&
+                !isOverlayQuickCommandSendInFlight()
+            ) {
+                gateSoftHideStartedAtMs = 0L
+                dismissOverlayUiBecauseNotInGame(logWaitingForGame = true)
+                return
+            }
             val nowMs = System.currentTimeMillis()
             if (gateSoftHideStartedAtMs <= 0L) {
                 gateSoftHideStartedAtMs = nowMs
@@ -3787,6 +3853,7 @@ class CombatOverlayService : Service() {
             }
             return
         }
+        gateQuickProbeNotInTarget = false
         gateSoftHideStartedAtMs = 0L
         // SquadRelay на переднем плане при игре в фоне — прячем HUD, но не рвём FGS/сокет/ленту.
         if (lastForegroundHintPkg == packageName &&
@@ -3891,8 +3958,10 @@ class CombatOverlayService : Service() {
         stopOverlayIngamePresence(markAway = true)
         gateUiHideStreak = 0
         gateSoftHideStartedAtMs = 0L
+        gateQuickProbeNotInTarget = false
         lastForegroundHintPkg = null
         GameForegroundGate.invalidateForegroundHintCache()
+        resetHudWindowTouchPolicy()
         cancelOverlayHudRefreshWork()
         updateStripDismissScreenRects(emptyList())
         stripPassthroughSyncPosted = false
@@ -4545,15 +4614,6 @@ class CombatOverlayService : Service() {
                 return@launch
             }
             val roomId = resolveCachedRaidRoomIdForSend()
-            if (roomId != null) {
-                mainHandler.post {
-                    applyLocalSentMessageToStrip(
-                        buildOptimisticRaidCommandMessage(roomId, text),
-                        trustedRaidRoomId = roomId,
-                        displayText = text,
-                    )
-                }
-            }
             CombatOverlayService.warmupRaidForQuickCommandSend()
             val result = sendOverlayRaidQuickCommandHttp(text = text)
             mainHandler.post {
@@ -4740,7 +4800,7 @@ class CombatOverlayService : Service() {
                         sent = sent,
                         raidRoomId = roomId,
                         fallbackText = text,
-                        suppressSenderStrip = true,
+                        suppressSenderStrip = false,
                         pendingId = pendingId.takeIf { it.isNotEmpty() },
                     )
                     pendingOverlayQuickCommandId = null
@@ -5148,6 +5208,26 @@ class CombatOverlayService : Service() {
                 Log.d(OVERLAY_DIAG_TAG, "stripDrop reason=stale id=${normalized._id}")
             }
             return
+        }
+        if (inbound) {
+            val rid = normalized.roomId.trim()
+            val mid = stripCorrelationId
+            if (rid.isNotEmpty() && mid.isNotEmpty()) {
+                if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.markMessageNewSeen(rid, mid)) {
+                    if (stripBuffer.containsMessageId(mid)) {
+                        refreshExistingStripMessage(normalized, refreshNow)
+                    }
+                    ChatDeliveryMetrics.logStripDrop(normalized._id, "ingress_dup")
+                    return
+                }
+            }
+        }
+        normalized.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { clientId ->
+            if (stripBuffer.containsClientMessageId(clientId)) {
+                refreshExistingStripMessage(normalized, refreshNow)
+                ChatDeliveryMetrics.logStripDrop(normalized._id, "client_id_dup")
+                return
+            }
         }
         normalized._id?.trim()?.takeIf { it.isNotEmpty() }?.let { existingId ->
             if (stripBuffer.containsMessageId(existingId)) {
@@ -5727,6 +5807,10 @@ class CombatOverlayService : Service() {
 
     private fun dispatchOverlayIncomingChatMessage(msg: ChatMessage) {
         if (!isOverlayChatRoutingActive()) return
+        val msgRoomId = msg.roomId.trim()
+        if (msgRoomId.isNotEmpty()) {
+            AppContainer.from(this).chatRepository.ensureRoomJoined(msgRoomId)
+        }
         forwardOverlaySocketMessageToViewModel(msg)
         if (msg.isCompactReactionSocketUpdate()) {
             val id = msg._id?.trim().orEmpty()
