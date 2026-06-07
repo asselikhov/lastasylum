@@ -160,6 +160,7 @@ internal class ChatViewModelSyncBundle(
         override fun isChatTabActive(): Boolean = vm.isChatTabActive
         override fun overlayChatPanelVisible(): Boolean = vm.overlayChatPanelVisible
         override fun hasPendingUnreadReconcile(): Boolean = vm.hasPendingUnreadReconcile()
+        override fun hasDisplayedUnreadBadges(): Boolean = vm.hasDisplayedUnreadBadges()
         override fun stateRooms(): List<ChatRoomDto> = vm.vmState.value.rooms
         override suspend fun applyRoomsFromServer(serverRooms: List<ChatRoomDto>) =
             vm.applyRoomsFromServer(serverRooms)
@@ -244,6 +245,7 @@ internal class ChatViewModelSyncBundle(
         override fun applyOpenRoomLoadError(message: String) {
             vm.vmState.update { it.copy(isLoading = false, error = message) }
         }
+        override fun loadErrorString(throwable: Throwable) = throwable.toUserMessageRu(vm.res)
     }
 
     val roomOpenSync = com.lastasylum.alliance.data.chat.sync.ChatRoomOpenSync(
@@ -275,6 +277,7 @@ internal class ChatViewModelSyncBundle(
             vm.fallbackRoomsOnBootstrapError(error)
         override fun applyBootstrapEmptyRoomsError(message: String) = vm.applyBootstrapEmptyRoomsError(message)
         override fun applyBootstrapError(message: String) = vm.applyBootstrapError(message)
+        override fun bootstrapErrorMessage(error: Throwable) = error.toUserMessageRu(vm.res)
         override suspend fun applyRoomsFromServer(serverRooms: List<ChatRoomDto>) =
             vm.applyRoomsFromServer(serverRooms)
         override fun syncRaidRoomPreference(rooms: List<ChatRoomDto>) = vm.syncRaidRoomPreference(rooms)

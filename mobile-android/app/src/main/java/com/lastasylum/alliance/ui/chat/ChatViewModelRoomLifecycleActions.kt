@@ -210,10 +210,11 @@ internal fun ChatViewModel.syncReadStateFromPreferencesImpl() {
 internal fun ChatViewModel.recomputeRoomsUnreadFromLocalCursorsImpl(rooms: List<ChatRoomDto>): List<ChatRoomDto> {
         return rooms.map { room ->
             val previousUnread = room.unreadCount
+            val rawServer = rawServerUnreadByRoom[room.id] ?: room.unreadCount
             val effective = when {
                 isRoomActivelyViewed(room.id) -> 0
                 else -> effectiveUnreadCount(
-                    serverUnread = room.unreadCount,
+                    serverUnread = rawServer,
                     lastReadMessageId = room.lastReadMessageId,
                     localLastReadMessageId = deviceLastReadMessageId(room),
                 )
@@ -225,7 +226,7 @@ internal fun ChatViewModel.recomputeRoomsUnreadFromLocalCursorsImpl(rooms: List<
             val unread = displayedUnreadCount(
                 effectiveUnread = effective,
                 previouslyDisplayed = previousUnread,
-                rawServerUnread = effective,
+                rawServerUnread = rawServer,
                 optimisticFloor = floor,
             )
             if (unread == 0) {
@@ -838,6 +839,7 @@ internal fun ChatViewModel.mergeRoomsUnreadFromServerImpl(serverRooms: List<Chat
         val pinInFlight = vmState.value.pinInFlight
         val selectedRoomId = vmState.value.selectedRoomId?.trim().orEmpty()
         return serverRooms.map { room ->
+            rawServerUnreadByRoom[room.id] = room.unreadCount.coerceAtLeast(0)
             val previous = previousById[room.id]
             val serverPinId = room.pinnedMessageId?.trim().orEmpty()
             val prevPinId = previous?.pinnedMessageId?.trim().orEmpty()
@@ -1100,6 +1102,7 @@ internal fun ChatViewModel.onRoomUnreadFromServerImpl(event: ChatRoomUnreadEvent
         }
         val serverLast = event.lastReadMessageId?.trim().orEmpty()
         val serverUnread = event.unreadCount.coerceAtLeast(0)
+        rawServerUnreadByRoom[roomId] = serverUnread
         val roomDto = vmState.value.rooms.find { it.id == roomId }
         val localLast = roomDto?.let { deviceLastReadMessageId(it) }
             ?: chatRoomPreferencesInternal.getLastReadMessageId(roomId)

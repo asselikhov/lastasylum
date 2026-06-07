@@ -31,6 +31,7 @@ class ChatBootstrapSync(
         fun fallbackRoomsOnBootstrapError(error: Throwable): List<ChatRoomDto>?
         fun applyBootstrapEmptyRoomsError(message: String)
         fun applyBootstrapError(message: String)
+        fun bootstrapErrorMessage(error: Throwable): String
 
         suspend fun applyRoomsFromServer(serverRooms: List<ChatRoomDto>): List<ChatRoomDto>
         fun syncRaidRoomPreference(rooms: List<ChatRoomDto>)
@@ -99,7 +100,7 @@ class ChatBootstrapSync(
             if (!fallback.isNullOrEmpty()) {
                 fallback
             } else {
-                host.applyBootstrapError(e.message ?: "bootstrap_failed")
+                host.applyBootstrapError(host.bootstrapErrorMessage(e))
                 return
             }
         }

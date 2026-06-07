@@ -235,6 +235,8 @@ class ChatViewModel(
     internal val pendingUnreadBumps = ArrayDeque<Pair<String, String>>()
     /** Socket bump not yet reflected in listRooms / rooms:unread — do not zero tab badge. */
     internal val optimisticUnreadFloorByRoom = mutableMapOf<String, Int>()
+    /** Last server-reported unread per room (API / socket), not merged display count. */
+    internal val rawServerUnreadByRoom = mutableMapOf<String, Int>()
     internal var lastRoomsSyncedAtMs: Long = 0L
     internal val peerReadPollJobs = mutableMapOf<String, Job>()
     internal var unreadSyncJob: Job? = null
@@ -655,6 +657,7 @@ class ChatViewModel(
         ChatSocketIngress.clear()
         pendingUnreadBumps.clear()
         optimisticUnreadFloorByRoom.clear()
+        rawServerUnreadByRoom.clear()
         otherReadUptoByRoom.clear()
         lastMarkedReadByRoom.clear()
         markReadCoalescer.clear()
@@ -1349,6 +1352,10 @@ class ChatViewModel(
 
     internal fun hasPendingUnreadReconcile(): Boolean =
         pendingUnreadBumps.isNotEmpty() || optimisticUnreadFloorByRoom.values.any { it > 0 }
+
+    internal fun hasDisplayedUnreadBadges(): Boolean =
+        _state.value.tabUnreadBadge > 0 ||
+            _state.value.rooms.any { it.unreadCount > 0 }
 
 
     internal fun reconnectRealtimeIfNeeded() {

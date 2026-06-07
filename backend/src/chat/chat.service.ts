@@ -1597,108 +1597,104 @@ export class ChatService {
       out.set(oid.toString(), 0);
     }
 
-    const rows = await this.messageModel
-      .aggregate<{ _id: Types.ObjectId; count: number }>([
-        {
-          $match: {
-            roomId: { $in: valid },
-            deletedAt: null,
-            senderId: { $ne: userId },
-          },
+    const readOidFromField = (fieldPath: string) => ({
+      $let: {
+        vars: { raw: { $arrayElemAt: [fieldPath, 0] } },
+        in: {
+          $cond: [
+            {
+              $and: [{ $ne: ['$$raw', null] }, { $ne: ['$$raw', ''] }],
+            },
+            {
+              $convert: {
+                input: '$$raw',
+                to: 'objectId',
+                onError: null,
+                onNull: null,
+              },
+            },
+            null,
+          ],
         },
-        {
-          $lookup: {
-            from: this.chatReadStateModel.collection.name,
-            let: { rid: '$roomId' },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ['$roomId', '$$rid'] },
-                      { $eq: ['$userId', userId] },
+      },
+    });
+
+    try {
+      const rows = await this.messageModel
+        .aggregate<{ _id: Types.ObjectId; count: number }>([
+          {
+            $match: {
+              roomId: { $in: valid },
+              deletedAt: null,
+              senderId: { $ne: userId },
+            },
+          },
+          {
+            $lookup: {
+              from: this.chatReadStateModel.collection.name,
+              let: { rid: '$roomId' },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $eq: ['$roomId', '$$rid'] },
+                        { $eq: ['$userId', userId] },
+                      ],
+                    },
+                  },
+                },
+                {
+                  $project: {
+                    lastReadMessageId: 1,
+                    hiddenBeforeMessageId: 1,
+                    _id: 0,
+                  },
+                },
+                { $limit: 1 },
+              ],
+              as: 'readState',
+            },
+          },
+          {
+            $addFields: {
+              lastReadOid: readOidFromField('$readState.lastReadMessageId'),
+              hiddenBeforeOid: readOidFromField(
+                '$readState.hiddenBeforeMessageId',
+              ),
+            },
+          },
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  {
+                    $or: [
+                      { $eq: ['$hiddenBeforeOid', null] },
+                      { $gt: ['$_id', '$hiddenBeforeOid'] },
                     ],
                   },
-                },
-              },
-              {
-                $project: {
-                  lastReadMessageId: 1,
-                  hiddenBeforeMessageId: 1,
-                  _id: 0,
-                },
-              },
-              { $limit: 1 },
-            ],
-            as: 'readState',
-          },
-        },
-        {
-          $addFields: {
-            lastReadOid: {
-              $let: {
-                vars: {
-                  raw: {
-                    $arrayElemAt: ['$readState.lastReadMessageId', 0],
+                  {
+                    $or: [
+                      { $eq: ['$lastReadOid', null] },
+                      { $gt: ['$_id', '$lastReadOid'] },
+                    ],
                   },
-                },
-                in: {
-                  $cond: [
-                    {
-                      $and: [{ $ne: ['$$raw', null] }, { $ne: ['$$raw', ''] }],
-                    },
-                    { $toObjectId: '$$raw' },
-                    null,
-                  ],
-                },
-              },
-            },
-            hiddenBeforeOid: {
-              $let: {
-                vars: {
-                  raw: {
-                    $arrayElemAt: ['$readState.hiddenBeforeMessageId', 0],
-                  },
-                },
-                in: {
-                  $cond: [
-                    {
-                      $and: [{ $ne: ['$$raw', null] }, { $ne: ['$$raw', ''] }],
-                    },
-                    { $toObjectId: '$$raw' },
-                    null,
-                  ],
-                },
+                ],
               },
             },
           },
-        },
-        {
-          $match: {
-            $expr: {
-              $and: [
-                {
-                  $or: [
-                    { $eq: ['$hiddenBeforeOid', null] },
-                    { $gt: ['$_id', '$hiddenBeforeOid'] },
-                  ],
-                },
-                {
-                  $or: [
-                    { $eq: ['$lastReadOid', null] },
-                    { $gt: ['$_id', '$lastReadOid'] },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-        { $group: { _id: '$roomId', count: { $sum: 1 } } },
-      ])
-      .exec();
+          { $group: { _id: '$roomId', count: { $sum: 1 } } },
+        ])
+        .exec();
 
-    for (const row of rows) {
-      out.set(row._id.toString(), row.count);
+      for (const row of rows) {
+        out.set(row._id.toString(), row.count);
+      }
+    } catch (err) {
+      console.warn(
+        `countUnreadByRoomIds failed for user=${userId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     return out;
   }

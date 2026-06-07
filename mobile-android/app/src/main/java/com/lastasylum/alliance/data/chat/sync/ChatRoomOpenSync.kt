@@ -74,6 +74,7 @@ class ChatRoomOpenSync(
             messagesAlreadyInState: Boolean,
         )
         fun applyOpenRoomLoadError(message: String)
+        fun loadErrorString(throwable: Throwable): String
     }
 
     suspend fun openRoom(
@@ -238,7 +239,7 @@ class ChatRoomOpenSync(
             }
             .onFailure { e ->
                 if (!hadCachedMessagesLocal && host.isActiveSelectedRoom(rid)) {
-                    host.applyOpenRoomLoadError(e.message ?: "load_failed")
+                    host.applyOpenRoomLoadError(host.loadErrorString(e))
                 }
             }
     }

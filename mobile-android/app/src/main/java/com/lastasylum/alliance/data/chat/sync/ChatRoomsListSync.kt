@@ -21,6 +21,7 @@ class ChatRoomsListSync(
         fun isChatTabActive(): Boolean
         fun overlayChatPanelVisible(): Boolean
         fun hasPendingUnreadReconcile(): Boolean
+        fun hasDisplayedUnreadBadges(): Boolean
         fun stateRooms(): List<ChatRoomDto>
 
         suspend fun applyRoomsFromServer(serverRooms: List<ChatRoomDto>): List<ChatRoomDto>
@@ -42,14 +43,16 @@ class ChatRoomsListSync(
     fun syncRoomsFromServer(reconfirmVisibleRoom: Boolean = true) {
         if (!host.isChatTabActive() &&
             !host.overlayChatPanelVisible() &&
-            !host.hasPendingUnreadReconcile()
+            !host.hasPendingUnreadReconcile() &&
+            !host.hasDisplayedUnreadBadges()
         ) {
             return
         }
         scope.launch {
             if (!host.isChatTabActive() &&
                 !host.overlayChatPanelVisible() &&
-                !host.hasPendingUnreadReconcile()
+                !host.hasPendingUnreadReconcile() &&
+                !host.hasDisplayedUnreadBadges()
             ) {
                 return@launch
             }

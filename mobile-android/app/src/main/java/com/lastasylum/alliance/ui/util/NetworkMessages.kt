@@ -88,6 +88,9 @@ private fun parseNestMessage(raw: String, resources: Resources): String? {
 }
 
 private fun translateKnownServerMessage(english: String, resources: Resources): String = when {
+    english.contains("Internal server error", ignoreCase = true) ||
+        english.equals("Internal Server Error", ignoreCase = true) ->
+        resources.getString(R.string.err_server_generic)
     english.contains("Email is already in use", ignoreCase = true) ->
         resources.getString(R.string.err_email_taken_short)
     english.contains("Invalid credentials", ignoreCase = true) ->

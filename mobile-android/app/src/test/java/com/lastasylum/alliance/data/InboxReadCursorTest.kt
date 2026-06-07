@@ -129,6 +129,19 @@ class InboxReadCursorTest {
     }
 
     @Test
+    fun displayedUnread_staysZeroWhenRawPositiveButLocalReadSuppressesEffective() {
+        assertEquals(
+            0,
+            displayedUnreadCount(
+                effectiveUnread = 0,
+                previouslyDisplayed = 3,
+                rawServerUnread = 8,
+                optimisticFloor = 0,
+            ),
+        )
+    }
+
+    @Test
     fun reconcileDisplayedUnread_clearsWhenServerZero() {
         assertEquals(0, reconcileDisplayedUnread(serverUnread = 0, previouslyDisplayed = 5))
     }
