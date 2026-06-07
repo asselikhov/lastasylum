@@ -213,7 +213,7 @@ fun OverlayReactionNotificationsPanel(
                             OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
                             showClearHistoryConfirm = true
                         },
-                        enabled = !loading,
+                        enabled = !loading && !refreshing,
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.DeleteOutline,

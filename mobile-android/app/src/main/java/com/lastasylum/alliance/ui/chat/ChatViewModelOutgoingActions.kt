@@ -17,6 +17,8 @@ import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -322,17 +324,18 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
         }.let(::mergeGameEventAlert).also { row ->
             overlayQuickCommandPrepared[pending] = row
         }
-        withContext(Dispatchers.IO) {
-            repository.prefireOverlayRaidSocket(
-                text = body,
-                roomId = rid,
-                clientMessageId = prepared.clientMessageId,
-                gameEventAlert = eventAlert,
-            )
-        }
         val persistError = runCatching {
-            withContext(Dispatchers.IO) {
-                chatOutbox.persistEnqueue(prepared)
+            coroutineScope {
+                val persistJob = async(Dispatchers.IO) { chatOutbox.persistEnqueue(prepared) }
+                withContext(Dispatchers.IO) {
+                    repository.prefireOverlayRaidSocket(
+                        text = body,
+                        roomId = rid,
+                        clientMessageId = prepared.clientMessageId,
+                        gameEventAlert = eventAlert,
+                    )
+                }
+                persistJob.await()
             }
         }.exceptionOrNull()
         if (persistError != null) {
@@ -342,7 +345,7 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
             }
             return Result.failure(persistError)
         }
-        return chatSyncEngine.sendEnqueuedOutbox(prepared.clientMessageId)
+        return chatSyncEngine.sendEnqueuedOutbox(prepared.clientMessageId, skipSocket = true)
             .also { result ->
                 result.onSuccess { sent ->
                     overlayQuickCommandPrepared.remove(pending)
@@ -816,7 +819,9 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
             ChatSessionCache.updateMessages(rid, work.cappedMessages)
             schedulePersistChatSnapshot()
         }
-        publishRaidMessageToOverlayStripImpl(sent)
+        if (!CombatOverlayService.isRaidMessageAlreadyOnStrip(sent)) {
+            publishRaidMessageToOverlayStripImpl(sent)
+        }
     }
 
 internal fun ChatViewModel.applyIncomingMessageImpl(

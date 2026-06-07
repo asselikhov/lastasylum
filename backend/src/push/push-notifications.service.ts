@@ -83,11 +83,16 @@ export class PushNotificationsService implements OnModuleInit {
     if (tokens.length === 0) {
       this.logger.warn(
         `FCM game event: no device tokens for allianceId=${input.allianceId} ` +
-          `eventId=${input.eventId} (excludeUserId=${input.excludeUserId})`,
+          `eventId=${input.eventId} excludeUserId=${input.excludeUserId} ` +
+          `(check Mongo pushFcmTokens, gameEventPushEnabled, overlay-ingame filter)`,
       );
       return;
     }
     const unique = [...new Set(tokens)].slice(0, 500);
+    this.logger.log(
+      `FCM game event dispatch: eventId=${input.eventId} allianceId=${input.allianceId} ` +
+        `tokens=${unique.length} excludeUserId=${input.excludeUserId}`,
+    );
     const title = event.messageText;
     const sender = input.senderName.trim();
     const senderLine =
@@ -151,8 +156,18 @@ export class PushNotificationsService implements OnModuleInit {
       });
       await this.pruneInvalidTokens(unique, res);
       if (res.failureCount > 0) {
+        const failureCodes = res.responses
+          .map((r, i) =>
+            r.success
+              ? null
+              : `${unique[i]?.slice(0, 8)}…:${r.error?.code ?? 'unknown'}`,
+          )
+          .filter(Boolean)
+          .slice(0, 8)
+          .join(', ');
         this.logger.warn(
-          `FCM game event partial failure: ${res.failureCount}/${unique.length} eventId=${event.id}`,
+          `FCM game event partial failure: ${res.failureCount}/${unique.length} ` +
+            `eventId=${event.id} failures=[${failureCodes}]`,
         );
       } else {
         this.logger.log(

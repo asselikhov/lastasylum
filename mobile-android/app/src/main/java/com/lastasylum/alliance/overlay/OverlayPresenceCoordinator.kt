@@ -65,6 +65,15 @@ internal class OverlayPresenceCoordinator(
         }
         heartbeat.stop()
         missStreak++
+        val noIngameReason =
+            !inGameProbe &&
+                !isInGameOverlayUiActive() &&
+                !isVoiceActive() &&
+                !isOnlineParticipantsPanelVisible()
+        if (noIngameReason) {
+            stop(markAway = true)
+            return
+        }
         if (missStreak < AWAY_MISS_STREAK) {
             return
         }

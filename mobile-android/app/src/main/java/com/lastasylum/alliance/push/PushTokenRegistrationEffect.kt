@@ -6,13 +6,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.delay
 
 /**
@@ -24,7 +28,18 @@ fun PushTokenRegistrationEffect(enabled: Boolean) {
     if (!enabled) return
     val context = LocalContext.current
     val activity = context as? ComponentActivity
+    val lifecycleOwner = LocalLifecycleOwner.current
     var permissionPass by remember { mutableIntStateOf(0) }
+    var resumePass by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(lifecycleOwner, enabled) {
+        if (!enabled) return@DisposableEffect onDispose {}
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) resumePass++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -32,7 +47,7 @@ fun PushTokenRegistrationEffect(enabled: Boolean) {
         permissionPass++
     }
 
-    LaunchedEffect(enabled, permissionPass) {
+    LaunchedEffect(enabled, permissionPass, resumePass) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && activity != null) {
             val granted = ContextCompat.checkSelfPermission(
                 activity,

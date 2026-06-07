@@ -150,4 +150,11 @@ class MessageStore(
         roomDao.deleteForUser(userId)
         tombstoneDao.deleteForUser(userId)
     }
+
+    suspend fun clearRoomMessages(userId: String, roomId: String) = withContext(Dispatchers.IO) {
+        val uid = userId.trim()
+        val rid = roomId.trim()
+        if (uid.isEmpty() || rid.isEmpty()) return@withContext
+        messageDao.deleteForRoom(uid, rid)
+    }
 }

@@ -61,6 +61,11 @@ class OverlayReactionLogRepository(
     @Volatile
     private var selfUserId: String = ""
 
+    @Volatile
+    private var fetchGeneration: Int = 0
+
+    private var refreshJob: Job? = null
+
     fun setSelfUserId(userId: String) {
         selfUserId = userId.trim()
         scope.launch { recomputeUnread() }
@@ -114,7 +119,8 @@ class OverlayReactionLogRepository(
     }
 
     fun refresh() {
-        scope.launch { fetchFirstPage(showLoading = false, showRefreshing = true) }
+        refreshJob?.cancel()
+        refreshJob = scope.launch { fetchFirstPage(showLoading = false, showRefreshing = true) }
     }
 
     fun toggleLogEntryReaction(logId: String, emoji: String) {
@@ -150,6 +156,7 @@ class OverlayReactionLogRepository(
         showLoading: Boolean,
         showRefreshing: Boolean = false,
     ) {
+        val generation = ++fetchGeneration
         mutex.withLock {
             if (showLoading && _loading.value) return
             if (showRefreshing && _refreshing.value) return
@@ -162,6 +169,7 @@ class OverlayReactionLogRepository(
             val seen = cursor.lastSeenLogId?.trim()?.takeIf { it.isNotEmpty() }
             mergeLastSeenFromServer(seen, _lastSeenLogId.value)
             val page = chatApi.listOverlayReactionLog(before = null, limit = 50)
+            if (generation != fetchGeneration) return@runCatching
             mutex.withLock {
                 nextCursor = page.nextCursor?.trim()?.takeIf { it.isNotEmpty() }
                 mergeEntries(
@@ -170,11 +178,15 @@ class OverlayReactionLogRepository(
                 )
             }
         }.onFailure { e ->
-            _error.value = e.message
+            if (generation == fetchGeneration) {
+                _error.value = e.message
+            }
         }
-        if (showLoading) _loading.value = false
-        if (showRefreshing) _refreshing.value = false
-        recomputeUnread()
+        if (generation == fetchGeneration) {
+            if (showLoading) _loading.value = false
+            if (showRefreshing) _refreshing.value = false
+            recomputeUnread()
+        }
     }
 
     fun loadMore() {
@@ -300,6 +312,9 @@ class OverlayReactionLogRepository(
      */
     fun clearHistoryForUser() {
         scope.launch {
+            refreshJob?.cancel()
+            refreshJob = null
+            fetchGeneration++
             mutex.withLock {
                 if (_loading.value || _refreshing.value) return@launch
             }

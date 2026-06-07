@@ -10,8 +10,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /** Short TTL cache for overlay presence API (avoids 429 when panel polls / reaction picker opens). */
 internal object OverlayTeamPresenceCache {
-    /** Slightly below [OVERLAY_ONLINE_PANEL_POLL_MS] so panel poll usually hits cache. */
-    private const val TTL_MS = 55_000L
+    /** Slightly above [OVERLAY_ONLINE_PANEL_POLL_MS] so panel poll usually hits cache. */
+    private const val TTL_MS = 65_000L
 
     private val _revision = MutableStateFlow(0)
     val revision: StateFlow<Int> = _revision.asStateFlow()

@@ -165,16 +165,21 @@ class OverlayInboxBadgeCoordinator {
         serverCount: Int,
         previouslyDisplayed: Int,
         rawServerCount: Int = serverCount,
-    ): Int = displayedUnreadCount(
-        effectiveUnread = serverCount.coerceAtLeast(0),
-        previouslyDisplayed = previouslyDisplayed,
-        rawServerUnread = rawServerCount.coerceAtLeast(0),
-        optimisticFloor = forumOptimisticFloor,
-    ).also { merged ->
-        if (serverCount > 0 && merged >= serverCount) {
-            forumOptimisticFloor = 0
-        } else if (merged <= 0 && !isForumOptimisticActive()) {
-            forumOptimisticFloor = 0
+    ): Int {
+        val raw = rawServerCount.coerceAtLeast(0)
+        val effective = serverCount.coerceAtLeast(0)
+        val overlayHudCount = maxOf(raw, effective)
+        return displayedUnreadCount(
+            effectiveUnread = overlayHudCount,
+            previouslyDisplayed = previouslyDisplayed,
+            rawServerUnread = raw,
+            optimisticFloor = forumOptimisticFloor,
+        ).also { merged ->
+            if (overlayHudCount > 0 && merged >= overlayHudCount) {
+                forumOptimisticFloor = 0
+            } else if (merged <= 0 && !isForumOptimisticActive()) {
+                forumOptimisticFloor = 0
+            }
         }
     }
 
@@ -198,15 +203,18 @@ class OverlayInboxBadgeCoordinator {
         authoritative: Int,
         prevDisplayed: Int,
         useAuthoritative: Boolean,
+        rawAuthoritative: Int = authoritative,
     ): Int {
-        if (authoritative <= 0 && !shouldDeferForumReconcile() && !isForumOptimisticActive()) {
+        if (authoritative <= 0 && rawAuthoritative <= 0 &&
+            !shouldDeferForumReconcile() && !isForumOptimisticActive()
+        ) {
             clearForumOptimistic()
         }
         return when {
             isForumOptimisticActive() || shouldDeferForumReconcile() ->
-                maxOf(authoritative, prevDisplayed, forumOptimisticFloor)
-            useAuthoritative -> mergeForumDisplayed(authoritative, prevDisplayed)
-            else -> mergeForumDisplayed(authoritative, prevDisplayed)
+                maxOf(maxOf(authoritative, rawAuthoritative), prevDisplayed, forumOptimisticFloor)
+            useAuthoritative -> mergeForumDisplayed(authoritative, prevDisplayed, rawAuthoritative)
+            else -> mergeForumDisplayed(authoritative, prevDisplayed, rawAuthoritative)
         }
     }
 

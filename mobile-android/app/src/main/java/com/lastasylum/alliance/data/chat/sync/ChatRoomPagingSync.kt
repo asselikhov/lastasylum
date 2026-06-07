@@ -83,8 +83,16 @@ class ChatRoomPagingSync(
         fun publishMessagesDerivedImmediate(messages: List<ChatMessage>)
         fun loadErrorString(throwable: Throwable): String
         fun overlayTimeoutString(): String
-        fun postHistoryWipeAuthoritativeEmpty(): Boolean
-        fun clearPostHistoryWipeAuthoritativeEmpty()
+        fun isRoomAuthoritativeEmpty(roomId: String): Boolean
+        fun clearRoomAuthoritativeEmpty(roomId: String)
+    }
+
+    private val backgroundRefreshJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+
+    fun cancelBackgroundRefresh(roomId: String) {
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return
+        backgroundRefreshJobs.remove(rid)?.cancel()
     }
 
     fun refreshMessagesInBackground(roomId: String, force: Boolean = false) {
@@ -94,7 +102,8 @@ class ChatRoomPagingSync(
             host.overlayChatPanelVisible() && host.isAllianceRaidRoom(roomId) -> 0L
             else -> CHAT_BACKGROUND_MESSAGE_REFRESH_DEFER_MS
         }
-        scope.launch {
+        cancelBackgroundRefresh(roomId)
+        backgroundRefreshJobs[roomId.trim()] = scope.launch {
             try {
             if (deferMs > 0L) delay(deferMs)
             val isSelectedRoom = host.selectedRoomId() == roomId
@@ -126,7 +135,7 @@ class ChatRoomPagingSync(
                     val hasMoreOlder = loaded.size >= CHAT_PAGE_SIZE
                     val current = host.messagesForRoomMerge(roomId)
                     val merged = withContext(Dispatchers.Default) {
-                        mergeLoadedPageWithExisting(
+                        val raw = mergeLoadedPageWithExisting(
                             existing = current,
                             loaded = loaded,
                             maxMessages = host.messageMemoryCap,
@@ -134,8 +143,9 @@ class ChatRoomPagingSync(
                             roomId = roomId,
                             protectedSocketMessageIds = host.protectedSocketMessageIds(),
                             onAnchorDrop = host.mergeAnchorDropLogger(roomId),
-                            authoritativeEmpty = host.postHistoryWipeAuthoritativeEmpty(),
+                            authoritativeEmpty = host.isRoomAuthoritativeEmpty(roomId),
                         )
+                        host.filterMessagesForRoom(raw, roomId)
                     }
                     host.updateRoomMessageCache(
                         roomId,
@@ -173,8 +183,9 @@ class ChatRoomPagingSync(
                     }
                 }
             } finally {
-                if (host.postHistoryWipeAuthoritativeEmpty()) {
-                    host.clearPostHistoryWipeAuthoritativeEmpty()
+                backgroundRefreshJobs.remove(roomId.trim())
+                if (host.isRoomAuthoritativeEmpty(roomId)) {
+                    host.clearRoomAuthoritativeEmpty(roomId)
                 }
             }
         }
@@ -186,15 +197,18 @@ class ChatRoomPagingSync(
         pageSizeForHasMore: Int,
     ) {
         val current = host.messagesForRoomMerge(roomId)
-        val merged = mergeLoadedPageWithExisting(
-            existing = current,
-            loaded = loaded,
-            maxMessages = host.messageMemoryCap,
-            excludedMessageIds = host.locallyRemovedMessageIds(),
-            roomId = roomId,
-            protectedSocketMessageIds = host.protectedSocketMessageIds(),
-            onAnchorDrop = host.mergeAnchorDropLogger(roomId),
-            authoritativeEmpty = host.postHistoryWipeAuthoritativeEmpty(),
+        val merged = host.filterMessagesForRoom(
+            mergeLoadedPageWithExisting(
+                existing = current,
+                loaded = loaded,
+                maxMessages = host.messageMemoryCap,
+                excludedMessageIds = host.locallyRemovedMessageIds(),
+                roomId = roomId,
+                protectedSocketMessageIds = host.protectedSocketMessageIds(),
+                onAnchorDrop = host.mergeAnchorDropLogger(roomId),
+                authoritativeEmpty = host.isRoomAuthoritativeEmpty(roomId),
+            ),
+            roomId,
         )
         ChatSessionCache.updateMessages(roomId, merged)
         val known = host.knownMessageIds()

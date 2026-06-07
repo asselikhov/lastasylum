@@ -285,26 +285,32 @@ class OverlayTeamOnlineController(
     private suspend fun loadBootstrapFromNetwork(forceTeamRefresh: Boolean): BootstrapResult =
         coroutineScope {
             val userId = currentUserId()
+            val peekCtx = if (!forceTeamRefresh) OverlayTeamContextCache.peekForPanel() else null
             val ctxDeferred = async(Dispatchers.IO) {
-                if (!forceTeamRefresh) {
-                    OverlayTeamContextCache.peekForPanel()?.let { cached ->
-                        return@async Result.success(cached)
-                    }
-                }
-                OverlayTeamContextCache.load(
-                    usersRepository = usersRepository,
-                    teamsRepository = teamsRepository,
-                    forceRefresh = forceTeamRefresh,
-                )
+                peekCtx?.let { Result.success(it) }
+                    ?: OverlayTeamContextCache.load(
+                        usersRepository = usersRepository,
+                        teamsRepository = teamsRepository,
+                        forceRefresh = forceTeamRefresh,
+                    )
             }
-            val ctx = ctxDeferred.await().getOrThrow()
-            val requestedTeamId = ctx.teamId.trim()
+            val earlyTeamId = peekCtx?.teamId?.trim()?.takeIf { it.isNotEmpty() }
             if (forceTeamRefresh) {
                 OverlayTeamPresenceCache.invalidate()
             }
-            val teamDeferred = loadTeamDetailAsync(requestedTeamId, forceTeamRefresh)
-            val presenceDeferred = loadPresenceAsync(requestedTeamId, userId, forceTeamRefresh)
+            val earlyPresenceDeferred = earlyTeamId?.let { tid ->
+                loadPresenceAsync(tid, userId, forceTeamRefresh)
+            }
+            val earlyTeamDeferred = earlyTeamId?.let { tid ->
+                loadTeamDetailAsync(tid, forceTeamRefresh)
+            }
             val profileDeferred = loadProfileAsync(forceTeamRefresh)
+            val ctx = ctxDeferred.await().getOrThrow()
+            val requestedTeamId = ctx.teamId.trim()
+            val teamDeferred = earlyTeamDeferred
+                ?: loadTeamDetailAsync(requestedTeamId, forceTeamRefresh)
+            val presenceDeferred = earlyPresenceDeferred
+                ?: loadPresenceAsync(requestedTeamId, userId, forceTeamRefresh)
             val team = teamDeferred.await().getOrThrow()
             val authoritativeTeamId = team.id.trim().ifEmpty { requestedTeamId }
             val presence = presenceDeferred.await().getOrThrow()

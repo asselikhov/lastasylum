@@ -68,6 +68,9 @@ import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private val OverlaySheetBgTop = Color(0xF2141C2A)
@@ -76,6 +79,48 @@ private val OverlaySheetStroke = Color(0x3D4A62AA)
 private val OverlayMuted = Color(0xFF9AB0C4D8)
 private val OverlayCyan = Color(0xFF38BDF8)
 
+internal suspend fun peekOverlayIngameReactionRecipientsFromCache(
+    usersRepository: UsersRepository,
+    launchDiskCache: com.lastasylum.alliance.data.cache.LaunchDiskCache? = null,
+): List<PlayerTeamMemberDto>? = withContext(Dispatchers.IO) {
+    val uid = usersRepository.peekMyProfile()?.id?.trim().orEmpty()
+        .ifEmpty { usersRepository.peekMyProfileDisk()?.id?.trim().orEmpty() }
+    if (uid.isNotEmpty() && launchDiskCache != null) {
+        OverlayTeamContextCache.hydrateFromDisk(uid, usersRepository, launchDiskCache)
+    }
+    val ctx = OverlayTeamContextCache.peekForPanel() ?: return@withContext null
+    val self = ctx.currentUserId
+    val teamId = OverlayTeamContextCache.peekCachedTeam()?.id?.trim().orEmpty()
+        .ifEmpty { ctx.teamId }
+    if (teamId.isEmpty()) return@withContext null
+    if (uid.isNotEmpty() && launchDiskCache != null) {
+        launchDiskCache.loadOverlayPresence(uid, teamId)?.let { disk ->
+            OverlayTeamPresenceCache.seedFromDisk(teamId, disk)
+        }
+    }
+    OverlayTeamPresenceCache.peek(teamId)?.let { presence ->
+        filterFreshIngameRecipients(presence.ingame, selfUserId = self)
+    }
+}
+
+/** Warm presence cache before recipient sheet opens. */
+internal fun prefetchOverlayReactionRecipients(
+    scope: kotlinx.coroutines.CoroutineScope,
+    usersRepository: UsersRepository,
+    teamsRepository: TeamsRepository,
+    launchDiskCache: com.lastasylum.alliance.data.cache.LaunchDiskCache? = null,
+) {
+    scope.launch(Dispatchers.IO) {
+        runCatching {
+            loadOverlayIngameReactionRecipients(
+                usersRepository = usersRepository,
+                teamsRepository = teamsRepository,
+                launchDiskCache = launchDiskCache,
+            )
+        }
+    }
+}
+
 internal suspend fun loadOverlayIngameReactionRecipients(
     usersRepository: UsersRepository,
     teamsRepository: TeamsRepository,
@@ -83,26 +128,46 @@ internal suspend fun loadOverlayIngameReactionRecipients(
 ): Result<List<PlayerTeamMemberDto>> =
     withContext(Dispatchers.IO) {
         runCatching {
-            val uid = usersRepository.peekMyProfile()?.id?.trim().orEmpty()
-            if (uid.isNotEmpty() && launchDiskCache != null) {
-                OverlayTeamContextCache.hydrateFromDisk(uid, usersRepository, launchDiskCache)
+            coroutineScope {
+                val uid = usersRepository.peekMyProfile()?.id?.trim().orEmpty()
+                    .ifEmpty { usersRepository.peekMyProfileDisk()?.id?.trim().orEmpty() }
+                if (uid.isNotEmpty() && launchDiskCache != null) {
+                    OverlayTeamContextCache.hydrateFromDisk(uid, usersRepository, launchDiskCache)
+                }
+                val peekCtx = OverlayTeamContextCache.peekForPanel()
+                val ctxDeferred = async {
+                    peekCtx?.let { Result.success(it) }
+                        ?: OverlayTeamContextCache.load(
+                            usersRepository = usersRepository,
+                            teamsRepository = teamsRepository,
+                        )
+                }
+                val earlyTeamId = peekCtx?.teamId?.trim()?.takeIf { it.isNotEmpty() }
+                val presenceDeferred = earlyTeamId?.let { tid ->
+                    async {
+                        OverlayTeamPresenceCache.load(
+                            teamId = tid,
+                            teamsRepository = teamsRepository,
+                            launchDiskCache = launchDiskCache,
+                            userId = uid.ifEmpty { peekCtx?.currentUserId.orEmpty() },
+                            forceRefresh = false,
+                        )
+                    }
+                }
+                val ctx = ctxDeferred.await().getOrThrow()
+                val self = ctx.currentUserId
+                val teamId = OverlayTeamContextCache.peekCachedTeam()?.id?.trim().orEmpty()
+                    .ifEmpty { ctx.teamId }
+                val presence = presenceDeferred?.await()?.getOrThrow()
+                    ?: OverlayTeamPresenceCache.load(
+                        teamId = teamId,
+                        teamsRepository = teamsRepository,
+                        launchDiskCache = launchDiskCache,
+                        userId = uid.ifEmpty { self },
+                        forceRefresh = false,
+                    ).getOrThrow()
+                filterFreshIngameRecipients(presence.ingame, selfUserId = self)
             }
-            val ctx = OverlayTeamContextCache.peekForPanel()
-                ?: OverlayTeamContextCache.load(
-                    usersRepository = usersRepository,
-                    teamsRepository = teamsRepository,
-                ).getOrThrow()
-            val self = ctx.currentUserId
-            val teamId = OverlayTeamContextCache.peekCachedTeam()?.id?.trim().orEmpty()
-                .ifEmpty { ctx.teamId }
-            val presence = OverlayTeamPresenceCache.load(
-                teamId = teamId,
-                teamsRepository = teamsRepository,
-                launchDiskCache = launchDiskCache,
-                userId = uid.ifEmpty { self },
-                forceRefresh = false,
-            ).getOrThrow()
-            filterFreshIngameRecipients(presence.ingame, selfUserId = self)
         }
     }
 
@@ -120,6 +185,7 @@ fun OverlayReactionRecipientSheet(
     allowBroadcast: Boolean = true,
 ) {
     val context = LocalContext.current
+    val appContainer = remember(context) { com.lastasylum.alliance.di.AppContainer.from(context) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var members by remember { mutableStateOf<List<PlayerTeamMemberDto>>(emptyList()) }
@@ -131,17 +197,10 @@ fun OverlayReactionRecipientSheet(
     LaunchedEffect(reactionId) {
         error = null
         val cachedMembers = withContext(Dispatchers.IO) {
-            val uid = runCatching {
-                // Best-effort instant paint from warm overlay caches.
-                val ctx = OverlayTeamContextCache.peekForPanel() ?: return@runCatching null
-                val self = ctx.currentUserId
-                val teamId = OverlayTeamContextCache.peekCachedTeam()?.id?.trim().orEmpty()
-                    .ifEmpty { ctx.teamId }
-                OverlayTeamPresenceCache.peek(teamId)?.let { presence ->
-                    filterFreshIngameRecipients(presence.ingame, selfUserId = self)
-                }
-            }.getOrNull()
-            uid
+            peekOverlayIngameReactionRecipientsFromCache(
+                usersRepository = appContainer.usersRepository,
+                launchDiskCache = appContainer.launchDiskCache,
+            )
         }
         if (cachedMembers != null) {
             members = cachedMembers
@@ -150,17 +209,19 @@ fun OverlayReactionRecipientSheet(
             loading = true
         }
         loadMembers()
-            .onSuccess { members = it }
+            .onSuccess { fresh ->
+                members = fresh
+                error = null
+            }
             .onFailure { e ->
                 if (members.isEmpty()) {
                     error = when (e.message) {
                         "no_team" -> context.getString(R.string.overlay_reactions_no_team)
+                        "team_timeout", "presence_timeout" ->
+                            context.getString(R.string.overlay_panel_load_timeout)
                         else ->
                             e.message?.takeIf { it.isNotBlank() }
-                                ?: context.getString(
-                                    R.string.overlay_history_send_failed,
-                                    e.javaClass.simpleName,
-                                )
+                                ?: context.getString(R.string.overlay_online_error)
                     }
                 }
             }

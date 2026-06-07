@@ -268,6 +268,31 @@ class OverlayChatStripBufferTest {
     }
 
     @Test
+    fun removeOptimisticEchoesForServerMessage_byClientMessageId() {
+        val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600)
+        buffer.resetVisibleSession()
+        val optimistic = ChatMessage(
+            _id = "overlay-pending-3",
+            allianceId = "a",
+            roomId = "raid",
+            senderId = "me",
+            senderUsername = "Me",
+            senderRole = "R2",
+            text = "local text",
+            clientMessageId = "client-abc",
+            createdAt = Instant.now().toString(),
+        )
+        val server = optimistic.copy(_id = "server-101", text = "normalized text")
+        buffer.upsert(optimistic)
+        buffer.touchReceivedNow(optimistic)
+        buffer.removeOptimisticEchoesForServerMessage(server)
+        buffer.upsert(server)
+        buffer.touchReceivedNow(server)
+        assertEquals(1, buffer.visibleForPreview().size)
+        assertEquals("server-101", buffer.visibleForPreview().first()._id)
+    }
+
+    @Test
     fun removeOptimisticEchoesForServerMessage_beforeUpsert() {
         val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600)
         buffer.resetVisibleSession()

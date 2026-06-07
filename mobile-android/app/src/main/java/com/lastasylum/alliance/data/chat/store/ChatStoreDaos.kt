@@ -49,6 +49,9 @@ interface ChatMessageDao {
 
     @Query("DELETE FROM chat_messages WHERE userId = :userId")
     suspend fun deleteForUser(userId: String)
+
+    @Query("DELETE FROM chat_messages WHERE userId = :userId AND roomId = :roomId")
+    suspend fun deleteForRoom(userId: String, roomId: String)
 }
 
 @Dao

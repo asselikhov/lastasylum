@@ -398,7 +398,7 @@ class CombatOverlayService : Service() {
                 if (useAuthoritative) {
                     inboxBadgeCoordinator.mergeForumDisplayed(effective, prev, raw)
                 } else {
-                    inboxBadgeCoordinator.mergeHudForum(effective, prev, useAuthoritative)
+                    inboxBadgeCoordinator.mergeHudForum(effective, prev, useAuthoritative, raw)
                 }
             },
         ).also { AppContainer.from(this@CombatOverlayService).registerOverlayHudBadgeBus(it) }
@@ -2269,6 +2269,11 @@ class CombatOverlayService : Service() {
     ): Int {
         val effective = serverEffectiveCount.coerceAtLeast(0)
         if (effective <= 0) {
+            val hubBumpGraceActive = hubUnreadOptimisticFloor > 0 &&
+                System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
+            if (shouldDeferHubUnreadReconcile() || hubBumpGraceActive) {
+                return maxOf(prev.allianceChatUnread, hubUnreadOptimisticFloor)
+            }
             hubUnreadOptimisticFloor = 0
             patchHubUnreadInSessionCacheAfterLocalRead()
             return 0
@@ -2580,6 +2585,13 @@ class CombatOverlayService : Service() {
     ) {
         val effective = serverEffectiveCount.coerceAtLeast(0)
         if (effective <= 0) {
+            val hubBumpGraceActive = hubUnreadOptimisticFloor > 0 &&
+                System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
+            if (shouldDeferHubUnreadReconcile() || hubBumpGraceActive) {
+                val kept = maxOf(overlayStatusHudFlow.value.allianceChatUnread, hubUnreadOptimisticFloor)
+                applyAllianceHubUnreadCount(kept)
+                return
+            }
             hubUnreadOptimisticFloor = 0
             applyAllianceHubUnreadCount(0)
             patchHubUnreadInSessionCacheAfterLocalRead()
@@ -4438,22 +4450,24 @@ class CombatOverlayService : Service() {
         beginOverlayChatSubscription()
     }
 
-    /** Forum topic inbox for overlay «Форум» badge while in-game (not only inside a topic). */
+    /** Forum topic inbox for overlay «Форум» badge while overlay FGS is active. */
     private fun ensureOverlayForumInboxRealtimeIfNeeded() {
-        if (!isInGameOverlayUiActive()) return
+        if (!shouldRetainOverlayRaidRealtime()) return
         if (overlayForumTopicActivityListener != null) return
         val container = AppContainer.from(this)
         val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
         val listener: (TeamForumTopicActivityEvent) -> Unit = listener@{ event ->
             if (selfId.isNotBlank() && event.senderUserId.trim() == selfId) return@listener
             mainHandler.post {
-                if (!isInGameOverlayUiActive()) return@post
+                if (!shouldRetainOverlayRaidRealtime()) return@post
                 if (shouldBumpOverlayForumUnread(event)) {
                     bumpForumUnreadLocally(event.messageId)
                     return@post
                 }
                 OverlayGameStatusHudRefresh.invalidateForumCache()
-                scheduleDebouncedForumHudRefresh()
+                if (isInGameOverlayUiActive() || isOverlayUiHoldActive()) {
+                    scheduleDebouncedForumHudRefresh()
+                }
             }
         }
         overlayForumTopicActivityListener = listener
@@ -4466,7 +4480,7 @@ class CombatOverlayService : Service() {
             if (teamId.isEmpty()) return@launch
             val baseUrl = BuildConfig.API_BASE_URL.trimEnd('/')
             mainHandler.post {
-                if (!isInGameOverlayUiActive()) return@post
+                if (!shouldRetainOverlayRaidRealtime()) return@post
                 container.teamForumSocket.connectTeamInbox(baseUrl, teamId) {
                     container.tokenStore.getAccessToken()
                 }
@@ -6298,6 +6312,7 @@ class CombatOverlayService : Service() {
                 teamId = ctx.teamId,
                 teamsRepository = container.teamsRepository,
                 launchDiskCache = container.launchDiskCache,
+                userId = uid,
                 forceRefresh = false,
             )
             ensureOverlayRaidRoomReadyForSend()
@@ -7284,9 +7299,16 @@ class CombatOverlayService : Service() {
         fun notifyRoomHistoryCleared(roomId: String) {
             val rid = roomId.trim()
             if (rid.isEmpty()) return
-            val service = runningInstance ?: return
+            val service = runningInstance
+            if (service == null) {
+                // Best-effort: service may be down but overlay VM already cleared feed.
+                return
+            }
             service.mainHandler.post {
                 service.stripBuffer.removeMessagesForRoom(rid)
+                if (service.stripPreviewForUi().isNotEmpty()) {
+                    service.stripBuffer.clear()
+                }
                 service.stripBuffer.prune()
                 val hubId = runCatching { service.resolveOverlayHubRoomId() }
                     .getOrNull()
@@ -7381,6 +7403,17 @@ class CombatOverlayService : Service() {
             service.mainHandler.post {
                 service.applyLocalSentMessageToStrip(message)
             }
+        }
+
+        fun isRaidMessageAlreadyOnStrip(message: ChatMessage): Boolean {
+            val service = runningInstance ?: return false
+            val id = message._id?.trim().orEmpty()
+            if (id.isNotEmpty() && service.stripBuffer.containsMessageId(id)) return true
+            val clientId = message.clientMessageId?.trim().orEmpty()
+            if (clientId.isNotEmpty() && service.stripBuffer.containsClientMessageId(clientId)) {
+                return true
+            }
+            return false
         }
 
         /** Force overlay HUD refresh after chat mark-all (local-cursor merge, not raw API). */

@@ -24,6 +24,7 @@ describe('UsersService', () => {
     }),
   }));
   const execCollect = jest.fn();
+  const execDistinct = jest.fn().mockResolvedValue([]);
   const execFindIngame = jest.fn();
   const findForAlliance = jest.fn().mockReturnValue({
     select: jest.fn().mockReturnValue({
@@ -99,6 +100,7 @@ describe('UsersService', () => {
               }
               return findForAlliance(filter);
             }),
+            distinct: jest.fn().mockReturnValue({ exec: execDistinct }),
           },
         },
       ],

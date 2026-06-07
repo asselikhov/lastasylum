@@ -128,6 +128,12 @@ class OverlayChatStripBuffer(
         return messages.any { it._id?.trim() == id }
     }
 
+    fun containsClientMessageId(clientMessageId: String): Boolean {
+        val cid = clientMessageId.trim()
+        if (cid.isEmpty()) return false
+        return messages.any { it.clientMessageId?.trim() == cid }
+    }
+
     fun seedFromHistory(loaded: List<ChatMessage>) {
         clear()
         visibleSince = Instant.EPOCH
@@ -186,18 +192,24 @@ class OverlayChatStripBuffer(
         removedKeys.forEach { receivedAt.remove(it) }
     }
 
-    /** Перед upsert ответа API — убрать optimistic-карточку с тем же текстом (быстрые команды / чат). */
+    /** Перед upsert ответа API — убрать optimistic-карточку (clientMessageId или текст). */
     fun removeOptimisticEchoesForServerMessage(server: ChatMessage) {
         val serverText = server.text.trim()
         val serverSender = server.senderId.trim()
-        if (serverText.isEmpty()) return
+        val serverClientId = server.clientMessageId?.trim().orEmpty()
+        if (serverText.isEmpty() && serverClientId.isEmpty()) return
         val removedKeys = ArrayList<String>()
         messages.removeAll { m ->
             val id = m._id?.trim().orEmpty()
             val isOptimistic = id.startsWith("pending-") || id.startsWith("overlay-pending-")
             if (!isOptimistic) return@removeAll false
             if (serverSender.isNotEmpty() && m.senderId.trim() != serverSender) return@removeAll false
-            val drop = m.text.trim() == serverText
+            val drop = when {
+                serverClientId.isNotEmpty() &&
+                    m.clientMessageId?.trim() == serverClientId -> true
+                serverText.isNotEmpty() && m.text.trim() == serverText -> true
+                else -> false
+            }
             if (drop) {
                 removedKeys.add(m._id?.takeIf { it.isNotBlank() } ?: m.stableKey())
             }

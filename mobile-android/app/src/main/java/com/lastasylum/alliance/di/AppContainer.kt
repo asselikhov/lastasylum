@@ -92,7 +92,7 @@ class AppContainer private constructor(context: Context) {
             if (useAuthoritative) {
                 inboxBadgeCoordinator.mergeForumDisplayed(effective, prev, raw)
             } else {
-                inboxBadgeCoordinator.mergeHudForum(effective, prev, useAuthoritative)
+                inboxBadgeCoordinator.mergeHudForum(effective, prev, useAuthoritative, raw)
             }
         },
     ).also { registerOverlayHudBadgeBus(it) }

@@ -593,6 +593,8 @@ internal fun ChatViewModel.clearHistoryForSelectedRoomImpl() {
         val roomId = vmState.value.selectedRoomId?.trim().orEmpty()
         if (roomId.isEmpty() || vmState.value.isLoading) return
         vmScope.launch {
+            syncBundle.roomPagingSync.cancelBackgroundRefresh(roomId)
+            markRoomClearedAuthoritativeEmpty(roomId)
             vmRepository.clearRoomHistoryForUser(roomId)
                 .onSuccess { response ->
                     response.hiddenBeforeMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -602,10 +604,14 @@ internal fun ChatViewModel.clearHistoryForSelectedRoomImpl() {
                         chatRoomPreferencesInternal.setLastReadMessageId(roomId, it)
                         lastMarkedReadByRoom[roomId] = it
                     }
+                    withContext(Dispatchers.IO) {
+                        messageStore.clearRoomMessages(currentUserId, roomId)
+                    }
                     applyClearedRoomHistoryLocal(roomId, response.unreadCount)
                     CombatOverlayService.notifyRoomHistoryCleared(roomId)
                 }
                 .onFailure { e ->
+                    clearRoomAuthoritativeEmpty(roomId)
                     vmState.value = vmState.value.copy(
                         transientNotice = e.toUserMessageRu(res),
                     )

@@ -941,10 +941,28 @@ export class UsersService implements OnModuleInit {
       const teamId = allianceId.slice(3);
       if (!Types.ObjectId.isValid(teamId)) return [];
       const teamOid = new Types.ObjectId(teamId);
-      filter.$or = [
+      const orClauses: Record<string, unknown>[] = [
         { playerTeamId: teamOid },
         { 'gameIdentities.playerTeamId': teamOid },
       ];
+      // Legacy users may only have allianceName set (no playerTeamId) — include routing keys
+      // already used by confirmed members of this team.
+      const legacyAllianceNames = await this.userModel
+        .distinct('allianceName', {
+          membershipStatus: TeamMembershipStatus.ACTIVE,
+          $or: [
+            { playerTeamId: teamOid },
+            { 'gameIdentities.playerTeamId': teamOid },
+          ],
+        })
+        .exec();
+      for (const name of legacyAllianceNames) {
+        const trimmed = String(name ?? '').trim();
+        if (trimmed) {
+          orClauses.push({ allianceName: trimmed });
+        }
+      }
+      filter.$or = orClauses;
     } else {
       filter.allianceName = allianceId;
     }

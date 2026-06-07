@@ -84,8 +84,8 @@ internal class ChatViewModelSyncBundle(
         override fun setForceBackgroundRefreshAfterReconnect(value: Boolean) {
             vm.forceBackgroundRefreshAfterReconnect = value
         }
-        override fun postHistoryWipeAuthoritativeEmpty(): Boolean = vm.postHistoryWipeAuthoritativeEmpty
-        override fun clearPostHistoryWipeAuthoritativeEmpty() = vm.clearPostHistoryWipeAuthoritativeEmpty()
+        override fun isRoomAuthoritativeEmpty(roomId: String): Boolean = vm.isRoomAuthoritativeEmpty(roomId)
+        override fun clearRoomAuthoritativeEmpty(roomId: String) = vm.clearRoomAuthoritativeEmpty(roomId)
         override fun applyLoadedPageToUi(roomId: String, capped: List<ChatMessage>, hasMoreOlder: Boolean) {
             vm.vmState.value = vm.vmState.value.copy(
                 isLoading = false,
@@ -96,8 +96,9 @@ internal class ChatViewModelSyncBundle(
             )
         }
         override fun applyMergedPageToUi(roomId: String, merged: List<ChatMessage>, hasMoreOlder: Boolean) {
+            val filtered = vm.filterMessagesForRoom(merged, roomId)
             vm.vmState.update {
-                it.copy(messages = merged, hasMoreOlder = hasMoreOlder, newestMessageKey = merged.firstOrNull()?._id)
+                it.copy(messages = filtered, hasMoreOlder = hasMoreOlder, newestMessageKey = filtered.firstOrNull()?._id)
             }
         }
         override fun applyLoadingOlder(loading: Boolean) {

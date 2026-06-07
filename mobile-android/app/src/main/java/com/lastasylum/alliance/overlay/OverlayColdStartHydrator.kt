@@ -5,6 +5,7 @@ import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.chat.ChatHubRoomSync
 import com.lastasylum.alliance.data.chat.ChatSessionCache
+import com.lastasylum.alliance.data.teams.TeamInboxBadgeDeriver
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.prefetchTeamLaunchContent
@@ -58,6 +59,12 @@ internal object OverlayColdStartHydrator {
             OverlayTeamContextCache.seedFromDisk(profile, team)
             seededContext = true
             hasAnyDisk = true
+            val teamId = profile.playerTeamId?.trim().orEmpty().ifEmpty { team.id.trim() }
+            if (teamId.isNotEmpty()) {
+                disk.loadOverlayPresence(uid, teamId)?.let { presence ->
+                    OverlayTeamPresenceCache.seedFromDisk(teamId, presence)
+                }
+            }
         }
 
         val rooms = disk.loadChatRooms(uid)
@@ -95,9 +102,10 @@ internal object OverlayColdStartHydrator {
                     )
                 } ?: 0
                 val localForumRead = container.teamForumPreferences.loadAllLastReadMessageIds(teamId)
-                val forumUnread = forumTopics
-                    ?.let { TeamInboxUnread.sumForumUnread(it, localForumRead) }
-                    ?: 0
+                val forumCounts = forumTopics?.let { topics ->
+                    TeamInboxBadgeDeriver.computeForumUnreadCounts(topics, localForumRead)
+                }
+                val forumUnread = forumCounts?.let { maxOf(it.effective, it.rawServer) } ?: 0
                 OverlayGameStatusHudRefresh.seedBadgesFromDisk(teamId, newsUnread, forumUnread)
                 seededBadges = true
                 hasAnyDisk = true

@@ -40,14 +40,14 @@ class OverlayInboxBadgeCoordinatorTest {
     }
 
     @Test
-    fun mergeForumDisplayed_suppressesStaleRawServerWhenEffectiveZero() {
+    fun mergeForumDisplayed_showsRawServerWhenLocalCursorSuppressesEffective() {
         val coordinator = OverlayInboxBadgeCoordinator()
         val merged = coordinator.mergeForumDisplayed(
             serverCount = 0,
-            previouslyDisplayed = 4,
+            previouslyDisplayed = 0,
             rawServerCount = 3,
         )
-        assertEquals(0, merged)
+        assertEquals(3, merged)
     }
 
     @Test

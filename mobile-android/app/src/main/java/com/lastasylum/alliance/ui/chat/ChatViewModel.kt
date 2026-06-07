@@ -171,6 +171,9 @@ class ChatViewModel(
     /** While true, Room observer and merge must not resurrect stale local rows after admin wipe. */
     @Volatile
     internal var postHistoryWipeAuthoritativeEmpty = false
+    /** Per-room soft-clear: block paging merge until next filtered fetch completes. */
+    internal val clearedRoomAuthoritativeEmptyIds =
+        java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
     internal var outboxObserverJob: Job? = null
 
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
@@ -595,6 +598,20 @@ class ChatViewModel(
 
     internal fun clearPostHistoryWipeAuthoritativeEmpty() {
         postHistoryWipeAuthoritativeEmpty = false
+    }
+
+    internal fun markRoomClearedAuthoritativeEmpty(roomId: String) {
+        val rid = roomId.trim()
+        if (rid.isNotEmpty()) clearedRoomAuthoritativeEmptyIds.add(rid)
+    }
+
+    internal fun isRoomAuthoritativeEmpty(roomId: String): Boolean {
+        if (postHistoryWipeAuthoritativeEmpty) return true
+        return clearedRoomAuthoritativeEmptyIds.contains(roomId.trim())
+    }
+
+    internal fun clearRoomAuthoritativeEmpty(roomId: String) {
+        clearedRoomAuthoritativeEmptyIds.remove(roomId.trim())
     }
 
     private fun resetChatStateAfterHistoryWipe() {
