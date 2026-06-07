@@ -38,13 +38,19 @@ internal class ChatViewModelSyncBundle(
         }
         override fun capMessagesForMemory(messages: List<ChatMessage>) = vm.capMessagesForMemory(messages)
         override fun applyRehydratedMessages(roomId: String, merged: List<ChatMessage>, hasMoreOlder: Boolean) {
+            val filtered = vm.filterMessagesForRoom(merged, roomId)
+            val safe = sanitizeMessagesForUiList(
+                messages = filtered,
+                currentUserId = vm.currentUserIdInternal,
+                activeOutgoingPendingId = vm.outboxRoomSnapshot.newestPendingId,
+            )
             vm.vmState.update {
                 it.copy(
-                    messages = merged,
+                    messages = safe,
                     selectedRoomId = roomId,
                     hasMoreOlder = hasMoreOlder,
                     isLoading = false,
-                    newestMessageKey = merged.firstOrNull()?._id ?: it.newestMessageKey,
+                    newestMessageKey = safe.firstOrNull()?._id ?: it.newestMessageKey,
                 )
             }
         }

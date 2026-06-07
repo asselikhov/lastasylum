@@ -742,6 +742,19 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun upsertMessage_staleIdIndexPrependsWhenRowMissingFromList() {
+        val known = linkedSetOf("507f1f77bcf86cd799439013")
+        val index = mutableMapOf("507f1f77bcf86cd799439013" to 0)
+        val current = listOf(msg("507f1f77bcf86cd799439011", "old"))
+        val incoming = msg("507f1f77bcf86cd799439013", "from peer").copy(senderId = "peer")
+        val r = upsertMessage(current, incoming, known, index)
+        assertEquals(
+            listOf("507f1f77bcf86cd799439013", "507f1f77bcf86cd799439011"),
+            r.messages.map { it._id },
+        )
+    }
+
+    @Test
     fun dedupeOwnOutgoingByClientMessageId_dropsPendingWhenConfirmedExists() {
         val pending = msg("pending-1", "hello").copy(clientMessageId = "cid-1")
         val confirmed = msg("server-1", "hello").copy(clientMessageId = "cid-1")

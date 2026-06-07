@@ -42,6 +42,11 @@ data class IncomingBatchWork(
     val echoesOnly: Boolean = false,
 )
 
+private data class MessageIndexSnapshot(
+    val knownMessageIds: Set<String>,
+    val messageIdIndex: Map<String, Int>,
+)
+
 /**
  * Socket incoming batch routing + in-memory list apply.
  * VM supplies [Host] callbacks for UI state, caches, and side effects.
@@ -136,6 +141,12 @@ class ChatIncomingSync(
         }
         scope.launch(Dispatchers.Default) {
             incomingApplyMutex.withLock {
+                val indexSnapshot = synchronized(chatMutationLock) {
+                    MessageIndexSnapshot(
+                        knownMessageIds = host.knownMessageIds().toSet(),
+                        messageIdIndex = host.messageIdIndex().toMap(),
+                    )
+                }
                 val work = synchronized(chatMutationLock) {
                     computeIncomingBatchWork(selectedRoom, scopedBatch)
                 }
@@ -162,8 +173,13 @@ class ChatIncomingSync(
                         return@withContext
                     }
                     val snapshot = host.stateSnapshot()
+                    val batchHasPeer = scopedBatch.any { message ->
+                        val selfId = host.currentUserId.trim()
+                        selfId.isNotEmpty() && message.senderId.trim() != selfId
+                    }
                     if (work.echoesOnly &&
                         !clearComposer &&
+                        !batchHasPeer &&
                         chatMessagesListContentEqual(snapshot.messages, cappedMessages)
                     ) {
                         return@withContext
@@ -185,6 +201,14 @@ class ChatIncomingSync(
                             work = work,
                             clearComposer = clearComposer,
                         )
+                    } else if (committedMessages == null) {
+                        synchronized(chatMutationLock) {
+                            host.knownMessageIds().clear()
+                            host.knownMessageIds().addAll(indexSnapshot.knownMessageIds)
+                            host.messageIdIndex().clear()
+                            host.messageIdIndex().putAll(indexSnapshot.messageIdIndex)
+                        }
+                        scopedBatch.forEach { host.stashIncomingMessageForRoom(it) }
                     }
                 }
             }
@@ -221,8 +245,8 @@ class ChatIncomingSync(
         }
         var newestFromPendingReplace: String? = null
         val stillFresh = ArrayList<ChatMessage>(fresh.size)
-        val knownMessageIds = host.knownMessageIds()
-        val messageIdIndex = host.messageIdIndex()
+        val knownMessageIds = host.knownMessageIds().toMutableSet()
+        val messageIdIndex = host.messageIdIndex().toMutableMap()
         for (message in fresh) {
             host.trackRecentSocketMessageId(message._id)
             if (host.shouldDeferOwnOutgoingSocketEcho(message)) {
@@ -333,8 +357,10 @@ private fun mergeOwnOutgoingEchoesInPlace(
     val selfId = currentUserId.trim()
     for (echo in echoes) {
         val id = echo._id?.trim().orEmpty()
-        val idx = messageIdIndex[id] ?: continue
-        if (idx !in nextMessages.indices) continue
+        val idx = messageIdIndex[id]?.takeIf { pos ->
+            pos in nextMessages.indices && nextMessages[pos]._id == id
+        } ?: nextMessages.indexOfFirst { it._id?.trim() == id }
+        if (idx < 0) continue
         val before = nextMessages
         val existing = nextMessages[idx]
         val merged = if (isOptimisticOutgoingMessageId(existing._id?.trim().orEmpty()) &&

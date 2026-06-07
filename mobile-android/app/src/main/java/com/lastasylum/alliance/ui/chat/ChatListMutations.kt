@@ -749,7 +749,13 @@ internal fun upsertMessage(
 ): MessageUpsertResult {
     val id = incoming._id
     if (id != null) {
-        val existingIndex = idIndex?.get(id) ?: current.indexOfFirst { it._id == id }
+        val indexedPos = idIndex?.get(id)
+        val existingIndex = when {
+            indexedPos != null &&
+                indexedPos in current.indices &&
+                current[indexedPos]._id == id -> indexedPos
+            else -> current.indexOfFirst { it._id == id }
+        }
         if (existingIndex >= 0) {
             val updated = current.toMutableList()
             updated[existingIndex] = incoming.mergeIncomingChatUpdate(current[existingIndex])

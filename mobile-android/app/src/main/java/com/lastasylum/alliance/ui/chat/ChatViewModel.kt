@@ -406,14 +406,25 @@ class ChatViewModel(
                 messages = cappedMessages,
                 currentUserId = currentUserId,
                 activeOutgoingPendingId = outboxRoomSnapshot.newestPendingId,
-            )
+            ).let { sanitized ->
+                if (hasDuplicateMessageIds(sanitized)) {
+                    dedupeMessagesByIdNewestFirst(sanitized)
+                } else {
+                    sanitized
+                }
+            }
             val pendingInSnapshot = snapshot.messages.any {
                 isOptimisticOutgoingMessageId(it._id?.trim().orEmpty())
             }
             val pendingInBatch = safeMessages.any {
                 isOptimisticOutgoingMessageId(it._id?.trim().orEmpty())
             }
-            if (!pendingInSnapshot && pendingInBatch && work.previousMessages !== snapshot.messages) {
+            val selfId = currentUserId.trim()
+            val batchHasPeer = selfId.isNotEmpty() &&
+                scopedBatch.any { it.senderId.trim() != selfId }
+            if (!pendingInSnapshot && pendingInBatch && work.previousMessages !== snapshot.messages &&
+                !batchHasPeer
+            ) {
                 return null
             }
             if (hasDuplicateMessageIds(safeMessages) && !hasDuplicateMessageIds(snapshot.messages)) {
@@ -437,7 +448,6 @@ class ChatViewModel(
             if (nextState.deletingMessageId in clearedDeletingId) {
                 nextState = nextState.copy(deletingMessageId = null)
             }
-            val selfId = currentUserId.trim()
             val ownOutgoing = selfId.isNotEmpty() &&
                 scopedBatch.any { it.senderId.trim() == selfId }
             if (clearComposer) {
@@ -455,6 +465,11 @@ class ChatViewModel(
             }
             _state.value = syncSelections(nextState)
             _listDerived.value = safeDerived
+            synchronized(chatMutationLock) {
+                knownMessageIds.clear()
+                knownMessageIds.addAll(safeMessages.mapNotNull { it._id })
+                rebuildMessageIdIndex(safeMessages, messageIdIndex)
+            }
             return safeMessages
         }
 
