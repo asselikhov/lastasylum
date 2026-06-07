@@ -44,6 +44,7 @@ class ChatOutbox(
         currentUserRole: String,
         senderUsername: String,
         pendingMessageId: String = "pending-${UUID.randomUUID()}",
+        gameEventAlert: String? = null,
     ): OutboxEnqueueResult {
         val clientMessageId = UUID.randomUUID().toString()
         val optimistic = ChatMessage(
@@ -68,6 +69,7 @@ class ChatOutbox(
             userId = userId,
             attachments = attachments,
             excavationAlert = excavationAlert,
+            gameEventAlert = gameEventAlert?.trim()?.takeIf { it.isNotEmpty() },
             source = source,
         )
     }
@@ -85,6 +87,7 @@ class ChatOutbox(
                 replyToMessageId = prepared.optimisticMessage.replyToMessageId,
                 attachmentsJson = ChatStoreJson.attachmentsToJson(prepared.attachments),
                 excavationAlert = prepared.excavationAlert,
+                gameEventAlert = prepared.gameEventAlert,
                 source = prepared.source.wire,
                 state = OutboxSendState.Pending.wire,
                 attempts = 0,
@@ -215,6 +218,7 @@ class ChatOutbox(
         replyToMessageId = row.replyToMessageId,
         attachments = ChatStoreJson.attachmentsFromJson(row.attachmentsJson),
         excavationAlert = row.excavationAlert,
+        gameEventAlert = row.gameEventAlert?.trim()?.takeIf { it.isNotEmpty() },
         source = OutboxSendSource.entries.firstOrNull { it.wire == row.source } ?: OutboxSendSource.ChatUi,
         state = OutboxSendState.fromWire(row.state),
         attempts = row.attempts,
@@ -231,5 +235,6 @@ data class OutboxEnqueueResult(
     val userId: String,
     val attachments: List<String>?,
     val excavationAlert: Boolean,
+    val gameEventAlert: String? = null,
     val source: OutboxSendSource,
 )

@@ -216,7 +216,7 @@ class CombatOverlayService : Service() {
             prepareOptimisticGameEvent = { eventId ->
                 val event = com.lastasylum.alliance.gameevents.GameEventCatalog.byId(eventId)
                     ?: return@OverlayCommandsPopover null
-                postOptimisticOverlayRaidQuickCommand(event.messageText)
+                postOptimisticOverlayRaidQuickCommand(event.messageText, gameEventAlert = eventId)
             },
             removeOptimisticRaidSend = { pendingId ->
                 pendingQuickCommandTexts.remove(pendingId)?.let { text ->
@@ -4599,9 +4599,12 @@ class CombatOverlayService : Service() {
         )
 
     /** Register outgoing quick command; optimistic chat row when raid room id is known. */
-    private fun postOptimisticOverlayRaidQuickCommand(text: String): String? {
+    private fun postOptimisticOverlayRaidQuickCommand(
+        text: String,
+        gameEventAlert: String? = null,
+    ): String? {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post { postOptimisticOverlayRaidQuickCommand(text) }
+            mainHandler.post { postOptimisticOverlayRaidQuickCommand(text, gameEventAlert) }
             return null
         }
         val body = text.trim()
@@ -4615,7 +4618,7 @@ class CombatOverlayService : Service() {
             warmupOverlayRaidForQuickCommands()
         } else {
             scheduleOverlayRaidRealtimeWarm(roomId)
-            prepareOverlayRaidQuickCommandChatOptimistic(pendingId, body, roomId)
+            prepareOverlayRaidQuickCommandChatOptimistic(pendingId, body, roomId, gameEventAlert)
         }
         return pendingId
     }
@@ -4641,12 +4644,13 @@ class CombatOverlayService : Service() {
         pendingId: String,
         text: String,
         roomId: String,
+        gameEventAlert: String? = null,
     ) {
         val vm = ensureChatViewModelForQuickCommandSend() ?: return
         if (overlayChatTeamPanelVisible) {
             showOverlayHudPane(OverlayHudPane.Chat)
         }
-        vm.prepareOverlayRaidQuickCommandOutgoing(pendingId, roomId, text)
+        vm.prepareOverlayRaidQuickCommandOutgoing(pendingId, roomId, text, gameEventAlert)
     }
 
     private fun prepareOverlayRaidQuickCommandSend(

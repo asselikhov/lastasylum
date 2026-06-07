@@ -130,6 +130,34 @@ class ChatSyncEngineTest {
     }
 
     @Test
+    fun sendEnqueuedOutbox_overlayRaid_forwardsGameEventAlert() = runBlocking {
+        engine.bindUser(userId)
+        fakeGateway.sendResult = Result.success(
+            sampleMessage("507f1f77bcf86cd799439011", roomId, "[ШТАБ] Раскопки"),
+        )
+        val prepared = chatOutbox.prepareEnqueue(
+            userId = userId,
+            roomId = roomId,
+            text = "[ШТАБ] Раскопки",
+            replyToMessageId = null,
+            attachments = null,
+            excavationAlert = false,
+            source = OutboxSendSource.OverlayRaid,
+            currentUserId = userId,
+            currentUserRole = "R1",
+            senderUsername = "me",
+            pendingMessageId = "overlay-pending-1",
+            gameEventAlert = "hq_excavation",
+        )
+        chatOutbox.persistEnqueue(prepared)
+
+        val result = engine.sendEnqueuedOutbox(prepared.clientMessageId)
+
+        assertTrue(result.isSuccess)
+        assertEquals("hq_excavation", fakeGateway.lastOverlayGameEventAlert)
+    }
+
+    @Test
     fun loadRoomSnapshotFromStore_returnsEmptySnapshotForKnownRoomWithoutMessages() = runBlocking {
         messageStore.upsertRooms(userId, listOf(sampleRoom(roomId)))
 
@@ -166,6 +194,7 @@ class ChatSyncEngineTest {
         val markReadCalls = mutableListOf<Pair<String, String>>()
         val sendCalls = AtomicInteger(0)
         var sendResult: Result<ChatMessage> = Result.failure(IllegalStateException("no_send_stub"))
+        var lastOverlayGameEventAlert: String? = null
 
         override suspend fun listRooms(): Result<List<ChatRoomDto>> = rooms
 
@@ -194,6 +223,7 @@ class ChatSyncEngineTest {
             clientMessageId: String,
             maxAttempts: Int,
         ): Result<ChatMessage> {
+            lastOverlayGameEventAlert = gameEventAlert
             sendCalls.incrementAndGet()
             return sendResult
         }

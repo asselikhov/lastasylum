@@ -55,6 +55,7 @@ data class ChatOutboxEntity(
     val replyToMessageId: String?,
     val attachmentsJson: String?,
     val excavationAlert: Boolean,
+    val gameEventAlert: String? = null,
     val source: String,
     val state: String,
     val attempts: Int,

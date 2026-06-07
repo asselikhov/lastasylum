@@ -227,6 +227,7 @@ internal fun ChatViewModel.prepareOverlayRaidQuickCommandOutgoingImpl(
         pendingId: String,
         roomId: String,
         text: String,
+        gameEventAlert: String? = null,
     ) {
         val rid = roomId.trim()
         val body = text.trim()
@@ -246,6 +247,7 @@ internal fun ChatViewModel.prepareOverlayRaidQuickCommandOutgoingImpl(
             currentUserRole = currentUserRole,
             senderUsername = "",
             pendingMessageId = pending,
+            gameEventAlert = gameEventAlert,
         )
         overlayQuickCommandPrepared[pending] = prepared
         insertOptimisticOutgoingSynchronously(prepared.optimisticMessage, clearComposer = false)
@@ -267,8 +269,15 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
         withContext(Dispatchers.Main.immediate) {
             ensureSelectedRoomForOverlayOutgoing(rid)
         }
+        val eventAlert = gameEventAlert?.trim()?.takeIf { it.isNotEmpty() }
+        fun mergeGameEventAlert(row: OutboxEnqueueResult): OutboxEnqueueResult =
+            if (eventAlert != null && row.gameEventAlert != eventAlert) {
+                row.copy(gameEventAlert = eventAlert)
+            } else {
+                row
+            }
         val prepared = withContext(Dispatchers.Main.immediate) {
-            overlayQuickCommandPrepared[pending]
+            overlayQuickCommandPrepared[pending]?.let(::mergeGameEventAlert)
                 ?: if (messageIdIndex.containsKey(pending) || knownMessageIds.contains(pending)) {
                     chatOutbox.prepareEnqueue(
                         userId = currentUserId,
@@ -282,6 +291,7 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
                         currentUserRole = currentUserRole,
                         senderUsername = "",
                         pendingMessageId = pending,
+                        gameEventAlert = eventAlert,
                     ).also { enqueue ->
                         overlayQuickCommandPrepared[pending] = enqueue
                         if (!messageIdIndex.containsKey(pending)) {
@@ -302,12 +312,15 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
                         currentUserRole = currentUserRole,
                         senderUsername = "",
                         pendingMessageId = pending,
+                        gameEventAlert = eventAlert,
                     )
                     overlayQuickCommandPrepared[pending] = enqueue
                     insertOptimisticOutgoingSynchronously(enqueue.optimisticMessage, clearComposer = false)
                     trackActiveOutgoingClientMessageId(enqueue.clientMessageId)
                     enqueue
                 }
+        }.let(::mergeGameEventAlert).also { row ->
+            overlayQuickCommandPrepared[pending] = row
         }
         val persistError = runCatching {
             withContext(Dispatchers.IO) {

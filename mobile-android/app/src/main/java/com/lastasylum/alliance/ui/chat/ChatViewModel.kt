@@ -695,8 +695,12 @@ class ChatViewModel(
     }
 
     /** Optimistic row for overlay quick commands before HTTP confirm. */
-    fun prepareOverlayRaidQuickCommandOutgoing(pendingId: String, roomId: String, text: String) =
-        prepareOverlayRaidQuickCommandOutgoingImpl(pendingId, roomId, text)
+    fun prepareOverlayRaidQuickCommandOutgoing(
+        pendingId: String,
+        roomId: String,
+        text: String,
+        gameEventAlert: String? = null,
+    ) = prepareOverlayRaidQuickCommandOutgoingImpl(pendingId, roomId, text, gameEventAlert)
 
     suspend fun sendOverlayRaidQuickCommand(
         pendingId: String,

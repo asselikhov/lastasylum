@@ -26,6 +26,8 @@ data class OutboxEntry(
     val replyToMessageId: String?,
     val attachments: List<String>?,
     val excavationAlert: Boolean,
+    /** Overlay Push tab: [com.lastasylum.alliance.gameevents.GameEventCatalog] id for FCM. */
+    val gameEventAlert: String? = null,
     val source: OutboxSendSource,
     val state: OutboxSendState,
     val attempts: Int,

@@ -118,7 +118,7 @@ class ChatSyncEngine(
                 repository.sendOverlayRaidCommandFast(
                     text = entry.text,
                     roomId = entry.roomId,
-                    gameEventAlert = null,
+                    gameEventAlert = entry.gameEventAlert,
                     clientMessageId = entry.clientMessageId,
                     maxAttempts = 1,
                 )
