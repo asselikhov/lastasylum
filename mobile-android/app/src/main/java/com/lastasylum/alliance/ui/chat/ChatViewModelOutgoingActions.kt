@@ -87,6 +87,7 @@ internal fun ChatViewModel.confirmOutgoingByClientMessageIdImpl(
 ) {
     val cid = clientMessageId.trim()
     if (cid.isEmpty()) return
+    val normalizedSent = sent.withOutgoingClientMessageId(cid)
     vmScope.launch {
         incomingApplyMutex.withLock {
             val alreadyConfirmed = cid in confirmedOutgoingClientMessageIds
@@ -97,17 +98,24 @@ internal fun ChatViewModel.confirmOutgoingByClientMessageIdImpl(
             )
             withContext(Dispatchers.Main.immediate) {
                 if (alreadyConfirmed) {
-                    reconcileAlreadyConfirmedOutgoing(cid, sent, pendingId)
+                    reconcileAlreadyConfirmedOutgoing(cid, normalizedSent, pendingId)
                 } else {
-                    applyOutgoingConfirmation(cid, sent, pendingId)
-                    confirmedOutgoingClientMessageIds.add(cid)
+                    applyOutgoingConfirmation(cid, normalizedSent, pendingId)
+                    if (!hasOwnOutgoingRowPairByClientMessageId(
+                            vmState.value.messages,
+                            cid,
+                            currentUserId,
+                        )
+                    ) {
+                        confirmedOutgoingClientMessageIds.add(cid)
+                    }
                 }
             }
             withContext(Dispatchers.IO) {
                 chatOutbox.confirmSend(
                     userId = currentUserId,
                     clientMessageId = cid,
-                    serverMessage = sent,
+                    serverMessage = normalizedSent,
                     httpAckSpanId = httpAckSpanId,
                 )
             }
@@ -150,8 +158,56 @@ private fun ChatViewModel.applyOutgoingConfirmation(
         confirmPendingOutgoingMessageImpl(pendingId, sent)
         return
     }
-    if (serverId.isNotEmpty() && vmState.value.messages.any { it._id?.trim() == serverId }) return
+    if (serverId.isNotEmpty() && vmState.value.messages.any { it._id?.trim() == serverId }) {
+        repairOwnOutgoingRowPairIfNeeded(clientMessageId, sent)
+        return
+    }
     confirmPendingOutgoingMessageImpl(pendingId = null, sent = sent)
+}
+
+private fun ChatViewModel.repairOwnOutgoingRowPairIfNeeded(
+    clientMessageId: String,
+    sent: ChatMessage,
+) {
+    findOptimisticOutgoingPendingForConfirm(
+        messages = vmState.value.messages,
+        clientMessageId = clientMessageId,
+        confirmed = sent,
+        currentUserId = currentUserId,
+    )?.let { resolvedPending ->
+        confirmPendingOutgoingMessageImpl(resolvedPending, sent)
+        return
+    }
+    if (!hasOwnOutgoingRowPairByClientMessageId(
+            vmState.value.messages,
+            clientMessageId,
+            currentUserId,
+        )
+    ) {
+        return
+    }
+    applySanitizedOutgoingListRepair()
+}
+
+private fun ChatViewModel.applySanitizedOutgoingListRepair() {
+    val sanitized = sanitizeMessagesForUiList(
+        messages = vmState.value.messages,
+        currentUserId = currentUserId,
+        activeOutgoingPendingId = outboxRoomSnapshot.newestPendingId,
+    )
+    if (sanitized === vmState.value.messages) return
+    synchronized(chatMutationLock) {
+        rebuildMessageIdIndex(sanitized, messageIdIndex)
+        vmState.value = vmState.value.copy(messages = sanitized)
+    }
+    publishMessagesDerivedImmediate(sanitized)
+    vmState.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let { rid ->
+        roomMessageCache[rid] = ChatRoomMessageCache(
+            messages = sanitized,
+            hasMoreOlder = vmState.value.hasMoreOlder,
+        )
+        ChatSessionCache.updateMessages(rid, sanitized)
+    }
 }
 
 private fun ChatViewModel.reconcileAlreadyConfirmedOutgoing(
@@ -161,10 +217,13 @@ private fun ChatViewModel.reconcileAlreadyConfirmedOutgoing(
 ) {
     val serverId = sent._id?.trim().orEmpty()
     val snapshot = vmState.value.messages
-    val needsRepair = pendingId != null &&
-        findOptimisticOutgoingPendingId(snapshot, clientMessageId, currentUserId) != null
-    if (needsRepair) {
-        confirmPendingOutgoingMessageImpl(pendingId, sent)
+    findOptimisticOutgoingPendingForConfirm(
+        messages = snapshot,
+        clientMessageId = clientMessageId,
+        confirmed = sent,
+        currentUserId = currentUserId,
+    )?.let { resolvedPending ->
+        confirmPendingOutgoingMessageImpl(resolvedPending, sent)
         return
     }
     if (!hasOwnOutgoingRowPairByClientMessageId(snapshot, clientMessageId, currentUserId)) {
@@ -855,14 +914,21 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
         val serverId = sent._id?.trim().orEmpty()
         if (pending.isEmpty()) {
             val cid = sent.clientMessageId?.trim().orEmpty()
-            if (cid.isNotEmpty()) {
-                findOptimisticOutgoingPendingId(vmState.value.messages, cid, currentUserId)
-                    ?.let { resolvedPending ->
-                        confirmPendingOutgoingMessageImpl(resolvedPending, sent)
-                        return
-                    }
+            findOptimisticOutgoingPendingForConfirm(
+                messages = vmState.value.messages,
+                clientMessageId = cid,
+                confirmed = sent,
+                currentUserId = currentUserId,
+            )?.let { resolvedPending ->
+                confirmPendingOutgoingMessageImpl(resolvedPending, sent)
+                return
             }
-            if (serverId.isNotEmpty() && vmState.value.messages.any { it._id?.trim() == serverId }) return
+            if (serverId.isNotEmpty() && vmState.value.messages.any { it._id?.trim() == serverId }) {
+                if (cid.isNotEmpty()) {
+                    repairOwnOutgoingRowPairIfNeeded(cid, sent)
+                }
+                return
+            }
             applyIncomingMessage(sent, clearComposer = false, skipOutgoingEchoBlock = true)
             return
         }

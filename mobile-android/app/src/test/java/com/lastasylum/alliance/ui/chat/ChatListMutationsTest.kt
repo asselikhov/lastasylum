@@ -508,6 +508,44 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun withOutgoingClientMessageId_fillsMissingAckField() {
+        val ack = msg("server-1", "hello")
+        val normalized = ack.withOutgoingClientMessageId("client-abc")
+        assertEquals("client-abc", normalized.clientMessageId)
+        assertEquals(
+            "existing",
+            ack.copy(clientMessageId = "existing")
+                .withOutgoingClientMessageId("other")
+                .clientMessageId,
+        )
+    }
+
+    @Test
+    fun findOptimisticOutgoingPendingForConfirm_fallsBackToTextMatch() {
+        val pending = msg("pending-1", "hello").copy(clientMessageId = "client-abc")
+        val server = msg("server-1", "hello")
+        val resolved = findOptimisticOutgoingPendingForConfirm(
+            messages = listOf(server, pending),
+            clientMessageId = "",
+            confirmed = server,
+            currentUserId = "u1",
+        )
+        assertEquals("pending-1", resolved)
+    }
+
+    @Test
+    fun findOptimisticOutgoingPendingForConfirm_prefersClientMessageId() {
+        val pending = msg("pending-1", "hello").copy(clientMessageId = "client-abc")
+        val resolved = findOptimisticOutgoingPendingForConfirm(
+            messages = listOf(pending),
+            clientMessageId = "client-abc",
+            confirmed = msg("server-1", "different"),
+            currentUserId = "u1",
+        )
+        assertEquals("pending-1", resolved)
+    }
+
+    @Test
     fun replaceMatchingPendingOutgoing_swapsOptimisticRow() {
         val pending = msg("pending-1", "hello")
         val server = msg("server-1", "hello")

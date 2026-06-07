@@ -66,6 +66,15 @@ internal fun outgoingTextsMatch(a: ChatMessage, b: ChatMessage): Boolean =
         normalizeOutgoingReplyToId(a.replyToMessageId) ==
         normalizeOutgoingReplyToId(b.replyToMessageId)
 
+/** Socket/HTTP ack may omit [ChatMessage.clientMessageId]; keep the outbox id for dedupe. */
+internal fun ChatMessage.withOutgoingClientMessageId(clientMessageId: String): ChatMessage {
+    val cid = clientMessageId.trim()
+    if (cid.isEmpty()) return this
+    val existing = this.clientMessageId?.trim().orEmpty()
+    if (existing.isNotEmpty()) return this
+    return copy(clientMessageId = cid)
+}
+
 /**
  * Drop a confirmed server row that raced ahead of HTTP confirm for [pending].
  * Matches by [ChatMessage.clientMessageId] when present; legacy text fallback drops only
@@ -230,6 +239,24 @@ internal fun findOptimisticOutgoingPendingId(
         isOptimisticOutgoingMessageId(pendingId) &&
             msg.senderId.trim() == selfId &&
             msg.clientMessageId?.trim() == cid
+    }?._id?.trim()?.takeIf { it.isNotEmpty() }
+}
+
+/** Resolve optimistic row for confirm when the map was already consumed or ack omitted [clientMessageId]. */
+internal fun findOptimisticOutgoingPendingForConfirm(
+    messages: List<ChatMessage>,
+    clientMessageId: String,
+    confirmed: ChatMessage,
+    currentUserId: String,
+): String? {
+    findOptimisticOutgoingPendingId(messages, clientMessageId, currentUserId)?.let { return it }
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty() || confirmed.senderId.trim() != selfId) return null
+    return messages.firstOrNull { msg ->
+        val pendingId = msg._id?.trim().orEmpty()
+        isOptimisticOutgoingMessageId(pendingId) &&
+            msg.senderId.trim() == selfId &&
+            outgoingTextsMatch(msg, confirmed)
     }?._id?.trim()?.takeIf { it.isNotEmpty() }
 }
 
