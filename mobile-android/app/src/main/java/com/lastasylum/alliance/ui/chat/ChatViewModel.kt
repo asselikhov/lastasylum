@@ -775,18 +775,22 @@ class ChatViewModel(
         }
         val selfId = currentUserId.trim()
         val isOwn = selfId.isNotEmpty() && message.senderId.trim() == selfId
-        val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
-        if (isOwn && cid != null) {
-            confirmOutgoingByClientMessageId(cid, message)
-            vmScope.launch(Dispatchers.IO) {
-                chatSyncEngine.onSocketMessageConfirmed(
-                    currentUserId,
-                    message.roomId,
-                    message,
-                    cid,
-                )
+        if (isOwn) {
+            val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
+                ?: activeOutgoingClientMessageIds.singleOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+            if (cid != null) {
+                val normalized = message.withOutgoingClientMessageId(cid)
+                confirmOutgoingByClientMessageId(cid, normalized)
+                vmScope.launch(Dispatchers.IO) {
+                    chatSyncEngine.onSocketMessageConfirmed(
+                        currentUserId,
+                        message.roomId,
+                        normalized,
+                        cid,
+                    )
+                }
+                return
             }
-            return
         }
         if (shouldBlockOwnOutgoingRealtime(message)) return
         if (!isIncomingMessageVisible(message)) return

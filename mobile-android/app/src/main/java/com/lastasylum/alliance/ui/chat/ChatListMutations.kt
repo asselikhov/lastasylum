@@ -118,6 +118,35 @@ internal fun stripRacingServerEchoForPending(
 }
 
 /**
+ * Link a racing server echo (no [ChatMessage.clientMessageId]) to the in-flight optimistic row
+ * at the head of the list so cid-based dedupe can remove the duplicate pending row.
+ */
+internal fun attachPendingClientMessageIdsToOwnConfirmed(
+    messages: List<ChatMessage>,
+    currentUserId: String,
+): List<ChatMessage> {
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty()) return messages
+    val pendingEntries = messages.withIndex().filter { (_, msg) ->
+        val id = msg._id?.trim().orEmpty()
+        isOptimisticOutgoingMessageId(id) && msg.senderId.trim() == selfId
+    }
+    if (pendingEntries.isEmpty()) return messages
+    return messages.mapIndexed { index, msg ->
+        val id = msg._id?.trim().orEmpty()
+        if (isOptimisticOutgoingMessageId(id) || id.isEmpty()) return@mapIndexed msg
+        if (msg.senderId.trim() != selfId) return@mapIndexed msg
+        if (!msg.clientMessageId.isNullOrBlank()) return@mapIndexed msg
+        val pending = pendingEntries.firstOrNull { (pendingIdx, pendingMsg) ->
+            index < pendingIdx && outgoingTextsMatch(pendingMsg, msg)
+        }?.value ?: return@mapIndexed msg
+        val cid = pending.clientMessageId?.trim().orEmpty()
+        if (cid.isEmpty()) return@mapIndexed msg
+        msg.withOutgoingClientMessageId(cid)
+    }
+}
+
+/**
  * Last line of defense before UI apply: strip pending+server pairs and rows that raced
  * ahead of [confirmPendingOutgoingMessage] while [activeOutgoingPendingId] is set.
  */
@@ -133,6 +162,7 @@ internal fun sanitizeMessagesAfterRealtimeApply(
             out = stripRacingServerEchoForPending(out, pending, currentUserId)
         }
     }
+    out = attachPendingClientMessageIdsToOwnConfirmed(out, currentUserId)
     out = stripRedundantPendingOutgoing(out, currentUserId)
     out = stripRedundantOwnOutgoingByClientMessageId(out, currentUserId)
     out = dedupeOwnOutgoingByClientMessageId(out, currentUserId)

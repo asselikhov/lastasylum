@@ -75,18 +75,22 @@ internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
         }
         val selfId = currentUserId.trim()
         val isOwn = selfId.isNotEmpty() && message.senderId.trim() == selfId
-        val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
-        if (isOwn && cid != null) {
-            confirmOutgoingByClientMessageId(cid, message)
-            vmScope.launch(Dispatchers.IO) {
-                chatSyncEngine.onSocketMessageConfirmed(
-                    currentUserId,
-                    message.roomId,
-                    message,
-                    cid,
-                )
+        if (isOwn) {
+            val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
+                ?: activeOutgoingClientMessageIds.singleOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+            if (cid != null) {
+                val normalized = message.withOutgoingClientMessageId(cid)
+                confirmOutgoingByClientMessageId(cid, normalized)
+                vmScope.launch(Dispatchers.IO) {
+                    chatSyncEngine.onSocketMessageConfirmed(
+                        currentUserId,
+                        message.roomId,
+                        normalized,
+                        cid,
+                    )
+                }
+                return
             }
-            return
         }
         if (shouldBlockOwnOutgoingRealtime(message)) return
         if (isOwn) {
@@ -374,6 +378,21 @@ internal fun ChatViewModel.messagesForRoomMergeImpl(roomId: String): List<ChatMe
 internal fun ChatViewModel.stashIncomingMessageForRoomImpl(message: ChatMessage) {
         val roomId = message.roomId.trim()
         if (roomId.isBlank()) return
+        val selfId = currentUserId.trim()
+        if (selfId.isNotEmpty() && message.senderId.trim() == selfId) {
+            val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
+                ?: activeOutgoingClientMessageIds.singleOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+            if (cid != null) {
+                confirmOutgoingByClientMessageId(cid, message.withOutgoingClientMessageId(cid))
+                return
+            }
+            if (hasOptimisticOutgoingPending(vmState.value.messages, currentUserId) ||
+                hasMatchingPendingOutgoing(vmState.value.messages, message, currentUserId)
+            ) {
+                ChatDeliveryMetrics.logDrop(roomId, message._id, "own_outgoing_inflight")
+                return
+            }
+        }
         if (!isIncomingMessageVisible(message)) {
             ChatDeliveryMetrics.logDrop(roomId, message._id, "hidden")
             return
@@ -401,12 +420,10 @@ internal fun ChatViewModel.stashIncomingMessageForRoomImpl(message: ChatMessage)
         val localKnown = existing.mapNotNull { it._id }.toMutableSet()
         val update = upsertMessage(existing, message, localKnown, idIndex = null)
         val sanitized = capMessagesForMemory(
-            dedupeOwnOutgoingByClientMessageId(
-                stripRedundantOwnOutgoingByClientMessageId(
-                    dedupeMessagesByIdNewestFirst(update.messages),
-                    currentUserId,
-                ),
-                currentUserId,
+            sanitizeMessagesForUiList(
+                messages = dedupeMessagesByIdNewestFirst(update.messages),
+                currentUserId = currentUserId,
+                activeOutgoingPendingId = outboxRoomSnapshot.newestPendingId,
             ),
         )
         roomMessageCache[roomId] = ChatRoomMessageCache(

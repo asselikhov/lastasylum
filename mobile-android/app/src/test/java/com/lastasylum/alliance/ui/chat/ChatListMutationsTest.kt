@@ -508,6 +508,41 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun attachPendingClientMessageIdsToOwnConfirmed_linksRacingServerEcho() {
+        val pending = msg("pending-1", "hello").copy(clientMessageId = "client-abc")
+        val server = msg("server-1", "hello")
+        val linked = attachPendingClientMessageIdsToOwnConfirmed(
+            messages = listOf(server, pending),
+            currentUserId = "u1",
+        )
+        assertEquals("client-abc", linked[0].clientMessageId)
+        val stripped = stripRedundantOwnOutgoingByClientMessageId(linked, "u1")
+        assertEquals(listOf("server-1"), stripped.map { it._id })
+    }
+
+    @Test
+    fun attachPendingClientMessageIdsToOwnConfirmed_skipsDistantHistoryMatch() {
+        val pending = msg("pending-1", "hello").copy(clientMessageId = "client-abc")
+        val old = msg("server-old", "hello")
+        val linked = attachPendingClientMessageIdsToOwnConfirmed(
+            messages = listOf(pending, msg("x"), msg("y"), msg("z"), old),
+            currentUserId = "u1",
+        )
+        assertNull(linked.last().clientMessageId)
+    }
+
+    @Test
+    fun attachPendingClientMessageIdsToOwnConfirmed_skipsOlderConfirmedBelowPending() {
+        val pending = msg("pending-2", "hello").copy(clientMessageId = "client-2")
+        val older = msg("507f1f77bcf86cd799439011", "hello")
+        val linked = attachPendingClientMessageIdsToOwnConfirmed(
+            messages = listOf(pending, older),
+            currentUserId = "u1",
+        )
+        assertNull(linked[1].clientMessageId)
+    }
+
+    @Test
     fun withOutgoingClientMessageId_fillsMissingAckField() {
         val ack = msg("server-1", "hello")
         val normalized = ack.withOutgoingClientMessageId("client-abc")

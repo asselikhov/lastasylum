@@ -836,9 +836,10 @@ internal fun ChatViewModel.insertOptimisticOutgoingSynchronouslyImpl(
                 idIndex = messageIdIndex,
             )
             val capped = capMessagesForMemory(
-                dedupeOwnOutgoingByClientMessageId(
-                    dedupeMessagesByIdNewestFirst(update.messages),
-                    currentUserId,
+                sanitizeMessagesForUiList(
+                    messages = dedupeMessagesByIdNewestFirst(update.messages),
+                    currentUserId = currentUserId,
+                    activeOutgoingPendingId = outboxRoomSnapshot.newestPendingId,
                 ),
             )
             rebuildMessageIdIndex(capped, messageIdIndex)
@@ -929,11 +930,11 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
                 }
                 return
             }
-            applyIncomingMessage(sent, clearComposer = false, skipOutgoingEchoBlock = true)
+            prependConfirmedOutgoingMessage(sent)
             return
         }
         if (serverId.isEmpty()) {
-            applyIncomingMessage(sent, clearComposer = false, skipOutgoingEchoBlock = true)
+            prependConfirmedOutgoingMessage(sent)
             return
         }
         val roomId = vmState.value.selectedRoomId
@@ -974,14 +975,17 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
                 list
             }
             val capped = capMessagesForMemory(
-                dedupeOwnOutgoingByClientMessageId(
-                    stripRedundantOwnOutgoingByClientMessageId(
-                        dedupeMessagesByIdNewestFirst(
-                            stripRedundantPendingOutgoing(updated, currentUserId),
-                        ),
-                        currentUserId,
+                sanitizeMessagesForUiList(
+                    messages = dedupeMessagesByIdNewestFirst(
+                        stripRedundantPendingOutgoing(updated, currentUserId).let {
+                            dedupeOwnOutgoingByClientMessageId(
+                                stripRedundantOwnOutgoingByClientMessageId(it, currentUserId),
+                                currentUserId,
+                            )
+                        },
                     ),
-                    currentUserId,
+                    currentUserId = currentUserId,
+                    activeOutgoingPendingId = outboxRoomSnapshot.newestPendingId,
                 ),
             )
             rebuildMessageIdIndex(capped, messageIdIndex)
@@ -996,30 +1000,19 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
             stashIncomingMessageForRoom(sent)
             return
         }
-        val isInPlaceConfirm = work.cappedMessages.size == work.previousMessages.size &&
-            work.cappedMessages.isNotEmpty() &&
-            work.previousMessages.isNotEmpty() &&
-            work.cappedMessages.drop(1) == work.previousMessages.drop(1) &&
-            work.cappedMessages[0] != work.previousMessages[0]
-        val derived = reconcileDerivedWithMessages(
-            derived = if (isInPlaceConfirm) {
-                buildChatMessagesListDerivedAfterReplaceNewest(
-                    previousDerived = work.previousDerived,
-                    previousMessages = work.previousMessages,
-                    messages = work.cappedMessages,
-                )
-            } else {
-                buildChatMessagesListDerived(work.cappedMessages)
-            },
+        val safeMessages = sanitizeMessagesForUiList(
             messages = work.cappedMessages,
+            currentUserId = currentUserId,
+            activeOutgoingPendingId = outboxRoomSnapshot.newestPendingId,
         )
+        val derived = buildChatMessagesListDerived(safeMessages)
         deriveJob?.cancel()
         deriveDebounceJob?.cancel()
         synchronized(chatMutationLock) {
             val snapshot = vmState.value
             vmState.value = syncSelections(
                 snapshot.copy(
-                    messages = work.cappedMessages,
+                    messages = safeMessages,
                     newestMessageKey = serverId,
                     isSending = false,
                     error = null,
@@ -1045,16 +1038,55 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
         }
         if (!rid.isNullOrBlank()) {
             roomMessageCache[rid] = ChatRoomMessageCache(
-                messages = work.cappedMessages,
+                messages = safeMessages,
                 hasMoreOlder = vmState.value.hasMoreOlder,
             )
-            ChatSessionCache.updateMessages(rid, work.cappedMessages)
+            ChatSessionCache.updateMessages(rid, safeMessages)
             schedulePersistChatSnapshot()
         }
         if (!CombatOverlayService.isRaidMessageAlreadyOnStrip(sent)) {
             publishRaidMessageToOverlayStripImpl(sent)
         }
     }
+
+private fun ChatViewModel.prependConfirmedOutgoingMessage(sent: ChatMessage) {
+    val serverId = sent._id?.trim().orEmpty()
+    if (serverId.isEmpty()) return
+    if (vmState.value.messages.any { it._id?.trim() == serverId }) return
+    val work = synchronized(chatMutationLock) {
+        val update = upsertMessage(
+            current = vmState.value.messages,
+            incoming = sent.copy(editedAt = null),
+            knownMessageIds = knownMessageIds,
+            idIndex = messageIdIndex,
+        )
+        val safeMessages = capMessagesForMemory(
+            sanitizeMessagesForUiList(
+                messages = update.messages,
+                currentUserId = currentUserId,
+                activeOutgoingPendingId = outboxRoomSnapshot.newestPendingId,
+            ),
+        )
+        rebuildMessageIdIndex(safeMessages, messageIdIndex)
+        safeMessages
+    }
+    vmState.value = syncSelections(
+        vmState.value.copy(
+            messages = work,
+            newestMessageKey = serverId,
+            isSending = false,
+            error = null,
+        ),
+    )
+    publishMessagesDerivedImmediate(work)
+    vmState.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let { rid ->
+        roomMessageCache[rid] = ChatRoomMessageCache(
+            messages = work,
+            hasMoreOlder = vmState.value.hasMoreOlder,
+        )
+        ChatSessionCache.updateMessages(rid, work)
+    }
+}
 
 internal fun ChatViewModel.applyIncomingMessageImpl(
         message: ChatMessage,
