@@ -131,11 +131,9 @@ fun TeamForumListScreen(
     }
 
     fun hydrateReadCursorsFromTopics(rows: List<TeamForumTopicDto>) {
-        rows.forEach { topic ->
-            topic.lastReadMessageId?.trim()?.takeIf { it.isNotBlank() }?.let { mid ->
-                mergeTopicReadCursor(topic.id, mid)
-            }
-        }
+        // Device read cursors come from [forumPrefs] in [reload] only.
+        // Do not copy [TeamForumTopicDto.lastReadMessageId] into prefs — that suppresses
+        // per-topic unread badges and fire animation while server unreadCount is still > 0.
     }
 
     fun effectiveTopicUnread(topic: TeamForumTopicDto): Int =

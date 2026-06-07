@@ -55,11 +55,33 @@ class FeedAnimationPolicyTest {
     @Test
     fun forumTopicAnimationTier_overlayLargeListCapsToOff() {
         assertEquals(
-            FeedAnimationTier.Off,
+            FeedAnimationTier.Full,
             forumTopicAnimationTier(
                 unread = true,
                 isVisible = true,
                 visibleUnreadRank = 0,
+                listSize = 40,
+                sectionActive = true,
+                overlayMode = true,
+            ),
+        )
+        assertEquals(
+            FeedAnimationTier.Lite,
+            forumTopicAnimationTier(
+                unread = true,
+                isVisible = true,
+                visibleUnreadRank = 3,
+                listSize = 40,
+                sectionActive = true,
+                overlayMode = true,
+            ),
+        )
+        assertEquals(
+            FeedAnimationTier.Off,
+            forumTopicAnimationTier(
+                unread = true,
+                isVisible = true,
+                visibleUnreadRank = 6,
                 listSize = 40,
                 sectionActive = true,
                 overlayMode = true,

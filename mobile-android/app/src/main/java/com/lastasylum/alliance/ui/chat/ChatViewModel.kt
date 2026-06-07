@@ -1332,6 +1332,8 @@ class ChatViewModel(
                 overlayChatPanelOpenInGame = CombatOverlayService.isOverlayChatPanelOpenInGame(),
             )
         }
+        // Main-app chat tab must not mark-read while the in-game overlay owns the session.
+        if (CombatOverlayService.isTargetGameForeground()) return false
         if (!appInForeground) return false
         val selfId = currentUserId.trim()
         val isPeer = incomingMessage?.let { msg ->

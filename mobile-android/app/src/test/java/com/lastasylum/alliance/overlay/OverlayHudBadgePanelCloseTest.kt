@@ -67,6 +67,26 @@ class OverlayHudBadgePanelCloseTest {
     }
 
     @Test
+    fun panelClose_forumListWithoutMarkRead_keepsOptimisticBadge() {
+        val (bus, coordinator) = busWithCoordinator()
+        coordinator.bumpForumOptimistic(3)
+        bus.emit(OverlayHudBadgeEvent.ForumUnread(3, rawServer = 3, useAuthoritative = false))
+        ShadowLooper.idleMainLooper()
+        assertEquals(3, bus.current().forumUnread)
+
+        // Closing forum list without viewport mark-read must not clear optimistic floor.
+        bus.emit(
+            OverlayHudBadgeEvent.ForumUnread(
+                effective = 3,
+                rawServer = 3,
+                useAuthoritative = true,
+            ),
+        )
+        ShadowLooper.idleMainLooper()
+        assertEquals(3, bus.current().forumUnread)
+    }
+
+    @Test
     fun panelClose_fullRefreshAfterMarkRead_keepsZeroBadges() {
         val (bus, coordinator) = busWithCoordinator()
         coordinator.bumpNewsOptimistic(1)

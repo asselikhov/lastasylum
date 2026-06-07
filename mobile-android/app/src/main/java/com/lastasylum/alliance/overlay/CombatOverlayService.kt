@@ -6049,7 +6049,6 @@ class CombatOverlayService : Service() {
                 OverlayGameStatusHudRefresh.invalidateNewsCache()
             }
             OverlayHudPane.Forum -> {
-                inboxBadgeCoordinator.onForumMarkedReadLocally()
                 OverlayGameStatusHudRefresh.invalidateForumCache()
             }
             OverlayHudPane.Notifications, OverlayHudPane.Participants -> Unit
@@ -7425,7 +7424,13 @@ class CombatOverlayService : Service() {
                         service.clearHubUnreadOptimisticState()
                         service.applyAllianceHubUnreadCount(0)
                         service.patchHubUnreadInSessionCacheAfterLocalRead()
-                    } else if (!service.shouldDeferHubUnreadReconcile()) {
+                    } else if (service.shouldDeferHubUnreadReconcile()) {
+                        val kept = maxOf(
+                            service.currentHudBadgeState().allianceChatUnread,
+                            service.hubUnreadOptimisticFloor,
+                        )
+                        service.applyAllianceHubUnreadCount(kept)
+                    } else {
                         service.applyAllianceHubUnreadCount(0)
                     }
                     return@post

@@ -84,4 +84,25 @@ class OverlayReadCursorPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun effectiveTopicUnread_keepsServerUnreadWithoutLocalCursorPoisoning() {
+        val topic = com.lastasylum.alliance.data.teams.TeamForumTopicDto(
+            id = "topic1",
+            teamId = "team1",
+            title = "Topic",
+            createdByUserId = "u1",
+            messageCount = 12,
+            unreadCount = 4,
+            lastReadMessageId = "000000000000000000000010",
+            createdAt = "2020-01-01T00:00:00Z",
+            updatedAt = "2020-01-01T00:00:00Z",
+        )
+        val unread = com.lastasylum.alliance.data.effectiveUnreadCount(
+            serverUnread = topic.unreadCount,
+            lastReadMessageId = topic.lastReadMessageId,
+            localLastReadMessageId = null,
+        )
+        assertEquals(4, unread)
+    }
 }

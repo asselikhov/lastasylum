@@ -26,7 +26,9 @@ fun forumTopicAnimationTier(
 ): FeedAnimationTier {
     if (!sectionActive || !isVisible) return FeedAnimationTier.Off
     if (unread) {
-        if (overlayMode && listSize > 20) return FeedAnimationTier.Off
+        if (overlayMode && listSize > 20 && visibleUnreadRank > 2) {
+            return if (visibleUnreadRank <= 5) FeedAnimationTier.Lite else FeedAnimationTier.Off
+        }
         if (overlayMode && visibleUnreadRank > 1) {
             return if (visibleUnreadRank <= 5) FeedAnimationTier.Lite else FeedAnimationTier.Off
         }
