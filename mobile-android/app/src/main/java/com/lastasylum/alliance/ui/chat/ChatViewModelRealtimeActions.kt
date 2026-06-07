@@ -41,6 +41,17 @@ private fun ChatViewModel.shouldBlockOwnOutgoingRealtimeUnlocked(message: ChatMe
             if (cid in snapshot.activeClientMessageIds) return true
         }
         if (hasMatchingPendingOutgoing(vmState.value.messages, message, currentUserId)) return true
+        val roomId = message.roomId.trim()
+        val serverId = message._id?.trim().orEmpty()
+        if (roomId.isNotEmpty() && serverId.isNotEmpty() && !messageIdIndex.containsKey(serverId)) {
+            val hasPendingInRoom = vmState.value.messages.any { msg ->
+                val pendingRowId = msg._id?.trim().orEmpty()
+                isOptimisticOutgoingMessageId(pendingRowId) &&
+                    msg.senderId.trim() == selfId &&
+                    msg.roomId.trim() == roomId
+            }
+            if (hasPendingInRoom) return true
+        }
         val pendingId = message._id?.trim().orEmpty()
         if (pendingId.isNotEmpty() && snapshot.pendingToClientId.containsKey(pendingId)) return true
         return isDuplicateOwnOutgoingDelivery(

@@ -67,6 +67,48 @@ internal fun outgoingTextsMatch(a: ChatMessage, b: ChatMessage): Boolean =
         normalizeOutgoingReplyToId(b.replyToMessageId)
 
 /**
+ * Drop a confirmed server row that raced ahead of HTTP confirm for [pending].
+ * Matches by [ChatMessage.clientMessageId] when present; legacy text fallback drops only
+ * confirmed rows above the pending row in the newest-first list (socket echo at head).
+ */
+internal fun stripRacingServerEchoForPending(
+    messages: List<ChatMessage>,
+    pending: ChatMessage,
+    currentUserId: String,
+): List<ChatMessage> {
+    val selfId = currentUserId.trim()
+    val pendingId = pending._id?.trim().orEmpty()
+    if (selfId.isEmpty() || pendingId.isEmpty()) return messages
+    val pendingCid = pending.clientMessageId?.trim().orEmpty()
+    var out = messages
+    if (pendingCid.isNotEmpty()) {
+        out = out.filterNot { msg ->
+            val id = msg._id?.trim().orEmpty()
+            id != pendingId &&
+                id.isNotEmpty() &&
+                !isOptimisticOutgoingMessageId(id) &&
+                msg.senderId.trim() == selfId &&
+                msg.clientMessageId?.trim() == pendingCid
+        }
+    }
+    val pendingIndex = out.indexOfFirst { it._id?.trim() == pendingId }
+    if (pendingIndex <= 0) return out
+    val racingIds = out.withIndex()
+        .filter { (idx, msg) ->
+            val id = msg._id?.trim().orEmpty()
+            idx < pendingIndex &&
+                !isOptimisticOutgoingMessageId(id) &&
+                id.isNotEmpty() &&
+                msg.senderId.trim() == selfId &&
+                outgoingTextsMatch(msg, pending)
+        }
+        .mapNotNull { (_, msg) -> msg._id?.trim()?.takeIf { it.isNotEmpty() } }
+        .toSet()
+    if (racingIds.isEmpty()) return out
+    return out.filterNot { it._id?.trim().orEmpty() in racingIds }
+}
+
+/**
  * Last line of defense before UI apply: strip pending+server pairs and rows that raced
  * ahead of [confirmPendingOutgoingMessage] while [activeOutgoingPendingId] is set.
  */
@@ -78,17 +120,8 @@ internal fun sanitizeMessagesAfterRealtimeApply(
     var out = messages
     val pendingId = activeOutgoingPendingId?.trim().orEmpty()
     if (pendingId.isNotEmpty()) {
-        val pending = out.find { it._id?.trim() == pendingId }
-        if (pending != null) {
-            val selfId = currentUserId.trim()
-            out = out.filterNot { msg ->
-                val id = msg._id?.trim().orEmpty()
-                id != pendingId &&
-                    id.isNotEmpty() &&
-                    !isOptimisticOutgoingMessageId(id) &&
-                    msg.senderId.trim() == selfId &&
-                    outgoingTextsMatch(msg, pending)
-            }
+        out.find { it._id?.trim() == pendingId }?.let { pending ->
+            out = stripRacingServerEchoForPending(out, pending, currentUserId)
         }
     }
     out = stripRedundantPendingOutgoing(out, currentUserId)
@@ -197,29 +230,11 @@ internal fun mergeOutgoingConfirmation(
         replyToMessageId = confirmed.replyToMessageId ?: optimistic.replyToMessageId,
     )
 
-/** Removes optimistic rows when any confirmed server row from self matches the same outgoing. */
+/** Removes optimistic rows when a confirmed server row shares the same [clientMessageId]. */
 internal fun stripRedundantPendingOutgoing(
     messages: List<ChatMessage>,
     currentUserId: String,
-): List<ChatMessage> {
-    val selfId = currentUserId.trim()
-    if (selfId.isEmpty() || messages.isEmpty()) return messages
-    val confirmedFingerprints = HashSet<String>()
-    for (msg in messages) {
-        val id = msg._id?.trim().orEmpty()
-        if (msg.senderId.trim() != selfId || id.isEmpty() || isOptimisticOutgoingMessageId(id)) continue
-        confirmedFingerprints.add(
-            "${msg.text.trim()}\u0000${normalizeOutgoingReplyToId(msg.replyToMessageId)}",
-        )
-    }
-    if (confirmedFingerprints.isEmpty()) return messages
-    return messages.filter { msg ->
-        val id = msg._id?.trim().orEmpty()
-        if (!isOptimisticOutgoingMessageId(id) || msg.senderId.trim() != selfId) return@filter true
-        val fp = "${msg.text.trim()}\u0000${normalizeOutgoingReplyToId(msg.replyToMessageId)}"
-        fp !in confirmedFingerprints
-    }
-}
+): List<ChatMessage> = stripRedundantOwnOutgoingByClientMessageId(messages, currentUserId)
 
 /**
  * HTTP refresh must not drop rows already shown from socket (API can lag behind realtime).

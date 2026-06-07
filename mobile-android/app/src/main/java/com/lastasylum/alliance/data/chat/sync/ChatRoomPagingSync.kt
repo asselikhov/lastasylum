@@ -194,6 +194,7 @@ class ChatRoomPagingSync(
             roomId = roomId,
             protectedSocketMessageIds = host.protectedSocketMessageIds(),
             onAnchorDrop = host.mergeAnchorDropLogger(roomId),
+            authoritativeEmpty = host.postHistoryWipeAuthoritativeEmpty(),
         )
         ChatSessionCache.updateMessages(roomId, merged)
         val known = host.knownMessageIds()

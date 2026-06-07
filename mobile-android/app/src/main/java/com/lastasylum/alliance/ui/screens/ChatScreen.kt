@@ -2232,7 +2232,7 @@ private fun ChatBubbleInnerColumn(
                 nicknameColor = senderAccent,
                 senderRole = message.senderRole,
                 isMine = isMine,
-                showRoleBadge = !overlayUi,
+                showRoleBadge = false,
             )
         }
 
@@ -2532,7 +2532,7 @@ private fun ChatFloatingImageAttachmentsBlock(
                 nicknameColor = senderAccent,
                 senderRole = message.senderRole,
                 isMine = isMine,
-                showRoleBadge = !overlayUi,
+                showRoleBadge = false,
             )
         }
         Surface(
@@ -3021,7 +3021,7 @@ internal fun ChatMessageBubble(
             showIncomingAvatar = !isMine && isChainBottom,
             reserveIncomingAvatarSpace = !isMine && !isChainBottom,
             leadingAvatar = {
-                if (overlayUi && !isMine) {
+                if (!isMine) {
                     ChatSenderAvatarWithSquadRank(
                     avatarRelativeUrl = telegramUrl,
                     squadRole = message.senderRole,
@@ -3114,7 +3114,7 @@ internal fun ChatMessageBubble(
                             nicknameColor = senderAccent,
                             senderRole = message.senderRole,
                             isMine = isMine,
-                            showRoleBadge = !overlayUi,
+                            showRoleBadge = false,
                         )
                     }
                     Box(

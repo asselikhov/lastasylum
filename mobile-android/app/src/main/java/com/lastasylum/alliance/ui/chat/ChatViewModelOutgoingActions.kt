@@ -596,8 +596,13 @@ internal fun ChatViewModel.insertOptimisticOutgoingSynchronouslyImpl(
         }
         val work = synchronized(chatMutationLock) {
             val snapshot = vmState.value
+            val withoutRacingEcho = stripRacingServerEchoForPending(
+                messages = snapshot.messages,
+                pending = message,
+                currentUserId = currentUserId,
+            )
             val update = upsertMessage(
-                current = snapshot.messages,
+                current = withoutRacingEcho,
                 incoming = message,
                 knownMessageIds = knownMessageIds,
                 idIndex = messageIdIndex,

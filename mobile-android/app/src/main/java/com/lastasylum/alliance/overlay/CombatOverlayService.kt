@@ -98,6 +98,7 @@ import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.isCompactReactionSocketUpdate
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
+import com.lastasylum.alliance.data.chat.ChatHistoryWipe
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.OverlayReactionBurstReplyTo
 import com.lastasylum.alliance.data.chat.OverlayReactionEvent
@@ -5497,7 +5498,24 @@ class CombatOverlayService : Service() {
                 lastStripRenderSignature = 0
                 updateStripDismissScreenRects(emptyList())
                 refreshOverlayChatStrip()
-                CombatOverlayService.resolveChatViewModel()?.applyChatHistoryClearedFromServer()
+                val vm = CombatOverlayService.resolveChatViewModel()
+                if (vm != null) {
+                    vm.applyChatHistoryClearedFromServer()
+                } else {
+                    val uid = jwtSubFromAccessToken()?.trim().orEmpty()
+                    if (uid.isNotEmpty()) {
+                        val container = AppContainer.from(this@CombatOverlayService)
+                        serviceScope.launch {
+                            ChatHistoryWipe.wipeAllLocalChatData(
+                                userId = uid,
+                                messageStore = container.messageStore,
+                                chatOutbox = container.chatOutbox,
+                                launchDiskCache = container.launchDiskCache,
+                                chatRoomPreferences = container.chatRoomPreferences,
+                            )
+                        }
+                    }
+                }
             }
         }
         overlayChatHistoryClearedListener = historyListener

@@ -365,8 +365,8 @@ class ChatListMutationsTest {
 
     @Test
     fun stripRedundantPendingOutgoing_removesPendingWhenServerEchoExists() {
-        val pending = msg("pending-1", "hello")
-        val server = msg("server-1", "hello")
+        val pending = msg("pending-1", "hello").copy(clientMessageId = "client-1")
+        val server = msg("server-1", "hello").copy(clientMessageId = "client-1")
         val out = stripRedundantPendingOutgoing(listOf(server, pending), "u1")
         assertEquals(listOf("server-1"), out.map { it._id })
     }
@@ -479,10 +479,56 @@ class ChatListMutationsTest {
 
     @Test
     fun stripRedundantPendingOutgoing_removesOverlayPendingWhenConfirmed() {
-        val pending = msg("overlay-pending-1", "coords")
-        val server = msg("server-1", "coords")
+        val pending = msg("overlay-pending-1", "coords").copy(clientMessageId = "client-1")
+        val server = msg("server-1", "coords").copy(clientMessageId = "client-1")
         val out = stripRedundantPendingOutgoing(listOf(server, pending), "u1")
         assertEquals(listOf("server-1"), out.map { it._id })
+    }
+
+    @Test
+    fun stripRedundantPendingOutgoing_keepsSecondPendingWithSameText() {
+        val first = msg("server-1", "hello")
+        val pending = msg("pending-2", "hello").copy(clientMessageId = "client-2")
+        val out = stripRedundantPendingOutgoing(listOf(first, pending), "u1")
+        assertEquals(listOf("server-1", "pending-2"), out.map { it._id })
+    }
+
+    @Test
+    fun stripRacingServerEchoForPending_keepsOlderConfirmedWithSameText() {
+        val older = msg("507f1f77bcf86cd799439011", "hello")
+        val pending = msg("pending-2", "hello").copy(clientMessageId = "client-2")
+        val echo = msg("507f1f77bcf86cd799439099", "hello")
+        val out = stripRacingServerEchoForPending(
+            messages = listOf(echo, pending, older),
+            pending = pending,
+            currentUserId = "u1",
+        )
+        assertEquals(listOf("pending-2", "507f1f77bcf86cd799439011"), out.map { it._id })
+    }
+
+    @Test
+    fun stripRacingServerEchoForPending_dropsSingleRacingEchoByClientMessageId() {
+        val pending = msg("pending-1", "hello").copy(clientMessageId = "client-1")
+        val echo = msg("507f1f77bcf86cd799439099", "hello").copy(clientMessageId = "client-1")
+        val out = stripRacingServerEchoForPending(
+            messages = listOf(echo, pending),
+            pending = pending,
+            currentUserId = "u1",
+        )
+        assertEquals(listOf("pending-1"), out.map { it._id })
+    }
+
+    @Test
+    fun sanitizeMessagesAfterRealtimeApply_keepsOlderConfirmedWithSameText() {
+        val older = msg("507f1f77bcf86cd799439011", "hello")
+        val pending = msg("pending-2", "hello").copy(clientMessageId = "client-2")
+        val echo = msg("507f1f77bcf86cd799439099", "hello")
+        val out = sanitizeMessagesAfterRealtimeApply(
+            messages = listOf(echo, pending, older),
+            currentUserId = "u1",
+            activeOutgoingPendingId = "pending-2",
+        )
+        assertEquals(listOf("pending-2", "507f1f77bcf86cd799439011"), out.map { it._id })
     }
 
     @Test
