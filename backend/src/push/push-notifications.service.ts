@@ -133,7 +133,7 @@ export class PushNotificationsService implements OnModuleInit {
           priority: 'high',
           notification: {
             channelId: event.channelId,
-            notificationPriority: 'PRIORITY_HIGH',
+            priority: 'high',
           },
         },
         apns: {
