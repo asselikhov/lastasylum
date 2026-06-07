@@ -73,10 +73,10 @@ internal object OverlayGameStatusHudRefresh {
         forumUnread: Int,
     ) {
         seedBadgesFromDisk(teamId, newsUnread, forumUnread)
-        AppContainer.from(context).inboxBadgeCoordinator.cacheNewsForum(
+        AppContainer.from(context).inboxBadgeCoordinator.cacheAuthoritativeNewsForum(
             teamId.trim(),
-            newsUnread.coerceAtLeast(0),
-            forumUnread.coerceAtLeast(0),
+            newsServer = newsUnread.coerceAtLeast(0),
+            forumEffective = forumUnread.coerceAtLeast(0),
         )
     }
 
@@ -160,19 +160,20 @@ internal object OverlayGameStatusHudRefresh {
                     cachedNewsUnread = count
                     cachedNewsAtMs = now
                     cachedBadgeTeamId = teamId
+                    coordinator.cacheAuthoritativeNews(teamId, count)
                 }
             }
             forumUnread = if (forumCacheFresh) {
                 coordinator.readCachedForum(teamId)
                     ?: cachedForumUnread
             } else {
-                coordinator.fetchForumUnread(context, teamId).also { count ->
-                    cachedForumUnread = count
+                coordinator.fetchForumUnreadCounts(context, teamId).also { counts ->
+                    cachedForumUnread = counts.effective
                     cachedForumAtMs = now
                     cachedBadgeTeamId = teamId
-                }
+                    coordinator.cacheAuthoritativeForum(teamId, counts.effective, counts.rawServer)
+                }.effective
             }
-            coordinator.cacheNewsForum(teamId, newsUnread, forumUnread)
             cachedBadgeAtMs = maxOf(cachedNewsAtMs, cachedForumAtMs)
         }
 

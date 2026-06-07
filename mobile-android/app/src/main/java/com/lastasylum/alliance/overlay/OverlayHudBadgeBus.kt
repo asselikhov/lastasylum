@@ -42,7 +42,13 @@ class OverlayHudBadgeBus(
         }
     }
 
-    fun current(): OverlayGameStatusHudState = reducer.current()
+    fun current(): OverlayGameStatusHudState {
+        if (flushPosted && Looper.myLooper() == Looper.getMainLooper()) {
+            mainHandler.removeCallbacks(flushRunnable)
+            flushRunnable.run()
+        }
+        return reducer.current()
+    }
 
     private fun enqueueAndSchedule(event: OverlayHudBadgeEvent) {
         synchronized(pending) {

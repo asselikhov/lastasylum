@@ -14,7 +14,7 @@ data class ForumUnreadCounts(
 
 /** Single source for team inbox badge counts (overlay HUD, Team tab, mark-read refresh). */
 object TeamInboxBadgeDeriver {
-    /** Prefer client effective count; trust API when it reports more (stale topic cache). */
+    /** Prefer client effective count; trust API only when client still has unread. */
     fun resolveForumUnread(
         clientUnread: Int?,
         apiUnread: Int?,
@@ -24,6 +24,7 @@ object TeamInboxBadgeDeriver {
         return when {
             client == null -> api ?: 0
             api == null -> client
+            client == 0 -> 0
             else -> maxOf(client, api)
         }
     }

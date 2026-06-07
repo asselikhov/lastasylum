@@ -31,9 +31,9 @@ class TeamInboxBadgeDeriverTest {
     }
 
     @Test
-    fun resolveForumUnread_trustsApiWhenHigherThanStaleClient() {
+    fun resolveForumUnread_trustsClientZeroOverStaleApi() {
         assertEquals(
-            3,
+            0,
             TeamInboxBadgeDeriver.resolveForumUnread(clientUnread = 0, apiUnread = 3),
         )
         assertEquals(

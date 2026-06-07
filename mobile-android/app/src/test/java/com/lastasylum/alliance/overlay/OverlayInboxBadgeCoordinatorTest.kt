@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.overlay
 
+import com.lastasylum.alliance.data.teams.ForumUnreadCounts
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -104,5 +105,25 @@ class OverlayInboxBadgeCoordinatorTest {
         coordinator.bumpNewsOptimistic(2)
         assertEquals(2, coordinator.newsOptimisticFloor)
         assertTrue(coordinator.shouldDeferNewsReconcile())
+    }
+
+    @Test
+    fun cacheAuthoritative_storesServerNotDisplayed() {
+        val coordinator = OverlayInboxBadgeCoordinator()
+        coordinator.cacheAuthoritativeNews("team1", 0)
+        coordinator.cacheAuthoritativeForum("team1", effective = 0, rawServer = 3)
+        assertEquals(0, coordinator.readCachedNews("team1"))
+        assertEquals(0, coordinator.readCachedForum("team1"))
+        assertEquals(
+            ForumUnreadCounts(effective = 0, rawServer = 3),
+            coordinator.readCachedForumCounts("team1"),
+        )
+        coordinator.clearNewsOptimistic()
+        val merged = coordinator.mergeHudNews(
+            authoritative = coordinator.readCachedNews("team1")!!,
+            prevDisplayed = 5,
+            useAuthoritative = true,
+        )
+        assertEquals(0, merged)
     }
 }

@@ -196,7 +196,7 @@ internal fun ChatViewModel.acknowledgeOwnOutgoingInActiveRoomImpl(roomId: String
 internal fun ChatViewModel.recomputeRoomUnreadBadgesImpl() {
         val rooms = vmState.value.rooms
         if (rooms.isEmpty()) return
-        val adjusted = mergeRoomsUnreadFromServer(rooms)
+        val adjusted = recomputeRoomsUnreadFromLocalCursorsImpl(rooms)
         vmState.update { it.copy(rooms = adjusted) }
         syncTabUnreadBadge(adjusted)
         ChatSessionCache.update(adjusted)
@@ -211,11 +211,45 @@ internal fun ChatViewModel.syncReadStateFromPreferencesImpl() {
         hydrateReadCursorsFromPreferences()
         val rooms = vmState.value.rooms
         if (rooms.isEmpty()) return
-        val adjusted = mergeRoomsUnreadFromServer(rooms)
+        val adjusted = recomputeRoomsUnreadFromLocalCursorsImpl(rooms)
         syncTabUnreadBadge(adjusted)
         vmState.update { it.copy(rooms = adjusted) }
         ChatSessionCache.update(adjusted)
         syncOverlayAllianceHubBadge(adjusted)
+    }
+
+    /**
+     * Recompute badges from local read cursors without re-merging already-displayed counts as raw server.
+     */
+internal fun ChatViewModel.recomputeRoomsUnreadFromLocalCursorsImpl(rooms: List<ChatRoomDto>): List<ChatRoomDto> {
+        return rooms.map { room ->
+            val previousUnread = room.unreadCount
+            val effective = when {
+                isRoomActivelyViewed(room.id) -> 0
+                else -> effectiveUnreadCount(
+                    serverUnread = room.unreadCount,
+                    lastReadMessageId = room.lastReadMessageId,
+                    localLastReadMessageId = deviceLastReadMessageId(room),
+                )
+            }
+            if (effective == 0) {
+                clearOptimisticUnreadFloor(room.id)
+            }
+            val floor = optimisticUnreadFloorByRoom[room.id] ?: 0
+            val unread = displayedUnreadCount(
+                effectiveUnread = effective,
+                previouslyDisplayed = previousUnread,
+                rawServerUnread = effective,
+                optimisticFloor = floor,
+            )
+            if (unread == 0) {
+                clearOptimisticUnreadFloor(room.id)
+            }
+            room.copy(
+                unreadCount = unread,
+                lastReadMessageId = resolvedLastReadMessageId(room) ?: room.lastReadMessageId,
+            )
+        }
     }
 
     /** Overlay panel closed — wait for debounced mark-read POST before releasing shared VM state. */

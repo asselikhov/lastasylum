@@ -90,11 +90,7 @@ class AppContainer private constructor(context: Context) {
         reducer = reducer,
         mergeNews = inboxBadgeCoordinator::mergeHudNews,
         mergeForum = { effective, prev, raw, useAuthoritative ->
-            if (useAuthoritative) {
-                inboxBadgeCoordinator.mergeForumDisplayed(effective, prev, raw)
-            } else {
-                inboxBadgeCoordinator.mergeHudForum(effective, prev, useAuthoritative, raw)
-            }
+            inboxBadgeCoordinator.mergeHudForum(effective, prev, useAuthoritative, raw)
         },
     ).also { registerOverlayHudBadgeBus(it) }
 

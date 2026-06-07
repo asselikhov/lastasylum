@@ -91,7 +91,7 @@ class ChatRoomsListSync(
                 .onSuccess { raw ->
                     val next = host.applyRoomsFromServer(raw)
                     host.syncRaidRoomPreference(next)
-                    ChatSessionCache.update(raw)
+                    ChatSessionCache.update(next)
                     host.publishRooms(next)
                     host.syncTabUnreadBadge(next)
                     host.syncOverlayAllianceHubBadge(next)

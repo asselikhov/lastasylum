@@ -21,6 +21,9 @@ class OverlayInboxBadgeCoordinator {
     private var cachedForumUnread: Int = 0
 
     @Volatile
+    private var cachedForumRawUnread: Int = 0
+
+    @Volatile
     private var cachedBadgeTeamId: String? = null
 
     @Volatile
@@ -222,11 +225,32 @@ class OverlayInboxBadgeCoordinator {
         }
     }
 
-    fun cacheNewsForum(teamId: String, news: Int, forum: Int) {
-        cachedBadgeTeamId = teamId
-        cachedNewsUnread = news
-        cachedForumUnread = forum
+    /** Cache server-authoritative counts only — never merged/displayed badge values. */
+    fun cacheAuthoritativeNews(teamId: String, serverCount: Int) {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
+        cachedBadgeTeamId = tid
+        cachedNewsUnread = serverCount.coerceAtLeast(0)
         cachedBadgeAtMs = System.currentTimeMillis()
+    }
+
+    fun cacheAuthoritativeForum(teamId: String, effective: Int, rawServer: Int) {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
+        cachedBadgeTeamId = tid
+        cachedForumUnread = effective.coerceAtLeast(0)
+        cachedForumRawUnread = rawServer.coerceAtLeast(0)
+        cachedBadgeAtMs = System.currentTimeMillis()
+    }
+
+    fun cacheAuthoritativeNewsForum(
+        teamId: String,
+        newsServer: Int,
+        forumEffective: Int,
+        forumRawServer: Int = forumEffective,
+    ) {
+        cacheAuthoritativeNews(teamId, newsServer)
+        cacheAuthoritativeForum(teamId, forumEffective, forumRawServer)
     }
 
     fun readCachedNews(teamId: String): Int? {
@@ -237,6 +261,14 @@ class OverlayInboxBadgeCoordinator {
     fun readCachedForum(teamId: String): Int? {
         if (!isCacheFresh(teamId)) return null
         return cachedForumUnread
+    }
+
+    fun readCachedForumCounts(teamId: String): ForumUnreadCounts? {
+        if (!isCacheFresh(teamId)) return null
+        return ForumUnreadCounts(
+            effective = cachedForumUnread,
+            rawServer = cachedForumRawUnread,
+        )
     }
 
     private fun isCacheFresh(teamId: String): Boolean {
