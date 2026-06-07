@@ -67,6 +67,27 @@ fun displayedUnreadCount(
 fun reconcileDisplayedUnread(serverUnread: Int, previouslyDisplayed: Int): Int =
     displayedUnreadCount(serverUnread, previouslyDisplayed, rawServerUnread = serverUnread)
 
+/**
+ * Whether to drop an optimistic unread floor after server merge/recompute.
+ * Prevents badge flicker when listRooms still reports zero after a socket bump.
+ */
+fun shouldClearOptimisticUnreadFloor(
+    floor: Int,
+    rawServerUnread: Int,
+    displayedUnread: Int,
+    lastBumpAtMs: Long = 0L,
+    nowMs: Long = System.currentTimeMillis(),
+    graceMs: Long = 4_000L,
+): Boolean {
+    if (floor <= 0) return true
+    val raw = rawServerUnread.coerceAtLeast(0)
+    if (raw >= floor) return true
+    if (raw > 0 && displayedUnread == 0) return true
+    if (displayedUnread > 0) return false
+    if (raw == 0 && lastBumpAtMs > 0L && nowMs - lastBumpAtMs < graceMs) return false
+    return true
+}
+
 /** Unified inbox badge display: effective unread + optimistic floor + anti-flicker previous. */
 fun computeDisplayedUnread(
     serverUnread: Int,

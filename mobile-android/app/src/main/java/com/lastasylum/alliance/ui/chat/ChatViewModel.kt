@@ -235,6 +235,7 @@ class ChatViewModel(
     internal val pendingUnreadBumps = ArrayDeque<Pair<String, String>>()
     /** Socket bump not yet reflected in listRooms / rooms:unread — do not zero tab badge. */
     internal val optimisticUnreadFloorByRoom = mutableMapOf<String, Int>()
+    internal val optimisticUnreadFloorLastBumpAtMs = mutableMapOf<String, Long>()
     /** Last server-reported unread per room (API / socket), not merged display count. */
     internal val rawServerUnreadByRoom = mutableMapOf<String, Int>()
     internal var lastRoomsSyncedAtMs: Long = 0L
@@ -657,6 +658,7 @@ class ChatViewModel(
         ChatSocketIngress.clear()
         pendingUnreadBumps.clear()
         optimisticUnreadFloorByRoom.clear()
+        optimisticUnreadFloorLastBumpAtMs.clear()
         rawServerUnreadByRoom.clear()
         otherReadUptoByRoom.clear()
         lastMarkedReadByRoom.clear()
@@ -1110,6 +1112,11 @@ class ChatViewModel(
     internal fun applyRoomsFromServer(serverRooms: List<ChatRoomDto>) = applyRoomsFromServerImpl(serverRooms)
     internal fun mergeRoomsUnreadFromServer(serverRooms: List<ChatRoomDto>) = mergeRoomsUnreadFromServerImpl(serverRooms)
     internal fun clearOptimisticUnreadFloor(roomId: String) = clearOptimisticUnreadFloorImpl(roomId)
+    internal fun maybeClearOptimisticUnreadFloor(
+        roomId: String,
+        rawServerUnread: Int,
+        displayedUnread: Int,
+    ) = maybeClearOptimisticUnreadFloorImpl(roomId, rawServerUnread, displayedUnread)
     internal fun syncTabUnreadBadge(rooms: List<ChatRoomDto> = _state.value.rooms) = syncTabUnreadBadgeImpl(rooms)
     internal fun deviceLastReadMessageId(roomId: String) = deviceLastReadMessageIdImpl(roomId)
     internal fun deviceLastReadMessageId(room: ChatRoomDto) = deviceLastReadMessageIdImpl(room)
@@ -1328,6 +1335,18 @@ class ChatViewModel(
         incomingMessage: ChatMessage? = null,
     ): Boolean {
         if (_state.value.selectedRoomId != roomId) return false
+        val selfId = currentUserId.trim()
+        val isPeer = incomingMessage?.let { msg ->
+            selfId.isNotEmpty() && msg.senderId.trim() != selfId
+        }
+        // Main-app chat tab wins when overlay HUD chat is not actively open in-game.
+        if (appInForeground && isChatTabActive && !CombatOverlayService.isOverlayChatPanelOpenInGame()) {
+            return isMainAppRoomActivelyViewed(
+                isChatTabActive = true,
+                isTargetGameForeground = CombatOverlayService.isTargetGameForeground(),
+                isPeerMessage = isPeer,
+            )
+        }
         if (overlayChatPanelVisible) {
             if (!CombatOverlayService.isOverlayChatTabActive()) return false
             return isOverlayRoomActivelyViewed(
@@ -1339,10 +1358,6 @@ class ChatViewModel(
             )
         }
         if (!appInForeground) return false
-        val selfId = currentUserId.trim()
-        val isPeer = incomingMessage?.let { msg ->
-            selfId.isNotEmpty() && msg.senderId.trim() != selfId
-        }
         return isMainAppRoomActivelyViewed(
             isChatTabActive = isChatTabActive,
             isTargetGameForeground = CombatOverlayService.isTargetGameForeground(),

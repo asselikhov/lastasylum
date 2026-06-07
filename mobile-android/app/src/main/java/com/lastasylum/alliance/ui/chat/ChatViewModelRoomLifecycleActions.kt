@@ -17,12 +17,14 @@ import com.lastasylum.alliance.data.chat.sync.applyOverlayLoadTimeoutPolicy
 import com.lastasylum.alliance.data.chat.sync.CHAT_INITIAL_PAGE_SIZE
 import com.lastasylum.alliance.data.chat.sync.CHAT_PAGE_SIZE
 import com.lastasylum.alliance.data.chat.sync.CHAT_ROOMS_SYNC_ON_RESUME_TTL_MS
+import com.lastasylum.alliance.data.chat.sync.CHAT_UNREAD_RECONCILE_GRACE_MS
 import com.lastasylum.alliance.data.chat.sync.CHAT_UNREAD_SYNC_DEBOUNCE_MS
 import com.lastasylum.alliance.data.chat.sync.ChatRoomMessageCache
 import com.lastasylum.alliance.data.chat.sync.LaunchDiskPrimePayload
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.isObjectIdNewer
+import com.lastasylum.alliance.data.shouldClearOptimisticUnreadFloor
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.ui.OVERLAY_PANEL_LOAD_MAX_MS
@@ -219,9 +221,6 @@ internal fun ChatViewModel.recomputeRoomsUnreadFromLocalCursorsImpl(rooms: List<
                     localLastReadMessageId = deviceLastReadMessageId(room),
                 )
             }
-            if (effective == 0) {
-                clearOptimisticUnreadFloor(room.id)
-            }
             val floor = optimisticUnreadFloorByRoom[room.id] ?: 0
             val unread = displayedUnreadCount(
                 effectiveUnread = effective,
@@ -229,9 +228,7 @@ internal fun ChatViewModel.recomputeRoomsUnreadFromLocalCursorsImpl(rooms: List<
                 rawServerUnread = rawServer,
                 optimisticFloor = floor,
             )
-            if (unread == 0) {
-                clearOptimisticUnreadFloor(room.id)
-            }
+            maybeClearOptimisticUnreadFloor(room.id, rawServer, unread)
             room.copy(
                 unreadCount = unread,
                 lastReadMessageId = resolvedLastReadMessageId(room) ?: room.lastReadMessageId,
@@ -839,7 +836,8 @@ internal fun ChatViewModel.mergeRoomsUnreadFromServerImpl(serverRooms: List<Chat
         val pinInFlight = vmState.value.pinInFlight
         val selectedRoomId = vmState.value.selectedRoomId?.trim().orEmpty()
         return serverRooms.map { room ->
-            rawServerUnreadByRoom[room.id] = room.unreadCount.coerceAtLeast(0)
+            val rawApiUnread = room.unreadCount.coerceAtLeast(0)
+            rawServerUnreadByRoom[room.id] = rawApiUnread
             val previous = previousById[room.id]
             val serverPinId = room.pinnedMessageId?.trim().orEmpty()
             val prevPinId = previous?.pinnedMessageId?.trim().orEmpty()
@@ -851,19 +849,14 @@ internal fun ChatViewModel.mergeRoomsUnreadFromServerImpl(serverRooms: List<Chat
                 isRoomActivelyViewed(room.id) -> 0
                 else -> effectiveUnreadForRoom(room)
             }
-            if (serverUnread == 0) {
-                clearOptimisticUnreadFloor(room.id)
-            }
             val floor = optimisticUnreadFloorByRoom[room.id] ?: 0
             val unread = displayedUnreadCount(
                 effectiveUnread = serverUnread,
                 previouslyDisplayed = previousUnread,
-                rawServerUnread = room.unreadCount,
+                rawServerUnread = rawApiUnread,
                 optimisticFloor = floor,
             )
-            if (unread == 0) {
-                clearOptimisticUnreadFloor(room.id)
-            }
+            maybeClearOptimisticUnreadFloor(room.id, rawApiUnread, unread)
             val resolvedLast = resolvedLastReadMessageId(room)
             room.copy(
                 unreadCount = unread,
@@ -876,9 +869,28 @@ internal fun ChatViewModel.mergeRoomsUnreadFromServerImpl(serverRooms: List<Chat
         }
     }
 
+internal fun ChatViewModel.maybeClearOptimisticUnreadFloorImpl(
+    roomId: String,
+    rawServerUnread: Int,
+    displayedUnread: Int,
+) {
+    val floor = optimisticUnreadFloorByRoom[roomId] ?: 0
+    if (shouldClearOptimisticUnreadFloor(
+            floor = floor,
+            rawServerUnread = rawServerUnread,
+            displayedUnread = displayedUnread,
+            lastBumpAtMs = optimisticUnreadFloorLastBumpAtMs[roomId] ?: 0L,
+            graceMs = CHAT_UNREAD_RECONCILE_GRACE_MS,
+        )
+    ) {
+        clearOptimisticUnreadFloorImpl(roomId)
+    }
+}
+
 internal fun ChatViewModel.clearOptimisticUnreadFloorImpl(roomId: String) {
         if (roomId.isBlank()) return
         optimisticUnreadFloorByRoom.remove(roomId)
+        optimisticUnreadFloorLastBumpAtMs.remove(roomId)
     }
 
 internal fun ChatViewModel.syncTabUnreadBadgeImpl(rooms: List<ChatRoomDto> = vmState.value.rooms) {
@@ -933,6 +945,7 @@ internal fun ChatViewModel.bumpRoomUnreadLocallyImpl(roomId: String, messageId: 
         val prevDisplayed = room?.unreadCount ?: 0
         val nextFloor = ((optimisticUnreadFloorByRoom[roomId] ?: 0) + 1).coerceAtMost(999)
         optimisticUnreadFloorByRoom[roomId] = nextFloor
+        optimisticUnreadFloorLastBumpAtMs[roomId] = System.currentTimeMillis()
         val displayed = displayedUnreadCount(
             effectiveUnread = effectiveBase + 1,
             previouslyDisplayed = prevDisplayed,
@@ -1165,7 +1178,7 @@ internal fun ChatViewModel.onRoomUnreadFromServerImpl(event: ChatRoomUnreadEvent
                         optimisticFloor = floor,
                     )
                     val next = merged.copy(unreadCount = displayed)
-                    if (displayed == 0) clearOptimisticUnreadFloor(roomId)
+                    maybeClearOptimisticUnreadFloor(roomId, serverUnread, displayed)
                     next
                 }
             }

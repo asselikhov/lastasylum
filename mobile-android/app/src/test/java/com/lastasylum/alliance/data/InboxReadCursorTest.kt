@@ -1,6 +1,8 @@
 package com.lastasylum.alliance.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class InboxReadCursorTest {
@@ -137,6 +139,66 @@ class InboxReadCursorTest {
                 previouslyDisplayed = 3,
                 rawServerUnread = 8,
                 optimisticFloor = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun shouldClearOptimisticFloor_retainsDuringGraceWhenServerStillZero() {
+        val now = 10_000L
+        assertFalse(
+            shouldClearOptimisticUnreadFloor(
+                floor = 1,
+                rawServerUnread = 0,
+                displayedUnread = 1,
+                lastBumpAtMs = now - 500L,
+                nowMs = now,
+                graceMs = 4_000L,
+            ),
+        )
+        assertFalse(
+            shouldClearOptimisticUnreadFloor(
+                floor = 1,
+                rawServerUnread = 0,
+                displayedUnread = 0,
+                lastBumpAtMs = now - 500L,
+                nowMs = now,
+                graceMs = 4_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun shouldClearOptimisticFloor_clearsWhenServerCaughtUpOrGraceExpired() {
+        val now = 10_000L
+        assertTrue(
+            shouldClearOptimisticUnreadFloor(
+                floor = 1,
+                rawServerUnread = 1,
+                displayedUnread = 1,
+                lastBumpAtMs = now - 500L,
+                nowMs = now,
+            ),
+        )
+        assertTrue(
+            shouldClearOptimisticUnreadFloor(
+                floor = 1,
+                rawServerUnread = 0,
+                displayedUnread = 0,
+                lastBumpAtMs = now - 5_000L,
+                nowMs = now,
+                graceMs = 4_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun shouldClearOptimisticFloor_clearsWhenLocalReadSuppressesStaleServer() {
+        assertTrue(
+            shouldClearOptimisticUnreadFloor(
+                floor = 2,
+                rawServerUnread = 3,
+                displayedUnread = 0,
             ),
         )
     }
