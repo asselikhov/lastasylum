@@ -14,6 +14,7 @@ class ChatRoomsListSync(
     private val scope: CoroutineScope,
     private val repository: ChatRepository,
     private val usersRepository: UsersRepository,
+    private val chatRoomPreferences: com.lastasylum.alliance.data.chat.ChatRoomPreferences,
     private val host: Host,
 ) {
     interface Host {
@@ -34,12 +35,18 @@ class ChatRoomsListSync(
         fun reconnectRealtimeIfNeeded()
         fun setLastRoomsSyncedAtMs(atMs: Long)
         fun schedulePersistChatSnapshot()
+        fun applyChatHistoryClearedFromServer()
     }
 
     fun syncRoomsFromServer(reconfirmVisibleRoom: Boolean = true) {
         if (!host.isChatTabActive() && !host.overlayChatPanelVisible()) return
         scope.launch {
             if (!host.isChatTabActive() && !host.overlayChatPanelVisible()) return@launch
+            com.lastasylum.alliance.data.chat.ChatHistorySync.reconcileIfNeeded(
+                repository = repository,
+                chatRoomPreferences = chatRoomPreferences,
+                onServerHistoryCleared = { host.applyChatHistoryClearedFromServer() },
+            )
             repository.listRooms()
                 .onSuccess { raw ->
                     val next = host.applyRoomsFromServer(raw)

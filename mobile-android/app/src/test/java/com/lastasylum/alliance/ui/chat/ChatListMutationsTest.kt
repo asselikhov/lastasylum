@@ -560,6 +560,27 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun mergeLoadedPageWithExisting_stripsPendingWhenLoadedHasSameClientMessageId() {
+        val pending = msg("pending-1", "Test3").copy(
+            senderId = "u1",
+            clientMessageId = "cid-abc",
+        )
+        val confirmed = msg("507f1f77bcf86cd799439099", "Test3").copy(
+            senderId = "u1",
+            clientMessageId = "cid-abc",
+        )
+        val existing = listOf(pending)
+        val loaded = listOf(confirmed)
+        val merged = mergeLoadedPageWithExisting(
+            existing = existing,
+            loaded = loaded,
+            currentUserId = "u1",
+        )
+        assertEquals(1, merged.size)
+        assertEquals("507f1f77bcf86cd799439099", merged.first()._id)
+    }
+
+    @Test
     fun dedupeOwnOutgoingByClientMessageId_keepsFirstRow() {
         val first = msg("server-1", "hello").copy(clientMessageId = "cid-1")
         val dup = msg("server-2", "hello").copy(clientMessageId = "cid-1")

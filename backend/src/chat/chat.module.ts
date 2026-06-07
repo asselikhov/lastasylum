@@ -32,6 +32,10 @@ import {
   PlayerTeam,
   PlayerTeamSchema,
 } from '../users/schemas/player-team.schema';
+import {
+  ChatSystemMeta,
+  ChatSystemMetaSchema,
+} from './schemas/chat-system-meta.schema';
 
 @Module({
   imports: [
@@ -50,6 +54,7 @@ import {
         schema: OverlayReactionLogReadStateSchema,
       },
       { name: PlayerTeam.name, schema: PlayerTeamSchema },
+      { name: ChatSystemMeta.name, schema: ChatSystemMetaSchema },
     ]),
   ],
   controllers: [ChatController],

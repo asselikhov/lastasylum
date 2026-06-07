@@ -187,6 +187,19 @@ internal fun isDuplicateOwnOutgoingDelivery(
     return row._id?.trim() == serverId && outgoingTextsMatch(row, incoming)
 }
 
+/** True when the visible list still has unsent optimistic rows (skip stale REST merge). */
+internal fun hasOptimisticOutgoingPending(
+    messages: List<ChatMessage>,
+    currentUserId: String,
+): Boolean {
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty()) return false
+    return messages.any { msg ->
+        val id = msg._id?.trim().orEmpty()
+        isOptimisticOutgoingMessageId(id) && msg.senderId.trim() == selfId
+    }
+}
+
 /** True while optimistic row is still waiting for HTTP confirm (blocks socket duplicate row). */
 internal fun hasMatchingPendingOutgoing(
     messages: List<ChatMessage>,
@@ -230,6 +243,19 @@ internal fun mergeOutgoingConfirmation(
         replyToMessageId = confirmed.replyToMessageId ?: optimistic.replyToMessageId,
     )
 
+/** Drop optimistic rows and duplicate own sends after REST/socket merge. */
+internal fun sanitizeMergedChatMessages(
+    messages: List<ChatMessage>,
+    currentUserId: String,
+): List<ChatMessage> {
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty()) return messages
+    return dedupeOwnOutgoingByClientMessageId(
+        stripRedundantPendingOutgoing(messages, selfId),
+        selfId,
+    )
+}
+
 /** Removes optimistic rows when a confirmed server row shares the same [clientMessageId]. */
 internal fun stripRedundantPendingOutgoing(
     messages: List<ChatMessage>,
@@ -250,6 +276,7 @@ internal fun mergeLoadedPageWithExisting(
     protectedSocketMessageIds: Set<String> = emptySet(),
     onAnchorDrop: ((String) -> Unit)? = null,
     authoritativeEmpty: Boolean = false,
+    currentUserId: String = "",
 ): List<ChatMessage> {
     val scopedExisting = roomId?.let { filterMessagesForRoom(existing, it) } ?: existing
     if (loaded.isEmpty()) {
@@ -300,7 +327,12 @@ internal fun mergeLoadedPageWithExisting(
     val sorted = messages.sortedWith(
         compareByDescending<ChatMessage> { it._id?.trim().orEmpty() },
     )
-    return dedupeMessagesByIdNewestFirst(capNewestFirst(sorted, maxMessages))
+    val capped = dedupeMessagesByIdNewestFirst(capNewestFirst(sorted, maxMessages))
+    return if (currentUserId.isNotBlank()) {
+        sanitizeMergedChatMessages(capped, currentUserId)
+    } else {
+        capped
+    }
 }
 
 /** Merge [roomMessageCache] rows into visible UI after tab/foreground resume. */

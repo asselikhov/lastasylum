@@ -203,6 +203,13 @@ export class ChatController {
     return { success: true };
   }
 
+  @Get('sync-state')
+  @Roles(AllianceRole.MEMBER)
+  async getSyncState(@Req() req: { user: RequestUser }) {
+    await this.chatService.assertUserMayUseChat(req.user.userId);
+    return this.chatService.getChatSyncState();
+  }
+
   @Get('messages')
   @Roles(AllianceRole.MEMBER)
   async getRecentMessages(
@@ -248,7 +255,7 @@ export class ChatController {
       roomObjectId,
       attachmentIds,
     });
-    const message = await this.chatService.createMessage({
+    const { message, created } = await this.chatService.createMessage({
       roomId: dto.roomId,
       text: dto.text ?? '',
       replyToMessageId: dto.replyToMessageId,
@@ -256,29 +263,29 @@ export class ChatController {
       attachments: resolvedAttachments,
       clientMessageId: dto.clientMessageId,
     });
-    const messageId =
-      typeof (message as { _id?: unknown })._id === 'string'
-        ? (message as { _id: string })._id
-        : typeof (message as { _id?: unknown })._id === 'object' &&
-            (message as { _id?: { toString?: () => string } })._id != null
-          ? (message as { _id: { toString: () => string } })._id.toString()
-          : '';
-    const gameEventId = resolveGameEventId(
-      dto.gameEventAlert,
-      dto.excavationAlert,
-    );
-    await this.chatGateway.afterMessageCreated({
-      roomId: dto.roomId,
-      message,
-      senderUserId: req.user.userId,
-      gameEventId,
-      gameEventText: dto.text?.trim() ?? '',
-      messageAllianceId: message.allianceId,
-      messageId,
-      senderName: req.user.username,
-    });
-    // Обычные сообщения альянса не шлём push: в игре — оверлей/сокет; вне игры — только
-    // excavation_alert (notifyExcavationAlert) со звуком, чтобы не отвлекать от жизни вне рейда.
+    if (created) {
+      const messageId =
+        typeof (message as { _id?: unknown })._id === 'string'
+          ? (message as { _id: string })._id
+          : typeof (message as { _id?: unknown })._id === 'object' &&
+              (message as { _id?: { toString?: () => string } })._id != null
+            ? (message as { _id: { toString: () => string } })._id.toString()
+            : '';
+      const gameEventId = resolveGameEventId(
+        dto.gameEventAlert,
+        dto.excavationAlert,
+      );
+      await this.chatGateway.afterMessageCreated({
+        roomId: dto.roomId,
+        message,
+        senderUserId: req.user.userId,
+        gameEventId,
+        gameEventText: dto.text?.trim() ?? '',
+        messageAllianceId: message.allianceId,
+        messageId,
+        senderName: req.user.username,
+      });
+    }
     return message;
   }
 

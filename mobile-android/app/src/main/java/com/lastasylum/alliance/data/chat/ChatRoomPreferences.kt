@@ -82,6 +82,15 @@ class ChatRoomPreferences(context: Context) {
         editor.apply()
     }
 
+    fun getAcknowledgedHistoryClearedAt(): String =
+        prefs.getString(ackHistoryClearedKey(), null)?.trim().orEmpty()
+
+    fun setAcknowledgedHistoryClearedAt(isoTimestamp: String) {
+        val at = isoTimestamp.trim()
+        if (at.isEmpty()) return
+        prefs.edit().putString(ackHistoryClearedKey(), at).apply()
+    }
+
     fun loadAllLastReadMessageIds(): Map<String, String> {
         if (activeUserId.isNullOrBlank()) return emptyMap()
         val prefix = lastReadKeyPrefix()
@@ -131,6 +140,11 @@ class ChatRoomPreferences(context: Context) {
 
     private fun hiddenBeforeKey(roomId: String): String = hiddenBeforeKeyPrefix() + roomId
 
+    private fun ackHistoryClearedKey(): String {
+        val uid = activeUserId?.trim().orEmpty()
+        return if (uid.isBlank()) KEY_HISTORY_CLEARED_ACK else "$KEY_HISTORY_CLEARED_ACK$uid"
+    }
+
     /** Pre-userId keys were `last_read_msg_{roomId}`; move them to `last_read_msg_{userId}:{roomId}`. */
     private fun migrateLegacyReadCursors(userId: String) {
         val snapshot = prefs.all
@@ -161,5 +175,6 @@ class ChatRoomPreferences(context: Context) {
         const val KEY_HUB_ROOM = "hub_room_id"
         const val KEY_LAST_READ_PREFIX = "last_read_msg_"
         const val KEY_HIDDEN_BEFORE_PREFIX = "hidden_before_msg_"
+        const val KEY_HISTORY_CLEARED_ACK = "history_cleared_ack_"
     }
 }

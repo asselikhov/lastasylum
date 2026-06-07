@@ -4,6 +4,7 @@ import { Types } from 'mongoose';
 import { ChatService } from './chat.service';
 import { Message } from './schemas/message.schema';
 import { ChatRoomReadState } from './schemas/chat-room-read-state.schema';
+import { ChatSystemMeta } from './schemas/chat-system-meta.schema';
 import { UsersService } from '../users/users.service';
 import { TeamsService } from '../users/teams.service';
 import { ChatRoomsService } from './chat-rooms.service';
@@ -38,6 +39,17 @@ describe('ChatService.createMessage idempotency', () => {
         {
           provide: getModelToken(ChatRoomReadState.name),
           useValue: {},
+        },
+        {
+          provide: getModelToken(ChatSystemMeta.name),
+          useValue: {
+            findOneAndUpdate: jest.fn().mockReturnValue({ exec: jest.fn() }),
+            findOne: jest.fn().mockReturnValue({
+              select: jest.fn().mockReturnValue({
+                lean: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) }),
+              }),
+            }),
+          },
         },
         { provide: ChatAttachmentsService, useValue: {} },
         {
@@ -106,6 +118,7 @@ describe('ChatService.createMessage idempotency', () => {
       clientMessageId: 'client-uuid-1',
     });
     expect(create).not.toHaveBeenCalled();
-    expect(result._id).toBe(existingId.toString());
+    expect(result.message._id).toBe(existingId.toString());
+    expect(result.created).toBe(false);
   });
 });

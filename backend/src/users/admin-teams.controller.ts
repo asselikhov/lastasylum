@@ -130,7 +130,7 @@ export class AdminTeamsController {
   @Roles(AllianceRole.ADMIN)
   async clearAllChatMessages() {
     const result = await this.chat.clearAllChatHistoryForAdmin();
-    this.chatGateway.broadcastChatHistoryCleared();
+    this.chatGateway.broadcastChatHistoryCleared(result.historyClearedAt);
     return result;
   }
 

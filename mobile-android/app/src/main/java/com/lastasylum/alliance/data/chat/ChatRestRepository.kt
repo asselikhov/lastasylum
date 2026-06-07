@@ -15,6 +15,9 @@ class ChatRestRepository(
     suspend fun listRooms(): Result<List<ChatRoomDto>> =
         ChatRoomsSessionCache.listRooms { chatApi.listRooms() }
 
+    suspend fun getChatSyncState(): Result<ChatSyncStateDto> =
+        runCatching { chatApi.getSyncState() }
+
     suspend fun loadRecentMessages(
         roomId: String,
         beforeMessageId: String? = null,

@@ -226,7 +226,7 @@ export class PushNotificationsService implements OnModuleInit {
       }
       this.chatPushDebounceByRoom.set(roomId, now);
     }
-    const tokens = await this.usersService.collectPushTokensForAlliance(
+    const tokens = await this.usersService.collectPushTokensForAllianceChat(
       input.allianceId,
       input.excludeUserId,
     );

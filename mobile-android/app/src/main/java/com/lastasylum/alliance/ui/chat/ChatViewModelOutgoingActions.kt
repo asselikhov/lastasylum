@@ -90,15 +90,21 @@ private fun ChatViewModel.finishFastOutgoingSend(
     afterOptimistic()
     vmScope.launch {
         val persistError = runCatching {
-            withContext(Dispatchers.IO) {
-                repository.emitChatOutgoingViaSocket(
-                    text = trimmed,
-                    roomId = roomId,
-                    replyToMessageId = replyToMessageId,
-                    clientMessageId = prepared.clientMessageId,
-                    excavationAlert = prepared.excavationAlert,
-                )
-                chatOutbox.persistEnqueue(prepared)
+            coroutineScope {
+                launch(Dispatchers.IO) {
+                    runCatching {
+                        repository.emitChatOutgoingViaSocket(
+                            text = trimmed,
+                            roomId = roomId,
+                            replyToMessageId = replyToMessageId,
+                            clientMessageId = prepared.clientMessageId,
+                            excavationAlert = prepared.excavationAlert,
+                        )
+                    }
+                }
+                withContext(Dispatchers.IO) {
+                    chatOutbox.persistEnqueue(prepared)
+                }
             }
         }.exceptionOrNull()
         if (persistError != null) {
@@ -326,16 +332,19 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
         }
         val persistError = runCatching {
             coroutineScope {
-                val persistJob = async(Dispatchers.IO) { chatOutbox.persistEnqueue(prepared) }
-                withContext(Dispatchers.IO) {
-                    repository.prefireOverlayRaidSocket(
-                        text = body,
-                        roomId = rid,
-                        clientMessageId = prepared.clientMessageId,
-                        gameEventAlert = eventAlert,
-                    )
+                launch(Dispatchers.IO) {
+                    runCatching {
+                        repository.prefireOverlayRaidSocket(
+                            text = body,
+                            roomId = rid,
+                            clientMessageId = prepared.clientMessageId,
+                            gameEventAlert = eventAlert,
+                        )
+                    }
                 }
-                persistJob.await()
+                withContext(Dispatchers.IO) {
+                    chatOutbox.persistEnqueue(prepared)
+                }
             }
         }.exceptionOrNull()
         if (persistError != null) {
@@ -667,12 +676,7 @@ internal fun ChatViewModel.insertOptimisticOutgoingSynchronouslyImpl(
             )
             ChatSessionCache.updateMessages(rid, capped)
         }
-        val pendingKey = message._id?.trim().orEmpty()
-        val isOverlayQuickCommand = pendingKey.isNotEmpty() &&
-            overlayQuickCommandPrepared.containsKey(pendingKey)
-        if (!isOverlayQuickCommand) {
-            publishRaidMessageToOverlayStripImpl(message)
-        }
+        publishRaidMessageToOverlayStripImpl(message)
     }
 
 internal fun ChatViewModel.removePendingOutgoingMessageImpl(pendingId: String?) {

@@ -554,7 +554,7 @@ class TeamsRepository(
 
     private companion object {
         const val PERF_TAG = "PerfDiag"
-        const val FORUM_TOPICS_TTL_MS = 15_000L
-        const val FORUM_MESSAGES_TTL_MS = 20_000L
+        const val FORUM_TOPICS_TTL_MS = 5_000L
+        const val FORUM_MESSAGES_TTL_MS = 2_000L
     }
 }

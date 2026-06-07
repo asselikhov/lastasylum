@@ -5,6 +5,7 @@ import { Types } from 'mongoose';
 import { ChatService } from './chat.service';
 import { Message } from './schemas/message.schema';
 import { ChatRoomReadState } from './schemas/chat-room-read-state.schema';
+import { ChatSystemMeta } from './schemas/chat-system-meta.schema';
 import { ChatRoomsService } from './chat-rooms.service';
 import { ChatAttachmentsService } from './chat-attachments.service';
 import { UsersService } from '../users/users.service';
@@ -164,6 +165,19 @@ describe('ChatService pin (team rooms)', () => {
         {
           provide: getModelToken(ChatRoomReadState.name),
           useValue: chatReadStateModel,
+        },
+        {
+          provide: getModelToken(ChatSystemMeta.name),
+          useValue: {
+            findOneAndUpdate: jest.fn().mockReturnValue({
+              exec: jest.fn().mockResolvedValue({ historyClearedAt: new Date() }),
+            }),
+            findOne: jest.fn().mockReturnValue({
+              select: jest.fn().mockReturnValue({
+                lean: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) }),
+              }),
+            }),
+          },
         },
         { provide: ChatAttachmentsService, useValue: chatAttachments },
         { provide: UsersService, useValue: usersService },

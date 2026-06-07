@@ -4,7 +4,7 @@ import { PushNotificationsService } from './push-notifications.service';
 import { UsersService } from '../users/users.service';
 
 describe('PushNotificationsService', () => {
-  const collectPushTokensForAlliance = jest.fn();
+  const collectPushTokensForAllianceChat = jest.fn();
   let service: PushNotificationsService;
   const prevJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
@@ -24,7 +24,7 @@ describe('PushNotificationsService', () => {
         PushNotificationsService,
         {
           provide: UsersService,
-          useValue: { collectPushTokensForAlliance },
+          useValue: { collectPushTokensForAllianceChat },
         },
       ],
     }).compile();
@@ -33,7 +33,7 @@ describe('PushNotificationsService', () => {
   });
 
   it('does not collect tokens when Firebase is not configured', async () => {
-    collectPushTokensForAlliance.mockResolvedValue(['t1']);
+    collectPushTokensForAllianceChat.mockResolvedValue(['t1']);
     await service.notifyAllianceChatMessage({
       allianceId: 'ally',
       excludeUserId: new Types.ObjectId().toHexString(),
@@ -41,11 +41,11 @@ describe('PushNotificationsService', () => {
       body: 'Body',
       data: { k: 'v' },
     });
-    expect(collectPushTokensForAlliance).not.toHaveBeenCalled();
+    expect(collectPushTokensForAllianceChat).not.toHaveBeenCalled();
   });
 
   it('notifyRaidPinAlert delegates to alliance chat push when Firebase is not configured', async () => {
-    collectPushTokensForAlliance.mockResolvedValue(['t1']);
+    collectPushTokensForAllianceChat.mockResolvedValue(['t1']);
     await service.notifyRaidPinAlert({
       allianceId: `pt:${new Types.ObjectId().toHexString()}`,
       excludeUserId: new Types.ObjectId().toHexString(),
@@ -53,6 +53,6 @@ describe('PushNotificationsService', () => {
       messageId: 'msg1',
       body: 'Raid pin preview',
     });
-    expect(collectPushTokensForAlliance).not.toHaveBeenCalled();
+    expect(collectPushTokensForAllianceChat).not.toHaveBeenCalled();
   });
 });

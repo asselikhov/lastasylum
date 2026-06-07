@@ -50,7 +50,7 @@ internal fun TeamForumMessageDto.hasForumImages(): Boolean =
     imageRelativeUrls.isNotEmpty() || !imageRelativeUrl.isNullOrBlank()
 
 /** Periodic REST reconcile while forum topic screen is active. */
-internal const val ACTIVE_FORUM_RECONCILE_INTERVAL_MS = 60_000L
+internal const val ACTIVE_FORUM_RECONCILE_INTERVAL_MS = 30_000L
 
 internal fun isForumPendingId(id: String): Boolean =
     id.trim().startsWith("pending-")

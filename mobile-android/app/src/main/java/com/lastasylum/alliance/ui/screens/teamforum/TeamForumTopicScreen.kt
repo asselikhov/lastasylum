@@ -815,7 +815,7 @@ fun TeamForumTopicScreen(
                     }
                     trimForumMessagesInMemory()
                     hasMoreOlder = diskSnapshot.hasMoreOlder
-                    loading = false
+                    loading = true
                 } else if (knownEmpty) {
                     messages.clear()
                     if (stashed.isNotEmpty()) {
@@ -827,7 +827,7 @@ fun TeamForumTopicScreen(
                     loading = true
                 }
             }
-            val bypassCache = forceRefresh || forceForumRefreshAfterReconnect
+            val bypassCache = forceRefresh || forceForumRefreshAfterReconnect || !appendOlder
             forumRepository.listForumMessages(currentUserId, teamId, topicId, before = before, limit = 50, bypassCache = bypassCache)
                 .onSuccess { page ->
                     val visible = visibleForumMessages(page)
@@ -869,7 +869,8 @@ fun TeamForumTopicScreen(
     }
 
     fun mergeNew(msg: TeamForumMessageDto, source: String = "socket") {
-        if (shouldBlockOwnForumOutgoingRealtime(
+        if (source == "socket" &&
+            shouldBlockOwnForumOutgoingRealtime(
                 messages,
                 msg,
                 currentUserId,
@@ -1016,7 +1017,7 @@ fun TeamForumTopicScreen(
             if (!sectionActive) break
             val elapsed = System.currentTimeMillis() - lastForumBackgroundSyncAtMs
             if (elapsed >= ACTIVE_FORUM_RECONCILE_INTERVAL_MS) {
-                loadForumMessages(before = null, appendOlder = false, forceRefresh = false)
+                loadForumMessages(before = null, appendOlder = false, forceRefresh = true)
             }
         }
     }

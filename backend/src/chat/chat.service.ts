@@ -31,6 +31,7 @@ import { ChatRoomsService } from './chat-rooms.service';
 import { buildMessageReactionBroadcastPayload } from './chat-realtime-broadcast.util';
 import { Message, MessageAttachment } from './schemas/message.schema';
 import { ChatRoomReadState } from './schemas/chat-room-read-state.schema';
+import { ChatSystemMeta } from './schemas/chat-system-meta.schema';
 import { ChatAttachmentsService } from './chat-attachments.service';
 import { assertStickerPayload } from './sticker-payload.util';
 import {
@@ -138,6 +139,16 @@ export type ChatClearHistoryForAdminResult = {
   readStatesDeleted: number;
   attachmentsDeleted: number;
   pinsCleared: number;
+  historyClearedAt: string;
+};
+
+export type ChatCreateMessageResult = {
+  message: ChatMessageView;
+  created: boolean;
+};
+
+export type ChatSyncState = {
+  historyClearedAt: string | null;
 };
 
 export type ChatRoomPinChangedPayload = {
@@ -163,6 +174,8 @@ export class ChatService {
     @InjectModel(Message.name) private readonly messageModel: Model<Message>,
     @InjectModel(ChatRoomReadState.name)
     private readonly chatReadStateModel: Model<ChatRoomReadState>,
+    @InjectModel(ChatSystemMeta.name)
+    private readonly chatSystemMetaModel: Model<ChatSystemMeta>,
     private readonly chatAttachments: ChatAttachmentsService,
     private readonly usersService: UsersService,
     private readonly gameIdentities: GameIdentitiesService,
@@ -980,7 +993,7 @@ export class ChatService {
     replyToMessageId?: string;
     attachments?: MessageAttachment[];
     clientMessageId?: string;
-  }): Promise<ChatMessageView> {
+  }): Promise<ChatCreateMessageResult> {
     const authorUser = await this.usersService.findById(input.author.userId);
     if (
       !authorUser ||
@@ -1026,7 +1039,10 @@ export class ChatService {
         .lean<MessageLean | null>()
         .exec();
       if (existing) {
-        return this.viewMessageForUser(existing, input.author.userId);
+        return {
+          message: await this.viewMessageForUser(existing, input.author.userId),
+          created: false,
+        };
       }
     }
 
@@ -1054,10 +1070,41 @@ export class ChatService {
       reactions: [],
       clientMessageId,
     });
-    return this.viewMessageForUser(
-      created.toObject<MessageLean>(),
-      input.author.userId,
-    );
+    return {
+      message: await this.viewMessageForUser(
+        created.toObject<MessageLean>(),
+        input.author.userId,
+      ),
+      created: true,
+    };
+  }
+
+  /** Clients poll on reconnect to wipe local cache after admin history delete. */
+  async getChatSyncState(): Promise<ChatSyncState> {
+    const row = await this.chatSystemMetaModel
+      .findOne({ key: 'global' })
+      .select('historyClearedAt')
+      .lean<{ historyClearedAt?: Date | null } | null>()
+      .exec();
+    const at = row?.historyClearedAt;
+    return {
+      historyClearedAt:
+        at instanceof Date && Number.isFinite(at.getTime())
+          ? at.toISOString()
+          : null,
+    };
+  }
+
+  private async markChatHistoryCleared(): Promise<string> {
+    const clearedAt = new Date();
+    await this.chatSystemMetaModel
+      .findOneAndUpdate(
+        { key: 'global' },
+        { $set: { historyClearedAt: clearedAt } },
+        { upsert: true, new: true },
+      )
+      .exec();
+    return clearedAt.toISOString();
   }
 
   /** R5 admin: read room history without membership check. */
@@ -1718,6 +1765,7 @@ export class ChatService {
    * Chat rooms are kept (same as scripts/clear-chat-messages.mjs).
    */
   async clearAllChatHistoryForAdmin(): Promise<ChatClearHistoryForAdminResult> {
+    const historyClearedAt = await this.markChatHistoryCleared();
     const [messages, readStates, attachmentsDeleted, pinsCleared] =
       await Promise.all([
         this.messageModel.deleteMany({}).exec(),
@@ -1730,6 +1778,7 @@ export class ChatService {
       readStatesDeleted: readStates.deletedCount ?? 0,
       attachmentsDeleted,
       pinsCleared,
+      historyClearedAt,
     };
   }
 }

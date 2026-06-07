@@ -61,6 +61,22 @@ function gameEventPushSenderFromMessage(message: unknown): {
   };
 }
 
+function chatMessagePushPreview(message: unknown): {
+  senderLabel: string;
+  body: string;
+} {
+  const m = message as {
+    senderUsername?: string;
+    text?: string;
+  };
+  const sender = (m.senderUsername ?? '').trim();
+  const text = (m.text ?? '').trim();
+  return {
+    senderLabel: sender || 'Чат',
+    body: text.slice(0, 120) || 'Новое сообщение',
+  };
+}
+
 /** Must match overlay reaction ids in Android OverlayQuickReactions.kt */
 const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
   'heart',
@@ -258,7 +274,7 @@ export class ChatGateway {
       roomObjectId,
       attachmentIds,
     });
-    const message = await this.chatService.createMessage({
+    const { message, created } = await this.chatService.createMessage({
       roomId,
       text: payload.text ?? '',
       replyToMessageId: payload.replyToMessageId,
@@ -266,30 +282,32 @@ export class ChatGateway {
       attachments: resolvedAttachments,
       clientMessageId: payload.clientMessageId,
     });
-    const messageId =
-      typeof (message as { _id?: unknown })._id === 'string'
-        ? (message as { _id: string })._id
-        : typeof (message as { _id?: unknown })._id === 'object' &&
-            (message as { _id?: { toString?: () => string } })._id != null
-          ? (message as { _id: { toString: () => string } })._id.toString()
-          : '';
-    const gameEventId = resolveGameEventId(
-      payload.gameEventAlert,
-      payload.excavationAlert,
-    );
-    await this.afterMessageCreated({
-      roomId,
-      message,
-      senderUserId: client.data.user.userId,
-      gameEventId,
-      gameEventText: payload.text?.trim() ?? '',
-      messageAllianceId:
-        typeof (message as { allianceId?: string }).allianceId === 'string'
-          ? (message as { allianceId: string }).allianceId
-          : allianceId,
-      messageId,
-      senderName: client.data.user.username,
-    });
+    if (created) {
+      const messageId =
+        typeof (message as { _id?: unknown })._id === 'string'
+          ? (message as { _id: string })._id
+          : typeof (message as { _id?: unknown })._id === 'object' &&
+              (message as { _id?: { toString?: () => string } })._id != null
+            ? (message as { _id: { toString: () => string } })._id.toString()
+            : '';
+      const gameEventId = resolveGameEventId(
+        payload.gameEventAlert,
+        payload.excavationAlert,
+      );
+      await this.afterMessageCreated({
+        roomId,
+        message,
+        senderUserId: client.data.user.userId,
+        gameEventId,
+        gameEventText: payload.text?.trim() ?? '',
+        messageAllianceId:
+          typeof (message as { allianceId?: string }).allianceId === 'string'
+            ? (message as { allianceId: string }).allianceId
+            : allianceId,
+        messageId,
+        senderName: client.data.user.username,
+      });
+    }
     return { event: 'message:sent', data: message };
   }
 
@@ -730,6 +748,24 @@ export class ChatGateway {
           },
         })
         .catch(() => undefined);
+    } else if (
+      input.messageAllianceId &&
+      input.messageAllianceId !== GLOBAL_CHAT_ALLIANCE_ID
+    ) {
+      const preview = chatMessagePushPreview(input.message);
+      void this.pushNotifications
+        .notifyAllianceChatMessage({
+          allianceId: input.messageAllianceId,
+          excludeUserId: senderUserId,
+          title: preview.senderLabel || 'Новое сообщение',
+          body: preview.body,
+          data: {
+            roomId,
+            messageId: input.messageId ?? '',
+            type: 'chat_message',
+          },
+        })
+        .catch(() => undefined);
     }
   }
 
@@ -954,8 +990,12 @@ export class ChatGateway {
   }
 
   /** Notify connected clients that server-side chat history was wiped. */
-  broadcastChatHistoryCleared(): void {
-    this.server?.emit('chat:history:cleared', { ok: true });
+  broadcastChatHistoryCleared(clearedAt: string): void {
+    const at = clearedAt.trim();
+    this.server?.emit('chat:history:cleared', {
+      ok: true,
+      clearedAt: at || null,
+    });
     void this.broadcastUnreadZeroAfterHistoryClear();
   }
 

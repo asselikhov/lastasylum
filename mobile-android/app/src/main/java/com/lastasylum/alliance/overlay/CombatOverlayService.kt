@@ -2913,6 +2913,9 @@ class CombatOverlayService : Service() {
         val applyViaOverlayPanel = overlayChatTeamPanelVisible &&
             (!activityChatViewModelHandlesUnread() || selectedId == msgRoomId)
         if (!roomSelected && !applyViaOverlayPanel) return
+        if (roomSelected && activityChatViewModelHandlesUnread()) {
+            return
+        }
         vm.applyOverlayIncomingMessage(msg)
     }
 

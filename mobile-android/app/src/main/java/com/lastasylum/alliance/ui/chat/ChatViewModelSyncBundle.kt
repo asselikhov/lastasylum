@@ -161,12 +161,14 @@ internal class ChatViewModelSyncBundle(
         override fun reconnectRealtimeIfNeeded() = vm.reconnectRealtimeIfNeeded()
         override fun setLastRoomsSyncedAtMs(atMs: Long) { vm.lastRoomsSyncedAtMs = atMs }
         override fun schedulePersistChatSnapshot() = vm.schedulePersistChatSnapshot()
+        override fun applyChatHistoryClearedFromServer() = vm.applyChatHistoryClearedFromServer()
     }
 
     val roomsListSync = com.lastasylum.alliance.data.chat.sync.ChatRoomsListSync(
         scope = scope,
         repository = repository,
         usersRepository = vm.usersRepositoryInternal,
+        chatRoomPreferences = vm.chatRoomPreferencesInternal,
         host = roomsListSyncHost,
     )
 

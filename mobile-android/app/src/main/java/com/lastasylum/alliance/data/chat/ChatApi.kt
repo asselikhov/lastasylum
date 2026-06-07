@@ -17,6 +17,9 @@ interface ChatApi {
     @GET("chat/rooms")
     suspend fun listRooms(): List<ChatRoomDto>
 
+    @GET("chat/sync-state")
+    suspend fun getSyncState(): ChatSyncStateDto
+
     @POST("chat/rooms")
     suspend fun createRoom(@Body body: CreateChatRoomRequest): ChatRoomDto
 

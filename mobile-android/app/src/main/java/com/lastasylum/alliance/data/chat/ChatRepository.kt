@@ -14,6 +14,8 @@ class ChatRepository(
 
     suspend fun listRooms(): Result<List<ChatRoomDto>> = rest.listRooms()
 
+    suspend fun getChatSyncState(): Result<ChatSyncStateDto> = rest.getChatSyncState()
+
     suspend fun loadRecentMessages(
         roomId: String,
         beforeMessageId: String? = null,

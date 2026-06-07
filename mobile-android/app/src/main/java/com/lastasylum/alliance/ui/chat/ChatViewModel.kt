@@ -593,6 +593,8 @@ class ChatViewModel(
                 )
             }
             resetChatStateAfterHistoryWipe()
+            repository.getChatSyncState().getOrNull()?.historyClearedAt?.trim()?.takeIf { it.isNotEmpty() }
+                ?.let { chatRoomPreferences.setAcknowledgedHistoryClearedAt(it) }
             syncRoomsFromServer(reconfirmVisibleRoom = !selected.isNullOrBlank())
             selected?.let { refreshMessagesInBackground(it, force = true) }
             schedulePersistChatSnapshot()

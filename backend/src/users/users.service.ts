@@ -1071,7 +1071,19 @@ export class UsersService implements OnModuleInit {
     allianceId: string,
     excludeUserId: string,
   ): Promise<string[]> {
+    return this.collectPushTokensForAllianceChat(allianceId, excludeUserId, {
+      excludeIngameOverlay: false,
+    });
+  }
+
+  /** Alliance chat push — skip users actively in overlay (socket handles them). */
+  async collectPushTokensForAllianceChat(
+    allianceId: string,
+    excludeUserId: string,
+    options?: { excludeIngameOverlay?: boolean },
+  ): Promise<string[]> {
     if (!Types.ObjectId.isValid(excludeUserId)) return [];
+    const excludeIngameOverlay = options?.excludeIngameOverlay !== false;
     const filter: Record<string, unknown> = {
       membershipStatus: TeamMembershipStatus.ACTIVE,
       _id: { $ne: new Types.ObjectId(excludeUserId) },
@@ -1086,12 +1098,28 @@ export class UsersService implements OnModuleInit {
     }
     const users = await this.userModel
       .find(filter)
-      .select('pushFcmTokens')
-      .lean()
+      .select('pushFcmTokens presenceStatus lastPresenceAt')
+      .lean<
+        Array<{
+          pushFcmTokens?: string[];
+          presenceStatus?: string | null;
+          lastPresenceAt?: Date | null;
+        }>
+      >()
       .exec();
+    const staleBeforeMs =
+      Date.now() - UsersService.OVERLAY_INGAME_LIST_STALE_MS;
     const out: string[] = [];
     for (const u of users) {
-      const arr = (u as { pushFcmTokens?: string[] }).pushFcmTokens;
+      if (excludeIngameOverlay) {
+        const lastAt = u.lastPresenceAt;
+        const ingameNow =
+          (u.presenceStatus ?? '').trim().toLowerCase() === 'ingame' &&
+          lastAt instanceof Date &&
+          lastAt.getTime() >= staleBeforeMs;
+        if (ingameNow) continue;
+      }
+      const arr = u.pushFcmTokens;
       if (Array.isArray(arr)) out.push(...arr);
     }
     return out;

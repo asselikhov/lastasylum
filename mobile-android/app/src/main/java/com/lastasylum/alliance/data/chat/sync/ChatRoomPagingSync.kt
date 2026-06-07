@@ -11,6 +11,7 @@ import com.lastasylum.alliance.ui.chat.filterMessagesForRoom
 import com.lastasylum.alliance.ui.chat.mergeLoadedPageWithExisting
 import com.lastasylum.alliance.ui.chat.mergeOlderPage
 import com.lastasylum.alliance.ui.chat.rebuildMessageIdIndex
+import com.lastasylum.alliance.ui.chat.hasOptimisticOutgoingPending
 import com.lastasylum.alliance.ui.chat.shouldSkipBackgroundMessageRefresh
 import com.lastasylum.alliance.ui.chat.ChatState
 import kotlinx.coroutines.CoroutineScope
@@ -106,6 +107,7 @@ class ChatRoomPagingSync(
             cancelBackgroundRefresh(roomId)
         }
         val deferMs = when {
+            host.isActiveSelectedRoom(roomId) -> 0L
             ChatSessionCache.getFreshMessages(roomId) == null -> 0L
             host.overlayChatPanelVisible() && host.isAllianceRaidRoom(roomId) -> 0L
             else -> CHAT_BACKGROUND_MESSAGE_REFRESH_DEFER_MS
@@ -151,6 +153,7 @@ class ChatRoomPagingSync(
                             protectedSocketMessageIds = host.protectedSocketMessageIds(),
                             onAnchorDrop = host.mergeAnchorDropLogger(roomId),
                             authoritativeEmpty = host.isRoomAuthoritativeEmpty(roomId),
+                            currentUserId = host.currentUserId,
                         )
                         host.filterMessagesForRoom(raw, roomId)
                     }
@@ -214,6 +217,7 @@ class ChatRoomPagingSync(
                 protectedSocketMessageIds = host.protectedSocketMessageIds(),
                 onAnchorDrop = host.mergeAnchorDropLogger(roomId),
                 authoritativeEmpty = host.isRoomAuthoritativeEmpty(roomId),
+                currentUserId = host.currentUserId,
             ),
             roomId,
         )
@@ -308,7 +312,9 @@ class ChatRoomPagingSync(
     private fun shouldSkipBackgroundMessageRefreshForRoom(roomId: String): Boolean {
         val rid = roomId.trim()
         if (rid.isEmpty()) return false
+        if (host.isActiveSelectedRoom(rid)) return false
         val visible = host.filterMessagesForRoom(host.stateSnapshot().messages, rid)
+        if (hasOptimisticOutgoingPending(visible, host.currentUserId)) return false
         val sessionCache = ChatSessionCache.getFreshMessages(rid)
         val roomCache = host.roomMessageCache(rid)?.messages?.let {
             host.messagesWithoutLocallyRemoved(host.filterMessagesForRoom(it, rid))
