@@ -1,7 +1,6 @@
 package com.lastasylum.alliance.data.chat.sync
 
 import com.lastasylum.alliance.data.chat.ChatMessage
-import com.lastasylum.alliance.data.chat.ChatSocketIngress
 import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
 import com.lastasylum.alliance.ui.chat.ChatState
@@ -119,19 +118,12 @@ class ChatIncomingSync(
         clearComposer: Boolean = false,
     ) {
         if (batch.isEmpty()) return
-        val ingressFiltered = batch.filter { message ->
-            val rid = message.roomId.trim()
-            val mid = message._id?.trim().orEmpty()
-            mid.isEmpty() || rid.isEmpty() ||
-                ChatSocketIngress.markMessageNewSeen(rid, mid)
-        }
-        if (ingressFiltered.isEmpty()) return
         val roomId = host.selectedRoomId()
         val selectedRoom = roomId?.trim().orEmpty()
         val scopedBatch = if (selectedRoom.isEmpty()) {
-            ingressFiltered
+            batch
         } else {
-            ingressFiltered.filter { it.roomId.trim() == selectedRoom }
+            batch.filter { it.roomId.trim() == selectedRoom }
         }.filterNot { host.shouldBlockOwnOutgoingRealtime(it) }
         if (scopedBatch.isEmpty()) return
         scope.launch(Dispatchers.Default) {

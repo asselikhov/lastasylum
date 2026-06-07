@@ -5209,19 +5209,6 @@ class CombatOverlayService : Service() {
             }
             return
         }
-        if (inbound) {
-            val rid = normalized.roomId.trim()
-            val mid = stripCorrelationId
-            if (rid.isNotEmpty() && mid.isNotEmpty()) {
-                if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.markMessageNewSeen(rid, mid)) {
-                    if (stripBuffer.containsMessageId(mid)) {
-                        refreshExistingStripMessage(normalized, refreshNow)
-                    }
-                    ChatDeliveryMetrics.logStripDrop(normalized._id, "ingress_dup")
-                    return
-                }
-            }
-        }
         normalized.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { clientId ->
             if (stripBuffer.containsClientMessageId(clientId)) {
                 refreshExistingStripMessage(normalized, refreshNow)
@@ -5811,8 +5798,8 @@ class CombatOverlayService : Service() {
         if (msgRoomId.isNotEmpty()) {
             AppContainer.from(this).chatRepository.ensureRoomJoined(msgRoomId)
         }
-        forwardOverlaySocketMessageToViewModel(msg)
         if (msg.isCompactReactionSocketUpdate()) {
+            forwardOverlaySocketMessageToViewModel(msg)
             val id = msg._id?.trim().orEmpty()
             if (id.isNotEmpty() && stripBuffer.containsMessageId(id)) {
                 refreshExistingStripMessage(msg, refreshNow = true)
@@ -5824,12 +5811,6 @@ class CombatOverlayService : Service() {
         val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
         val normalized = normalizeStripRaidMessage(msg, raidId)
         val isRaid = shouldIngestForRaidStrip(normalized)
-        if (!isRaid && !isHub) {
-            if (!activityChatViewModelHandlesUnread()) {
-                resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
-            }
-            return
-        }
         val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
         val isSelf = selfId.isNotEmpty() && msg.senderId.trim() == selfId
         if (isRaid) {
@@ -5864,7 +5845,11 @@ class CombatOverlayService : Service() {
             }
         } else if (isHub) {
             handleOverlayHubMessage(msg)
+        } else if (!activityChatViewModelHandlesUnread()) {
+            resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
+            return
         }
+        forwardOverlaySocketMessageToViewModel(msg)
     }
 
     private fun unregisterOverlayReactionListenersIfRegistered() {

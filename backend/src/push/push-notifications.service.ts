@@ -3,6 +3,7 @@ import * as admin from 'firebase-admin';
 import { getGameEventById } from '../game-events/game-event-catalog';
 import { formatGameEventPushSenderLine } from '../game-events/game-event-push.util';
 import { UsersService } from '../users/users.service';
+import { parseFirebaseServiceAccountJson } from './firebase-service-account.util';
 
 const CHAT_PUSH_DEBOUNCE_MS = 45_000;
 
@@ -24,16 +25,21 @@ export class PushNotificationsService implements OnModuleInit {
       return;
     }
     try {
+      const cred = parseFirebaseServiceAccountJson(raw);
       if (!admin.apps.length) {
-        const cred = JSON.parse(raw) as admin.ServiceAccount;
         admin.initializeApp({
           credential: admin.credential.cert(cred),
         });
       }
       this.ready = true;
-      this.logger.log('Firebase Admin initialized for FCM');
+      const projectId =
+        (cred as { project_id?: string }).project_id ?? 'unknown';
+      this.logger.log(`Firebase Admin initialized for FCM (project=${projectId})`);
     } catch (e) {
-      this.logger.warn(`Firebase Admin init failed: ${(e as Error).message}`);
+      this.logger.warn(
+        `Firebase Admin init failed: ${(e as Error).message}. ` +
+          `Check FIREBASE_SERVICE_ACCOUNT_JSON is valid single-line JSON on Render.`,
+      );
     }
   }
 

@@ -90,10 +90,6 @@ internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
                 if (shouldBlockOwnOutgoingRealtime(message) || !isIncomingMessageVisible(message)) return@launch
                 dispatchIncomingBatch(listOf(message))
             }
-            val roomId = message.roomId.trim()
-            if (roomId.isNotEmpty()) {
-                refreshMessagesInBackground(roomId, force = true)
-            }
         }
     }
 

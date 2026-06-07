@@ -18,6 +18,34 @@ for (const [k, v] of Object.entries(env)) {
   if (process.env[k] == null || process.env[k] === '') process.env[k] = v;
 }
 
+function parseFirebaseServiceAccountJson(raw) {
+  const trimmed = raw.trim();
+  const attempts = [trimmed];
+  if (
+    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+  ) {
+    attempts.push(trimmed.slice(1, -1));
+  }
+  attempts.push(trimmed.replace(/\r?\n/g, '\\n'));
+  let lastError;
+  for (const candidate of attempts) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (
+        typeof parsed.private_key === 'string' &&
+        parsed.private_key.includes('\\n')
+      ) {
+        parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+      }
+      return parsed;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError ?? new Error('invalid FIREBASE_SERVICE_ACCOUNT_JSON');
+}
+
 const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
 if (!raw) {
   console.error('FIREBASE_SERVICE_ACCOUNT_JSON is not set in backend/.env');
@@ -26,7 +54,7 @@ if (!raw) {
 
 let cred;
 try {
-  cred = JSON.parse(raw);
+  cred = parseFirebaseServiceAccountJson(raw);
 } catch (e) {
   console.error('FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON:', e.message);
   process.exit(1);
