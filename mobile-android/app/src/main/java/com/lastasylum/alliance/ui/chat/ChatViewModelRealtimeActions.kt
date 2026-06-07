@@ -33,6 +33,9 @@ internal fun ChatViewModel.shouldBlockOwnOutgoingRealtimeImpl(message: ChatMessa
 private fun ChatViewModel.shouldBlockOwnOutgoingRealtimeUnlocked(message: ChatMessage): Boolean {
         val selfId = currentUserId.trim()
         if (selfId.isEmpty() || message.senderId.trim() != selfId) return false
+        if (message.clientMessageId.isNullOrBlank() && activeOutgoingClientMessageIds.isNotEmpty()) {
+            return true
+        }
         message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { cid ->
             if (cid in confirmedOutgoingClientMessageIds) return true
             if (cid in activeOutgoingClientMessageIds) return true

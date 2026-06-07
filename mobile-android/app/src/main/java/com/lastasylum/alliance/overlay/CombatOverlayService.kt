@@ -365,6 +365,9 @@ class CombatOverlayService : Service() {
     private var overlayChatTeamComposeView: ComposeView? = null
     @Volatile
     private var overlayChatTeamPanelVisible = false
+
+    @Volatile
+    private var overlayForumFlushPendingRead: (suspend () -> Unit)? = null
     private var currentOverlayHudPane: OverlayHudPane? = null
     /** 0 = chat, 1 = team tab in legacy overlay panel ([showOverlayChatTeamPanel] without HUD pane). */
     @Volatile
@@ -1160,10 +1163,6 @@ class CombatOverlayService : Service() {
     private val overlayCloseHudBadgeRefreshRunnable = Runnable {
         if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return@Runnable
         refreshOverlayInboxBadgesCoalesced(includeReactionLog = true)
-    }
-
-    private val overlayStripMarkReadRunnable = Runnable {
-        resolveChatViewModel()?.markOverlayStripVisibleAsRead()
     }
 
     private var lastStripZOrderLiftMs: Long = 0L
@@ -2349,44 +2348,6 @@ class CombatOverlayService : Service() {
             hubUnreadOptimisticFloor = 0
         }
         return merged
-    }
-
-    private fun scheduleOverlayStripMarkReadDebounced() {
-        if (!isOverlayChatStripEnabled()) return
-        if (chatStripHost?.visibility != View.VISIBLE) return
-        mainHandler.removeCallbacks(overlayStripMarkReadRunnable)
-        mainHandler.postDelayed(overlayStripMarkReadRunnable, OVERLAY_STRIP_MARK_READ_DEBOUNCE_MS)
-    }
-
-    private fun overlayStripMarkReadTarget(): Pair<String, String>? {
-        if (!isOverlayStripVisibleForMarkReadInternal()) return null
-        val hubId = runCatching { resolveOverlayHubRoomId() }.getOrNull()?.trim().orEmpty()
-        val raidId = resolveOverlayRaidRoomId()?.trim().orEmpty()
-        var newestId: String? = null
-        var newestRoom: String? = null
-        for (msg in stripPreviewForUi()) {
-            val roomId = msg.roomId.trim()
-            if (roomId.isEmpty()) continue
-            val isRaid = raidId.isNotEmpty() && roomId == raidId
-            val isHub = hubId.isNotEmpty() && roomId == hubId
-            if (!isRaid && !isHub) continue
-            val id = msg._id?.trim().orEmpty()
-            if (id.isEmpty() || id.startsWith("pending-")) continue
-            if (newestId == null || com.lastasylum.alliance.data.isObjectIdNewer(id, newestId)) {
-                newestId = id
-                newestRoom = roomId
-            }
-        }
-        val room = newestRoom ?: return null
-        val id = newestId ?: return null
-        return room to id
-    }
-
-    private fun isOverlayStripVisibleForMarkReadInternal(): Boolean {
-        if (!isOverlayChatStripEnabled()) return false
-        if (chatStripHost?.visibility != View.VISIBLE) return false
-        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return false
-        return stripPreviewForUi().isNotEmpty()
     }
 
     private fun refreshOverlayHubUnreadFromCache() {
@@ -5170,7 +5131,6 @@ class CombatOverlayService : Service() {
             scheduleRefreshOverlayChatStrip()
         }
         ensureStripWindowVisibleForRaidTraffic()
-        scheduleOverlayStripMarkReadDebounced()
     }
 
     private fun ingestOverlayRaidMessage(
@@ -5335,9 +5295,6 @@ class CombatOverlayService : Service() {
         ensureOverlayMessageStripIfNeeded()
         ensureStripWindowVisibleForRaidTraffic()
         ensureStripPruneScheduled()
-        if (inbound) {
-            scheduleOverlayStripMarkReadDebounced()
-        }
     }
 
     private fun setStripPlainMessage(message: String, noticeId: String = OverlayStripNoticeIds.GENERIC) {
@@ -6050,6 +6007,7 @@ class CombatOverlayService : Service() {
                     OverlayHudPane.Chat, null -> {
                         if (closingPane == OverlayHudPane.Chat || legacyChatTabIndex == 0) {
                             withContext(Dispatchers.Main) {
+                                resolveChatViewModel()?.flushOverlayChatViewportMarkRead()
                                 resolveChatViewModel()?.awaitPendingMarkRead()
                             }
                         }
@@ -6067,7 +6025,10 @@ class CombatOverlayService : Service() {
                             teamId = ctx.teamId,
                         )
                     }
-                    OverlayHudPane.Forum, OverlayHudPane.Participants -> Unit
+                    OverlayHudPane.Forum -> {
+                        overlayForumFlushPendingRead?.invoke()
+                    }
+                    OverlayHudPane.Participants -> Unit
                 }
             }
             mainHandler.post {
@@ -6128,6 +6089,7 @@ class CombatOverlayService : Service() {
         }
         overlayChatTeamPanelVisible = false
         currentOverlayHudPane = null
+        overlayForumFlushPendingRead = null
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
         root?.let { hideOverlayIme(it) }
         if (root != null && root.isAttachedToWindow) {
@@ -6173,6 +6135,7 @@ class CombatOverlayService : Service() {
         overlayChatTeamComposeView = null
         overlayChatTeamPanelVisible = false
         currentOverlayHudPane = null
+        overlayForumFlushPendingRead = null
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }
         overlayChatTeamComposeOwner?.destroy()
@@ -7386,20 +7349,17 @@ class CombatOverlayService : Service() {
         fun isOverlayChatTabActive(): Boolean =
             runningInstance?.isOverlayChatContentActive() == true
 
-        /** Raid/hub strip visible with messages — used for mark-read while strip is on screen. */
-        fun isOverlayStripVisibleForMarkRead(): Boolean =
-            runningInstance?.isOverlayStripVisibleForMarkReadInternal() == true
-
-        /** Newest strip message id in raid or hub room for mark-read. */
-        fun overlayStripMarkReadTarget(): Pair<String, String>? =
-            runningInstance?.overlayStripMarkReadTarget()
-
         /** Chat tab open in overlay HUD while in-game — enables mark-read and ✓✓ for senders. */
         fun isOverlayChatPanelOpenInGame(): Boolean {
             val service = runningInstance ?: return false
             return service.overlayChatTeamPanelVisible &&
                 service.isOverlayChatContentActive() &&
                 service.isInGameOverlayUiActive()
+        }
+
+        /** Flush pending forum topic mark-read when overlay forum pane closes. */
+        fun registerOverlayForumFlushPendingRead(action: (suspend () -> Unit)?) {
+            runningInstance?.overlayForumFlushPendingRead = action
         }
 
         /** Reset hub mail chip optimistic floor after admin chat wipe. */
@@ -7686,7 +7646,6 @@ class CombatOverlayService : Service() {
         /** After socket/VM bump, ignore stale listRooms that would zero the chip. */
         private const val HUB_UNREAD_RECONCILE_GRACE_MS = 4_000L
         private const val OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS = 80L
-        private const val OVERLAY_STRIP_MARK_READ_DEBOUNCE_MS = 500L
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 0L
         /** После present не поднимаем панель remove/add — только NOT_TOUCHABLE aux; lift ленты — force. */

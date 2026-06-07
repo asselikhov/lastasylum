@@ -48,26 +48,38 @@ internal fun ChatViewModel.shouldAutoMarkReadSelectedRoomImpl(): Boolean {
 
 internal fun ChatViewModel.shouldOverlayAutoMarkReadSelectedRoomImpl(): Boolean {
         if (!overlayChatPanelVisible) return false
+        if (!CombatOverlayService.isOverlayChatTabActive()) return false
         val roomId = vmState.value.selectedRoomId?.trim().orEmpty()
         if (roomId.isEmpty()) return false
         return CombatOverlayService.isOverlayChatPanelOpenInGame() ||
             com.lastasylum.alliance.overlay.OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
     }
 
-internal fun ChatViewModel.markOverlayPanelReadToNewestIncomingImpl() {
-        if (!overlayChatPanelVisible) return
+internal fun ChatViewModel.flushOverlayChatViewportMarkReadImpl() {
+        markOverlayVisibleMessagesAsReadImpl(
+            messageIds = lastOverlayVisibleMessageIds,
+            forceFlushOnClose = true,
+        )
+    }
+
+internal fun ChatViewModel.markOverlayVisibleMessagesAsReadImpl(
+        messageIds: List<String>,
+        forceFlushOnClose: Boolean = false,
+    ) {
+        lastOverlayVisibleMessageIds = messageIds
+        if (!forceFlushOnClose && !overlayChatPanelVisible) return
         val roomId = vmState.value.selectedRoomId?.trim().orEmpty()
         if (roomId.isEmpty()) return
-        val self = currentUserId.trim()
-        val targetId = vmState.value.messages.firstOrNull { message ->
-            val id = message._id?.trim().orEmpty()
-            isValidMarkReadMessageId(id) &&
-                (self.isBlank() || message.senderId.trim() != self)
-        }?._id
-            ?: vmState.value.messages.firstOrNull()?._id
-        if (isValidMarkReadMessageId(targetId)) {
-            vmScope.launch { markRoomReadUpTo(roomId, targetId!!) }
-        }
+        val room = vmState.value.rooms.find { it.id == roomId } ?: return
+        val lastRead = resolvedLastReadMessageId(room)?.trim().orEmpty()
+        val markId = computeOverlayViewportReadWatermark(
+            messageIds = messageIds,
+            messages = vmState.value.messages,
+            lastReadMessageId = lastRead,
+            currentUserId = currentUserId,
+            isValidMessageId = ::isValidMarkReadMessageId,
+        ) ?: return
+        vmScope.launch { markRoomReadUpTo(roomId, markId) }
     }
 
 internal suspend fun ChatViewModel.hydratePeerReadCursorImpl(roomId: String, force: Boolean = false) {
@@ -88,32 +100,6 @@ internal suspend fun ChatViewModel.hydratePeerReadCursorImpl(roomId: String, for
                     _otherReadUptoMessageId.value = publish
                 }
             }
-    }
-
-    /** Mark visible overlay messages read (viewport); advances cursor only forward. */
-internal fun ChatViewModel.markOverlayVisibleMessagesAsReadImpl(messageIds: List<String>) {
-        if (!overlayChatPanelVisible) return
-        val roomId = vmState.value.selectedRoomId?.trim().orEmpty()
-        if (roomId.isEmpty()) return
-        val room = vmState.value.rooms.find { it.id == roomId } ?: return
-        val lastRead = resolvedLastReadMessageId(room)?.trim().orEmpty()
-        val self = currentUserId.trim()
-        var watermark: String? = null
-        for (raw in messageIds) {
-            val id = raw.trim()
-            if (!isValidMarkReadMessageId(id)) continue
-            if (lastRead.isNotEmpty() && !isObjectIdNewer(id, lastRead)) continue
-            val senderId = vmState.value.messages.find { it._id?.trim() == id }?.senderId?.trim().orEmpty()
-            if (self.isNotBlank() && senderId == self) continue
-            watermark = when (val prev = watermark) {
-                null -> id
-                else -> if (isObjectIdNewer(id, prev)) id else prev
-            }
-        }
-        val markId = watermark ?: return
-        val cursor = lastRead
-        if (cursor.isNotEmpty() && !isObjectIdNewer(markId, cursor)) return
-        vmScope.launch { markRoomReadUpTo(roomId, markId) }
     }
 
     /** Oldest unread incoming in the open room (reverse list: last matching row). */
@@ -285,28 +271,6 @@ internal suspend fun ChatViewModel.markAllRoomsReadUpToLatestImpl() {
         syncOverlayAllianceHubBadge()
         CombatOverlayService.clearHubUnreadState()
         CombatOverlayService.refreshStatusHudAfterMarkAll()
-    }
-
-internal fun ChatViewModel.startOverlayAutoMarkReadCollectorImpl() {
-        overlayAutoMarkReadJob?.cancel()
-        overlayAutoMarkReadJob = vmScope.launch {
-            vmState
-                .map { st ->
-                    Triple(
-                        overlayChatPanelVisible,
-                        st.selectedRoomId,
-                        st.messages.firstOrNull()?._id,
-                    )
-                }
-                .distinctUntilChanged()
-                .collect { (visible, roomId, newestId) ->
-                    if (!visible) return@collect
-                    val rid = roomId?.trim().orEmpty()
-                    if (rid.isEmpty() || !isValidMarkReadMessageId(newestId)) return@collect
-                    if (!shouldOverlayAutoMarkReadSelectedRoom()) return@collect
-                    markRoomReadUpTo(rid, newestId!!)
-                }
-        }
     }
 
 internal fun ChatViewModel.scheduleBootstrapImpl(

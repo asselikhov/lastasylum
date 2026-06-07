@@ -249,7 +249,8 @@ class ChatViewModel(
     /** Fullscreen overlay chat/team panel is open — separate from bottom-nav Chat tab. */
     @Volatile
     internal var overlayChatPanelVisible = false
-    internal var overlayAutoMarkReadJob: kotlinx.coroutines.Job? = null
+    @Volatile
+    internal var lastOverlayVisibleMessageIds: List<String> = emptyList()
     internal val bootstrapMutex = Mutex()
     internal var bootstrapJob: Job? = null
     internal var openRoomJob: Job? = null
@@ -938,12 +939,8 @@ class ChatViewModel(
         syncOverlayAllianceHubBadge()
     }
 
-    /** Raid/hub strip visible in-game — mark newest strip message read. */
-    fun markOverlayStripVisibleAsRead() {
-        val (roomId, messageId) = CombatOverlayService.overlayStripMarkReadTarget() ?: return
-        if (!isValidMarkReadMessageId(messageId)) return
-        viewModelScope.launch { markRoomReadUpTo(roomId, messageId) }
-    }
+    /** Flush viewport-based mark-read on overlay chat pane close. */
+    fun flushOverlayChatViewportMarkRead() = flushOverlayChatViewportMarkReadImpl()
 
     internal fun schedulePeerReadCursorPoll(roomId: String, sentMessageId: String) {
         val rid = roomId.trim()
@@ -1026,7 +1023,6 @@ class ChatViewModel(
     internal fun persistChatSnapshot() = persistChatSnapshotImpl()
     internal fun shouldAutoMarkReadSelectedRoom() = shouldAutoMarkReadSelectedRoomImpl()
     internal fun shouldOverlayAutoMarkReadSelectedRoom() = shouldOverlayAutoMarkReadSelectedRoomImpl()
-    internal fun markOverlayPanelReadToNewestIncoming() = markOverlayPanelReadToNewestIncomingImpl()
     internal suspend fun hydratePeerReadCursor(roomId: String, force: Boolean = false) =
         hydratePeerReadCursorImpl(roomId, force)
     fun markOverlayVisibleMessagesAsRead(messageIds: List<String>) = markOverlayVisibleMessagesAsReadImpl(messageIds)
@@ -1045,7 +1041,6 @@ class ChatViewModel(
     fun syncReadStateFromPreferences() = syncReadStateFromPreferencesImpl()
     suspend fun awaitPendingMarkRead() = awaitPendingMarkReadImpl()
     suspend fun markAllRoomsReadUpToLatest() = markAllRoomsReadUpToLatestImpl()
-    internal fun startOverlayAutoMarkReadCollector() = startOverlayAutoMarkReadCollectorImpl()
     internal fun scheduleBootstrap(
         preferAllianceHubRoom: Boolean = false,
         preferOverlayRaidRoom: Boolean = false,
@@ -1237,6 +1232,7 @@ class ChatViewModel(
         if (overlayChatPanelVisible == visible) return
         overlayChatPanelVisible = visible
         if (visible) {
+            lastOverlayVisibleMessageIds = emptyList()
             refreshStickerPackAccess()
             refreshTeamProfileGateLight()
             syncReadStateFromPreferences()
@@ -1258,7 +1254,6 @@ class ChatViewModel(
                 if (_state.value.selectedRoomId.isNullOrBlank()) {
                     ensureAllianceHubRoomSelected()
                 }
-                markOverlayPanelReadToNewestIncoming()
                 recomputeRoomUnreadBadges()
                 val roomId = _state.value.selectedRoomId
                 if (!roomId.isNullOrBlank()) {
@@ -1268,12 +1263,10 @@ class ChatViewModel(
                     scheduleBootstrap(preferAllianceHubRoom = true, force = false)
                 }
             }
-            startOverlayAutoMarkReadCollector()
             return
         }
-        overlayAutoMarkReadJob?.cancel()
-        overlayAutoMarkReadJob = null
-        markOverlayPanelReadToNewestIncoming()
+        flushOverlayChatViewportMarkRead()
+        lastOverlayVisibleMessageIds = emptyList()
         snapshotSelectedRoomToMessageCache()
         schedulePersistChatSnapshot()
         viewModelScope.launch {
@@ -1330,15 +1323,14 @@ class ChatViewModel(
     ): Boolean {
         if (_state.value.selectedRoomId != roomId) return false
         if (overlayChatPanelVisible) {
-            val selfId = currentUserId.trim()
-            val isPeer = incomingMessage?.let { msg ->
-                selfId.isNotEmpty() && msg.senderId.trim() != selfId
-            } ?: false
-            if (isPeer) return true
             if (!CombatOverlayService.isOverlayChatTabActive()) return false
-            return appInForeground ||
-                com.lastasylum.alliance.overlay.OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
-                CombatOverlayService.isOverlayChatPanelOpenInGame()
+            return isOverlayRoomActivelyViewed(
+                overlayChatTabActive = true,
+                appInForeground = appInForeground,
+                fullscreenPanelVisible =
+                    com.lastasylum.alliance.overlay.OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible,
+                overlayChatPanelOpenInGame = CombatOverlayService.isOverlayChatPanelOpenInGame(),
+            )
         }
         if (!appInForeground) return false
         val selfId = currentUserId.trim()

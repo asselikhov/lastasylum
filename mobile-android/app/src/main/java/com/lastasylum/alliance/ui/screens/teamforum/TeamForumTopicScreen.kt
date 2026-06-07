@@ -936,7 +936,7 @@ fun TeamForumTopicScreen(
             Log.d("SR_Forum", "merge team=$teamId topic=$topicId count=1 source=$source")
         }
         persistForumMessagesToDisk()
-        if (!overlayUi || isNearBottom) {
+        if (!overlayUi && isNearBottom) {
             if (msg.senderUserId.trim() == currentUserId.trim()) {
                 msg.id.trim().takeIf { it.isNotEmpty() && !isForumPendingId(it) }?.let { mergeReadCursor(it) }
             } else {
@@ -1070,10 +1070,25 @@ fun TeamForumTopicScreen(
     LaunchedEffect(listState, overlayUi, teamId, topicId) {
         if (!overlayUi) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
-            .debounce(140)
             .collect { indices ->
                 markVisibleForumRef.value(indices)
             }
+    }
+    LaunchedEffect(overlayUi, teamId, topicId) {
+        if (!overlayUi) {
+            com.lastasylum.alliance.overlay.CombatOverlayService.registerOverlayForumFlushPendingRead(null)
+            return@LaunchedEffect
+        }
+        com.lastasylum.alliance.overlay.CombatOverlayService.registerOverlayForumFlushPendingRead {
+            forumMarkReadCoalescer.flushAndAwait(topicId)
+        }
+    }
+    DisposableEffect(overlayUi, teamId, topicId) {
+        onDispose {
+            if (!overlayUi) return@onDispose
+            scope.launch { forumMarkReadCoalescer.flushAndAwait(topicId) }
+            com.lastasylum.alliance.overlay.CombatOverlayService.registerOverlayForumFlushPendingRead(null)
+        }
     }
 
     var initialScrollApplied by remember(teamId, topicId) { mutableStateOf(false) }

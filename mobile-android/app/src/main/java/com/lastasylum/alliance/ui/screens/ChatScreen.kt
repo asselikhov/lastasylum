@@ -302,7 +302,6 @@ import android.net.Uri
 import android.widget.Toast
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
-import com.lastasylum.alliance.ui.chat.OVERLAY_VIEWPORT_MARK_READ_DEBOUNCE_MS
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -589,7 +588,6 @@ private fun ChatScreenMessagesHost(
     LaunchedEffect(listState, overlayUi, listPane.selectedRoomId) {
         if (!overlayUi) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
-            .debounce(OVERLAY_VIEWPORT_MARK_READ_DEBOUNCE_MS)
             .collect { indices ->
                 val markRead = markOverlayVisibleReadRef.value ?: return@collect
                 val ids = indices.flatMap { index ->
@@ -597,6 +595,17 @@ private fun ChatScreenMessagesHost(
                 }
                 if (ids.isNotEmpty()) markRead(ids)
             }
+    }
+    DisposableEffect(overlayUi, listPane.selectedRoomId) {
+        onDispose {
+            if (!overlayUi) return@onDispose
+            val markRead = markOverlayVisibleReadRef.value ?: return@onDispose
+            val indices = listState.layoutInfo.visibleItemsInfo.map { it.index }
+            val ids = indices.flatMap { index ->
+                messageIdsForTimelineIndex(timelineRef.value, messagesRef.value, index)
+            }
+            if (ids.isNotEmpty()) markRead(ids)
+        }
     }
 
     var pendingScrollAnchor by remember(listPane.selectedRoomId) {

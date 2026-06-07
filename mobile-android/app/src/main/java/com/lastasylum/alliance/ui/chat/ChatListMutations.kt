@@ -62,10 +62,34 @@ internal fun outgoingMessageFingerprint(
     return "$rid\u0000${text.trim()}\u0000${normalizeOutgoingReplyToId(replyToMessageId)}"
 }
 
-internal fun outgoingTextsMatch(a: ChatMessage, b: ChatMessage): Boolean =
-    a.text.trim() == b.text.trim() &&
-        normalizeOutgoingReplyToId(a.replyToMessageId) ==
+internal fun outgoingAttachmentFingerprint(message: ChatMessage): String =
+    message.attachments
+        .map { "${it.kind.orEmpty()}:${it.url.orEmpty()}" }
+        .sorted()
+        .joinToString("\u0001")
+
+/**
+ * Same outgoing payload: text + reply, or empty text with matching / in-flight attachments
+ * (optimistic rows often have empty [ChatMessage.attachments] until HTTP confirm).
+ */
+internal fun outgoingPayloadMatches(a: ChatMessage, b: ChatMessage): Boolean {
+    if (normalizeOutgoingReplyToId(a.replyToMessageId) !=
         normalizeOutgoingReplyToId(b.replyToMessageId)
+    ) {
+        return false
+    }
+    val textA = a.text.trim()
+    val textB = b.text.trim()
+    if (textA != textB) return false
+    if (textA.isNotEmpty()) return true
+    val fpA = outgoingAttachmentFingerprint(a)
+    val fpB = outgoingAttachmentFingerprint(b)
+    if (fpA == fpB) return true
+    return fpA.isEmpty() || fpB.isEmpty()
+}
+
+internal fun outgoingTextsMatch(a: ChatMessage, b: ChatMessage): Boolean =
+    outgoingPayloadMatches(a, b)
 
 private const val OUTGOING_SAME_SEND_MAX_SKEW_MS = 120_000L
 
@@ -156,7 +180,8 @@ internal fun attachPendingClientMessageIdsToOwnConfirmed(
 ): List<ChatMessage> {
     val selfId = currentUserId.trim()
     if (selfId.isEmpty()) return messages
-    val pendingEntries = messages.withIndex().filter { (_, msg) ->
+    val headScan = 12
+    val pendingEntries = messages.withIndex().take(headScan).filter { (_, msg) ->
         val id = msg._id?.trim().orEmpty()
         isOptimisticOutgoingMessageId(id) && msg.senderId.trim() == selfId
     }
@@ -166,14 +191,13 @@ internal fun attachPendingClientMessageIdsToOwnConfirmed(
         if (isOptimisticOutgoingMessageId(id) || id.isEmpty()) return@mapIndexed msg
         if (msg.senderId.trim() != selfId) return@mapIndexed msg
         if (!msg.clientMessageId.isNullOrBlank()) return@mapIndexed msg
+        if (index >= headScan) return@mapIndexed msg
         val pending = pendingEntries.firstOrNull { (pendingIdx, pendingMsg) ->
-            val adjacent = kotlin.math.abs(pendingIdx - index) <= 1
-            if (!adjacent) return@firstOrNull false
             val pendingCid = pendingMsg.clientMessageId?.trim().orEmpty()
-            val msgCid = msg.clientMessageId?.trim().orEmpty()
             when {
-                pendingCid.isNotEmpty() && msgCid == pendingCid -> true
-                isLikelySameOutgoingSend(pendingMsg, msg) -> true
+                pendingCid.isNotEmpty() && isLikelySameOutgoingSend(pendingMsg, msg) -> true
+                isLikelySameOutgoingSend(pendingMsg, msg) &&
+                    kotlin.math.abs(pendingIdx - index) <= 1 -> true
                 else -> false
             }
         }?.value ?: return@mapIndexed msg
@@ -236,10 +260,20 @@ internal fun sanitizeMessagesAfterRealtimeApply(
     activeOutgoingPendingId: String?,
 ): List<ChatMessage> {
     var out = messages
-    val pendingId = activeOutgoingPendingId?.trim().orEmpty()
-    if (pendingId.isNotEmpty()) {
-        out.find { it._id?.trim() == pendingId }?.let { pending ->
-            out = stripRacingServerEchoForPending(out, pending, currentUserId)
+    val selfId = currentUserId.trim()
+    if (selfId.isNotEmpty()) {
+        val pendingIds = LinkedHashSet<String>()
+        activeOutgoingPendingId?.trim()?.takeIf { it.isNotEmpty() }?.let { pendingIds.add(it) }
+        for (msg in out.take(12)) {
+            val id = msg._id?.trim().orEmpty()
+            if (isOptimisticOutgoingMessageId(id) && msg.senderId.trim() == selfId) {
+                pendingIds.add(id)
+            }
+        }
+        for (pendingId in pendingIds) {
+            out.find { it._id?.trim() == pendingId }?.let { pending ->
+                out = stripRacingServerEchoForPending(out, pending, selfId)
+            }
         }
     }
     out = attachPendingClientMessageIdsToOwnConfirmed(out, currentUserId)

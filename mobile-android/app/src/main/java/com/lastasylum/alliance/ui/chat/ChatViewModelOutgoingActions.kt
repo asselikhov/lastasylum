@@ -839,7 +839,8 @@ internal fun ChatViewModel.insertOptimisticOutgoingSynchronouslyImpl(
                 sanitizeMessagesForUiList(
                     messages = dedupeMessagesByIdNewestFirst(update.messages),
                     currentUserId = currentUserId,
-                    activeOutgoingPendingId = outboxRoomSnapshot.newestPendingId,
+                    activeOutgoingPendingId = message._id?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: outboxRoomSnapshot.newestPendingId,
                 ),
             )
             rebuildMessageIdIndex(capped, messageIdIndex)

@@ -928,4 +928,63 @@ class ChatListMutationsTest {
         val synced = syncSelections(state)
         assertFalse(synced.confirmBulkDelete)
     }
+
+    @Test
+    fun outgoingPayloadMatches_treatsEmptyAttachmentsOnOptimisticAsInFlight() {
+        val pending = msg("pending-1", "").copy(
+            attachments = emptyList(),
+            clientMessageId = "cid-img",
+        )
+        val confirmed = msg("server-1", "").copy(
+            attachments = listOf(
+                ChatAttachment(kind = "image", url = "/chat/attachments/abc"),
+            ),
+            clientMessageId = "cid-img",
+        )
+        assertTrue(outgoingPayloadMatches(pending, confirmed))
+    }
+
+    @Test
+    fun sanitizeMessagesAfterRealtimeApply_stripsRacingEchoWithoutOutboxPendingHint() {
+        val now = "2026-06-07T12:00:00.000Z"
+        val pending = msg("pending-1", "").copy(
+            clientMessageId = "cid-1",
+            createdAt = now,
+        )
+        val echo = msg("507f1f77bcf86cd799439099", "").copy(
+            attachments = listOf(
+                ChatAttachment(kind = "image", url = "/chat/attachments/abc"),
+            ),
+            createdAt = now,
+        )
+        val out = sanitizeMessagesAfterRealtimeApply(
+            messages = listOf(echo, pending),
+            currentUserId = "u1",
+            activeOutgoingPendingId = null,
+        )
+        assertEquals(listOf("pending-1"), out.map { it._id })
+    }
+
+    @Test
+    fun attachPendingClientMessageIdsToOwnConfirmed_linksNonAdjacentWhenClientMessageIdSet() {
+        val now = "2026-06-07T12:00:00.000Z"
+        val pending = msg("pending-1", "").copy(
+            clientMessageId = "cid-1",
+            createdAt = now,
+        )
+        val peer = msg("507f1f77bcf86cd799439011", "peer").copy(senderId = "peer")
+        val echo = msg("507f1f77bcf86cd799439099", "").copy(
+            attachments = listOf(
+                ChatAttachment(kind = "image", url = "/chat/attachments/abc"),
+            ),
+            createdAt = now,
+        )
+        val linked = attachPendingClientMessageIdsToOwnConfirmed(
+            messages = listOf(echo, peer, pending),
+            currentUserId = "u1",
+        )
+        assertEquals("cid-1", linked[0].clientMessageId)
+        val stripped = stripRedundantOwnOutgoingByClientMessageId(linked, "u1")
+        assertEquals(listOf("507f1f77bcf86cd799439099", "507f1f77bcf86cd799439011"), stripped.map { it._id })
+    }
 }
