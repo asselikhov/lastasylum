@@ -33,7 +33,6 @@ import com.lastasylum.alliance.R
 data class OverlayGameTopRightHudState(
     /** Teammates in game with a fresh overlay heartbeat (see [OverlayGameStatusHudRefresh.filterTeamIngameOverlayMembers]). */
     val onlineIngameCount: Int = 0,
-    val ingamePreviewAvatars: List<OverlayHudAvatarPreview> = emptyList(),
     val teamJoinRequestCount: Int = 0,
     val reactionLogUnreadCount: Int = 0,
     val micOn: Boolean = false,
@@ -145,22 +144,10 @@ fun OverlayGameTopRightHud(
         ) {
             OverlayGameHudBar(horizontalAlignment = Alignment.End) {
                 OverlayGameHudChipRow {
-                    val showFacepile = state.teamJoinRequestCount == 0 &&
-                        state.ingamePreviewAvatars.isNotEmpty()
                     OverlayGameHudChip(
-                        icon = if (!showFacepile) Icons.Outlined.Groups else null,
+                        icon = Icons.Outlined.Groups,
                         accent = OverlayHudChipAccent.Online,
                         badgeCount = state.teamJoinRequestCount,
-                        leadingContent = if (showFacepile) {
-                            {
-                                OverlayHudFacepile(
-                                    previews = state.ingamePreviewAvatars,
-                                    totalCount = state.onlineIngameCount,
-                                )
-                            }
-                        } else {
-                            null
-                        },
                         contentDescription = if (state.teamJoinRequestCount > 0) {
                             stringResource(
                                 R.string.overlay_hud_join_requests_cd,

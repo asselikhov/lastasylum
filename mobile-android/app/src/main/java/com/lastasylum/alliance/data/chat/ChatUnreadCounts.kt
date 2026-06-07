@@ -2,6 +2,7 @@ package com.lastasylum.alliance.data.chat
 
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.effectiveUnreadCount
+import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.overlay.OverlayGameStatusHudRefresh
 
 /** Shared unread badge math for app tabs, overlay HUD, and cache refresh. */
@@ -72,6 +73,38 @@ object ChatUnreadCounts {
     /** Bottom nav «Чат» — sum of displayed room chips (already merged in [ChatViewModel]). */
     fun tabBadgeTotal(rooms: List<ChatRoomDto>): Int =
         rooms.sumOf { it.unreadCount.coerceAtLeast(0) }.coerceIn(0, 99)
+
+    /**
+     * Hub mail chip: cursor-aware effective count wins over stale socket snapshot.
+     * [socketSnapshotUnread] / [socketSnapshotLastRead] from `rooms:unread` personal fanout.
+     */
+    fun resolveHubBadgeCount(
+        rooms: List<ChatRoomDto>,
+        localReadByRoom: Map<String, String>,
+        optimisticFloor: Int = 0,
+        previouslyDisplayed: Int = 0,
+        socketSnapshotUnread: Int? = null,
+        socketSnapshotLastRead: String? = null,
+    ): Int {
+        if (isAllianceHubLocallyReadSuppressed(rooms, localReadByRoom)) return 0
+        val cursorBased = overlayAllianceHubBadge(
+            rooms = rooms,
+            localReadByRoom = localReadByRoom,
+            optimisticFloor = optimisticFloor,
+            previouslyDisplayed = previouslyDisplayed,
+        )
+        val socketUnread = socketSnapshotUnread?.coerceAtLeast(0) ?: return cursorBased
+        val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return cursorBased
+        val localRead = localReadByRoom[hub.id]?.trim().orEmpty()
+        val socketLastRead = socketSnapshotLastRead?.trim().orEmpty()
+        if (localRead.isNotEmpty() &&
+            socketLastRead.isNotEmpty() &&
+            isObjectIdNewer(localRead, socketLastRead)
+        ) {
+            return cursorBased
+        }
+        return maxOf(cursorBased, socketUnread).coerceIn(0, 99)
+    }
 
     /** Raw server rows + local cursors (tests / one-shot recompute without merge). */
     fun tabBadgeTotalFromServer(

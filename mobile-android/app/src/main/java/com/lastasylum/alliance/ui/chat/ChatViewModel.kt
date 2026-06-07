@@ -62,6 +62,7 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayHudBadgeEvent
 import com.lastasylum.alliance.overlay.OverlayRaidChatForwardPolicy
+import com.lastasylum.alliance.data.chat.ChatSocketIngress
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.chat.PinHistoryPreferences
@@ -81,7 +82,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -224,14 +224,12 @@ class ChatViewModel(
     internal val lastMarkedReadByRoom = mutableMapOf<String, String>()
     internal val markReadCoalescer = ChatMarkReadCoalescer(viewModelScope)
     internal val lastPeerReadFetchAtMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
-    /** Socket can deliver the same message via new + reaction/edited; count unread once per id. */
-    internal val unreadBumpedMessageIds = LinkedHashSet<String>()
+    /** Socket can deliver the same message via new + reaction/edited; dedupe via [ChatSocketIngress]. */
     /** Realtime before listRooms — applied after [applyRoomsFromServer]. */
     internal val pendingUnreadBumps = ArrayDeque<Pair<String, String>>()
     /** Socket bump not yet reflected in listRooms / rooms:unread — do not zero tab badge. */
     internal val optimisticUnreadFloorByRoom = mutableMapOf<String, Int>()
     internal var lastRoomsSyncedAtMs: Long = 0L
-    internal val markReadInFlight = CopyOnWriteArrayList<Job>()
     internal val peerReadPollJobs = mutableMapOf<String, Job>()
     internal var unreadSyncJob: Job? = null
     internal var stashRehydrateJob: Job? = null
@@ -622,7 +620,7 @@ class ChatViewModel(
         messageIdIndex.clear()
         lazyColumnKeyByMessageId.clear()
         locallyRemovedMessageIds.clear()
-        unreadBumpedMessageIds.clear()
+        ChatSocketIngress.clear()
         pendingUnreadBumps.clear()
         optimisticUnreadFloorByRoom.clear()
         otherReadUptoByRoom.clear()

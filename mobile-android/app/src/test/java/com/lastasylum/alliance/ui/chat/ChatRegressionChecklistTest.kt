@@ -22,8 +22,11 @@ class ChatRegressionChecklistTest {
             "HTTP send retry does not create duplicate server messages",
             "Raid fanout does not duplicate message:new on overlay client",
             "Strip pending buffer delivers after raid room id resolves",
+            "Overlay chat panel close flushes debounced mark-read before badge reconcile",
+            "Forum tab badge clears while reading topic without navigating back",
+            "Forum list topic row unread zeroes immediately after mark-read in topic",
         )
-        assertTrue(scenarios.size >= 12)
+        assertTrue(scenarios.size >= 15)
     }
 
     @Test

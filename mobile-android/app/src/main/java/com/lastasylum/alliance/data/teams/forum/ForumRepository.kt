@@ -137,6 +137,42 @@ class ForumRepository(
         )
     }
 
+    /** Zero unread locally after mark-read so list tab + Room observe update immediately. */
+    suspend fun patchTopicReadLocally(
+        userId: String,
+        teamId: String,
+        topicId: String,
+        messageId: String,
+        topicFallback: TeamForumTopicDto? = null,
+    ) = withContext(Dispatchers.IO) {
+        val uid = userId.trim()
+        val tid = teamId.trim()
+        val tpid = topicId.trim()
+        val mid = messageId.trim()
+        if (uid.isEmpty() || tid.isEmpty() || tpid.isEmpty() || mid.isEmpty()) return@withContext
+
+        setTopicReadCursor(uid, tid, tpid, mid)
+
+        val cached = launchDiskCache.loadForumTopics(uid, tid)?.toMutableList()
+        val patched = when {
+            cached != null -> {
+                val idx = cached.indexOfFirst { it.id == tpid }
+                if (idx >= 0) {
+                    cached[idx] = cached[idx].copy(unreadCount = 0, lastReadMessageId = mid)
+                } else {
+                    topicFallback?.copy(unreadCount = 0, lastReadMessageId = mid)?.also { cached.add(it) }
+                }
+                cached
+            }
+            topicFallback != null -> listOf(topicFallback.copy(unreadCount = 0, lastReadMessageId = mid))
+            else -> null
+        } ?: return@withContext
+
+        launchDiskCache.saveForumTopics(uid, tid, patched)
+        val row = patched.firstOrNull { it.id == tpid } ?: return@withContext
+        upsertTopics(uid, tid, listOf(row))
+    }
+
     suspend fun uploadForumImage(
         teamId: String,
         bytes: ByteArray,

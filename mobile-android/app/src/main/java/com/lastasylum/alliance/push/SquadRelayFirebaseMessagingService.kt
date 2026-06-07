@@ -63,6 +63,9 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
         if (CombatOverlayService.inGameOverlayUiActive.value) {
             return
         }
+        message.data["messageId"]?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            GameEventPushStripSuppressor.ackPushDelivered(it)
+        }
         val eventText = message.data["title"]?.trim()?.takeIf { it.isNotEmpty() }
             ?: message.data["eventText"]?.trim()?.takeIf { it.isNotEmpty() }
             ?: message.notification?.title?.trim()?.takeIf { it.isNotEmpty() }

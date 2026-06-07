@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.chat.store.SquadRelayDatabase
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
+import com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamsApiUnusedStub
 import com.lastasylum.alliance.data.teams.TeamsRepository
@@ -81,6 +82,43 @@ class ForumListViewModelTest {
         }
         assertEquals(1, vm.state.value.topics.size)
         assertEquals("General", vm.state.value.topics.first().title)
+    }
+
+    @Test
+    fun applyTopicReadLocal_zerosUnreadImmediately() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val vm = ForumListViewModel(app, forumRepository, "user1")
+        vm.bindTeam("team1")
+        vm.reload(force = true)
+        withTimeout(5_000) {
+            while (vm.state.value.topics.isEmpty()) delay(10)
+        }
+        vm.applyTopicReadLocal("t1", "507f1f77bcf86cd799439011")
+        val topic = vm.state.value.topics.first()
+        assertEquals(0, topic.unreadCount)
+        assertEquals("507f1f77bcf86cd799439011", topic.lastReadMessageId)
+    }
+
+    @Test
+    fun applyTopicActivity_skipsOpenTopic() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val vm = ForumListViewModel(app, forumRepository, "user1")
+        vm.bindTeam("team1")
+        vm.reload(force = true)
+        withTimeout(5_000) {
+            while (vm.state.value.topics.isEmpty()) delay(10)
+        }
+        vm.setOpenTopicId("t1")
+        vm.applyTopicActivity(
+            TeamForumTopicActivityEvent(
+                teamId = "team1",
+                topicId = "t1",
+                messageId = "507f1f77bcf86cd799439012",
+                senderUserId = "peer-2",
+            ),
+        )
+        delay(400)
+        assertEquals(0, vm.state.value.topics.first().unreadCount)
     }
 
     private fun sampleTopic(id: String, title: String) = TeamForumTopicDto(

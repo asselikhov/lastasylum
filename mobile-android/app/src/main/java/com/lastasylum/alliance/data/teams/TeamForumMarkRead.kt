@@ -2,6 +2,7 @@ package com.lastasylum.alliance.data.teams
 
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.teams.forum.ForumRepository
+import com.lastasylum.alliance.overlay.OverlayInboxBadgeCoordinator
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -129,6 +130,27 @@ object TeamForumMarkRead {
         if (newestId.isEmpty()) return
         forumRepository.markForumTopicRead(tid, tpid, newestId)
         forumPrefs.setLastReadMessageId(tid, tpid, newestId)
+    }
+
+    suspend fun afterTopicMarkedRead(
+        forumRepository: ForumRepository,
+        userId: String,
+        forumPrefs: TeamForumPreferences,
+        teamId: String,
+        topicId: String,
+        messageId: String,
+        topicFallback: TeamForumTopicDto? = null,
+        onInboxChanged: () -> Unit = {},
+        inboxBadgeCoordinator: OverlayInboxBadgeCoordinator? = null,
+    ) {
+        val tid = teamId.trim()
+        val tpid = topicId.trim()
+        val mid = messageId.trim()
+        if (tid.isEmpty() || tpid.isEmpty() || mid.isEmpty()) return
+        forumRepository.patchTopicReadLocally(userId, tid, tpid, mid, topicFallback)
+        inboxBadgeCoordinator?.onForumMarkedReadLocally()
+        onInboxChanged()
+        com.lastasylum.alliance.overlay.CombatOverlayService.refreshOverlayForumBadgeFromApp()
     }
 
     suspend fun markTopicReadToLatest(

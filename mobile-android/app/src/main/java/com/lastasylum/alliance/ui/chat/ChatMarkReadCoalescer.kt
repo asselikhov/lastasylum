@@ -28,6 +28,7 @@ internal class ChatMarkReadCoalescer(
     )
 
     private val rooms = ConcurrentHashMap<String, RoomState>()
+    private var networkHandler: (suspend (roomId: String, messageId: String) -> Unit)? = null
 
     fun clear() {
         rooms.values.forEach { state ->
@@ -36,6 +37,30 @@ internal class ChatMarkReadCoalescer(
             state.pendingMessageId = null
         }
         rooms.clear()
+        networkHandler = null
+    }
+
+    /** Cancel debounce and POST pending mark-read immediately (overlay close / DoneAll). */
+    suspend fun flushAndAwait(roomId: String? = null) {
+        val handler = networkHandler ?: return
+        val targets = when (val rid = roomId?.trim().orEmpty()) {
+            "" -> rooms.keys.toList()
+            else -> listOf(rid).filter { rooms.containsKey(it) }
+        }
+        for (rid in targets) {
+            val state = rooms[rid] ?: continue
+            state.debounceJob?.cancel()
+            state.debounceJob = null
+            flushRoom(rid, handler)
+        }
+    }
+
+    fun hasPending(roomId: String? = null): Boolean {
+        val rid = roomId?.trim().orEmpty()
+        if (rid.isEmpty()) {
+            return rooms.values.any { it.pendingMessageId?.isNotBlank() == true }
+        }
+        return rooms[rid]?.pendingMessageId?.isNotBlank() == true
     }
 
     fun schedule(
@@ -50,6 +75,7 @@ internal class ChatMarkReadCoalescer(
         val mid = messageId.trim()
         if (rid.isEmpty() || mid.isEmpty()) return
 
+        networkHandler = onNetworkMarkRead
         val state = rooms.getOrPut(rid) { RoomState() }
         val cursor = getCurrentCursor()?.trim().orEmpty()
         val posted = state.lastPostedMessageId?.trim().orEmpty()

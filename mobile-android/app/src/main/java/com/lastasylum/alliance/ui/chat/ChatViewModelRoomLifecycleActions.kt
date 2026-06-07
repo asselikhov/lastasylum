@@ -10,6 +10,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent
 import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
 import com.lastasylum.alliance.data.chat.ChatSessionCache
+import com.lastasylum.alliance.data.chat.ChatSocketIngress
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.chat.ChatTeamRoomsMembership
 import com.lastasylum.alliance.data.chat.sync.applyOverlayLoadTimeoutPolicy
@@ -217,9 +218,9 @@ internal fun ChatViewModel.syncReadStateFromPreferencesImpl() {
         syncOverlayAllianceHubBadge(adjusted)
     }
 
-    /** Overlay panel closed — wait for in-flight mark-read before releasing shared VM state. */
+    /** Overlay panel closed — wait for debounced mark-read POST before releasing shared VM state. */
 internal suspend fun ChatViewModel.awaitPendingMarkReadImpl() {
-        markReadInFlight.toList().joinAll()
+        markReadCoalescer.flushAndAwait()
     }
 
     /** Mark every room with unread up to the latest known message (overlay DoneAll). */
@@ -925,11 +926,7 @@ internal fun ChatViewModel.shouldTrackUnreadForMessageImpl(roomId: String, messa
     }
 
 internal fun ChatViewModel.bumpRoomUnreadLocallyImpl(roomId: String, messageId: String) {
-        if (!unreadBumpedMessageIds.add(messageId)) return
-        while (unreadBumpedMessageIds.size > 512) {
-            val oldest = unreadBumpedMessageIds.first()
-            unreadBumpedMessageIds.remove(oldest)
-        }
+        if (!ChatSocketIngress.markMessageNewSeen(roomId, messageId)) return
         val room = vmState.value.rooms.find { it.id == roomId }
         val effectiveBase = room?.let { effectiveUnreadForRoom(it) } ?: 0
         val prevDisplayed = room?.unreadCount ?: 0
@@ -1085,6 +1082,15 @@ internal fun ChatViewModel.onRoomUnreadFromServerImpl(event: ChatRoomUnreadEvent
         val roomDto = vmState.value.rooms.find { it.id == roomId }
         val localLast = roomDto?.let { deviceLastReadMessageId(it) }
             ?: chatRoomPreferencesInternal.getLastReadMessageId(roomId)
+        if (!localLast.isNullOrBlank() && serverLast.isNotBlank() &&
+            isObjectIdNewer(localLast, serverLast)
+        ) {
+            val floor = optimisticUnreadFloorByRoom[roomId] ?: 0
+            val displayed = roomDto?.unreadCount ?: 0
+            if (floor > 0 || displayed > serverUnread) {
+                return
+            }
+        }
         if (serverUnread > 0 && !localLast.isNullOrBlank()) {
             val suppressed = effectiveUnreadCount(
                 serverUnread = serverUnread,

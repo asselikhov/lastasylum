@@ -36,6 +36,11 @@ class ForumListViewModel(
 
     private var reloadJob: Job? = null
     private var topicActivityJob: Job? = null
+    private var openTopicId: String? = null
+
+    fun setOpenTopicId(topicId: String?) {
+        openTopicId = topicId?.trim()?.takeIf { it.isNotEmpty() }
+    }
 
     fun bindTeam(teamId: String) {
         val tid = teamId.trim()
@@ -73,6 +78,7 @@ class ForumListViewModel(
 
     fun applyTopicActivity(event: TeamForumTopicActivityEvent) {
         if (event.senderUserId.trim() == currentUserId.trim()) return
+        if (event.topicId == openTopicId) return
         topicActivityJob?.cancel()
         topicActivityJob = viewModelScope.launch {
             delay(300)
@@ -103,6 +109,22 @@ class ForumListViewModel(
                 pinnedMessages = event.pinnedMessages,
             )
             st.copy(topics = st.topics.toMutableList().apply { this[idx] = updated })
+        }
+    }
+
+    fun applyTopicReadLocal(topicId: String, messageId: String) {
+        val tpid = topicId.trim()
+        val mid = messageId.trim()
+        if (tpid.isEmpty() || mid.isEmpty()) return
+        _state.update { st ->
+            val idx = st.topics.indexOfFirst { it.id == tpid }
+            if (idx < 0) return@update st
+            val row = st.topics[idx]
+            st.copy(
+                topics = st.topics.toMutableList().apply {
+                    this[idx] = row.copy(unreadCount = 0, lastReadMessageId = mid)
+                },
+            )
         }
     }
 

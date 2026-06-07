@@ -168,19 +168,23 @@ class OverlayInboxBadgeCoordinator {
     ): Int {
         val raw = rawServerCount.coerceAtLeast(0)
         val effective = serverCount.coerceAtLeast(0)
-        val overlayHudCount = maxOf(raw, effective)
         return displayedUnreadCount(
-            effectiveUnread = overlayHudCount,
+            effectiveUnread = effective,
             previouslyDisplayed = previouslyDisplayed,
             rawServerUnread = raw,
             optimisticFloor = forumOptimisticFloor,
         ).also { merged ->
-            if (overlayHudCount > 0 && merged >= overlayHudCount) {
+            if (effective > 0 && merged >= effective) {
                 forumOptimisticFloor = 0
             } else if (merged <= 0 && !isForumOptimisticActive()) {
                 forumOptimisticFloor = 0
             }
         }
+    }
+
+    fun onForumMarkedReadLocally() {
+        clearForumOptimistic()
+        invalidateForumCache()
     }
 
     fun mergeHudNews(

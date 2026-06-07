@@ -29,7 +29,10 @@ import { ChatAttachmentsService } from './chat-attachments.service';
 import { OverlayReactionLogService } from './overlay-reaction-log.service';
 import { normalizeOverlayChatStickerReaction } from './overlay-sticker-reaction.util';
 import { filterPersonalChatFanoutUserIds } from './chat-realtime-broadcast.util';
-import { resolveGameEventId } from '../game-events/game-event-catalog';
+import {
+  isGameEventNotifyMessageText,
+  resolveGameEventId,
+} from '../game-events/game-event-catalog';
 import { formatGameEventPushSenderLine } from '../game-events/game-event-push.util';
 
 function gameEventPushSenderFromMessage(message: unknown): {
@@ -678,12 +681,12 @@ export class ChatGateway {
     const senderUserId = input.senderUserId.trim();
     if (!roomId || !senderUserId) return;
     const eventId = input.gameEventId?.trim();
+    await this.notifyRoomUnreadAfterNewMessage(roomId, senderUserId);
     this.broadcastNewMessageWithOverlayFanout(
       roomId,
       input.message,
       senderUserId,
     );
-    void this.notifyRoomUnreadAfterNewMessage(roomId, senderUserId);
     if (
       eventId &&
       input.messageAllianceId &&
@@ -807,13 +810,17 @@ export class ChatGateway {
     const uid = senderUserId.trim();
     if (!rid || !uid) return;
     const inRoom = this.userIdsInChatRoom(rid);
-    const personalTargets = await this.fanOutChatEventToEligibleUsersNotInRoom(
-      rid,
-      'message:new',
-      message,
-      uid,
-      inRoom,
-    );
+    const messageText = (message as { text?: string }).text?.trim() ?? '';
+    const skipPersonalFanout = isGameEventNotifyMessageText(messageText);
+    const personalTargets = skipPersonalFanout
+      ? new Set<string>()
+      : await this.fanOutChatEventToEligibleUsersNotInRoom(
+          rid,
+          'message:new',
+          message,
+          uid,
+          inRoom,
+        );
     await this.fanOutRaidMessageToIngameOverlayTeammates(
       rid,
       message,
@@ -881,7 +888,7 @@ export class ChatGateway {
     const room = await this.chatRoomsService.findById(rid);
     if (!room || room.title !== ALLIANCE_RAID_ROOM_TITLE) return;
     const teammateIds =
-      await this.usersService.listSquadTeammateUserIdsForRaidFanout(uid);
+      await this.usersService.listOverlayIngameTeammateIds(uid);
     let fanoutCount = 0;
     let skippedInRoom = 0;
     let skippedPersonal = 0;

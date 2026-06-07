@@ -136,7 +136,7 @@ import com.lastasylum.alliance.ui.chat.toDisplayChatMessage
 import com.lastasylum.alliance.ui.components.CenteredScreenLoading
 import com.lastasylum.alliance.ui.components.premium.PremiumGlassBar
 import com.lastasylum.alliance.ui.components.team.ForumTopicCardTokens
-import com.lastasylum.alliance.ui.teamforum.TeamForumTopicViewModel
+import com.lastasylum.alliance.ui.teamforum.ForumListViewModel
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
@@ -230,9 +230,15 @@ fun TeamForumTopicScreen(
     val overlayUi = LocalOverlayUiMode.current
     val scope = rememberCoroutineScope()
 
-    val topicViewModel: TeamForumTopicViewModel = viewModel(key = "forum_topic_${teamId}_$topicId") {
-        TeamForumTopicViewModel.create(context.applicationContext as Application, teamId, topicId)
+    val listViewModel: ForumListViewModel = viewModel(key = "forum_list_$teamId") {
+        ForumListViewModel.create(context.applicationContext as Application, teamId)
     }
+
+    DisposableEffect(teamId, topicId) {
+        listViewModel.setOpenTopicId(topicId)
+        onDispose { listViewModel.setOpenTopicId(null) }
+    }
+
     val listState = rememberLazyListState()
     val messages = remember { mutableStateListOf<TeamForumMessageDto>() }
     var loading by remember { mutableStateOf(true) }
@@ -545,7 +551,6 @@ fun TeamForumTopicScreen(
     fun removeMessage(messageId: String) {
         forumRepository.invalidateForumMessagesCache(teamId, topicId)
         messages.removeAll { it.id == messageId }
-        topicViewModel.removeMessage(messageId)
         bumpMessagesGeneration()
         persistForumMessagesToDisk()
         if (activeActionMessageId == messageId) {
@@ -572,8 +577,24 @@ fun TeamForumTopicScreen(
 
     var markForumReadJob by remember(teamId, topicId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
-    fun notifyForumInboxAfterRead() {
-        com.lastasylum.alliance.overlay.CombatOverlayService.refreshOverlayForumBadgeFromApp()
+    fun notifyForumInboxAfterRead(messageId: String) {
+        listViewModel.applyTopicReadLocal(topicId, messageId)
+        topicSnapshot?.let { snap ->
+            onTopicSnapshotUpdate(snap.copy(unreadCount = 0, lastReadMessageId = messageId))
+        }
+        scope.launch {
+            TeamForumMarkRead.afterTopicMarkedRead(
+                forumRepository = forumRepository,
+                userId = currentUserId,
+                forumPrefs = forumPrefs,
+                teamId = teamId,
+                topicId = topicId,
+                messageId = messageId,
+                topicFallback = topicSnapshot,
+                onInboxChanged = onInboxChanged,
+                inboxBadgeCoordinator = app.inboxBadgeCoordinator,
+            )
+        }
     }
 
     fun scheduleMarkForumTopicRead(messageId: String) {
@@ -582,7 +603,7 @@ fun TeamForumTopicScreen(
         markForumReadJob = scope.launch {
             delay(320)
             forumRepository.markForumTopicRead(teamId, topicId, messageId)
-                .onSuccess { notifyForumInboxAfterRead() }
+                .onSuccess { notifyForumInboxAfterRead(messageId) }
         }
     }
 
@@ -593,7 +614,7 @@ fun TeamForumTopicScreen(
         if (cursor.isBlank()) return
         scope.launch {
             forumRepository.markForumTopicRead(teamId, topicId, cursor)
-                .onSuccess { notifyForumInboxAfterRead() }
+                .onSuccess { notifyForumInboxAfterRead(cursor) }
         }
     }
 
@@ -612,7 +633,7 @@ fun TeamForumTopicScreen(
             forumRepository.markForumTopicRead(teamId, topicId, newestId)
                 .onSuccess {
                     mergeReadCursor(newestId)
-                    notifyForumInboxAfterRead()
+                    notifyForumInboxAfterRead(newestId)
                 }
         }
     }
@@ -901,7 +922,6 @@ fun TeamForumTopicScreen(
             Log.d("SR_Forum", "merge team=$teamId topic=$topicId count=1 source=$source")
         }
         persistForumMessagesToDisk()
-        topicViewModel.mergeIncoming(msg)
         if (!overlayUi || isNearBottom) {
             markTopicReadToLatest()
         }

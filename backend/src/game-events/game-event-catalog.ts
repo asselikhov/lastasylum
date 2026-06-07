@@ -66,6 +66,9 @@ export const GAME_EVENT_CATALOG: readonly GameEventDefinition[] = [
 ] as const;
 
 const BY_ID = new Map(GAME_EVENT_CATALOG.map((e) => [e.id, e]));
+const BY_MESSAGE_TEXT = new Map(
+  GAME_EVENT_CATALOG.map((e) => [e.messageText, e]),
+);
 
 export function resolveGameEventId(
   gameEventAlert?: string | null,
@@ -73,6 +76,9 @@ export function resolveGameEventId(
 ): string | null {
   const raw = gameEventAlert?.trim();
   if (raw) {
+    if (raw === 'excavation') {
+      return 'hq_excavation';
+    }
     return BY_ID.has(raw) ? raw : null;
   }
   if (excavationAlert === true) {
@@ -87,6 +93,11 @@ export function getGameEventById(eventId: string): GameEventDefinition | null {
 
 export function isValidGameEventId(eventId: string): boolean {
   return BY_ID.has(eventId.trim());
+}
+
+/** Raid chat / overlay strip text for catalog game-event notifies. */
+export function isGameEventNotifyMessageText(text: string): boolean {
+  return BY_MESSAGE_TEXT.has(text.trim());
 }
 
 export const ALL_GAME_EVENT_IDS = GAME_EVENT_CATALOG.map((e) => e.id);

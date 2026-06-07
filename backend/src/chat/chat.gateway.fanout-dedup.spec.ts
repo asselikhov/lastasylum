@@ -14,9 +14,9 @@ describe('ChatGateway fanout dedup', () => {
   let gateway: ChatGateway;
   const emit = jest.fn();
   const to = jest.fn().mockReturnValue({ emit });
-  const listSquadTeammateUserIdsForRaidFanout = jest
+  const listOverlayIngameTeammateIds = jest
     .fn()
-    .mockResolvedValue(['t1', 't2', 't3']);
+    .mockResolvedValue(['t2', 't3']);
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -39,7 +39,7 @@ describe('ChatGateway fanout dedup', () => {
             listActiveUserIdsForChatRoomAccess: jest
               .fn()
               .mockResolvedValue(['t1', 't2', 't3']),
-            listSquadTeammateUserIdsForRaidFanout,
+            listOverlayIngameTeammateIds,
             resolveTeamDisplayNameForGameEventPush: jest
               .fn()
               .mockResolvedValue('Team'),
@@ -92,5 +92,25 @@ describe('ChatGateway fanout dedup', () => {
     ).length;
     expect(t1Count).toBe(0);
     expect(userEmits.length).toBeGreaterThan(0);
+    expect(listOverlayIngameTeammateIds).toHaveBeenCalled();
+  });
+
+  it('skips personal fanout for game-event notify messages', async () => {
+    const message = {
+      _id: 'msg-ge',
+      roomId: 'raid-room',
+      text: '[ШТАБ] Раскопки альянса',
+    };
+    listOverlayIngameTeammateIds.mockResolvedValue(['t2']);
+    gateway.broadcastNewMessageWithOverlayFanout(
+      'raid-room',
+      message,
+      'sender1',
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    const userTargetCalls = to.mock.calls.filter(
+      (call) => typeof call[0] === 'string' && call[0].startsWith('user:'),
+    );
+    expect(userTargetCalls.map((c) => c[0])).toEqual(['user:t2']);
   });
 });

@@ -446,6 +446,13 @@ export class TeamForumService {
     this.unreadSumCache.delete(`${teamId}:${userId}`);
   }
 
+  private async invalidateUnreadSumCacheForTeam(teamId: string): Promise<void> {
+    const memberIds = await this.teams.listSquadMemberUserIds(teamId);
+    for (const memberId of memberIds) {
+      this.invalidateUnreadSumCache(teamId, memberId);
+    }
+  }
+
   private topicRow(
     doc: TeamForumTopicDocument,
     extras?: {
@@ -610,11 +617,6 @@ export class TeamForumService {
       const doc = docById.get(id);
       const lastMsgId = doc?.lastMessageId ?? null;
       if (!lastMsgId) {
-        out.set(id, 0);
-        continue;
-      }
-      const senderId = doc?.lastMessageSenderUserId?.trim();
-      if (senderId === userId) {
         out.set(id, 0);
         continue;
       }
@@ -1756,6 +1758,7 @@ export class TeamForumService {
     topic.lastMessageSenderUserId = doc.senderUserId;
     topic.lastMessageSenderUsername = doc.senderUsername;
     await topic.save();
+    await this.invalidateUnreadSumCacheForTeam(teamId);
     const row = this.messageRow(doc, replyTarget, userId);
     return {
       ...row,
@@ -1865,6 +1868,7 @@ export class TeamForumService {
       topic.lastMessageSenderUserId = doc.senderUserId;
       topic.lastMessageSenderUsername = doc.senderUsername;
       await topic.save();
+      await this.invalidateUnreadSumCacheForTeam(teamId);
     }
 
     const rows = await this.enrichMessagesWithAvatars([

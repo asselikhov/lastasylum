@@ -106,27 +106,24 @@ describe('ChatGateway.afterMessageCreated', () => {
     );
   });
 
-  it('does not await unread notify before afterMessageCreated returns', async () => {
-    let notifyDone = false;
-    notifyRoomUnreadAfterNewMessage.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          setTimeout(() => {
-            notifyDone = true;
-            resolve();
-          }, 100);
-        }),
-    );
+  it('awaits unread notify before overlay fanout', async () => {
+    const order: string[] = [];
+    notifyRoomUnreadAfterNewMessage.mockImplementation(async () => {
+      order.push('notify');
+    });
+    broadcastNewMessageWithOverlayFanout.mockImplementation(() => {
+      order.push('broadcast');
+    });
     await gateway.afterMessageCreated({
       roomId: 'raid-room',
       message: { _id: 'msg3', text: 'ping', roomId: 'raid-room' },
       senderUserId: 'sender1',
     });
-    expect(broadcastNewMessageWithOverlayFanout).toHaveBeenCalled();
+    expect(order).toEqual(['notify', 'broadcast']);
     expect(notifyRoomUnreadAfterNewMessage).toHaveBeenCalledWith(
       'raid-room',
       'sender1',
     );
-    expect(notifyDone).toBe(false);
+    expect(broadcastNewMessageWithOverlayFanout).toHaveBeenCalled();
   });
 });

@@ -155,6 +155,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import com.lastasylum.alliance.ui.OVERLAY_WARMUP_MAX_MS
 import com.lastasylum.alliance.push.FcmTokenManager
+import com.lastasylum.alliance.push.GameEventPushStripSuppressor
 import com.lastasylum.alliance.update.downloadAndInstallAppUpdate
 import com.lastasylum.alliance.update.checkAppUpdate
 import com.lastasylum.alliance.update.AppUpdateCheckResult
@@ -350,7 +351,9 @@ class CombatOverlayService : Service() {
     /** Burst waits for overlay:reaction:log when reply snapshot is not on overlay:reaction yet. */
     private val pendingIncomingReactionBursts = LinkedHashMap<String, OverlayReactionEvent>()
     private val pendingIncomingReactionBurstTimers = mutableMapOf<String, Runnable>()
-    private val inboxBadgeCoordinator = OverlayInboxBadgeCoordinator()
+    /** Shared app + overlay FGS instance — optimistic floors stay in sync. */
+    val inboxBadgeCoordinator: OverlayInboxBadgeCoordinator
+        get() = AppContainer.from(this).inboxBadgeCoordinator
     /** Лента: короткий TTL и мало строк превью — компактная полоса у края. */
     private val stripBuffer = OverlayChatStripBuffer(
         messageTtlSeconds = OverlayChatStripBuffer.DEFAULT_MESSAGE_TTL_SECONDS,
@@ -2053,18 +2056,6 @@ class CombatOverlayService : Service() {
                 } else {
                     overlayTopRightHudFlow.value.onlineIngameCount
                 }
-                val selfUserId = container.usersRepository.resolveMyProfilePreferCache()?.id?.trim()
-                val ingamePreviewAvatars = if (refreshPresenceCounts) {
-                    val tid = container.usersRepository.resolveMyProfilePreferCache()
-                        ?.playerTeamId?.trim().orEmpty()
-                    if (tid.isNotEmpty()) {
-                        buildOverlayHudAvatarPreviews(tid, selfUserId)
-                    } else {
-                        emptyList()
-                    }
-                } else {
-                    overlayTopRightHudFlow.value.ingamePreviewAvatars
-                }
                 val joinRequestCount = if (force || nowMs - lastHudJoinRequestRefreshAtMs >= HUD_JOIN_REQUEST_REFRESH_MS) {
                     runCatching {
                         OverlayGameStatusHudRefresh.loadTeamJoinRequestCount(this@CombatOverlayService)
@@ -2140,7 +2131,6 @@ class CombatOverlayService : Service() {
                     val prevTopRight = overlayTopRightHudFlow.value
                     val nextTopRight = prevTopRight.copy(
                         onlineIngameCount = onlineIngameCount,
-                        ingamePreviewAvatars = ingamePreviewAvatars,
                         teamJoinRequestCount = joinRequestCount,
                     )
                     if (nextTopRight != prevTopRight) {
@@ -2546,7 +2536,7 @@ class CombatOverlayService : Service() {
 
     private fun clearHubUnreadOptimisticState() {
         hubUnreadOptimisticFloor = 0
-        hubUnreadBumpedMessageIds.clear()
+        com.lastasylum.alliance.data.chat.ChatSocketIngress.clear()
         mainHandler.removeCallbacks(hudBadgeRefreshRunnable)
         hudBadgeRefreshPosted = false
         pendingHubHudRefresh = false
@@ -2676,8 +2666,6 @@ class CombatOverlayService : Service() {
         ChatSessionCache.update(updated)
     }
 
-    private val hubUnreadBumpedMessageIds = LinkedHashSet<String>()
-
     private val forumUnreadBumpedMessageIds = LinkedHashSet<String>()
 
     /** Realtime [rooms:unread] for any overlay chat room (hub HUD + overlay panel tabs). */
@@ -2769,9 +2757,11 @@ class CombatOverlayService : Service() {
 
     private fun bumpAllianceHubUnreadLocally(messageId: String? = null) {
         val mid = messageId?.trim().orEmpty()
-        if (mid.isNotEmpty() && !hubUnreadBumpedMessageIds.add(mid)) return
-        while (hubUnreadBumpedMessageIds.size > 512) {
-            hubUnreadBumpedMessageIds.remove(hubUnreadBumpedMessageIds.first())
+        val hubId = AppContainer.from(this).chatRoomPreferences.getHubRoomId()?.trim().orEmpty()
+        if (mid.isNotEmpty() && hubId.isNotEmpty()) {
+            if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.markMessageNewSeen(hubId, mid)) {
+                return
+            }
         }
         hubUnreadLastBumpAtMs = System.currentTimeMillis()
         val container = AppContainer.from(this)
@@ -5130,6 +5120,19 @@ class CombatOverlayService : Service() {
                 }
                 return
             }
+            if (
+                GameEventCatalog.isNotifyMessageText(normalized.text) &&
+                GameEventPushStripSuppressor.shouldSuppressStrip(normalized._id)
+            ) {
+                ChatDeliveryMetrics.logStripDrop(normalized._id, "push_ack")
+                if (BuildConfig.DEBUG) {
+                    Log.d(
+                        OVERLAY_DIAG_TAG,
+                        "stripDrop reason=push_ack id=${normalized._id}",
+                    )
+                }
+                return
+            }
         }
         val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
         if (!OverlayStripRecipientPolicy.shouldShowIncomingStripCard(normalized, selfId)) {
@@ -6588,18 +6591,9 @@ class CombatOverlayService : Service() {
                                                     initialJoinRequestCount = topRightHud.teamJoinRequestCount,
                                                     onClose = { hideOverlayChatTeamPanel() },
                                                     onIngameCountChanged = { count ->
-                                                        val tid = container.usersRepository
-                                                            .peekMyProfile()
-                                                            ?.playerTeamId?.trim().orEmpty()
-                                                        val previews = if (tid.isNotEmpty()) {
-                                                            buildOverlayHudAvatarPreviews(tid, userId)
-                                                        } else {
-                                                            emptyList()
-                                                        }
                                                         overlayTopRightHudFlow.value =
                                                             overlayTopRightHudFlow.value.copy(
                                                                 onlineIngameCount = count,
-                                                                ingamePreviewAvatars = previews,
                                                             )
                                                     },
                                                     onJoinRequestCountChanged = { count ->

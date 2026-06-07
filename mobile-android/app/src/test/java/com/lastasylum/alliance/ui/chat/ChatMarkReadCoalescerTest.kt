@@ -90,6 +90,49 @@ class ChatMarkReadCoalescerTest {
     }
 
     @Test
+    fun flushAndAwait_postsImmediatelyWithoutDebounce() = runTest {
+        val coalescer = ChatMarkReadCoalescer(this)
+        val network = mutableListOf<String>()
+        coalescer.schedule(
+            roomId = "room-1",
+            messageId = "507f1f77bcf86cd799439011",
+            forceSync = false,
+            getCurrentCursor = { null },
+            onOptimisticAdvance = { _, _ -> },
+            onNetworkMarkRead = { _, mid -> network.add(mid) },
+        )
+        assertTrue(network.isEmpty())
+        coalescer.flushAndAwait("room-1")
+        assertEquals(listOf("507f1f77bcf86cd799439011"), network)
+    }
+
+    @Test
+    fun flushAndAwait_allRooms() = runTest {
+        val coalescer = ChatMarkReadCoalescer(this)
+        val network = mutableListOf<Pair<String, String>>()
+        coalescer.schedule(
+            roomId = "room-a",
+            messageId = "507f1f77bcf86cd799439011",
+            forceSync = false,
+            getCurrentCursor = { null },
+            onOptimisticAdvance = { _, _ -> },
+            onNetworkMarkRead = { rid, mid -> network.add(rid to mid) },
+        )
+        coalescer.schedule(
+            roomId = "room-b",
+            messageId = "507f1f77bcf86cd799439012",
+            forceSync = false,
+            getCurrentCursor = { null },
+            onOptimisticAdvance = { _, _ -> },
+            onNetworkMarkRead = { rid, mid -> network.add(rid to mid) },
+        )
+        coalescer.flushAndAwait()
+        assertEquals(2, network.size)
+        assertTrue(network.any { it.first == "room-a" })
+        assertTrue(network.any { it.first == "room-b" })
+    }
+
+    @Test
     fun shouldFetchPeerReadCursor_respectsInterval() {
         val now = 100_000L
         assertTrue(shouldFetchPeerReadCursor(lastAtMs = 0L, nowMs = now))

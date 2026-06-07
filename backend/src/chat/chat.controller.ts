@@ -485,13 +485,13 @@ export class ChatController {
       roomId,
       messageId,
     );
+    await this.chatGateway.notifyRoomUnreadAfterNewMessage(
+      roomId,
+      req.user.userId,
+    );
     this.chatGateway.broadcastNewMessageWithOverlayFanout(
       roomId,
       forwarded,
-      req.user.userId,
-    );
-    void this.chatGateway.notifyRoomUnreadAfterNewMessage(
-      roomId,
       req.user.userId,
     );
     return forwarded;

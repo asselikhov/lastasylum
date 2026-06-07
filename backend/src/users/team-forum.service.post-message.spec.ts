@@ -39,6 +39,7 @@ describe('TeamForumService.postMessage idempotency', () => {
   const teams = {
     getTeamIfMemberOrThrow: jest.fn().mockResolvedValue({ _id: teamId }),
     resolveSquadRoleForMember: jest.fn().mockReturnValue(PlayerTeamMemberRole.R1),
+    listSquadMemberUserIds: jest.fn().mockResolvedValue([userId, '507f1f77bcf86cd799439099']),
   };
 
   let service: TeamForumService;
@@ -132,5 +133,37 @@ describe('TeamForumService.postMessage idempotency', () => {
     expect(create).not.toHaveBeenCalled();
     expect(result.id).toBe(existingId.toString());
     expect(result.clientMessageId).toBe('client-uuid-1');
+  });
+
+  it('postMessage invalidates inbox sum cache for all team members', async () => {
+    const newId = new Types.ObjectId();
+    findOneMessage.mockReturnValue({
+      exec: jest.fn().mockResolvedValue(null),
+    });
+    create.mockResolvedValue({
+      _id: newId,
+      topicId: new Types.ObjectId(topicId),
+      teamId: new Types.ObjectId(teamId),
+      senderUserId: userId,
+      senderUsername: 'Alice',
+      senderRole: PlayerTeamMemberRole.R1,
+      senderTeamTag: null,
+      senderServerNumber: 1,
+      text: 'new',
+      replyToMessageId: null,
+      imageFileId: null,
+      imageFileIds: [],
+      fileFileId: null,
+      deletedAt: null,
+      clientMessageId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const invalidateSpy = jest.spyOn(
+      service as never,
+      'invalidateUnreadSumCacheForTeam' as never,
+    );
+    await service.postMessage(teamId, topicId, userId, 'new');
+    expect(invalidateSpy).toHaveBeenCalledWith(teamId);
   });
 });

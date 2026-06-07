@@ -149,6 +149,21 @@ class ChatUnreadCountsTest {
     }
 
     @Test
+    fun resolveHubBadgeCount_ignoresStaleSocketWhenLocalCursorAhead() {
+        val rooms = listOf(
+            room(id = "hub", sortOrder = 1, allianceId = "pt:team1", unread = 0),
+        )
+        val local = mapOf("hub" to "507f1f77bcf86cd799439020")
+        val badge = ChatUnreadCounts.resolveHubBadgeCount(
+            rooms = rooms,
+            localReadByRoom = local,
+            socketSnapshotUnread = 3,
+            socketSnapshotLastRead = "507f1f77bcf86cd799439010",
+        )
+        assertEquals(0, badge)
+    }
+
+    @Test
     fun hubClear_mustNotUseReconcileDisplayedUnread() {
         assertEquals(
             0,
