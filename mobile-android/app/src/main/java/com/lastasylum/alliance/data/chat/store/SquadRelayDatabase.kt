@@ -17,7 +17,7 @@ import androidx.room.RoomDatabase
         ForumReadCursorEntity::class,
         LatencySampleEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class SquadRelayDatabase : RoomDatabase() {
