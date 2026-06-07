@@ -236,8 +236,11 @@ internal fun OverlayGameHudChip(
     iconTint: Color? = null,
     icon: ImageVector? = null,
     painter: Painter? = null,
+    leadingContent: (@Composable () -> Unit)? = null,
 ) {
-    require(icon != null || painter != null) { "icon or painter required" }
+    require(icon != null || painter != null || leadingContent != null) {
+        "icon, painter, or leadingContent required"
+    }
     val badge = badgeCount.coerceAtLeast(0)
     val shape = RoundedCornerShape(HudChipCorner)
     val tint = iconTint ?: accent.icon
@@ -257,6 +260,7 @@ internal fun OverlayGameHudChip(
             contentAlignment = Alignment.Center,
         ) {
             when {
+                leadingContent != null -> leadingContent()
                 icon != null -> {
                     Icon(
                         imageVector = icon,

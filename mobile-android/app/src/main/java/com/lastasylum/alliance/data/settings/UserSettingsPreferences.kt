@@ -327,6 +327,47 @@ class UserSettingsPreferences(context: Context) {
      * Панель включена без гейта → оставляем включённой (поведение станет «только в игре»).
      * Панель выключена, гейт включён → включаем панель (пользователь явно хотел режим в игре).
      */
+    fun getOverlayPinnedMemberIds(teamId: String): Set<String> =
+        getOverlayPinnedMemberIdsOrdered(teamId).toSet()
+
+    fun getOverlayPinnedMemberIdsOrdered(teamId: String): List<String> {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return emptyList()
+        val raw = prefs.getString(overlayPinnedKey(tid), null) ?: return emptyList()
+        return raw.split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .take(OVERLAY_PINNED_MAX)
+    }
+
+    fun setOverlayPinnedMemberIds(teamId: String, userIds: Collection<String>) {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
+        val csv = userIds
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .take(OVERLAY_PINNED_MAX)
+            .joinToString(",")
+        prefs.edit().putString(overlayPinnedKey(tid), csv).apply()
+    }
+
+    fun toggleOverlayPinnedMember(teamId: String, userId: String): Set<String> {
+        val uid = userId.trim()
+        if (uid.isEmpty()) return getOverlayPinnedMemberIds(teamId)
+        val current = getOverlayPinnedMemberIds(teamId).toMutableSet()
+        if (uid in current) {
+            current.remove(uid)
+        } else if (current.size < OVERLAY_PINNED_MAX) {
+            current.add(uid)
+        }
+        setOverlayPinnedMemberIds(teamId, current)
+        return current
+    }
+
+    private fun overlayPinnedKey(teamId: String): String = "$KEY_OVERLAY_PINNED_PREFIX$teamId"
+
     private fun migrateOverlayPrefsIfNeeded() {
         if (prefs.getBoolean(KEY_OVERLAY_GAME_GATE_MERGED, false)) return
         val panel = prefs.getBoolean(KEY_OVERLAY_PANEL_ENABLED, true)
@@ -371,6 +412,8 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT = "last_seen_team_news_created_at"
         private const val KEY_OVERLAY_TARGET_LEGACY_MIGRATED = "overlay_target_legacy_migrated_v1"
         private const val KEY_OVERLAY_TARGET_PLAY_MIGRATED = "overlay_target_play_migrated_v2"
+        private const val KEY_OVERLAY_PINNED_PREFIX = "overlay_online_pinned_v1_"
+        private const val OVERLAY_PINNED_MAX = 3
 
         /**
          * Google Play (RU): `com.phs.global` — см. сведения об игре; также варианты com.lastasylum.plague*.

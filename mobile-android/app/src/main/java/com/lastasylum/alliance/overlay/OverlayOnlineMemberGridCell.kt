@@ -115,6 +115,11 @@ fun OverlayOnlineMemberGridCell(
         else -> stringResource(R.string.overlay_online_status_recent)
     }
     val statusLine = if (presenceAge.isNotBlank()) "$statusText · $presenceAge" else statusText
+    val micSuffix = if (showVoiceBadges && voiceFlags.micOn) {
+        stringResource(R.string.overlay_online_member_a11y_mic)
+    } else {
+        ""
+    }
     val rowCd = if (mode == OverlayOnlineMemberCellMode.Selectable) {
         stringResource(
             if (selected) {
@@ -126,7 +131,13 @@ fun OverlayOnlineMemberGridCell(
             squadRole,
         )
     } else {
-        displayName
+        stringResource(
+            R.string.overlay_online_member_a11y,
+            displayName,
+            squadRole,
+            statusText + if (presenceAge.isNotBlank()) ", $presenceAge" else "",
+            micSuffix,
+        )
     }
 
     Box(
@@ -343,7 +354,7 @@ private fun MemberAvatar(
                     Modifier
                 },
             ),
-        contentAlignment = Alignment.Center,
+        contentAlignment = Alignment.BottomEnd,
     ) {
         Box(
             modifier = Modifier
@@ -366,6 +377,18 @@ private fun MemberAvatar(
                 )
             }
         }
+        val dotColor = when {
+            inGameNow && freshness == PresenceFreshness.Fresh -> tokens.livePulse
+            inGameNow && freshness == PresenceFreshness.StaleSoon -> tokens.borderStaleSoon
+            else -> tokens.mutedColor
+        }
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(dotColor)
+                .border(1.dp, Color(0xFF10141E), CircleShape),
+        )
     }
 }
 

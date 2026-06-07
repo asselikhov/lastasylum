@@ -6,8 +6,26 @@ import java.time.Instant
 /** Окно свежести пинга оверлея (~2.5× heartbeat оверлея 45 с). */
 const val OVERLAY_INGAME_PRESENCE_STALE_MS = 120_000L
 
-/** Как часто обновлять список «Участники онлайн», пока панель открыта. */
+/** Fallback poll when panel is backgrounded and socket is disconnected. */
 const val OVERLAY_ONLINE_PANEL_POLL_MS = 60_000L
+
+/** Poll interval when presence socket is connected (socket drives most updates). */
+const val OVERLAY_ONLINE_PANEL_POLL_SOCKET_MS = 180_000L
+
+/** Faster poll when panel is open but socket is disconnected. */
+const val OVERLAY_ONLINE_PANEL_POLL_FAST_MS = 45_000L
+
+/** UI tick for relative last-seen labels without network refresh. */
+const val OVERLAY_ONLINE_DISPLAY_CLOCK_MS = 60_000L
+
+fun resolveOverlayOnlinePanelPollMs(
+    socketConnected: Boolean,
+    panelForeground: Boolean,
+): Long = when {
+    socketConnected -> OVERLAY_ONLINE_PANEL_POLL_SOCKET_MS
+    panelForeground -> OVERLAY_ONLINE_PANEL_POLL_FAST_MS
+    else -> OVERLAY_ONLINE_PANEL_POLL_MS
+}
 
 /** Короткая подпись свежести пинга для списка «Участники онлайн». */
 fun formatOverlayPresenceAgeRu(lastOverlayPresenceAt: String?): String {

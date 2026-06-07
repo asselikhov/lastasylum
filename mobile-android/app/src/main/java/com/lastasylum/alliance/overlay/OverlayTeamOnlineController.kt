@@ -2,6 +2,7 @@ package com.lastasylum.alliance.overlay
 
 import android.content.res.Resources
 import com.lastasylum.alliance.data.cache.LaunchDiskCache
+import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketEvent
@@ -11,7 +12,10 @@ import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.OVERLAY_PANEL_LOAD_MAX_MS
+import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_DISPLAY_CLOCK_MS
 import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_MS
+import com.lastasylum.alliance.ui.util.resolveOverlayOnlinePanelPollMs
+import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -45,6 +49,7 @@ data class OverlayTeamOnlineUiState(
     val activeFilterChip: OverlayOnlineFilterChip = OverlayOnlineFilterChip.IngameOnly,
     val ingameCount: Int = 0,
     val recentCount: Int = 0,
+    val displayEpoch: Long = 0,
 )
 
 class OverlayTeamOnlineController(
@@ -53,6 +58,7 @@ class OverlayTeamOnlineController(
     private val usersRepository: UsersRepository,
     private val teamPresenceSocket: TeamPresenceSocketManager,
     private val launchDiskCache: LaunchDiskCache?,
+    private val userSettingsPreferences: UserSettingsPreferences,
     private val tokenProvider: () -> String?,
     private val baseUrl: String,
     private val resources: Resources,
@@ -65,6 +71,12 @@ class OverlayTeamOnlineController(
     private var freshnessJob: Job? = null
     private var teamId: String? = null
     private var started = false
+    private var panelForeground = false
+    private var socketConnected = false
+    private var lastLoggedPollMode: String? = null
+    private var localVoiceMicOn: Boolean? = null
+    private var localVoiceSoundOn: Boolean? = null
+    private var lastPollAtMs = 0L
     private val presenceMergeMutex = Mutex()
     private val bootstrapMutex = Mutex()
 
@@ -104,8 +116,12 @@ class OverlayTeamOnlineController(
         teamPresenceSocket.addPresenceListener(presenceSocketListener)
         pollJob = scope.launch {
             while (isActive && started) {
-                delay(OVERLAY_ONLINE_PANEL_POLL_MS)
-                if (started) refreshPresenceOnly(showRefreshing = false)
+                val interval = currentPollIntervalMs()
+                delay(interval)
+                if (started) {
+                    logPollIfNeeded(interval)
+                    refreshPresenceOnly(showRefreshing = false)
+                }
             }
         }
         freshnessJob = scope.launch {
@@ -113,6 +129,60 @@ class OverlayTeamOnlineController(
                 delay(FRESHNESS_REBUILD_MS)
                 if (started) refreshPresenceFreshness()
             }
+        }
+        displayClockJob = scope.launch {
+            while (isActive && started) {
+                delay(OVERLAY_ONLINE_DISPLAY_CLOCK_MS)
+                if (started) tickDisplayClock()
+            }
+        }
+    }
+
+    private var displayClockJob: Job? = null
+
+    fun setPanelForeground(active: Boolean) {
+        panelForeground = active
+    }
+
+    fun setPresenceSocketConnected(connected: Boolean) {
+        socketConnected = connected
+    }
+
+    fun currentPollIntervalMs(): Long = resolveOverlayOnlinePanelPollMs(
+        socketConnected = socketConnected,
+        panelForeground = panelForeground,
+    )
+
+    fun tickDisplayClock() {
+        refreshPresenceFreshness()
+        _state.update { it.copy(displayEpoch = it.displayEpoch + 1) }
+    }
+
+    fun reloadPinnedSort() {
+        val current = _state.value
+        applyPresenceLists(current.ingameRaw, current.recentRaw, forceRebuild = true)
+    }
+
+    fun updateLocalVoiceFlags(micOn: Boolean?, soundOn: Boolean?) {
+        localVoiceMicOn = micOn
+        localVoiceSoundOn = soundOn
+    }
+
+    fun rebuildSortFromVoice() {
+        reloadPinnedSort()
+    }
+
+    private fun logPollIfNeeded(intervalMs: Long) {
+        val mode = when (intervalMs) {
+            resolveOverlayOnlinePanelPollMs(socketConnected = true, panelForeground = panelForeground) -> "socket"
+            resolveOverlayOnlinePanelPollMs(socketConnected = false, panelForeground = true) -> "fast"
+            else -> "normal"
+        }
+        val now = System.currentTimeMillis()
+        if (mode != lastLoggedPollMode || now - lastPollAtMs >= POLL_LOG_THROTTLE_MS) {
+            lastLoggedPollMode = mode
+            lastPollAtMs = now
+            OverlayRuntimeMetrics.logOnlinePanelPoll(mode)
         }
     }
 
@@ -123,6 +193,8 @@ class OverlayTeamOnlineController(
         pollJob = null
         freshnessJob?.cancel()
         freshnessJob = null
+        displayClockJob?.cancel()
+        displayClockJob = null
         teamPresenceSocket.removePresenceListener(presenceSocketListener)
     }
 
@@ -205,6 +277,7 @@ class OverlayTeamOnlineController(
 
     private suspend fun bootstrap(forceTeamRefresh: Boolean, showBlockingSpinner: Boolean) {
         bootstrapMutex.withLock {
+            val bootstrapStartedAt = android.os.SystemClock.elapsedRealtime()
             val hadCachedContent = _state.value.team != null || _state.value.baseSections.isNotEmpty()
             if (showBlockingSpinner && !hadCachedContent) {
                 _state.update { it.copy(loading = true) }
@@ -255,6 +328,12 @@ class OverlayTeamOnlineController(
                     )
                 }
                 applyPresenceLists(result.ingame, result.recentlyActive)
+                val paintMs = android.os.SystemClock.elapsedRealtime() - bootstrapStartedAt
+                OverlayRuntimeMetrics.logOnlinePanelPaint(
+                    source = if (hadCachedContent && !forceTeamRefresh) "cache" else "network",
+                    durationMs = paintMs,
+                    hadError = false,
+                )
             }.onFailure { e ->
                 if (!hadCachedContent && _state.value.team == null && _state.value.baseSections.isEmpty()) {
                     _state.update {
@@ -278,6 +357,12 @@ class OverlayTeamOnlineController(
                         )
                     }
                 }
+                val paintMs = android.os.SystemClock.elapsedRealtime() - bootstrapStartedAt
+                OverlayRuntimeMetrics.logOnlinePanelPaint(
+                    source = if (hadCachedContent) "cache" else "network",
+                    durationMs = paintMs,
+                    hadError = true,
+                )
             }
         }
     }
@@ -422,7 +507,27 @@ class OverlayTeamOnlineController(
             return
         }
         val selfId = current.profile?.id
-        val sections = buildPresenceSections(ingame, recentlyActive, selfId)
+        val tid = teamId?.trim().orEmpty()
+        val pinned = if (tid.isNotEmpty()) {
+            userSettingsPreferences.getOverlayPinnedMemberIdsOrdered(tid)
+        } else {
+            emptyList()
+        }
+        val memberIds = (ingame + recentlyActive).map { it.userId }
+        val voiceFlags = buildVoiceFlagsMap(
+            memberUserIds = memberIds,
+            voicePeers = TeamVoicePresenceStore.peers.value,
+            selfUserId = selfId,
+            localMicOn = localVoiceMicOn,
+            localSoundOn = localVoiceSoundOn,
+        )
+        val sections = buildPresenceSections(
+            ingame = ingame,
+            recentlyActive = recentlyActive,
+            selfUserId = selfId,
+            pinnedUserIds = pinned,
+            voiceFlagsByUserId = voiceFlags,
+        )
         val count = rawIngameCount(ingame)
         val recentCount = rawRecentCount(ingame, recentlyActive)
         _state.update {
@@ -466,5 +571,6 @@ class OverlayTeamOnlineController(
     private companion object {
         private const val FRESHNESS_REBUILD_MS = 30_000L
         private const val STEP_TIMEOUT_MS = 8_000L
+        private const val POLL_LOG_THROTTLE_MS = 120_000L
     }
 }

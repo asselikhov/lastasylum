@@ -2053,6 +2053,18 @@ class CombatOverlayService : Service() {
                 } else {
                     overlayTopRightHudFlow.value.onlineIngameCount
                 }
+                val selfUserId = container.usersRepository.resolveMyProfilePreferCache()?.id?.trim()
+                val ingamePreviewAvatars = if (refreshPresenceCounts) {
+                    val tid = container.usersRepository.resolveMyProfilePreferCache()
+                        ?.playerTeamId?.trim().orEmpty()
+                    if (tid.isNotEmpty()) {
+                        buildOverlayHudAvatarPreviews(tid, selfUserId)
+                    } else {
+                        emptyList()
+                    }
+                } else {
+                    overlayTopRightHudFlow.value.ingamePreviewAvatars
+                }
                 val joinRequestCount = if (force || nowMs - lastHudJoinRequestRefreshAtMs >= HUD_JOIN_REQUEST_REFRESH_MS) {
                     runCatching {
                         OverlayGameStatusHudRefresh.loadTeamJoinRequestCount(this@CombatOverlayService)
@@ -2128,6 +2140,7 @@ class CombatOverlayService : Service() {
                     val prevTopRight = overlayTopRightHudFlow.value
                     val nextTopRight = prevTopRight.copy(
                         onlineIngameCount = onlineIngameCount,
+                        ingamePreviewAvatars = ingamePreviewAvatars,
                         teamJoinRequestCount = joinRequestCount,
                     )
                     if (nextTopRight != prevTopRight) {
@@ -6575,9 +6588,18 @@ class CombatOverlayService : Service() {
                                                     initialJoinRequestCount = topRightHud.teamJoinRequestCount,
                                                     onClose = { hideOverlayChatTeamPanel() },
                                                     onIngameCountChanged = { count ->
+                                                        val tid = container.usersRepository
+                                                            .peekMyProfile()
+                                                            ?.playerTeamId?.trim().orEmpty()
+                                                        val previews = if (tid.isNotEmpty()) {
+                                                            buildOverlayHudAvatarPreviews(tid, userId)
+                                                        } else {
+                                                            emptyList()
+                                                        }
                                                         overlayTopRightHudFlow.value =
                                                             overlayTopRightHudFlow.value.copy(
                                                                 onlineIngameCount = count,
+                                                                ingamePreviewAvatars = previews,
                                                             )
                                                     },
                                                     onJoinRequestCountChanged = { count ->
@@ -6592,6 +6614,7 @@ class CombatOverlayService : Service() {
                                                             )
                                                         }
                                                     },
+                                                    onOpenVoiceHub = { toggleOverlayTopRightVoiceExpanded() },
                                                     onHudRefresh = {
                                                         OverlayGameStatusHudRefresh.invalidateNewsForumCache()
                                                         refreshOverlayStatusHudData(force = true)

@@ -96,11 +96,15 @@ fun buildPresenceSections(
     ingame: List<PlayerTeamMemberDto>,
     recentlyActive: List<PlayerTeamMemberDto>,
     selfUserId: String?,
+    pinnedUserIds: List<String> = emptyList(),
+    voiceFlagsByUserId: Map<String, VoiceMemberFlags> = emptyMap(),
 ): List<OverlayOnlinePresenceSection> {
     val ingameIds = ingame.map { it.userId }.toSet()
     val ingameModels = sortIngameMembers(
         ingame.filter { isOverlayIngameNow(it.presenceStatus, it.lastPresenceAt) },
-        selfUserId,
+        selfUserId = selfUserId,
+        pinnedUserIds = pinnedUserIds,
+        voiceFlagsByUserId = voiceFlagsByUserId,
     ).map { it.toUiModel(selfUserId, inGameNow = true) }
     val recentModels = sortRecentMembers(
         recentlyActive.filter {
@@ -273,11 +277,20 @@ fun rawRecentCount(
 private fun sortIngameMembers(
     members: List<PlayerTeamMemberDto>,
     selfUserId: String?,
+    pinnedUserIds: List<String> = emptyList(),
+    voiceFlagsByUserId: Map<String, VoiceMemberFlags> = emptyMap(),
 ): List<PlayerTeamMemberDto> {
     val selfId = selfUserId?.trim().orEmpty()
+    val pinOrder = pinnedUserIds.map { it.trim() }.filter { it.isNotEmpty() }
+    fun pinRank(userId: String): Int {
+        val idx = pinOrder.indexOf(userId)
+        return if (idx >= 0) pinOrder.size - idx else 0
+    }
     return members.sortedWith(
         compareByDescending<PlayerTeamMemberDto> { if (selfId.isNotEmpty() && it.userId == selfId) 1 else 0 }
+            .thenByDescending { pinRank(it.userId) }
             .thenByDescending { squadRoleRank(it.teamRole) }
+            .thenByDescending { if (voiceFlagsByUserId[it.userId]?.micOn == true) 1 else 0 }
             .thenBy { it.username.lowercase() },
     )
 }

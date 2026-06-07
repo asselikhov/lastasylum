@@ -17,6 +17,14 @@ internal object OverlayRuntimeMetrics {
         )
     }
 
+    fun logOnlinePanelPaint(source: String, durationMs: Long, hadError: Boolean) {
+        Log.d(TAG, "online_panel_paint source=$source durationMs=$durationMs hadError=$hadError")
+    }
+
+    fun logOnlinePanelPoll(mode: String) {
+        Log.d(TAG, "online_panel_poll mode=$mode")
+    }
+
     fun logServiceLifecycle(event: String) {
         Log.i(TAG, "service event=$event")
     }

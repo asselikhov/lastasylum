@@ -40,7 +40,6 @@ import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketManager
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketState
-import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_MS
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
@@ -66,6 +65,7 @@ fun OverlayTeamOnlinePanel(
     onIngameCountChanged: (Int) -> Unit = {},
     onJoinRequestCountChanged: (Int) -> Unit = {},
     onSendReactionToUser: (userId: String) -> Unit = {},
+    onOpenVoiceHub: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -83,6 +83,7 @@ fun OverlayTeamOnlinePanel(
             usersRepository = usersRepository,
             teamPresenceSocket = teamPresenceSocket,
             launchDiskCache = appContainer.launchDiskCache,
+            userSettingsPreferences = appContainer.userSettingsPreferences,
             tokenProvider = tokenProvider,
             baseUrl = BuildConfig.API_BASE_URL,
             resources = res,
@@ -101,12 +102,17 @@ fun OverlayTeamOnlinePanel(
         controller.start()
     }
     LaunchedEffect(presenceSocketState) {
+        controller.setPresenceSocketConnected(presenceSocketState == TeamPresenceSocketState.Connected)
         if (presenceSocketState == TeamPresenceSocketState.Connected) {
             controller.onPresenceSocketConnected()
         }
     }
     DisposableEffect(controller) {
-        onDispose { controller.stop() }
+        controller.setPanelForeground(true)
+        onDispose {
+            controller.setPanelForeground(false)
+            controller.stop()
+        }
     }
     DisposableEffect(lifecycleOwner, controller) {
         val observer = LifecycleEventObserver { _, event ->
@@ -122,9 +128,24 @@ fun OverlayTeamOnlinePanel(
         onDispose { voiceRosterSync.release() }
     }
     val uiState by controller.state.collectAsStateWithLifecycle(lifecycleOwner)
-    var longPressMember by remember { mutableStateOf<OverlayOnlineMemberUiModel?>(null) }
+    var actionSheetMember by remember { mutableStateOf<OverlayOnlineMemberUiModel?>(null) }
+    var pinnedMemberIds by remember(uiState.team?.id) {
+        mutableStateOf(
+            uiState.team?.id?.let { appContainer.userSettingsPreferences.getOverlayPinnedMemberIds(it) }
+                ?: emptySet(),
+        )
+    }
     val voicePeers by TeamVoicePresenceStore.peers.collectAsStateWithLifecycle(lifecycleOwner)
     val hasLocalVoiceSession = voiceSession != null
+
+    LaunchedEffect(voicePeers, voiceSession?.micOn, voiceSession?.soundOn) {
+        controller.updateLocalVoiceFlags(voiceSession?.micOn, voiceSession?.soundOn)
+        controller.rebuildSortFromVoice()
+    }
+
+    LaunchedEffect(uiState.displayEpoch) {
+        // displayEpoch drives relative last-seen relabel without network.
+    }
 
     LaunchedEffect(openJoinInboxInitially) {
         if (!openJoinInboxInitially) return@LaunchedEffect
@@ -147,26 +168,23 @@ fun OverlayTeamOnlinePanel(
     val memberIds = remember(uiState.baseSections) {
         uiState.baseSections.flatMap { it.items }.map { it.userId }
     }
-    val needsVoiceFilter = uiState.activeFilterChip == OverlayOnlineFilterChip.WithMic
     val voiceFlagsByUserId = remember(
         voicePeers,
         voiceSession?.micOn,
         voiceSession?.soundOn,
         selfId,
         memberIds,
-        needsVoiceFilter,
     ) {
-        if (!needsVoiceFilter) {
-            emptyMap()
-        } else {
-            buildVoiceFlagsMap(
-                memberUserIds = memberIds,
-                voicePeers = voicePeers,
-                selfUserId = selfId,
-                localMicOn = voiceSession?.micOn,
-                localSoundOn = voiceSession?.soundOn,
-            )
-        }
+        buildVoiceFlagsMap(
+            memberUserIds = memberIds,
+            voicePeers = voicePeers,
+            selfUserId = selfId,
+            localMicOn = voiceSession?.micOn,
+            localSoundOn = voiceSession?.soundOn,
+        )
+    }
+    val filterCounts = remember(uiState.baseSections, voiceFlagsByUserId) {
+        computeOverlayOnlineFilterCounts(uiState.baseSections, voiceFlagsByUserId)
     }
     val displaySections = remember(
         uiState.baseSections,
@@ -258,8 +276,10 @@ fun OverlayTeamOnlinePanel(
         onError = { _ -> /* surfaced via controller on next refresh */ },
     )
 
-    longPressMember?.let { member ->
-        OverlayAwareBottomSheet(onDismissRequest = { longPressMember = null }) {
+    actionSheetMember?.let { member ->
+        val teamId = team?.id?.trim().orEmpty()
+        val isPinned = member.userId in pinnedMemberIds
+        OverlayAwareBottomSheet(onDismissRequest = { actionSheetMember = null }) {
             Text(
                 text = member.username,
                 style = MaterialTheme.typography.titleMedium,
@@ -267,7 +287,7 @@ fun OverlayTeamOnlinePanel(
             )
             TextButton(
                 onClick = {
-                    longPressMember = null
+                    actionSheetMember = null
                     onSendReactionToUser(member.userId)
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -277,19 +297,55 @@ fun OverlayTeamOnlinePanel(
             TextButton(
                 onClick = {
                     copyUsernameToClipboard(context, member.username)
-                    longPressMember = null
+                    actionSheetMember = null
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.overlay_online_action_copy_nick))
             }
+            if (hasLocalVoiceSession && !member.isSelf) {
+                TextButton(
+                    onClick = {
+                        actionSheetMember = null
+                        onOpenVoiceHub()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.overlay_online_action_voice))
+                }
+            }
+            if (teamId.isNotEmpty() && !member.isSelf) {
+                TextButton(
+                    onClick = {
+                        pinnedMemberIds = appContainer.userSettingsPreferences
+                            .toggleOverlayPinnedMember(teamId, member.userId)
+                        controller.reloadPinnedSort()
+                        actionSheetMember = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        stringResource(
+                            if (isPinned) {
+                                R.string.overlay_online_action_unpin
+                            } else {
+                                R.string.overlay_online_action_pin
+                            },
+                        ),
+                    )
+                }
+            }
         }
     }
+
+    val openMemberActions: (OverlayOnlineMemberUiModel) -> Unit = { actionSheetMember = it }
 
     OverlayOnlinePanelScaffold(
         modifier = modifier,
         displaySections = displaySections,
+        baseSections = uiState.baseSections,
         searchQuery = uiState.searchQuery,
+        filterCounts = filterCounts,
         voiceSelfUserId = selfId,
         voiceLocalMicOn = voiceSession?.micOn,
         voiceLocalSoundOn = voiceSession?.soundOn,
@@ -304,15 +360,17 @@ fun OverlayTeamOnlinePanel(
         onSearchQuery = controller::onSearchQuery,
         onFilterChip = controller::onFilterChip,
         onRefresh = { controller.refresh(force = true) },
-        onMemberLongClick = { longPressMember = it },
+        onMemberClick = openMemberActions,
+        onMemberLongClick = openMemberActions,
         topBar = {
+            val pollIntervalSec = controller.currentPollIntervalMs() / 1_000
             val realtimeLabel = when (presenceSocketState) {
                 TeamPresenceSocketState.Connected ->
                     stringResource(R.string.overlay_online_realtime_live)
                 else ->
                     stringResource(
                         R.string.overlay_online_realtime_poll,
-                        OVERLAY_ONLINE_PANEL_POLL_MS / 1_000,
+                        pollIntervalSec,
                     )
             }
             OverlayHudPanelHeader(

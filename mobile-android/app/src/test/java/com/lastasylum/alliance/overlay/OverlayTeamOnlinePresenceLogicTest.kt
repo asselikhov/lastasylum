@@ -4,6 +4,10 @@ import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketEvent
 import com.lastasylum.alliance.data.voice.VoicePeerState
 import com.lastasylum.alliance.ui.util.OVERLAY_INGAME_PRESENCE_STALE_MS
+import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_FAST_MS
+import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_MS
+import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_SOCKET_MS
+import com.lastasylum.alliance.ui.util.resolveOverlayOnlinePanelPollMs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -47,6 +51,28 @@ class OverlayTeamOnlinePresenceLogicTest {
         )
         val ids = sections.first().items.map { it.userId }
         assertEquals(listOf(selfId, "u1", "u2", "u3"), ids)
+    }
+
+    @Test
+    fun sort_pinned_after_self_then_mic() {
+        val voice = mapOf(
+            "u2" to VoiceMemberFlags(micOn = true, soundOn = false),
+            "u3" to VoiceMemberFlags(micOn = false, soundOn = false),
+        )
+        val sections = buildPresenceSections(
+            ingame = listOf(
+                member("u1", "alice", role = "R3"),
+                member("u2", "bob", role = "R1"),
+                member("u3", "charlie", role = "R5"),
+                member(selfId, "me", role = "R1"),
+            ),
+            recentlyActive = emptyList(),
+            selfUserId = selfId,
+            pinnedUserIds = listOf("u3", "u1"),
+            voiceFlagsByUserId = voice,
+        )
+        val ids = sections.first().items.map { it.userId }
+        assertEquals(listOf(selfId, "u3", "u1", "u2"), ids)
     }
 
     @Test
@@ -327,6 +353,22 @@ class OverlayTeamOnlinePresenceLogicTest {
             selfUserId = selfId,
         )
         assertEquals(listOf("u1"), result.map { it.userId })
+    }
+
+    @Test
+    fun resolveOverlayOnlinePanelPollMs_adaptsToSocketAndForeground() {
+        assertEquals(
+            OVERLAY_ONLINE_PANEL_POLL_SOCKET_MS,
+            resolveOverlayOnlinePanelPollMs(socketConnected = true, panelForeground = true),
+        )
+        assertEquals(
+            OVERLAY_ONLINE_PANEL_POLL_FAST_MS,
+            resolveOverlayOnlinePanelPollMs(socketConnected = false, panelForeground = true),
+        )
+        assertEquals(
+            OVERLAY_ONLINE_PANEL_POLL_MS,
+            resolveOverlayOnlinePanelPollMs(socketConnected = false, panelForeground = false),
+        )
     }
 
     @Test
