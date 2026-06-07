@@ -43,7 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.ReadCursorSession
-import com.lastasylum.alliance.data.effectiveUnreadCount
+import com.lastasylum.alliance.data.teams.TeamInboxUnread.displayedForumTopicUnread
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.teams.TeamForumMarkRead
 import com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent
@@ -89,7 +89,7 @@ fun TeamForumListScreen(
     topicActivityPatch: TeamForumTopicActivityEvent? = null,
     topicPinPatch: TeamForumTopicPinChangedEvent? = null,
     onInboxChanged: () -> Unit = {},
-    onForumTopicsSynced: (List<TeamForumTopicDto>) -> Unit = {},
+    onForumTopicsSynced: (List<TeamForumTopicDto>, Map<String, Int>) -> Unit = { _, _ -> },
     onOpenTopic: (TeamForumTopicDto) -> Unit,
     @Suppress("UNUSED_PARAMETER") onBack: () -> Unit,
     onProvideMarkReadAction: (String, (() -> Unit)?) -> Unit = { _, _ -> },
@@ -137,10 +137,10 @@ fun TeamForumListScreen(
     }
 
     fun effectiveTopicUnread(topic: TeamForumTopicDto): Int =
-        effectiveUnreadCount(
-            serverUnread = topic.unreadCount,
-            lastReadMessageId = topic.lastReadMessageId,
+        displayedForumTopicUnread(
+            topic = topic,
             localLastReadMessageId = lastReadByTopic[topic.id],
+            optimisticFloor = listUiState.optimisticUnreadFloorByTopic[topic.id] ?: 0,
         )
 
     fun onTopicsUpdated(rows: List<TeamForumTopicDto>) {
@@ -149,7 +149,7 @@ fun TeamForumListScreen(
             topicTitles[t.id] = t.title
             topicSnapshots[t.id] = t
         }
-        onForumTopicsSynced(rows)
+        onForumTopicsSynced(rows, listUiState.optimisticUnreadFloorByTopic)
         val staleReads = rows.mapNotNull { topic ->
             if (topic.unreadCount > 0 && effectiveTopicUnread(topic) == 0) {
                 lastReadByTopic[topic.id]?.let { topic.id to it }
@@ -264,7 +264,12 @@ fun TeamForumListScreen(
             topicListState.layoutInfo.visibleItemsInfo.map { it.index }.toSet()
         }
     }
-    val visibleUnreadRanks by remember(topicListState, filteredTopics, lastReadByTopic.size) {
+    val visibleUnreadRanks by remember(
+        topicListState,
+        filteredTopics,
+        lastReadByTopic.size,
+        listUiState.optimisticUnreadFloorByTopic,
+    ) {
         derivedStateOf {
             buildVisibleUnreadRankMap(
                 topicListState.layoutInfo.visibleItemsInfo.map { it.index }.sorted(),
@@ -282,10 +287,10 @@ fun TeamForumListScreen(
             }
         }
     }
-    val forumTopicUnreadTotal = remember(topics, lastReadByTopic.size) {
+    val forumTopicUnreadTotal = remember(topics, lastReadByTopic.size, listUiState.optimisticUnreadFloorByTopic) {
         topics.sumOf { effectiveTopicUnread(it).coerceAtLeast(0) }
     }
-    val firstUnreadTopicIndex = remember(topics, lastReadByTopic.size) {
+    val firstUnreadTopicIndex = remember(topics, lastReadByTopic.size, listUiState.optimisticUnreadFloorByTopic) {
         topics.indexOfLast { effectiveTopicUnread(it) > 0 }
     }
     val isFirstUnreadTopicVisible by remember(topicListState, firstUnreadTopicIndex) {

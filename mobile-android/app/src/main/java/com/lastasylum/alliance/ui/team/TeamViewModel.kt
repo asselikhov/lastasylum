@@ -150,12 +150,19 @@ class TeamViewModel(
         }
     }
 
-    fun syncForumBadgeFromTopics(topics: List<TeamForumTopicDto>) {
+    fun syncForumBadgeFromTopics(
+        topics: List<TeamForumTopicDto>,
+        optimisticFloorByTopic: Map<String, Int> = emptyMap(),
+    ) {
         val teamId = _data.value.profile?.playerTeamId?.trim().orEmpty()
         if (teamId.isEmpty()) return
         viewModelScope.launch {
             val localRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
-            val counts = TeamInboxBadgeDeriver.computeForumUnreadCounts(topics, localRead)
+            val counts = TeamInboxBadgeDeriver.computeForumUnreadCounts(
+                topics,
+                localRead,
+                optimisticFloorByTopic,
+            )
             _data.update { state ->
                 val merged = TeamInboxBadgeDeriver.mergeForDisplay(
                     effectiveUnread = counts.effective,

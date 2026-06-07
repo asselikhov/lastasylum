@@ -53,6 +53,8 @@ fun displayedUnreadCount(
     val raw = rawServerUnread.coerceAtLeast(0)
     val floor = optimisticFloor.coerceAtLeast(0)
     if (raw > 0 && effective == 0) {
+        // Optimistic socket bump before read cursors advance (raw matches floor).
+        if (floor > 0 && raw <= floor) return floor
         return 0
     }
     if (effective == 0) {

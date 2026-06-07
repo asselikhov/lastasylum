@@ -247,7 +247,7 @@ fun TeamForumNavHost(
     forumTabReselectSignal: Int = 0,
     /** Wire keys of sticker packs the current user may send. */
     enabledStickerPackKeys: Set<String> = emptySet(),
-    onForumTopicsSynced: (List<TeamForumTopicDto>) -> Unit = {},
+    onForumTopicsSynced: (List<TeamForumTopicDto>, Map<String, Int>) -> Unit = { _, _ -> },
     onForumInboxChanged: () -> Unit = {},
     onRegisterMarkReadAction: ((() -> Unit)?) -> Unit = {},
 ) {

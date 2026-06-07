@@ -839,11 +839,7 @@ fun TeamForumTopicScreen(
                         capForumMessagesTrimNewestOnly(messages)
                         bumpMessagesGeneration()
                     } else {
-                        val stashed = if (messages.isEmpty()) {
-                            ForumMessageStash.drain(teamId, topicId)
-                        } else {
-                            emptyList()
-                        }
+                        val stashed = ForumMessageStash.drain(teamId, topicId)
                         val merged = mergeForumMessagesPage(
                             mergeForumMessagesPage(messages.toList(), stashed),
                             visible,
@@ -982,6 +978,14 @@ fun TeamForumTopicScreen(
             } else {
                 markTopicReadToLatest()
             }
+        }
+    }
+
+    LaunchedEffect(teamId, topicId, sectionActive) {
+        if (!sectionActive) return@LaunchedEffect
+        val stashed = ForumMessageStash.drain(teamId, topicId)
+        for (msg in stashed) {
+            mergeNew(msg, source = "stash")
         }
     }
 

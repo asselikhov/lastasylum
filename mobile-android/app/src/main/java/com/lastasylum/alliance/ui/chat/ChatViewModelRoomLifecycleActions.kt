@@ -407,7 +407,7 @@ internal fun ChatViewModel.onChatTabResumedImpl() {
             if (roomId.isEmpty()) return@launch
             rehydrateSelectedRoomMessagesFromCache()
             refreshPinBarForSelectedRoom()
-            refreshMessagesInBackground(roomId, force = false)
+            refreshMessagesInBackground(roomId, force = true)
             if (vmState.value.selectedRoomId.isNullOrBlank()) {
                 ensureAllianceHubRoomSelected()
             }
@@ -1188,11 +1188,16 @@ internal fun ChatViewModel.onRoomUnreadFromServerImpl(event: ChatRoomUnreadEvent
         syncTabUnreadBadge()
         syncOverlayAllianceHubBadge()
         if (serverUnread > 0) {
-            val selectedId = vmState.value.selectedRoomId
-            val activelyViewing = selectedId == roomId && isRoomActivelyViewed(roomId)
-            if (!activelyViewing) {
-                vmRepository.ensureRoomJoined(roomId)
-                refreshMessagesInBackground(roomId, force = true)
+            vmRepository.ensureRoomJoined(roomId)
+            val isSelected = vmState.value.selectedRoomId == roomId
+            val activelyViewing = isSelected && isRoomActivelyViewed(roomId)
+            when {
+                !isSelected -> refreshMessagesInBackground(roomId, force = true)
+                activelyViewing -> {
+                    rehydrateRoomMessagesFromCache(roomId)
+                    refreshMessagesInBackground(roomId, force = false)
+                }
+                else -> refreshMessagesInBackground(roomId, force = true)
             }
         }
     }

@@ -2545,16 +2545,32 @@ class CombatOverlayService : Service() {
         overlayReactionLogUnreadJob = null
     }
 
-    /** App/VM hub chip sync — does not set [hubUnreadOptimisticFloor] (realtime bumps only). */
-    private fun pushAllianceHubUnreadFromApp(displayed: Int) {
+    /** App/VM hub chip sync — seeds service grace floor when VM has pending socket bumps. */
+    private fun pushAllianceHubUnreadFromApp(displayed: Int, vmOptimisticFloor: Int = 0) {
         val clamped = displayed.coerceIn(0, 999)
         if (clamped <= 0) {
+            if (shouldDeferHubUnreadReconcile()) {
+                val kept = maxOf(
+                    currentHudBadgeState().allianceChatUnread,
+                    hubUnreadOptimisticFloor,
+                    vmOptimisticFloor,
+                )
+                if (kept > 0) {
+                    applyAllianceHubUnreadCount(kept)
+                    return
+                }
+            }
             clearHubUnreadOptimisticState()
             applyAllianceHubUnreadCount(0)
             patchHubUnreadInSessionCacheAfterLocalRead()
             return
         }
-        applyAllianceHubUnreadCount(clamped)
+        val seedFloor = maxOf(vmOptimisticFloor, clamped, hubUnreadOptimisticFloor)
+        if (seedFloor > hubUnreadOptimisticFloor) {
+            hubUnreadOptimisticFloor = seedFloor
+            hubUnreadLastBumpAtMs = System.currentTimeMillis()
+        }
+        applyAllianceHubUnreadCount(maxOf(clamped, hubUnreadOptimisticFloor))
     }
 
     private fun clearHubUnreadOptimisticState() {
@@ -2745,6 +2761,18 @@ class CombatOverlayService : Service() {
         }
 
         if (serverUnread <= 0) {
+            val hubBumpGraceActive = hubUnreadOptimisticFloor > 0 &&
+                System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
+            if (shouldDeferHubUnreadReconcile() || hubBumpGraceActive) {
+                val kept = maxOf(
+                    currentHudBadgeState().allianceChatUnread,
+                    hubUnreadOptimisticFloor,
+                )
+                if (kept > 0) {
+                    applyAllianceHubUnreadCount(kept)
+                    return
+                }
+            }
             hubUnreadOptimisticFloor = 0
             applyAllianceHubUnreadCount(0)
             if (serverLast.isNotBlank()) {
@@ -2896,6 +2924,16 @@ class CombatOverlayService : Service() {
         val vmBound = ChatViewModelRegistry.shared != null || activityScopedChatViewModel != null
         if (!vmBound) return false
         return AppContainer.from(this).chatRepository.hasPrimaryRealtimeSubscription()
+    }
+
+    /** Merge socket stash into visible chat after overlay pane switches to Chat. */
+    private fun rehydrateOverlayChatFeedFromStash() {
+        val vm = resolveChatViewModel() ?: return
+        vm.rehydrateSelectedRoomMessagesFromCache()
+        val roomId = vm.state.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isNotEmpty()) {
+            vm.scheduleRehydrateSelectedRoomFromStash(roomId)
+        }
     }
 
     private fun forwardOverlaySocketMessageToViewModel(msg: ChatMessage) {
@@ -3516,6 +3554,9 @@ class CombatOverlayService : Service() {
             currentOverlayHudPane = pane
             overlayHudPanelHostState.update {
                 it.copy(hudPane = pane, openGeneration = it.openGeneration + 1)
+            }
+            if (pane == OverlayHudPane.Chat) {
+                rehydrateOverlayChatFeedFromStash()
             }
             return
         }
@@ -7448,21 +7489,25 @@ class CombatOverlayService : Service() {
          * Push hub badge from app read cursors / merged room list.
          * When [authoritativeEffective] is null, overlay refetches listRooms + prefs (game entry).
          */
-        fun syncHubBadgeFromSharedReadState(authoritativeEffective: Int? = null) {
+        fun syncHubBadgeFromSharedReadState(
+            authoritativeEffective: Int? = null,
+            vmOptimisticFloor: Int = 0,
+        ) {
             val service = runningInstance ?: return
             service.mainHandler.post {
                 if (authoritativeEffective != null) {
                     val clamped = authoritativeEffective.coerceIn(0, 999)
                     if (clamped > 0) {
-                        service.pushAllianceHubUnreadFromApp(clamped)
+                        service.pushAllianceHubUnreadFromApp(clamped, vmOptimisticFloor)
                     } else if (service.isAllianceHubLocallyReadSuppressedNow()) {
                         service.clearHubUnreadOptimisticState()
                         service.applyAllianceHubUnreadCount(0)
                         service.patchHubUnreadInSessionCacheAfterLocalRead()
-                    } else if (service.shouldDeferHubUnreadReconcile()) {
+                    } else if (service.shouldDeferHubUnreadReconcile() || vmOptimisticFloor > 0) {
                         val kept = maxOf(
                             service.currentHudBadgeState().allianceChatUnread,
                             service.hubUnreadOptimisticFloor,
+                            vmOptimisticFloor,
                         )
                         service.applyAllianceHubUnreadCount(kept)
                     } else {
@@ -7588,7 +7633,10 @@ class CombatOverlayService : Service() {
             runningInstance?.hubUnreadOptimisticFloor ?: 0
 
         /** Push client forum unread to overlay HUD without clearing optimistic floors (topic list sync). */
-        fun syncOverlayForumBadgeFromTopics(topics: List<com.lastasylum.alliance.data.teams.TeamForumTopicDto>) {
+        fun syncOverlayForumBadgeFromTopics(
+            topics: List<com.lastasylum.alliance.data.teams.TeamForumTopicDto>,
+            optimisticFloorByTopic: Map<String, Int> = emptyMap(),
+        ) {
             val service = runningInstance ?: return
             service.serviceScope.launch(Dispatchers.IO) {
                 val container = AppContainer.from(service)
@@ -7598,7 +7646,11 @@ class CombatOverlayService : Service() {
                     .orEmpty()
                 if (teamId.isEmpty()) return@launch
                 val localRead = container.teamForumPreferences.loadAllLastReadMessageIds(teamId)
-                val counts = TeamInboxBadgeDeriver.computeForumUnreadCounts(topics, localRead)
+                val counts = TeamInboxBadgeDeriver.computeForumUnreadCounts(
+                    topics,
+                    localRead,
+                    optimisticFloorByTopic,
+                )
                 service.mainHandler.post {
                     if (!service.isInGameOverlayUiActive() && !service.isOverlayUiHoldActive()) return@post
                     service.inboxBadgeCoordinator.cacheAuthoritativeForum(
@@ -7606,6 +7658,9 @@ class CombatOverlayService : Service() {
                         counts.effective,
                         counts.rawServer,
                     )
+                    if (counts.effective > 0) {
+                        service.inboxBadgeCoordinator.bumpForumOptimistic(counts.effective)
+                    }
                     service.overlayHudBadgeBus.emit(
                         OverlayHudBadgeEvent.ForumUnread(
                             effective = counts.effective,

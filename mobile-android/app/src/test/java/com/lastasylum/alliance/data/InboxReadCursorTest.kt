@@ -118,6 +118,19 @@ class InboxReadCursorTest {
     }
 
     @Test
+    fun displayedUnread_honorsOptimisticFloorWhenRawMatchesSocketBump() {
+        assertEquals(
+            1,
+            displayedUnreadCount(
+                effectiveUnread = 0,
+                previouslyDisplayed = 0,
+                rawServerUnread = 1,
+                optimisticFloor = 1,
+            ),
+        )
+    }
+
+    @Test
     fun displayedUnread_clearsOptimisticFloorWhenLocalReadSuppressesStaleServer() {
         assertEquals(
             0,
@@ -199,6 +212,37 @@ class InboxReadCursorTest {
                 floor = 2,
                 rawServerUnread = 3,
                 displayedUnread = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun displayedForumTopicUnread_keepsOptimisticFloorWhenCursorsEqual() {
+        val topic = com.lastasylum.alliance.data.teams.TeamForumTopicDto(
+            id = "topic1",
+            teamId = "team1",
+            title = "Topic",
+            createdByUserId = "u1",
+            messageCount = 5,
+            unreadCount = 1,
+            lastReadMessageId = "000000000000000000000070",
+            createdAt = "2020-01-01T00:00:00Z",
+            updatedAt = "2020-01-01T00:00:00Z",
+        )
+        assertEquals(
+            0,
+            com.lastasylum.alliance.data.teams.TeamInboxUnread.displayedForumTopicUnread(
+                topic = topic,
+                localLastReadMessageId = "000000000000000000000070",
+                optimisticFloor = 0,
+            ),
+        )
+        assertEquals(
+            1,
+            com.lastasylum.alliance.data.teams.TeamInboxUnread.displayedForumTopicUnread(
+                topic = topic,
+                localLastReadMessageId = "000000000000000000000070",
+                optimisticFloor = 1,
             ),
         )
     }

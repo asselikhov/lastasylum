@@ -590,9 +590,14 @@ class ChatViewModel(
         viewModelScope.launch {
             while (isActive) {
                 delay(CHAT_ACTIVE_ROOM_RECONCILE_INTERVAL_MS)
-                if (!isChatTabActive && !overlayChatPanelVisible) continue
+                if (!appInForeground) continue
                 val roomId = _state.value.selectedRoomId?.trim().orEmpty()
                 if (roomId.isEmpty()) continue
+                if (!isChatTabActive && !overlayChatPanelVisible) {
+                    // Keep selected-room cache aligned while user is in-app but off chat UI.
+                    refreshMessagesInBackground(roomId, force = false)
+                    continue
+                }
                 if (shouldSkipBackgroundMessageRefreshForRoom(roomId)) continue
                 refreshMessagesInBackground(roomId, force = false)
             }
@@ -934,13 +939,22 @@ class ChatViewModel(
             CombatOverlayService.syncHubBadgeFromSharedReadState(null)
             return
         }
+        val hubId = com.lastasylum.alliance.data.chat.ChatRoomKindResolver.allianceHubRoom(rooms)
+            ?.id
+            ?.trim()
+            .orEmpty()
+        val vmFloor = if (hubId.isNotEmpty()) optimisticUnreadFloorByRoom[hubId] ?: 0 else 0
+        val mergedFloor = maxOf(
+            CombatOverlayService.currentHubUnreadOptimisticFloor(),
+            vmFloor,
+        )
         val displayed = ChatUnreadCounts.overlayAllianceHubBadge(
             rooms = rooms,
             localReadByRoom = localRead,
-            optimisticFloor = CombatOverlayService.currentHubUnreadOptimisticFloor(),
+            optimisticFloor = mergedFloor,
             previouslyDisplayed = CombatOverlayService.currentAllianceHubBadgeDisplayed(),
         )
-        CombatOverlayService.syncHubBadgeFromSharedReadState(displayed)
+        CombatOverlayService.syncHubBadgeFromSharedReadState(displayed, vmFloor)
     }
 
     /** Called from overlay service when activity VM owns unread (socket hub path). */
@@ -1232,8 +1246,11 @@ class ChatViewModel(
         if (inForeground) {
             syncReadStateFromPreferences()
             applyLocallyRemovedFilterToLoadedCaches()
-            if (isChatTabActive || overlayChatPanelVisible) {
-                rehydrateSelectedRoomMessagesFromCache()
+            reconnectRealtimeIfNeeded()
+            rehydrateSelectedRoomMessagesFromCache()
+            val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+            if (roomId.isNotEmpty()) {
+                refreshMessagesInBackground(roomId, force = true)
             }
         } else {
             persistSnapshotJob?.cancel()

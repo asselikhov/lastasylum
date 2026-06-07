@@ -23,6 +23,7 @@ data class ForumListUiState(
     val loading: Boolean = false,
     val error: String? = null,
     val searchQuery: String = "",
+    val optimisticUnreadFloorByTopic: Map<String, Int> = emptyMap(),
 )
 
 class ForumListViewModel(
@@ -63,7 +64,13 @@ class ForumListViewModel(
             _state.update { it.copy(loading = true, error = null) }
             forumRepository.syncTopics(currentUserId, teamId, bypassCache = force)
                 .onSuccess { topics ->
-                    _state.update { it.copy(topics = topics, loading = false) }
+                    _state.update {
+                        it.copy(
+                            topics = topics,
+                            loading = false,
+                            optimisticUnreadFloorByTopic = emptyMap(),
+                        )
+                    }
                 }
                 .onFailure { err ->
                     _state.update {
@@ -93,12 +100,17 @@ class ForumListViewModel(
                 val idx = st.topics.indexOfFirst { it.id == event.topicId }
                 if (idx < 0) return@update st
                 val row = st.topics[idx]
+                val nextFloor = ((st.optimisticUnreadFloorByTopic[event.topicId] ?: 0) + 1)
+                    .coerceAtMost(999)
                 val bumped = row.copy(
                     unreadCount = row.unreadCount + 1,
                     messageCount = row.messageCount + 1,
                     lastMessageAt = java.time.Instant.now().toString(),
                 )
-                st.copy(topics = st.topics.toMutableList().apply { this[idx] = bumped })
+                st.copy(
+                    topics = st.topics.toMutableList().apply { this[idx] = bumped },
+                    optimisticUnreadFloorByTopic = st.optimisticUnreadFloorByTopic + (event.topicId to nextFloor),
+                )
             }
         }
     }
@@ -131,6 +143,7 @@ class ForumListViewModel(
                 topics = st.topics.toMutableList().apply {
                     this[idx] = row.copy(unreadCount = 0, lastReadMessageId = mid)
                 },
+                optimisticUnreadFloorByTopic = st.optimisticUnreadFloorByTopic - tpid,
             )
         }
     }

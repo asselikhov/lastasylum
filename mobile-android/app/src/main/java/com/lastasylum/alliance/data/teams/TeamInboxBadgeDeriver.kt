@@ -35,8 +35,9 @@ object TeamInboxBadgeDeriver {
     fun computeForumUnreadCounts(
         topics: List<TeamForumTopicDto>,
         localReadByTopic: Map<String, String>,
+        optimisticFloorByTopic: Map<String, Int> = emptyMap(),
     ): ForumUnreadCounts = ForumUnreadCounts(
-        effective = computeForumUnread(topics, localReadByTopic),
+        effective = computeForumUnread(topics, localReadByTopic, optimisticFloorByTopic),
         rawServer = computeForumRawUnread(topics),
     )
 
@@ -66,7 +67,8 @@ object TeamInboxBadgeDeriver {
     fun computeForumUnread(
         topics: List<TeamForumTopicDto>,
         localReadByTopic: Map<String, String>,
-    ): Int = TeamInboxUnread.sumForumUnread(topics, localReadByTopic)
+        optimisticFloorByTopic: Map<String, Int> = emptyMap(),
+    ): Int = TeamInboxUnread.sumForumUnread(topics, localReadByTopic, optimisticFloorByTopic)
 
     suspend fun computeForumUnreadFromRepository(
         teamsRepository: TeamsRepository,

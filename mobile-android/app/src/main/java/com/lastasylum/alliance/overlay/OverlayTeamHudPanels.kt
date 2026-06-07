@@ -198,6 +198,7 @@ fun OverlayTeamForumPanel(
     modifier: Modifier = Modifier,
     onForumInboxChanged: () -> Unit = {},
     onRegisterMarkReadAction: ((() -> Unit)?) -> Unit = {},
+    onForumTopicsSynced: (List<com.lastasylum.alliance.data.teams.TeamForumTopicDto>, Map<String, Int>) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val app = remember { AppContainer.from(context.applicationContext) }
@@ -215,6 +216,10 @@ fun OverlayTeamForumPanel(
                 modifier = Modifier.fillMaxSize(),
                 onForumInboxChanged = onForumInboxChanged,
                 onRegisterMarkReadAction = onRegisterMarkReadAction,
+                onForumTopicsSynced = { topics, floors ->
+                    CombatOverlayService.syncOverlayForumBadgeFromTopics(topics, floors)
+                    onForumTopicsSynced(topics, floors)
+                },
             )
         }
     }

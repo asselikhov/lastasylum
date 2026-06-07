@@ -191,7 +191,7 @@ class ChatRoomOpenSync(
                         host.markRoomReadUpTo(rid, newestId)
                     }
                 }
-                pagingSync.refreshMessagesInBackground(rid, force = false)
+                pagingSync.refreshMessagesInBackground(rid, force = true)
                 host.schedulePersistChatSnapshot()
                 return
             }
@@ -205,7 +205,7 @@ class ChatRoomOpenSync(
                 messagesAlreadyInState = messagesAlreadyInState,
             )
             host.setListDerivedEmpty()
-            pagingSync.refreshMessagesInBackground(rid, force = false)
+            pagingSync.refreshMessagesInBackground(rid, force = true)
             host.schedulePersistChatSnapshot()
             return
         }

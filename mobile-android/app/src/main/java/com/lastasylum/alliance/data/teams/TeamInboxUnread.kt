@@ -40,10 +40,30 @@ object TeamInboxUnread {
     fun sumForumUnread(
         topics: List<TeamForumTopicDto>,
         localReadByTopic: Map<String, String>,
+        optimisticFloorByTopic: Map<String, Int> = emptyMap(),
     ): Int = topics.sumOf { topic ->
-        OverlayGameStatusHudRefresh.effectiveForumTopicUnread(
-            topic,
-            localReadByTopic[topic.id],
+        displayedForumTopicUnread(
+            topic = topic,
+            localLastReadMessageId = localReadByTopic[topic.id],
+            optimisticFloor = optimisticFloorByTopic[topic.id] ?: 0,
+        )
+    }
+
+    fun displayedForumTopicUnread(
+        topic: TeamForumTopicDto,
+        localLastReadMessageId: String?,
+        optimisticFloor: Int = 0,
+    ): Int {
+        val effective = effectiveUnreadCount(
+            serverUnread = topic.unreadCount,
+            lastReadMessageId = topic.lastReadMessageId,
+            localLastReadMessageId = localLastReadMessageId,
+        )
+        return com.lastasylum.alliance.data.displayedUnreadCount(
+            effectiveUnread = effective,
+            previouslyDisplayed = 0,
+            rawServerUnread = topic.unreadCount.coerceAtLeast(0),
+            optimisticFloor = optimisticFloor,
         )
     }
 

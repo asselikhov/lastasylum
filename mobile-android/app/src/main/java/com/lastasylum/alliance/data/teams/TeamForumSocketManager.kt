@@ -397,7 +397,12 @@ class TeamForumSocketManager {
                         }
                         return@on
                     }
-                    if (msg.topicId != activeTopic) return@on
+                    if (msg.topicId != activeTopic) {
+                        if (msg.topicId.isNotBlank()) {
+                            ForumMessageStash.stash(msg)
+                        }
+                        return@on
+                    }
                     dispatchMain {
                         messageListeners.forEach { l -> runCatching { l(msg) } }
                     }
