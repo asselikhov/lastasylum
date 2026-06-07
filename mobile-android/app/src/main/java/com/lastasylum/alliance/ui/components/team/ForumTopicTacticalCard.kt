@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
+import com.lastasylum.alliance.ui.util.rememberAnimatorScaleDisabled
 import kotlin.math.sin
 
 @Composable
@@ -61,15 +63,21 @@ fun ForumTopicAnimatedShell(
         label = "forumCardGlowBoost",
     )
 
-    val animActive = animationTier != FeedAnimationTier.Off
-    val fullAnim = animationTier == FeedAnimationTier.Full
-    val liteAnim = animationTier == FeedAnimationTier.Lite
+    val reduceMotion = rememberAnimatorScaleDisabled()
+    val effectiveTier = if (reduceMotion) FeedAnimationTier.Off else animationTier
+    val animActive = effectiveTier != FeedAnimationTier.Off
+    val fullAnim = effectiveTier == FeedAnimationTier.Full
+    val liteAnim = effectiveTier == FeedAnimationTier.Lite
     val isHot = activityLevel == ForumTopicCardTokens.ActivityLevel.Hot
 
     val drift: Float
     val pulse: Float
     val flicker: Float
+    val flickerFast: Float
     val heatPhase: Float
+    val turbulence: Float
+    val sparkPhase: Float
+    val crackle: Float
     if (animActive) {
         val infinite = rememberInfiniteTransition(label = "forumCardAmbient")
         drift = infinite.animateFloat(
@@ -94,7 +102,7 @@ fun ForumTopicAnimatedShell(
         } else {
             0.75f
         }
-        flicker = infinite.animateFloat(
+        val flickerSlow = infinite.animateFloat(
             initialValue = 0.35f,
             targetValue = 1f,
             animationSpec = infiniteRepeatable(
@@ -110,6 +118,20 @@ fun ForumTopicAnimatedShell(
             ),
             label = "forumFlicker",
         ).value
+        flickerFast = if (fullAnim && isHot) {
+            infinite.animateFloat(
+                initialValue = 0.2f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(420, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "forumFlickerFast",
+            ).value
+        } else {
+            flickerSlow
+        }
+        flicker = flickerSlow * 0.65f + flickerFast * 0.35f
         heatPhase = if (fullAnim) {
             infinite.animateFloat(
                 initialValue = 0f,
@@ -123,11 +145,46 @@ fun ForumTopicAnimatedShell(
         } else {
             drift
         }
+        turbulence = if (fullAnim && isHot) {
+            infinite.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(10_000, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart,
+                ),
+                label = "forumTurbulence",
+            ).value
+        } else {
+            drift
+        }
+        sparkPhase = infinite.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(3_200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "forumSparkPhase",
+        ).value
+        crackle = infinite.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1_400, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "forumCrackle",
+        ).value
     } else {
         drift = 0f
         pulse = 0.75f
         flicker = 0.5f
+        flickerFast = 0.5f
         heatPhase = 0f
+        turbulence = 0f
+        sparkPhase = 0f
+        crackle = 0.5f
     }
 
     val glassAlpha = ForumTopicCardTokens.glassAlpha(activityLevel)
@@ -160,20 +217,37 @@ fun ForumTopicAnimatedShell(
             .padding(ForumTopicCardTokens.borderWidth)
             .clip(innerShape)
             .background(ForumTopicCardTokens.glassFillBrush(glassAlpha), innerShape)
-            .drawWithContent {
-                when {
-                    fullAnim && isHot -> drawForumFireBackground(
-                        accent, drift, flicker, heatPhase, emberBoost,
-                    )
-                    liteAnim && isHot -> drawForumFireBackgroundLite(accent, drift, flicker)
-                    fullAnim && !isHot -> drawForumSereneBackground(
-                        accent = accent,
-                        drift = drift,
-                        pulse = pulse,
-                        breathPhase = heatPhase,
-                    )
-                    liteAnim && !isHot -> drawForumSereneBackgroundLite(accent, drift, pulse)
+            .drawWithCache {
+                onDrawBehind {
+                    when {
+                        fullAnim && isHot -> drawForumFireBackground(
+                            accent = accent,
+                            drift = drift,
+                            flicker = flicker,
+                            heatPhase = heatPhase,
+                            turbulence = turbulence,
+                            sparkPhase = sparkPhase,
+                            crackle = crackle,
+                            emberBoost = emberBoost,
+                        )
+                        liteAnim && isHot -> drawForumFireBackgroundLite(
+                            accent = accent,
+                            drift = drift,
+                            flicker = flicker,
+                            sparkPhase = sparkPhase,
+                            crackle = crackle,
+                        )
+                        fullAnim && !isHot -> drawForumSereneBackground(
+                            accent = accent,
+                            drift = drift,
+                            pulse = pulse,
+                            breathPhase = heatPhase,
+                        )
+                        liteAnim && !isHot -> drawForumSereneBackgroundLite(accent, drift, pulse)
+                    }
                 }
+            }
+            .drawWithContent {
                 if (showActivityStrip) {
                     drawForumActivityStripOverlay(
                         accent = accent,

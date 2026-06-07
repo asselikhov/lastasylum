@@ -52,7 +52,7 @@ object ForumTopicCardTokens {
     val ghostIconSize = 14.dp
     val subtitleEndGap = 4.dp
     val activityStripHeight = 2.dp
-    val activityStripHeightHot = 2.5.dp
+    val activityStripHeightHot = 3.dp
     val activityDotSize = 6.dp
     val accentRailWidth = FeedCardDesignTokens.compactAccentRailWidth
 
@@ -64,7 +64,13 @@ object ForumTopicCardTokens {
         val coal = Color(0xFF8B2500)
         val smoke = Color(0xFF2A1810)
         val core = Color(0xFFFFF3D4)
+        val whiteHot = Color(0xFFFFF8EC)
+        val magenta = Color(0xFF6B1838)
+        val haze = Color(0xFFFF8C42)
     }
+
+    /** Cyan rim tint for dual-tone fire cards (derived from accent at draw time). */
+    fun accentRimColor(accent: Accent): Color = accent.primary
 
     val pressScale = 0.985f
     val pressAnimSpec = tween<Float>(durationMillis = 120, easing = FastOutSlowInEasing)
@@ -146,7 +152,7 @@ object ForumTopicCardTokens {
     }
 
     fun glassAlpha(level: ActivityLevel): Float = when (level) {
-        ActivityLevel.Hot -> 0.88f
+        ActivityLevel.Hot -> 0.90f
         ActivityLevel.Warm -> 0.86f
         ActivityLevel.Calm -> 0.86f
     }
@@ -165,7 +171,7 @@ object ForumTopicCardTokens {
                 FirePalette.amber.copy(alpha = warmA),
                 FirePalette.orange.copy(alpha = warmA * 0.92f),
                 FirePalette.deep.copy(alpha = warmA * 0.82f),
-                accent.primary.copy(alpha = warmA * 0.45f),
+                accent.primary.copy(alpha = warmA * 0.52f),
             )
         }
         val cyanA = when (level) {

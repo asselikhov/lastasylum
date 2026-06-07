@@ -1,6 +1,5 @@
 package com.lastasylum.alliance.ui
 
-import android.provider.Settings
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -35,7 +34,6 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -43,22 +41,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.components.AtmosphericBackground
+import com.lastasylum.alliance.ui.util.rememberAnimatorScaleDisabled
 import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericPurple
 import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericSky
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
-
-@Composable
-private fun rememberAnimatorScaleDisabled(): Boolean {
-    val context = LocalContext.current
-    return remember(context) {
-        Settings.Global.getFloat(
-            context.contentResolver,
-            Settings.Global.ANIMATOR_DURATION_SCALE,
-            1f,
-        ) == 0f
-    }
-}
 
 /** Восстановление сессии: анимация + неопределённый прогресс. */
 @Composable
