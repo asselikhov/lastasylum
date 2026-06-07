@@ -116,12 +116,9 @@ export class PushNotificationsService implements OnModuleInit {
     const teamDisplayName = (input.senderTeamDisplayName ?? '').trim();
     const serverNum = input.senderServerNumber;
     try {
+      // Data-only on Android so SquadRelayFirebaseMessagingService builds avatar + banner UI.
       const res = await admin.messaging().sendEachForMulticast({
         tokens: unique,
-        notification: {
-          title: notificationTitle,
-          body: title,
-        },
         data: {
           ...input.data,
           type: 'game_event_alert',
@@ -140,13 +137,10 @@ export class PushNotificationsService implements OnModuleInit {
               : '',
           title,
           eventText: title,
+          notificationTitle,
         },
         android: {
           priority: 'high',
-          notification: {
-            channelId: event.channelId,
-            priority: 'high',
-          },
         },
         apns: {
           headers: { 'apns-priority': '10' },

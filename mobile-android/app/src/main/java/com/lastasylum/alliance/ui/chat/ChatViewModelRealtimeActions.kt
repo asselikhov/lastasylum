@@ -34,7 +34,7 @@ private fun ChatViewModel.shouldBlockOwnOutgoingRealtimeUnlocked(message: ChatMe
         val selfId = currentUserId.trim()
         if (selfId.isEmpty() || message.senderId.trim() != selfId) return false
         message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { cid ->
-            if (cid in confirmedOutgoingClientMessageIds) return false
+            if (cid in confirmedOutgoingClientMessageIds) return true
             if (cid in activeOutgoingClientMessageIds) return true
         }
         val snapshot = outboxRoomSnapshot
@@ -73,8 +73,10 @@ internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
         if (rid.isNotEmpty()) {
             vmRepository.ensureRoomJoined(rid)
         }
+        val selfId = currentUserId.trim()
+        val isOwn = selfId.isNotEmpty() && message.senderId.trim() == selfId
         val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
-        if (cid != null && message.senderId.trim() == currentUserId.trim()) {
+        if (isOwn && cid != null) {
             confirmOutgoingByClientMessageId(cid, message)
             vmScope.launch(Dispatchers.IO) {
                 chatSyncEngine.onSocketMessageConfirmed(
@@ -84,8 +86,13 @@ internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
                     cid,
                 )
             }
+            if (cid in confirmedOutgoingClientMessageIds) return
         }
         if (shouldBlockOwnOutgoingRealtime(message)) return
+        if (isOwn) {
+            val serverId = message._id?.trim().orEmpty()
+            if (serverId.isNotEmpty() && messageIdIndex.containsKey(serverId)) return
+        }
         if (!isIncomingMessageVisible(message)) return
         if (!incomingMessages.trySend(message).isSuccess) {
             vmScope.launch(Dispatchers.Main) {

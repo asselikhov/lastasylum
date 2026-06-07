@@ -75,4 +75,39 @@ class OverlayHudBadgeBusTest {
         ShadowLooper.idleMainLooper()
         assertEquals(0, flow.value.allianceChatUnread)
     }
+
+    @Test
+    fun emit_forumAuthoritative_usesCoordinatorMergeHudForum() {
+        val flow = MutableStateFlow(OverlayGameStatusHudState(forumUnread = 3))
+        val reducer = OverlayHudBadgeReducer(flow)
+        val coordinator = OverlayInboxBadgeCoordinator()
+        coordinator.bumpForumOptimistic(3)
+        val bus = OverlayHudBadgeBus(
+            reducer = reducer,
+            mergeNews = coordinator::mergeHudNews,
+            mergeForum = { effective, prev, raw, useAuthoritative ->
+                coordinator.mergeHudForum(effective, prev, useAuthoritative, raw)
+            },
+        )
+        bus.emit(
+            OverlayHudBadgeEvent.ForumUnread(
+                effective = 0,
+                rawServer = 5,
+                useAuthoritative = true,
+            ),
+        )
+        ShadowLooper.idleMainLooper()
+        assertEquals(5, flow.value.forumUnread)
+
+        coordinator.clearForumOptimistic()
+        bus.emit(
+            OverlayHudBadgeEvent.ForumUnread(
+                effective = 0,
+                rawServer = 5,
+                useAuthoritative = true,
+            ),
+        )
+        ShadowLooper.idleMainLooper()
+        assertEquals(0, flow.value.forumUnread)
+    }
 }

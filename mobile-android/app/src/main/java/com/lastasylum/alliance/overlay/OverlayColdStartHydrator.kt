@@ -112,7 +112,7 @@ internal object OverlayColdStartHydrator {
                         rawServerUnread = counts.rawServer,
                     )
                 } ?: 0
-                OverlayGameStatusHudRefresh.seedBadgesFromDisk(teamId, newsUnread, forumUnread)
+                OverlayGameStatusHudRefresh.seedBadgesFromDisk(context, teamId, newsUnread, forumUnread)
                 seededBadges = true
                 hasAnyDisk = true
             }

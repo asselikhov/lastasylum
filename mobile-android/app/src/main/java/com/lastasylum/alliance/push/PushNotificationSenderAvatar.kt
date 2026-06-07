@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.TextPaint
 import androidx.core.graphics.createBitmap
@@ -14,15 +13,12 @@ import coil3.imageLoader
 import coil3.request.ErrorResult
 import coil3.request.SuccessResult
 import coil3.toBitmap
-import androidx.compose.ui.graphics.toArgb
 import com.lastasylum.alliance.ui.chat.SquadRelayImageRequests
-import com.lastasylum.alliance.ui.theme.roleAccentColor
-import com.lastasylum.alliance.ui.theme.roleOnAccentColor
 import com.lastasylum.alliance.ui.util.resolvedProfileAvatarUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Large notification icon: round avatar + squad rank chip (as in chat). */
+/** Large notification icon: round avatar + squad rank chip on bottom edge (as in chat). */
 object PushNotificationSenderAvatar {
     private const val OUTPUT_PX = 128
 
@@ -100,40 +96,8 @@ object PushNotificationSenderAvatar {
         canvas.restore()
         val role = squadRole?.trim()?.uppercase().orEmpty()
         if (role.isNotBlank()) {
-            drawRankChip(canvas, role, OUTPUT_PX)
+            SquadRankChipCanvas.drawOnAvatarBottom(canvas, role, OUTPUT_PX)
         }
         return out
-    }
-
-    private fun drawRankChip(canvas: Canvas, role: String, sizePx: Int) {
-        val accent = roleAccentColor(role)
-        val onAccent = roleOnAccentColor(role)
-        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = onAccent.toArgb()
-            textSize = sizePx * 0.16f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-        }
-        val padH = sizePx * 0.08f
-        val padV = sizePx * 0.03f
-        val textW = textPaint.measureText(role)
-        val chipW = textW + padH * 2f
-        val chipH = textPaint.textSize + padV * 2f
-        val left = (sizePx - chipW) / 2f
-        val top = sizePx - chipH - sizePx * 0.02f
-        val rect = RectF(left, top, left + chipW, top + chipH)
-        val radius = chipH / 2f
-        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = accent.copy(alpha = 0.22f).toArgb()
-        }
-        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = sizePx * 0.008f
-            color = accent.copy(alpha = 0.4f).toArgb()
-        }
-        canvas.drawRoundRect(rect, radius, radius, fill)
-        canvas.drawRoundRect(rect, radius, radius, stroke)
-        val textY = rect.centerY() - (textPaint.descent() + textPaint.ascent()) / 2f
-        canvas.drawText(role, rect.centerX(), textY, textPaint)
     }
 }

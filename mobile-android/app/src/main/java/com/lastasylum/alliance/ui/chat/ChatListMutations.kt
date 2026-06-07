@@ -158,18 +158,34 @@ internal fun stripRedundantOwnOutgoingByClientMessageId(
     }
 }
 
-/** Socket + HTTP can briefly show two confirmed rows with the same [clientMessageId] — keep newest first. */
+/** Socket + HTTP can briefly show two confirmed rows with the same [clientMessageId] — keep confirmed over pending. */
 internal fun dedupeOwnOutgoingByClientMessageId(
     messages: List<ChatMessage>,
     currentUserId: String,
 ): List<ChatMessage> {
     val selfId = currentUserId.trim()
     if (selfId.isEmpty()) return messages
+    val confirmedClientIds = messages.mapNotNull { msg ->
+        val cid = msg.clientMessageId?.trim().orEmpty()
+        val id = msg._id?.trim().orEmpty()
+        if (msg.senderId.trim() == selfId &&
+            cid.isNotEmpty() &&
+            id.isNotEmpty() &&
+            !isOptimisticOutgoingMessageId(id)
+        ) {
+            cid
+        } else {
+            null
+        }
+    }.toSet()
     val seen = HashSet<String>()
     return messages.filter { msg ->
         val cid = msg.clientMessageId?.trim().orEmpty()
         if (msg.senderId.trim() != selfId || cid.isEmpty()) return@filter true
-        seen.add(cid)
+        val id = msg._id?.trim().orEmpty()
+        if (isOptimisticOutgoingMessageId(id) && cid in confirmedClientIds) return@filter false
+        if (!seen.add(cid)) return@filter false
+        true
     }
 }
 

@@ -670,8 +670,9 @@ export class UsersService implements OnModuleInit {
         .exec();
       return;
     }
-    // Main app pings "online"/"away" while overlay FGS still heartbeats ingame — keep ingame for allies.
-    if (normalized === 'online' || normalized === 'away') {
+    // Main app "online" while overlay FGS still heartbeats ingame — keep ingame for allies.
+    // Explicit "away" (overlay game exit) must downgrade even if the last ingame ping is fresh.
+    if (normalized === 'online') {
       const row = await this.userModel
         .findById(userId)
         .select('presenceStatus lastPresenceAt')
@@ -712,7 +713,7 @@ export class UsersService implements OnModuleInit {
    */
   static readonly OVERLAY_INGAME_LIST_STALE_MS = 120_000;
   /** Push: shorter ingame exclusion so offline users still get FCM after brief overlay session. */
-  static readonly GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS = 45_000;
+  static readonly GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS = 30_000;
 
   /** Fresh overlay «ingame» ping (same window as list/broadcast). */
   async isOverlayIngameNow(userId: string): Promise<boolean> {
@@ -1113,7 +1114,7 @@ export class UsersService implements OnModuleInit {
       >()
       .exec();
     const staleBeforeMs =
-      Date.now() - UsersService.OVERLAY_INGAME_LIST_STALE_MS;
+      Date.now() - UsersService.GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS;
     const out: string[] = [];
     for (const u of users) {
       if (excludeIngameOverlay) {

@@ -75,13 +75,14 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
             ?: AppContainer.from(app).usersRepository.peekMyProfile()?.teamDisplayName?.trim()
         val teamTag = message.data["senderTeamTag"]?.trim()?.ifBlank { null }
         val serverNumber = message.data["senderServerNumber"]?.toIntOrNull()?.takeIf { it > 0 }
+        val squadRole = message.data["senderSquadRole"]?.trim().orEmpty()
         val senderLineColored = PushNotificationSenderLineSpans.build(
             teamTag = teamTag,
             username = nickname,
             serverNumber = serverNumber,
+            squadRole = squadRole.ifBlank { null },
         )
         val avatarRelativeUrl = message.data["senderAvatarRelativeUrl"]?.trim().orEmpty()
-        val squadRole = message.data["senderSquadRole"]?.trim().orEmpty()
         val largeIcon = PushNotificationSenderAvatar.loadLargeIcon(
             context = app,
             avatarRelativeUrl = avatarRelativeUrl.ifBlank { null },

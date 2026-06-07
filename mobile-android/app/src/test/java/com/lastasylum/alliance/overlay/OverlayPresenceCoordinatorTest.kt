@@ -32,14 +32,27 @@ class OverlayPresenceCoordinatorTest {
     }
 
     @Test
-    fun keepIngamePing_whenParticipantsPanelVisible() {
-        assertTrue(
+    fun keepIngamePing_false_whenOnlyParticipantsPanelVisible() {
+        assertFalse(
             computeOverlayKeepIngamePing(
                 inGameProbe = false,
                 overlaySessionActive = false,
                 inGameOverlayUiActive = false,
                 isVoiceActive = false,
                 isOnlineParticipantsPanelVisible = true,
+            ),
+        )
+    }
+
+    @Test
+    fun keepIngamePing_whenVoiceActive() {
+        assertTrue(
+            computeOverlayKeepIngamePing(
+                inGameProbe = false,
+                overlaySessionActive = false,
+                inGameOverlayUiActive = false,
+                isVoiceActive = true,
+                isOnlineParticipantsPanelVisible = false,
             ),
         )
     }

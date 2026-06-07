@@ -602,6 +602,14 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun dedupeOwnOutgoingByClientMessageId_dropsPendingWhenConfirmedExists() {
+        val pending = msg("pending-1", "hello").copy(clientMessageId = "cid-1")
+        val confirmed = msg("server-1", "hello").copy(clientMessageId = "cid-1")
+        val out = dedupeOwnOutgoingByClientMessageId(listOf(pending, confirmed), "u1")
+        assertEquals(listOf("server-1"), out.map { it._id })
+    }
+
+    @Test
     fun dedupeOwnOutgoingByClientMessageId_keepsFirstRow() {
         val first = msg("server-1", "hello").copy(clientMessageId = "cid-1")
         val dup = msg("server-2", "hello").copy(clientMessageId = "cid-1")

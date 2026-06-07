@@ -122,7 +122,7 @@ class OverlayTeamOnlinePresenceLogicTest {
     }
 
     @Test
-    fun search_filter_by_username_and_telegram() {
+    fun search_filter_by_username() {
         val sections = buildPresenceSections(
             ingame = listOf(
                 member("u1", "alice").copy(avatarRelativeUrl = "/users/avatars/u1"),
@@ -135,8 +135,9 @@ class OverlayTeamOnlinePresenceLogicTest {
         assertEquals(1, filtered.first().items.size)
         assertEquals("u1", filtered.first().items.first().userId)
 
-        val byTg = filterByQuery(sections, "tg")
-        assertEquals(1, byTg.first().items.size)
+        val byBob = filterByQuery(sections, "bob")
+        assertEquals(1, byBob.first().items.size)
+        assertEquals("u2", byBob.first().items.first().userId)
     }
 
     @Test

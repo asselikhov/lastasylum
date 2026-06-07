@@ -31,8 +31,14 @@ class PresenceFormatTest {
     }
 
     @Test
-    fun ingamePingWithin120s_isOverlayIngameNow() {
-        val ping = Instant.now().minusSeconds(100).toString()
+    fun ingamePingWithinLiveWindow_isOverlayIngameNow() {
+        val ping = Instant.now().minusSeconds(30).toString()
         assertTrue(isOverlayIngameNow("ingame", ping))
+    }
+
+    @Test
+    fun ingamePingOlderThanLiveWindow_isNotOverlayIngameNow() {
+        val ping = Instant.now().minusSeconds(100).toString()
+        assertFalse(isOverlayIngameNow("ingame", ping))
     }
 }

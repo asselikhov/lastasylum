@@ -1,17 +1,14 @@
 package com.lastasylum.alliance.overlay
 
-import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatHubRoomSync
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.ReadCursorSession
-import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
-import com.lastasylum.alliance.data.teams.TeamInboxBadgeDeriver
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
@@ -69,6 +66,20 @@ internal object OverlayGameStatusHudRefresh {
         diskSeedAtMs = now
     }
 
+    fun seedBadgesFromDisk(
+        context: android.content.Context,
+        teamId: String,
+        newsUnread: Int,
+        forumUnread: Int,
+    ) {
+        seedBadgesFromDisk(teamId, newsUnread, forumUnread)
+        AppContainer.from(context).inboxBadgeCoordinator.cacheNewsForum(
+            teamId.trim(),
+            newsUnread.coerceAtLeast(0),
+            forumUnread.coerceAtLeast(0),
+        )
+    }
+
     /** Instant HUD badge paint from seeded RAM / chat session cache (no network). */
     fun buildInstantLocalState(context: android.content.Context): OverlayGameStatusHudState? {
         val container = AppContainer.from(context)
@@ -116,8 +127,6 @@ internal object OverlayGameStatusHudRefresh {
             )
         }
         val chatRepository = container.chatRepository
-        val teamsRepository = container.teamsRepository
-        val prefs = container.userSettingsPreferences
 
         val rooms = preloadedRooms
             ?: chatRepository.listRooms().getOrNull()
@@ -126,15 +135,16 @@ internal object OverlayGameStatusHudRefresh {
         val allianceUnread = allianceHubUnread(rooms, localChatRead)
 
         val teamId = profile?.playerTeamId?.trim().orEmpty()
+        val coordinator = container.inboxBadgeCoordinator
         val now = System.currentTimeMillis()
         val newsCacheFresh = !refreshNews &&
             teamId.isNotEmpty() &&
-            teamId == cachedBadgeTeamId &&
-            now - cachedNewsAtMs < NEWS_FORUM_CACHE_TTL_MS
+            (coordinator.readCachedNews(teamId) != null ||
+                (teamId == cachedBadgeTeamId && now - cachedNewsAtMs < NEWS_FORUM_CACHE_TTL_MS))
         val forumCacheFresh = !refreshForum &&
             teamId.isNotEmpty() &&
-            teamId == cachedBadgeTeamId &&
-            now - cachedForumAtMs < NEWS_FORUM_CACHE_TTL_MS
+            (coordinator.readCachedForum(teamId) != null ||
+                (teamId == cachedBadgeTeamId && now - cachedForumAtMs < NEWS_FORUM_CACHE_TTL_MS))
 
         val newsUnread: Int
         val forumUnread: Int
@@ -142,51 +152,27 @@ internal object OverlayGameStatusHudRefresh {
             newsUnread = 0
             forumUnread = 0
         } else {
-            if (newsCacheFresh) {
-                newsUnread = cachedNewsUnread
+            newsUnread = if (newsCacheFresh) {
+                coordinator.readCachedNews(teamId)
+                    ?: cachedNewsUnread
             } else {
-                val newsAfter = prefs.getLastSeenTeamNewsCreatedAt()
-                val badges = teamsRepository.getTeamInboxBadges(teamId, newsAfter).getOrNull()
-                newsUnread = badges?.newsUnread?.coerceAtLeast(0)
-                    ?: teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
-                        .getOrNull()
-                        ?.items
-                        ?.let { TeamInboxUnread.countUnreadNews(it, prefs, profileUserId) }
-                        ?: 0
-                cachedNewsUnread = newsUnread
-                cachedNewsAtMs = now
-                cachedBadgeTeamId = teamId
-            }
-            if (forumCacheFresh) {
-                forumUnread = cachedForumUnread
-            } else {
-                val newsAfter = prefs.getLastSeenTeamNewsCreatedAt()
-                val badges = teamsRepository.getTeamInboxBadges(teamId, newsAfter).getOrNull()
-                forumUnread = run {
-                    val forumPrefs = container.teamForumPreferences
-                    val apiForumUnread = badges?.forumUnread?.coerceAtLeast(0)
-                    val topics = teamsRepository.peekCachedForumTopics(teamId)
-                        ?: teamsRepository.listForumTopics(teamId).getOrNull()
-                    topics?.let { InboxUnreadReconciler.hydrateForumPrefsFromTopics(forumPrefs, teamId, it) }
-                    val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
-                    val clientCounts = topics?.let {
-                        TeamInboxBadgeDeriver.computeForumUnreadCounts(it, localRead)
-                    }
-                    val effective = TeamInboxBadgeDeriver.resolveForumUnread(
-                        clientCounts?.effective,
-                        apiForumUnread,
-                    )
-                    val raw = maxOf(clientCounts?.rawServer ?: 0, apiForumUnread ?: 0)
-                    TeamInboxBadgeDeriver.mergeForDisplay(
-                        effectiveUnread = effective,
-                        previouslyDisplayed = cachedForumUnread,
-                        rawServerUnread = raw,
-                    )
+                coordinator.fetchNewsUnread(context, teamId, profileUserId).also { count ->
+                    cachedNewsUnread = count
+                    cachedNewsAtMs = now
+                    cachedBadgeTeamId = teamId
                 }
-                cachedForumUnread = forumUnread
-                cachedForumAtMs = now
-                cachedBadgeTeamId = teamId
             }
+            forumUnread = if (forumCacheFresh) {
+                coordinator.readCachedForum(teamId)
+                    ?: cachedForumUnread
+            } else {
+                coordinator.fetchForumUnread(context, teamId).also { count ->
+                    cachedForumUnread = count
+                    cachedForumAtMs = now
+                    cachedBadgeTeamId = teamId
+                }
+            }
+            coordinator.cacheNewsForum(teamId, newsUnread, forumUnread)
             cachedBadgeAtMs = maxOf(cachedNewsAtMs, cachedForumAtMs)
         }
 

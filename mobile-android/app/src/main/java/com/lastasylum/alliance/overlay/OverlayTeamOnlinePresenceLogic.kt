@@ -123,8 +123,6 @@ fun isRecentlyActiveOverlay(
     lastPresenceAt: String?,
     now: Instant = Instant.now(),
 ): Boolean {
-    val status = presenceStatus?.trim()?.lowercase().orEmpty()
-    if (status == "ingame") return false
     if (isOverlayIngameNow(presenceStatus, lastPresenceAt)) return false
     val iso = lastPresenceAt?.trim().orEmpty()
     if (iso.isEmpty()) return false

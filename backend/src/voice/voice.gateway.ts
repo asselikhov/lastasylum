@@ -147,7 +147,7 @@ export class VoiceGateway {
   }
 
   @SubscribeMessage('voice:leave')
-  leaveVoice(@ConnectedSocket() client: AuthSocket) {
+  async leaveVoice(@ConnectedSocket() client: AuthSocket) {
     const user = this.requireUser(client);
     const roomId = client.data.voiceRoomId;
     if (!roomId) return { event: 'voice:left', data: {} };
@@ -156,10 +156,12 @@ export class VoiceGateway {
     client.data.micOn = false;
     client.data.soundOn = false;
     this.frameTimestamps.delete(client.id);
+    this.setOverlayIngameCached(user.userId, false);
     client.to(this.voiceRoomKey(roomId)).emit('voice:peer-left', {
       roomId,
       userId: user.userId,
     });
+    await this.usersService.updatePresence(user.userId, 'away');
     return { event: 'voice:left', data: { roomId } };
   }
 

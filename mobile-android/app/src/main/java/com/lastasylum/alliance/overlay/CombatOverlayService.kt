@@ -391,6 +391,9 @@ class CombatOverlayService : Service() {
     private var overlayPopoverComposeOwner: OverlayChatComposeOwner? = null
 
     private val overlayStatusHudFlow = MutableStateFlow(OverlayGameStatusHudState())
+
+    private fun currentHudBadgeState(): OverlayGameStatusHudState = overlayHudBadgeBus.current()
+
     private val overlayHudBadgeReducer = OverlayHudBadgeReducer(overlayStatusHudFlow)
     private var overlayInboxPartialRefreshJob: Job? = null
     private val overlayHudBadgeBus: OverlayHudBadgeBus by lazy {
@@ -398,11 +401,12 @@ class CombatOverlayService : Service() {
             reducer = overlayHudBadgeReducer,
             mergeNews = inboxBadgeCoordinator::mergeHudNews,
             mergeForum = { effective, prev, raw, useAuthoritative ->
-                if (useAuthoritative) {
-                    inboxBadgeCoordinator.mergeForumDisplayed(effective, prev, raw)
-                } else {
-                    inboxBadgeCoordinator.mergeHudForum(effective, prev, useAuthoritative, raw)
-                }
+                inboxBadgeCoordinator.mergeHudForum(
+                    effective,
+                    prev,
+                    useAuthoritative,
+                    raw,
+                )
             },
         ).also { AppContainer.from(this@CombatOverlayService).registerOverlayHudBadgeBus(it) }
     }
@@ -1066,7 +1070,7 @@ class CombatOverlayService : Service() {
     private fun allianceHubHudUnreadFromRooms(
         rooms: List<ChatRoomDto>,
         optimisticFloor: Int = hubUnreadOptimisticFloor,
-        previouslyDisplayed: Int = overlayStatusHudFlow.value.allianceChatUnread,
+        previouslyDisplayed: Int = currentHudBadgeState().allianceChatUnread,
     ): Int {
         val localRead = AppContainer.from(this).chatRoomPreferences.loadAllLastReadMessageIds()
         if (ChatUnreadCounts.isAllianceHubLocallyReadSuppressed(rooms, localRead)) {
@@ -2264,9 +2268,10 @@ class CombatOverlayService : Service() {
                         next = next.copy(allianceChatUnread = merged)
                     }
                     if (newsCount != null) {
-                        val mergedNews = inboxBadgeCoordinator.mergeNewsDisplayed(
-                            serverCount = newsCount,
-                            previouslyDisplayed = next.teamNewsUnread,
+                        val mergedNews = inboxBadgeCoordinator.mergeHudNews(
+                            authoritative = newsCount,
+                            prevDisplayed = next.teamNewsUnread,
+                            useAuthoritative = true,
                         )
                         overlayHudBadgeBus.emit(OverlayHudBadgeEvent.NewsUnread(mergedNews, useAuthoritative = true))
                         if (teamId.isNotEmpty()) {
@@ -2275,10 +2280,11 @@ class CombatOverlayService : Service() {
                         next = next.copy(teamNewsUnread = mergedNews)
                     }
                     if (forumCounts != null) {
-                        val mergedForum = inboxBadgeCoordinator.mergeForumDisplayed(
-                            serverCount = forumCounts.effective,
-                            previouslyDisplayed = next.forumUnread,
-                            rawServerCount = forumCounts.rawServer,
+                        val mergedForum = inboxBadgeCoordinator.mergeHudForum(
+                            authoritative = forumCounts.effective,
+                            prevDisplayed = next.forumUnread,
+                            useAuthoritative = true,
+                            rawAuthoritative = forumCounts.rawServer,
                         )
                         overlayHudBadgeBus.emit(
                             OverlayHudBadgeEvent.ForumUnread(
@@ -2509,10 +2515,11 @@ class CombatOverlayService : Service() {
             mainHandler.post {
                 if (!isInGameOverlayUiActive()) return@post
                 val prev = overlayHudBadgeBus.current()
-                val merged = inboxBadgeCoordinator.mergeForumDisplayed(
-                    serverCount = counts.effective,
-                    previouslyDisplayed = prev.forumUnread,
-                    rawServerCount = counts.rawServer,
+                val merged = inboxBadgeCoordinator.mergeHudForum(
+                    authoritative = counts.effective,
+                    prevDisplayed = prev.forumUnread,
+                    useAuthoritative = true,
+                    rawAuthoritative = counts.rawServer,
                 )
                 inboxBadgeCoordinator.cacheNewsForum(teamId, prev.teamNewsUnread, merged)
                 overlayHudBadgeBus.emit(
@@ -2527,7 +2534,6 @@ class CombatOverlayService : Service() {
     }
 
     private fun refreshOverlayReactionLogUnreadBadge() {
-        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
         val count = AppContainer.from(this).overlayReactionLogRepository.unreadCount.value
         val cur = overlayTopRightHudFlow.value
         if (cur.reactionLogUnreadCount != count) {
@@ -2537,13 +2543,13 @@ class CombatOverlayService : Service() {
 
     private fun startOverlayReactionLogUnreadCollector() {
         overlayReactionLogUnreadJob?.cancel()
+        refreshOverlayReactionLogUnreadBadge()
         overlayReactionLogUnreadJob = serviceScope.launch {
             AppContainer.from(this@CombatOverlayService)
                 .overlayReactionLogRepository
                 .unreadCount
                 .collect { count ->
                     mainHandler.post {
-                        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return@post
                         val cur = overlayTopRightHudFlow.value
                         if (cur.reactionLogUnreadCount != count) {
                             overlayTopRightHudFlow.value = cur.copy(reactionLogUnreadCount = count)
@@ -2627,7 +2633,7 @@ class CombatOverlayService : Service() {
             val hubBumpGraceActive = hubUnreadOptimisticFloor > 0 &&
                 System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
             if (shouldDeferHubUnreadReconcile() || hubBumpGraceActive) {
-                val kept = maxOf(overlayStatusHudFlow.value.allianceChatUnread, hubUnreadOptimisticFloor)
+                val kept = maxOf(currentHudBadgeState().allianceChatUnread, hubUnreadOptimisticFloor)
                 applyAllianceHubUnreadCount(kept)
                 return
             }
@@ -2643,7 +2649,7 @@ class CombatOverlayService : Service() {
             displayedUnreadCount(
                 effectiveUnread = effective,
                 previouslyDisplayed = maxOf(
-                    overlayStatusHudFlow.value.allianceChatUnread,
+                    currentHudBadgeState().allianceChatUnread,
                     hubUnreadOptimisticFloor,
                 ),
                 rawServerUnread = rawServerUnread.coerceAtLeast(0),
@@ -2772,7 +2778,7 @@ class CombatOverlayService : Service() {
             displayedUnreadCount(
                 effectiveUnread = serverUnread,
                 previouslyDisplayed = maxOf(
-                    overlayStatusHudFlow.value.allianceChatUnread,
+                    currentHudBadgeState().allianceChatUnread,
                     hubUnreadOptimisticFloor,
                 ),
                 rawServerUnread = serverUnread,
@@ -2811,7 +2817,7 @@ class CombatOverlayService : Service() {
                 previouslyDisplayed = 0,
             )
         } else {
-            overlayStatusHudFlow.value.allianceChatUnread
+            currentHudBadgeState().allianceChatUnread
         }
         val next = (baseEffective + 1).coerceAtMost(999)
         hubUnreadOptimisticFloor = next
@@ -2841,7 +2847,7 @@ class CombatOverlayService : Service() {
         while (forumUnreadBumpedMessageIds.size > 512) {
             forumUnreadBumpedMessageIds.remove(forumUnreadBumpedMessageIds.first())
         }
-        val prev = overlayStatusHudFlow.value.forumUnread
+        val prev = currentHudBadgeState().forumUnread
         val next = (prev + 1).coerceAtMost(999)
         inboxBadgeCoordinator.bumpForumOptimistic(next)
         overlayHudBadgeBus.emit(OverlayHudBadgeEvent.ForumUnread(next, next, useAuthoritative = false))
@@ -2849,7 +2855,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun bumpNewsUnreadLocally() {
-        val prev = overlayStatusHudFlow.value.teamNewsUnread
+        val prev = currentHudBadgeState().teamNewsUnread
         val next = (prev + 1).coerceAtMost(999)
         inboxBadgeCoordinator.bumpNewsOptimistic(next)
         overlayHudBadgeBus.emit(OverlayHudBadgeEvent.NewsUnread(next, useAuthoritative = false))
@@ -3756,13 +3762,16 @@ class CombatOverlayService : Service() {
         }
         overlayTopRightHudLayoutListener = null
         val composeOwner = overlayTopRightHudComposeOwner
+        val preservedReactionUnread = overlayTopRightHudFlow.value.reactionLogUnreadCount
         removeOverlayWindowTracked(host, "topRightHud") {
             overlayTopRightHudHost = null
             overlayTopRightHudParams = null
             overlayTopRightHudCompose = null
             composeOwner?.destroy()
             overlayTopRightHudComposeOwner = null
-            overlayTopRightHudFlow.value = OverlayGameTopRightHudState()
+            overlayTopRightHudFlow.value = OverlayGameTopRightHudState(
+                reactionLogUnreadCount = preservedReactionUnread,
+            )
             overlayCommandsPopover.invalidateReactionBurstAnchor()
         }
     }

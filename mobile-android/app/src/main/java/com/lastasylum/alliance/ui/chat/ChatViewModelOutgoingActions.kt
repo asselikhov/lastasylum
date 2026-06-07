@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.InputStream
 import java.util.UUID
@@ -95,14 +96,20 @@ internal fun ChatViewModel.confirmOutgoingByClientMessageIdImpl(
         return
     }
     pendingOutgoingByClientMessageId.remove(cid)
-    confirmPendingOutgoingMessage(pendingId, sent)
-    vmScope.launch(Dispatchers.IO) {
-        chatOutbox.confirmSend(
-            userId = currentUserId,
-            clientMessageId = cid,
-            serverMessage = sent,
-            httpAckSpanId = httpAckSpanId,
-        )
+    vmScope.launch {
+        incomingApplyMutex.withLock {
+            withContext(Dispatchers.Main.immediate) {
+                confirmPendingOutgoingMessageImpl(pendingId, sent)
+            }
+        }
+        withContext(Dispatchers.IO) {
+            chatOutbox.confirmSend(
+                userId = currentUserId,
+                clientMessageId = cid,
+                serverMessage = sent,
+                httpAckSpanId = httpAckSpanId,
+            )
+        }
     }
 }
 
@@ -154,9 +161,11 @@ private fun ChatViewModel.finishFastOutgoingSend(
         chatSyncEngine.sendEnqueuedOutbox(cid, skipSocket = true)
             .onSuccess { sent ->
                 if (!confirmedOutgoingClientMessageIds.contains(cid)) {
-                    withContext(Dispatchers.Main.immediate) {
-                        confirmPendingOutgoingMessage(prepared.pendingMessageId, sent)
-                    }
+                    confirmOutgoingByClientMessageId(
+                        clientMessageId = cid,
+                        sent = sent,
+                        pendingIdHint = prepared.pendingMessageId,
+                    )
                 }
             }
             .onFailure { throwable ->
@@ -398,9 +407,11 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
                 result.onSuccess { sent ->
                     overlayQuickCommandPrepared.remove(pending)
                     if (!confirmedOutgoingClientMessageIds.contains(prepared.clientMessageId)) {
-                        withContext(Dispatchers.Main.immediate) {
-                            confirmPendingOutgoingMessage(pending, sent)
-                        }
+                        confirmOutgoingByClientMessageId(
+                            clientMessageId = prepared.clientMessageId,
+                            sent = sent,
+                            pendingIdHint = pending,
+                        )
                     }
                 }.onFailure {
                     if (confirmedOutgoingClientMessageIds.contains(prepared.clientMessageId)) return@onFailure

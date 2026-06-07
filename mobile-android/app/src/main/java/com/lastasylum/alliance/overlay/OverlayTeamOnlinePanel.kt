@@ -96,8 +96,10 @@ fun OverlayTeamOnlinePanel(
     val presenceSocketState by teamPresenceSocket.connectionState.collectAsStateWithLifecycle(lifecycleOwner)
 
     LaunchedEffect(controller) {
-        scope.launch(Dispatchers.IO) {
-            runCatching { usersRepository.updatePresence("ingame") }
+        if (CombatOverlayService.isTargetGameForeground()) {
+            scope.launch(Dispatchers.IO) {
+                runCatching { usersRepository.updatePresence("ingame") }
+            }
         }
         controller.start()
     }

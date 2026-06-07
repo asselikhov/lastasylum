@@ -5,19 +5,17 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.graphics.Typeface
+import com.lastasylum.alliance.ui.chat.ChatSenderLineColors
 import com.lastasylum.alliance.ui.util.chatSenderDisplayLine
 import com.lastasylum.alliance.ui.util.formatServerLabel
 
-/** Incoming chat header colors (#109 [TAG] nickname). */
+/** Incoming chat header colors (#109 [TAG] nickname) — matches [ChatBubbleAuthorHeader]. */
 object PushNotificationSenderLineSpans {
-    private const val SERVER_COLOR = 0xFF8FAEFF.toInt()
-    private const val TAG_COLOR = 0xFF2D8A5C.toInt()
-    private const val NICKNAME_COLOR = 0xFFE8EEF5.toInt()
-
     fun build(
         teamTag: String?,
         username: String,
         serverNumber: Int?,
+        squadRole: String? = null,
     ): CharSequence {
         val line = chatSenderDisplayLine(teamTag, username, serverNumber)
         val spannable = SpannableString(line)
@@ -28,7 +26,7 @@ object PushNotificationSenderLineSpans {
             if (start >= 0) {
                 val end = start + server.length
                 spannable.setSpan(
-                    ForegroundColorSpan(SERVER_COLOR),
+                    ForegroundColorSpan(ChatSenderLineColors.serverColorArgb()),
                     start,
                     end,
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
@@ -44,7 +42,7 @@ object PushNotificationSenderLineSpans {
             if (start >= 0) {
                 val end = start + tagLabel.length
                 spannable.setSpan(
-                    ForegroundColorSpan(TAG_COLOR),
+                    ForegroundColorSpan(ChatSenderLineColors.tagColorArgb()),
                     start,
                     end,
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
@@ -57,7 +55,7 @@ object PushNotificationSenderLineSpans {
         val nickStart = line.indexOf(nick, searchFrom).coerceAtLeast(0)
         if (nickStart < line.length) {
             spannable.setSpan(
-                ForegroundColorSpan(NICKNAME_COLOR),
+                ForegroundColorSpan(ChatSenderLineColors.nicknameColorArgb(squadRole)),
                 nickStart,
                 line.length,
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,

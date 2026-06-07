@@ -794,31 +794,38 @@ export class TeamsService {
     };
   }
 
-  /** Matches Android [OVERLAY_INGAME_PRESENCE_STALE_MS] and UsersService.OVERLAY_INGAME_LIST_STALE_MS. */
+  /** Matches Android [OVERLAY_INGAME_LIVE_MS] for ingame bucket. */
+  static readonly OVERLAY_INGAME_LIVE_MS = 45_000;
+
+  /** Matches Android [OVERLAY_INGAME_PRESENCE_STALE_MS] for recent bucket. */
   static readonly OVERLAY_PRESENCE_LIST_STALE_MS = 120_000;
 
   private isOverlayIngameRow(
     row: TeamMemberRow,
     nowMs: number,
-    staleMs: number,
   ): boolean {
     if ((row.presenceStatus ?? '').trim().toLowerCase() !== 'ingame') {
       return false;
     }
     const at = row.lastPresenceAt ? Date.parse(row.lastPresenceAt) : Number.NaN;
-    return !Number.isNaN(at) && nowMs - at <= staleMs;
+    return (
+      !Number.isNaN(at) &&
+      nowMs - at <= TeamsService.OVERLAY_INGAME_LIVE_MS
+    );
   }
 
   private isRecentlyActiveOverlayRow(
     row: TeamMemberRow,
     nowMs: number,
-    staleMs: number,
   ): boolean {
-    if ((row.presenceStatus ?? '').trim().toLowerCase() === 'ingame') {
+    if (this.isOverlayIngameRow(row, nowMs)) {
       return false;
     }
     const at = row.lastPresenceAt ? Date.parse(row.lastPresenceAt) : Number.NaN;
-    return !Number.isNaN(at) && nowMs - at <= staleMs;
+    return (
+      !Number.isNaN(at) &&
+      nowMs - at <= TeamsService.OVERLAY_PRESENCE_LIST_STALE_MS
+    );
   }
 
   /**
@@ -909,13 +916,12 @@ export class TeamsService {
       };
     });
     const nowMs = Date.now();
-    const staleMs = TeamsService.OVERLAY_PRESENCE_LIST_STALE_MS;
     const ingame: TeamMemberRow[] = [];
     const recentlyActive: TeamMemberRow[] = [];
     for (const row of members) {
-      if (this.isOverlayIngameRow(row, nowMs, staleMs)) {
+      if (this.isOverlayIngameRow(row, nowMs)) {
         ingame.push(row);
-      } else if (this.isRecentlyActiveOverlayRow(row, nowMs, staleMs)) {
+      } else if (this.isRecentlyActiveOverlayRow(row, nowMs)) {
         recentlyActive.push(row);
       }
     }

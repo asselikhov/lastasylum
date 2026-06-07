@@ -3,7 +3,10 @@ package com.lastasylum.alliance.ui.util
 import java.time.Duration
 import java.time.Instant
 
-/** Окно свежести пинга оверлея (~2.5× heartbeat оверлея 45 с). */
+/** «В игре» — свежий ingame ping (синхрон с push exclusion / heartbeat). */
+const val OVERLAY_INGAME_LIVE_MS = 45_000L
+
+/** Окно «недавно активен» (~2.5× heartbeat оверлея 45 с). */
 const val OVERLAY_INGAME_PRESENCE_STALE_MS = 120_000L
 
 /** Fallback poll when panel is backgrounded and socket is disconnected. */
@@ -48,7 +51,7 @@ fun formatOverlayPresenceAgeRu(lastOverlayPresenceAt: String?): String {
 fun isOverlayIngameNow(
     presenceStatus: String?,
     lastOverlayPresenceAt: String?,
-    staleMs: Long = OVERLAY_INGAME_PRESENCE_STALE_MS,
+    staleMs: Long = OVERLAY_INGAME_LIVE_MS,
 ): Boolean {
     val s = presenceStatus?.trim()?.lowercase() ?: return false
     if (s != "ingame") return false

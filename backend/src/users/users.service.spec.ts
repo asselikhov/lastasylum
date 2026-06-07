@@ -244,7 +244,7 @@ describe('UsersService', () => {
       expect(downgraded).toBe(false);
     });
 
-    it('away does not downgrade fresh ingame overlay presence', async () => {
+    it('away downgrades fresh ingame overlay presence', async () => {
       execFindByIdLean.mockResolvedValue({
         presenceStatus: 'ingame',
         lastPresenceAt: new Date(),
@@ -252,14 +252,13 @@ describe('UsersService', () => {
       await usersService.updatePresence('u1', 'away');
       expect(updateOne).toHaveBeenCalledWith(
         { _id: 'u1' },
-        { $set: { lastAppActiveAt: expect.any(Date) } },
+        {
+          $set: {
+            presenceStatus: 'away',
+            lastAppActiveAt: expect.any(Date),
+          },
+        },
       );
-      const downgraded = updateOne.mock.calls.some(
-        (call) =>
-          (call[1] as { $set?: { presenceStatus?: string } })?.$set
-            ?.presenceStatus === 'away',
-      );
-      expect(downgraded).toBe(false);
     });
 
     it('non-ingame updates app activity without touching overlay timestamp', async () => {
