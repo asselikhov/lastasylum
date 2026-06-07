@@ -1546,8 +1546,11 @@ class ChatViewModel(
         httpAckSpanId: Long? = null,
     ) = confirmOutgoingByClientMessageIdImpl(clientMessageId, sent, pendingIdHint, httpAckSpanId)
 
-    internal fun applyIncomingMessage(message: ChatMessage, clearComposer: Boolean = false) =
-        applyIncomingMessageImpl(message, clearComposer)
+    internal fun applyIncomingMessage(
+        message: ChatMessage,
+        clearComposer: Boolean = false,
+        skipOutgoingEchoBlock: Boolean = false,
+    ) = applyIncomingMessageImpl(message, clearComposer, skipOutgoingEchoBlock)
     internal fun launchTextOutgoingSend(
         roomId: String,
         text: String,

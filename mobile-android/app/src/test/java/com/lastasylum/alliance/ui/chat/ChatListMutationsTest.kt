@@ -618,6 +618,50 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun findOptimisticOutgoingPendingId_matchesClientMessageId() {
+        val pending = msg("pending-abc", "hello").copy(
+            senderId = "u1",
+            clientMessageId = "cid-xyz",
+        )
+        val found = findOptimisticOutgoingPendingId(listOf(pending), "cid-xyz", "u1")
+        assertEquals("pending-abc", found)
+    }
+
+    @Test
+    fun hasOwnOutgoingRowPairByClientMessageId_trueWhenPendingAndServerShareCid() {
+        val pending = msg("pending-1", "hello").copy(
+            senderId = "u1",
+            clientMessageId = "cid-1",
+        )
+        val confirmed = msg("server-1", "hello").copy(
+            senderId = "u1",
+            clientMessageId = "cid-1",
+        )
+        assertTrue(
+            hasOwnOutgoingRowPairByClientMessageId(
+                listOf(pending, confirmed),
+                "cid-1",
+                "u1",
+            ),
+        )
+    }
+
+    @Test
+    fun hasOwnOutgoingRowPairByClientMessageId_falseWhenOnlyPending() {
+        val pending = msg("pending-1", "hello").copy(
+            senderId = "u1",
+            clientMessageId = "cid-1",
+        )
+        assertFalse(
+            hasOwnOutgoingRowPairByClientMessageId(
+                listOf(pending),
+                "cid-1",
+                "u1",
+            ),
+        )
+    }
+
+    @Test
     fun dedupeMessagesByIdNewestFirst_keepsFirstOccurrence() {
         val server = msg("same", "hello")
         val dup = server.copy(text = "hello (server)")

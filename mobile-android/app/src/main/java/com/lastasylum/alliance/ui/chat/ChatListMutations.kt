@@ -216,6 +216,48 @@ internal fun hasOptimisticOutgoingPending(
     }
 }
 
+/** Optimistic [_id] for an in-flight send with the given [clientMessageId], if still in the list. */
+internal fun findOptimisticOutgoingPendingId(
+    messages: List<ChatMessage>,
+    clientMessageId: String,
+    currentUserId: String,
+): String? {
+    val cid = clientMessageId.trim()
+    val selfId = currentUserId.trim()
+    if (cid.isEmpty() || selfId.isEmpty()) return null
+    return messages.firstOrNull { msg ->
+        val pendingId = msg._id?.trim().orEmpty()
+        isOptimisticOutgoingMessageId(pendingId) &&
+            msg.senderId.trim() == selfId &&
+            msg.clientMessageId?.trim() == cid
+    }?._id?.trim()?.takeIf { it.isNotEmpty() }
+}
+
+/** True when the visible list still shows optimistic + confirmed rows for the same outgoing send. */
+internal fun hasOwnOutgoingRowPairByClientMessageId(
+    messages: List<ChatMessage>,
+    clientMessageId: String,
+    currentUserId: String,
+): Boolean {
+    val cid = clientMessageId.trim()
+    val selfId = currentUserId.trim()
+    if (cid.isEmpty() || selfId.isEmpty()) return false
+    var hasPending = false
+    var hasConfirmed = false
+    for (msg in messages) {
+        if (msg.senderId.trim() != selfId || msg.clientMessageId?.trim() != cid) continue
+        val id = msg._id?.trim().orEmpty()
+        if (id.isEmpty()) continue
+        if (isOptimisticOutgoingMessageId(id)) {
+            hasPending = true
+        } else {
+            hasConfirmed = true
+        }
+        if (hasPending && hasConfirmed) return true
+    }
+    return false
+}
+
 /** True while optimistic row is still waiting for HTTP confirm (blocks socket duplicate row). */
 internal fun hasMatchingPendingOutgoing(
     messages: List<ChatMessage>,
@@ -359,6 +401,7 @@ internal fun mergeVisibleMessagesWithRoomCache(
     maxMessages: Int = CHAT_MAX_MESSAGES_IN_MEMORY,
     excludedMessageIds: Set<String> = emptySet(),
     hiddenBeforeMessageId: String? = null,
+    currentUserId: String = "",
 ): List<ChatMessage> {
     val scopedVisible = filterMessagesForRoom(visible, roomId, hiddenBeforeMessageId)
     val scopedCached = filterMessagesForRoom(cached, roomId, hiddenBeforeMessageId)
@@ -371,6 +414,7 @@ internal fun mergeVisibleMessagesWithRoomCache(
             maxMessages = maxMessages,
             excludedMessageIds = excludedMessageIds,
             roomId = roomId,
+            currentUserId = currentUserId,
         )
     }
 }

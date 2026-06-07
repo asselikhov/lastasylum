@@ -87,19 +87,20 @@ internal fun ChatViewModel.confirmOutgoingByClientMessageIdImpl(
 ) {
     val cid = clientMessageId.trim()
     if (cid.isEmpty()) return
-    if (!confirmedOutgoingClientMessageIds.add(cid)) return
-    val pendingId = pendingIdHint?.trim()?.takeIf { it.isNotEmpty() }
-        ?: pendingOutgoingByClientMessageId.remove(cid)
-        ?: outboxRoomSnapshot.pendingToClientId.entries.firstOrNull { it.value == cid }?.key
-    if (pendingId.isNullOrEmpty()) {
-        vmScope.launch {
-            incomingApplyMutex.withLock {
-                withContext(Dispatchers.Main.immediate) {
-                    val serverId = sent._id?.trim().orEmpty()
-                    if (serverId.isNotEmpty() && messageIdIndex.containsKey(serverId)) {
-                        return@withContext
-                    }
-                    applyIncomingMessage(sent, clearComposer = false)
+    vmScope.launch {
+        incomingApplyMutex.withLock {
+            val alreadyConfirmed = cid in confirmedOutgoingClientMessageIds
+            val pendingId = resolvePendingOutgoingIdForConfirm(
+                clientMessageId = cid,
+                pendingIdHint = pendingIdHint,
+                consumePendingMap = !alreadyConfirmed,
+            )
+            withContext(Dispatchers.Main.immediate) {
+                if (alreadyConfirmed) {
+                    reconcileAlreadyConfirmedOutgoing(cid, sent, pendingId)
+                } else {
+                    applyOutgoingConfirmation(cid, sent, pendingId)
+                    confirmedOutgoingClientMessageIds.add(cid)
                 }
             }
             withContext(Dispatchers.IO) {
@@ -111,23 +112,84 @@ internal fun ChatViewModel.confirmOutgoingByClientMessageIdImpl(
                 )
             }
         }
+    }
+}
+
+private fun ChatViewModel.resolvePendingOutgoingIdForConfirm(
+    clientMessageId: String,
+    pendingIdHint: String?,
+    consumePendingMap: Boolean,
+): String? {
+    pendingIdHint?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+    if (consumePendingMap) {
+        pendingOutgoingByClientMessageId.remove(clientMessageId)?.let { return it }
+    } else {
+        pendingOutgoingByClientMessageId[clientMessageId]?.let { return it }
+    }
+    outboxRoomSnapshot.pendingToClientId.entries
+        .firstOrNull { it.value == clientMessageId }
+        ?.key
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { return it }
+    return findOptimisticOutgoingPendingId(
+        messages = vmState.value.messages,
+        clientMessageId = clientMessageId,
+        currentUserId = currentUserId,
+    )
+}
+
+private fun ChatViewModel.applyOutgoingConfirmation(
+    clientMessageId: String,
+    sent: ChatMessage,
+    pendingId: String?,
+) {
+    pendingOutgoingByClientMessageId.remove(clientMessageId)
+    val serverId = sent._id?.trim().orEmpty()
+    if (!pendingId.isNullOrEmpty()) {
+        confirmPendingOutgoingMessageImpl(pendingId, sent)
         return
     }
-    pendingOutgoingByClientMessageId.remove(cid)
-    vmScope.launch {
-        incomingApplyMutex.withLock {
-            withContext(Dispatchers.Main.immediate) {
-                confirmPendingOutgoingMessageImpl(pendingId, sent)
-            }
+    if (serverId.isNotEmpty() && messageIdIndex.containsKey(serverId)) return
+    confirmPendingOutgoingMessageImpl(pendingId = null, sent = sent)
+}
+
+private fun ChatViewModel.reconcileAlreadyConfirmedOutgoing(
+    clientMessageId: String,
+    sent: ChatMessage,
+    pendingId: String?,
+) {
+    val serverId = sent._id?.trim().orEmpty()
+    val snapshot = vmState.value.messages
+    val needsRepair = pendingId != null &&
+        findOptimisticOutgoingPendingId(snapshot, clientMessageId, currentUserId) != null
+    if (needsRepair) {
+        confirmPendingOutgoingMessageImpl(pendingId, sent)
+        return
+    }
+    if (!hasOwnOutgoingRowPairByClientMessageId(snapshot, clientMessageId, currentUserId)) {
+        if (serverId.isNotEmpty() && !messageIdIndex.containsKey(serverId)) {
+            confirmPendingOutgoingMessageImpl(pendingId = null, sent = sent)
         }
-        withContext(Dispatchers.IO) {
-            chatOutbox.confirmSend(
-                userId = currentUserId,
-                clientMessageId = cid,
-                serverMessage = sent,
-                httpAckSpanId = httpAckSpanId,
-            )
-        }
+        return
+    }
+    val sanitized = sanitizeMessagesForUiList(
+        messages = snapshot,
+        currentUserId = currentUserId,
+        activeOutgoingPendingId = outboxRoomSnapshot.newestPendingId,
+    )
+    if (sanitized === snapshot) return
+    synchronized(chatMutationLock) {
+        rebuildMessageIdIndex(sanitized, messageIdIndex)
+        vmState.value = vmState.value.copy(messages = sanitized)
+    }
+    publishMessagesDerivedImmediate(sanitized)
+    vmState.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let { rid ->
+        roomMessageCache[rid] = ChatRoomMessageCache(
+            messages = sanitized,
+            hasMoreOlder = vmState.value.hasMoreOlder,
+        )
+        ChatSessionCache.updateMessages(rid, sanitized)
     }
 }
 
@@ -791,11 +853,11 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
         val serverId = sent._id?.trim().orEmpty()
         if (pending.isEmpty()) {
             if (serverId.isNotEmpty() && messageIdIndex.containsKey(serverId)) return
-            applyIncomingMessage(sent, clearComposer = false)
+            applyIncomingMessage(sent, clearComposer = false, skipOutgoingEchoBlock = true)
             return
         }
         if (serverId.isEmpty()) {
-            applyIncomingMessage(sent, clearComposer = false)
+            applyIncomingMessage(sent, clearComposer = false, skipOutgoingEchoBlock = true)
             return
         }
         val roomId = vmState.value.selectedRoomId
@@ -921,8 +983,9 @@ internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?,
 internal fun ChatViewModel.applyIncomingMessageImpl(
         message: ChatMessage,
         clearComposer: Boolean = false,
+        skipOutgoingEchoBlock: Boolean = false,
     ) {
-        if (shouldBlockOwnOutgoingRealtime(message)) return
+        if (!skipOutgoingEchoBlock && shouldBlockOwnOutgoingRealtime(message)) return
         if (clearComposer && overlayChatPanelVisible) {
             runCatching { CombatOverlayService.extendInGameOverlayUiHold() }
         }

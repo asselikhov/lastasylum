@@ -367,6 +367,7 @@ internal fun ChatViewModel.messagesForRoomMergeImpl(roomId: String): List<ChatMe
             maxMessages = messageMemoryCap,
             excludedMessageIds = locallyRemovedMessageIds,
             hiddenBeforeMessageId = hiddenBeforeForRoom(rid),
+            currentUserId = currentUserId,
         )
     }
 
