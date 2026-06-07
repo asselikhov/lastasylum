@@ -13,6 +13,7 @@ class TeamsRepository(
     private val forumTopicsDedup = InFlightDedup<String, List<TeamForumTopicDto>>()
     private val forumMessagesDedup = InFlightDedup<String, List<TeamForumMessageDto>>()
     private val teamNewsDedup = InFlightDedup<String, TeamNewsListPageDto>()
+    private val overlayPresenceDedup = InFlightDedup<String, TeamOverlayPresenceDto>()
     private val forumTopicsResultCache = mutableMapOf<String, ForumTopicsCacheEntry>()
     private val forumMessagesResultCache = mutableMapOf<String, ForumMessagesCacheEntry>()
     suspend fun createTeam(displayName: String, tag: String): Result<CreatePlayerTeamResponse> =
@@ -29,8 +30,13 @@ class TeamsRepository(
     suspend fun getTeam(teamId: String): Result<TeamDetailDto> =
         runCatching { teamsApi.getTeam(teamId) }
 
-    suspend fun getTeamOverlayPresence(teamId: String): Result<TeamOverlayPresenceDto> =
-        runCatching { teamsApi.getTeamOverlayPresence(teamId) }
+    suspend fun getTeamOverlayPresence(teamId: String): Result<TeamOverlayPresenceDto> {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return Result.failure(IllegalArgumentException("team_required"))
+        return overlayPresenceDedup.run(tid) {
+            runCatching { teamsApi.getTeamOverlayPresence(tid) }
+        }
+    }
 
     suspend fun submitJoinRequest(teamId: String): Result<SubmitJoinResponse> =
         runCatching {

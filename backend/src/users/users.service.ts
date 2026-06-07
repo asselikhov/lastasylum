@@ -950,16 +950,22 @@ export class UsersService implements OnModuleInit {
     }
     const users = await this.userModel
       .find(filter)
-      .select('_id pushFcmTokens gameEventPushEnabled excavationPushEnabled')
+      .select(
+        '_id pushFcmTokens gameEventPushEnabled excavationPushEnabled presenceStatus lastPresenceAt',
+      )
       .lean<
         Array<{
           _id: Types.ObjectId;
           pushFcmTokens?: string[];
           gameEventPushEnabled?: Record<string, boolean>;
           excavationPushEnabled?: boolean;
+          presenceStatus?: string | null;
+          lastPresenceAt?: Date | null;
         }>
       >()
       .exec();
+    const staleBeforeMs =
+      Date.now() - UsersService.OVERLAY_INGAME_LIST_STALE_MS;
     const out: string[] = [];
     let excludedOverlayIngame = 0;
     let excludedOptOut = 0;
@@ -974,7 +980,12 @@ export class UsersService implements OnModuleInit {
         excludedOptOut++;
         continue;
       }
-      if (await this.isOverlayIngameNow(userId)) {
+      const lastAt = u.lastPresenceAt;
+      const ingameNow =
+        (u.presenceStatus ?? '').trim().toLowerCase() === 'ingame' &&
+        lastAt instanceof Date &&
+        lastAt.getTime() >= staleBeforeMs;
+      if (ingameNow) {
         excludedOverlayIngame++;
         continue;
       }

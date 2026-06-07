@@ -118,6 +118,21 @@ class ChatRepository(
         onHttpSuccess = null,
     )
 
+    /** Fire-and-forget socket send before outbox persist (overlay hot path). */
+    fun prefireOverlayRaidSocket(
+        text: String,
+        roomId: String,
+        clientMessageId: String,
+        gameEventAlert: String? = null,
+    ) {
+        realtime.sendOverlayRaidCommandViaSocket(
+            text = text,
+            roomId = roomId,
+            clientMessageId = clientMessageId,
+            gameEventAlert = gameEventAlert,
+        )
+    }
+
     /** Overlay quick commands: parallel socket + HTTP with shared [clientMessageId] for idempotent delivery. */
     suspend fun sendOverlayRaidCommandFast(
         text: String,

@@ -132,8 +132,10 @@ class OverlayTeamOnlineController(
                 OverlayTeamContextCache.invalidate()
                 OverlayTeamPresenceCache.invalidate()
             }
-            bootstrap(forceTeamRefresh = force, showBlockingSpinner = false)
-            refreshPresenceOnly(showRefreshing = true)
+            bootstrap(
+                forceTeamRefresh = force,
+                showBlockingSpinner = false,
+            )
         }
     }
 
@@ -357,7 +359,10 @@ class OverlayTeamOnlineController(
             ?: throw IllegalStateException("profile_timeout")
     }
 
-    private suspend fun refreshPresenceOnly(showRefreshing: Boolean) {
+    private suspend fun refreshPresenceOnly(
+        showRefreshing: Boolean,
+        forceRefresh: Boolean = false,
+    ) {
         val tid = teamId?.trim().orEmpty()
         if (tid.isEmpty()) return
         if (showRefreshing) {
@@ -369,7 +374,7 @@ class OverlayTeamOnlineController(
                 teamsRepository = teamsRepository,
                 launchDiskCache = launchDiskCache,
                 userId = currentUserId(),
-                forceRefresh = true,
+                forceRefresh = forceRefresh,
             )
         }
         loaded.onSuccess { presence ->

@@ -322,6 +322,14 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
         }.let(::mergeGameEventAlert).also { row ->
             overlayQuickCommandPrepared[pending] = row
         }
+        withContext(Dispatchers.IO) {
+            repository.prefireOverlayRaidSocket(
+                text = body,
+                roomId = rid,
+                clientMessageId = prepared.clientMessageId,
+                gameEventAlert = eventAlert,
+            )
+        }
         val persistError = runCatching {
             withContext(Dispatchers.IO) {
                 chatOutbox.persistEnqueue(prepared)

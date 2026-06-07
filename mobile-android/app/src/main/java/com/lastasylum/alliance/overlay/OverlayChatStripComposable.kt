@@ -77,7 +77,8 @@ import com.lastasylum.alliance.ui.theme.roleAccentColor
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
-private const val STRIP_EXIT_ANIM_MS = 180L
+private const val STRIP_EXIT_ANIM_MS = 120L
+private const val STRIP_ENTER_ANIM_MS = 100
 private const val STRIP_CARD_ESTIMATE_DP = 120
 
 @OptIn(FlowPreview::class)
@@ -206,9 +207,9 @@ fun OverlayChatStrip(
 
             AnimatedVisibility(
                 visible = isVisible,
-                enter = fadeIn(animationSpec = tween(220)) +
-                    slideInVertically(initialOffsetY = { it / 3 }, animationSpec = tween(220)) +
-                    scaleIn(initialScale = 0.96f, animationSpec = tween(220)),
+                enter = fadeIn(animationSpec = tween(STRIP_ENTER_ANIM_MS)) +
+                    slideInVertically(initialOffsetY = { it / 3 }, animationSpec = tween(STRIP_ENTER_ANIM_MS)) +
+                    scaleIn(initialScale = 0.96f, animationSpec = tween(STRIP_ENTER_ANIM_MS)),
                 exit = fadeOut(animationSpec = tween(STRIP_EXIT_ANIM_MS.toInt())) +
                     slideOutVertically(targetOffsetY = { -it / 4 }, animationSpec = tween(STRIP_EXIT_ANIM_MS.toInt())) +
                     scaleOut(targetScale = 0.98f, animationSpec = tween(STRIP_EXIT_ANIM_MS.toInt())),

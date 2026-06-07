@@ -300,7 +300,7 @@ describe('UsersService', () => {
     it('returns false when ingame ping is stale', async () => {
       execFindByIdLean.mockResolvedValue({
         presenceStatus: 'ingame',
-        lastPresenceAt: new Date(Date.now() - 120_000),
+        lastPresenceAt: new Date(Date.now() - 121_000),
         membershipStatus: TeamMembershipStatus.ACTIVE,
       });
       await expect(
@@ -352,12 +352,14 @@ describe('UsersService', () => {
     it('excludes users in fresh ingame overlay and opted out', async () => {
       const exclude = new Types.ObjectId();
       const allyId = new Types.ObjectId();
-      execCollect.mockResolvedValue([{ _id: allyId, pushFcmTokens: ['t1'] }]);
-      execFindByIdLean.mockResolvedValue({
-        presenceStatus: 'online',
-        lastPresenceAt: new Date(0),
-        membershipStatus: TeamMembershipStatus.ACTIVE,
-      });
+      execCollect.mockResolvedValue([
+        {
+          _id: allyId,
+          pushFcmTokens: ['t1'],
+          presenceStatus: 'online',
+          lastPresenceAt: new Date(0),
+        },
+      ]);
       const out = await usersService.collectPushTokensForExcavationAlert(
         'pt:507f1f77bcf86cd799439011',
         exclude.toHexString(),
@@ -373,20 +375,19 @@ describe('UsersService', () => {
       const ingameAlly = new Types.ObjectId();
       const offlineAlly = new Types.ObjectId();
       execCollect.mockResolvedValue([
-        { _id: ingameAlly, pushFcmTokens: ['skip'] },
-        { _id: offlineAlly, pushFcmTokens: ['keep'] },
-      ]);
-      execFindByIdLean
-        .mockResolvedValueOnce({
+        {
+          _id: ingameAlly,
+          pushFcmTokens: ['skip'],
           presenceStatus: 'ingame',
           lastPresenceAt: new Date(),
-          membershipStatus: TeamMembershipStatus.ACTIVE,
-        })
-        .mockResolvedValueOnce({
+        },
+        {
+          _id: offlineAlly,
+          pushFcmTokens: ['keep'],
           presenceStatus: 'online',
           lastPresenceAt: new Date(0),
-          membershipStatus: TeamMembershipStatus.ACTIVE,
-        });
+        },
+      ]);
       const out = await usersService.collectPushTokensForExcavationAlert(
         'ally1',
         exclude.toHexString(),
@@ -403,18 +404,17 @@ describe('UsersService', () => {
           _id: new Types.ObjectId(),
           pushFcmTokens: ['skip'],
           gameEventPushEnabled: { pve_gather_5m: false },
+          presenceStatus: 'online',
+          lastPresenceAt: new Date(0),
         },
         {
           _id: new Types.ObjectId(),
           pushFcmTokens: ['keep'],
           gameEventPushEnabled: {},
+          presenceStatus: 'online',
+          lastPresenceAt: new Date(0),
         },
       ]);
-      execFindByIdLean.mockResolvedValue({
-        presenceStatus: 'online',
-        lastPresenceAt: new Date(0),
-        membershipStatus: TeamMembershipStatus.ACTIVE,
-      });
       const out = await usersService.collectPushTokensForGameEvent(
         'ally1',
         'pve_gather_5m',

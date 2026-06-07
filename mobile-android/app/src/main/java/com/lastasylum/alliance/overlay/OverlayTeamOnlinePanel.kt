@@ -99,7 +99,6 @@ fun OverlayTeamOnlinePanel(
             usersRepository.updatePresence("ingame")
         }
         controller.start()
-        controller.refresh(force = true)
     }
     LaunchedEffect(presenceSocketState) {
         if (presenceSocketState == TeamPresenceSocketState.Connected) {

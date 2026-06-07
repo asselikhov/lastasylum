@@ -1227,6 +1227,9 @@ class CombatOverlayService : Service() {
         GameForegroundGate.primeTotalTimeForegroundWatch(this, targets)
         registerScreenOnReceiver()
         startOverlayFcmTokenRegistration()
+        serviceScope.launch {
+            ensureOverlayRaidRoomReadyForSend()
+        }
         mainHandler.post {
             ensureOverlayRaidRealtimeIfNeeded()
             tickGameGate()
@@ -5619,63 +5622,7 @@ class CombatOverlayService : Service() {
             }
         overlayRoomUnreadListener = roomUnreadListener
         val listener: (ChatMessage) -> Unit = listener@{ msg ->
-            mainHandler.post {
-                if (!isOverlayChatRoutingActive()) return@post
-                forwardOverlaySocketMessageToViewModel(msg)
-                if (msg.isCompactReactionSocketUpdate()) {
-                    val id = msg._id?.trim().orEmpty()
-                    if (id.isNotEmpty() && stripBuffer.containsMessageId(id)) {
-                        refreshExistingStripMessage(msg, refreshNow = true)
-                    }
-                    return@post
-                }
-                val hubId = resolveOverlayHubRoomId()
-                val isHub = hubId.isNotBlank() && msg.roomId.trim() == hubId
-                val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
-                val normalized = normalizeStripRaidMessage(msg, raidId)
-                val isRaid = shouldIngestForRaidStrip(normalized)
-                if (!isRaid && !isHub) {
-                    if (!activityChatViewModelHandlesUnread()) {
-                        resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
-                    }
-                    return@post
-                }
-                val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
-                val isSelf = selfId.isNotEmpty() && msg.senderId.trim() == selfId
-                if (isRaid) {
-                    if (isSelf) {
-                        if (OverlayQuickCommandStripPolicy.shouldSuppressOwnStripCard(msg.text)) {
-                            OverlayQuickCommandStripPolicy.clearOutgoingQuickCommand(msg.text)
-                        }
-                    } else {
-                        val allowIngest = shouldIngestInboundRaidStrip(normalized)
-                        if (allowIngest) {
-                            ingestOverlayRaidMessage(
-                                normalized,
-                                refreshNow = true,
-                                inbound = true,
-                            )
-                            revealStripForInboundRaidIfNeeded()
-                            ensureOverlayMessageStripIfNeeded()
-                        } else if (BuildConfig.DEBUG) {
-                            Log.d(
-                                OVERLAY_DIAG_TAG,
-                                "stripDrop reason=not_eligible id=${normalized._id} self=$isSelf " +
-                                    "listener=${overlayMessageListener != null} " +
-                                    "stripEnabled=${isOverlayChatStripEnabled()} " +
-                                    "ingamePresence=$overlayIngamePresenceActive " +
-                                    "stripEligible=${isOverlayRaidStripEligible()} " +
-                                    "inGameUi=${isInGameOverlayUiActive()}",
-                            )
-                        }
-                    }
-                    if (!isSelf && !activityChatViewModelHandlesUnread()) {
-                        resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
-                    }
-                } else if (isHub) {
-                    handleOverlayHubMessage(msg)
-                }
-            }
+            mainHandler.postAtFrontOfQueue { dispatchOverlayIncomingChatMessage(msg) }
         }
         val deleteListener: (com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent) -> Unit =
             deleteListener@{ event ->
@@ -5746,6 +5693,64 @@ class CombatOverlayService : Service() {
             }
         }
         ensureOverlaySessionPresenceStarted()
+    }
+
+    private fun dispatchOverlayIncomingChatMessage(msg: ChatMessage) {
+        if (!isOverlayChatRoutingActive()) return
+        forwardOverlaySocketMessageToViewModel(msg)
+        if (msg.isCompactReactionSocketUpdate()) {
+            val id = msg._id?.trim().orEmpty()
+            if (id.isNotEmpty() && stripBuffer.containsMessageId(id)) {
+                refreshExistingStripMessage(msg, refreshNow = true)
+            }
+            return
+        }
+        val hubId = resolveOverlayHubRoomId()
+        val isHub = hubId.isNotBlank() && msg.roomId.trim() == hubId
+        val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
+        val normalized = normalizeStripRaidMessage(msg, raidId)
+        val isRaid = shouldIngestForRaidStrip(normalized)
+        if (!isRaid && !isHub) {
+            if (!activityChatViewModelHandlesUnread()) {
+                resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
+            }
+            return
+        }
+        val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+        val isSelf = selfId.isNotEmpty() && msg.senderId.trim() == selfId
+        if (isRaid) {
+            if (isSelf) {
+                if (OverlayQuickCommandStripPolicy.shouldSuppressOwnStripCard(msg.text)) {
+                    OverlayQuickCommandStripPolicy.clearOutgoingQuickCommand(msg.text)
+                }
+            } else {
+                val allowIngest = shouldIngestInboundRaidStrip(normalized)
+                if (allowIngest) {
+                    ingestOverlayRaidMessage(
+                        normalized,
+                        refreshNow = true,
+                        inbound = true,
+                    )
+                    revealStripForInboundRaidIfNeeded()
+                    ensureOverlayMessageStripIfNeeded()
+                } else if (BuildConfig.DEBUG) {
+                    Log.d(
+                        OVERLAY_DIAG_TAG,
+                        "stripDrop reason=not_eligible id=${normalized._id} self=$isSelf " +
+                            "listener=${overlayMessageListener != null} " +
+                            "stripEnabled=${isOverlayChatStripEnabled()} " +
+                            "ingamePresence=$overlayIngamePresenceActive " +
+                            "stripEligible=${isOverlayRaidStripEligible()} " +
+                            "inGameUi=${isInGameOverlayUiActive()}",
+                    )
+                }
+            }
+            if (!isSelf && !activityChatViewModelHandlesUnread()) {
+                resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
+            }
+        } else if (isHub) {
+            handleOverlayHubMessage(msg)
+        }
     }
 
     private fun unregisterOverlayReactionListenersIfRegistered() {
@@ -6292,8 +6297,10 @@ class CombatOverlayService : Service() {
             OverlayTeamPresenceCache.load(
                 teamId = ctx.teamId,
                 teamsRepository = container.teamsRepository,
+                launchDiskCache = container.launchDiskCache,
                 forceRefresh = false,
             )
+            ensureOverlayRaidRoomReadyForSend()
         }
     }
 
@@ -7535,7 +7542,7 @@ class CombatOverlayService : Service() {
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 0L
         /** После present не поднимаем панель remove/add — только NOT_TOUCHABLE aux; lift ленты — force. */
         private const val PANEL_PRESENT_ZORDER_GRACE_MS = 500L
-        private val STRIP_INGEST_RETRY_DELAYS_MS = longArrayOf(0L, 120L, 500L, 1_500L)
+        private val STRIP_INGEST_RETRY_DELAYS_MS = longArrayOf(0L, 50L, 150L, 400L)
         /** Симметричный отступ HUD от края игрового экрана (левый START / правый END). */
         private const val OVERLAY_HUD_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP
         private const val OVERLAY_HUD_LEFT_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP

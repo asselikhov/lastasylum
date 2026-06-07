@@ -113,6 +113,7 @@ internal class OverlayPresenceCoordinator(
     }
 }
 
+@Suppress("UNUSED_PARAMETER")
 internal fun computeOverlayKeepIngamePing(
     inGameProbe: Boolean,
     overlaySessionActive: Boolean,
@@ -121,7 +122,6 @@ internal fun computeOverlayKeepIngamePing(
     isOnlineParticipantsPanelVisible: Boolean,
 ): Boolean =
     inGameProbe ||
-        overlaySessionActive ||
         inGameOverlayUiActive ||
         isVoiceActive ||
         isOnlineParticipantsPanelVisible

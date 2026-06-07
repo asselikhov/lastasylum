@@ -100,7 +100,7 @@ internal suspend fun loadOverlayIngameReactionRecipients(
                 teamsRepository = teamsRepository,
                 launchDiskCache = launchDiskCache,
                 userId = uid.ifEmpty { self },
-                forceRefresh = true,
+                forceRefresh = false,
             ).getOrThrow()
             filterFreshIngameRecipients(presence.ingame, selfUserId = self)
         }
@@ -129,19 +129,39 @@ fun OverlayReactionRecipientSheet(
     var searchQuery by remember { mutableStateOf("") }
 
     LaunchedEffect(reactionId) {
-        loading = true
         error = null
+        val cachedMembers = withContext(Dispatchers.IO) {
+            val uid = runCatching {
+                // Best-effort instant paint from warm overlay caches.
+                val ctx = OverlayTeamContextCache.peekForPanel() ?: return@runCatching null
+                val self = ctx.currentUserId
+                val teamId = OverlayTeamContextCache.peekCachedTeam()?.id?.trim().orEmpty()
+                    .ifEmpty { ctx.teamId }
+                OverlayTeamPresenceCache.peek(teamId)?.let { presence ->
+                    filterFreshIngameRecipients(presence.ingame, selfUserId = self)
+                }
+            }.getOrNull()
+            uid
+        }
+        if (cachedMembers != null) {
+            members = cachedMembers
+            loading = false
+        } else {
+            loading = true
+        }
         loadMembers()
             .onSuccess { members = it }
             .onFailure { e ->
-                error = when (e.message) {
-                    "no_team" -> context.getString(R.string.overlay_reactions_no_team)
-                    else ->
-                        e.message?.takeIf { it.isNotBlank() }
-                            ?: context.getString(
-                                R.string.overlay_history_send_failed,
-                                e.javaClass.simpleName,
-                            )
+                if (members.isEmpty()) {
+                    error = when (e.message) {
+                        "no_team" -> context.getString(R.string.overlay_reactions_no_team)
+                        else ->
+                            e.message?.takeIf { it.isNotBlank() }
+                                ?: context.getString(
+                                    R.string.overlay_history_send_failed,
+                                    e.javaClass.simpleName,
+                                )
+                    }
                 }
             }
         loading = false

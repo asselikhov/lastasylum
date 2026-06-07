@@ -6,8 +6,8 @@ import org.junit.Test
 
 class OverlayPresenceCoordinatorTest {
     @Test
-    fun keepIngamePing_whenOverlaySessionActive_withoutInGameProbe() {
-        assertTrue(
+    fun keepIngamePing_false_whenOnlyOverlaySessionActive_withoutInGameProbe() {
+        assertFalse(
             computeOverlayKeepIngamePing(
                 inGameProbe = false,
                 overlaySessionActive = true,

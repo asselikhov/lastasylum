@@ -820,12 +820,88 @@ export class TeamsService {
     ingame: TeamMemberRow[];
     recentlyActive: TeamMemberRow[];
   }> {
-    const detail = await this.getTeamDetailForUser(teamId, requesterUserId);
+    if (!Types.ObjectId.isValid(teamId)) {
+      throw new NotFoundException('Team not found');
+    }
+    const team = await this.teamModel.findById(teamId).exec();
+    if (!team) {
+      throw new NotFoundException('Team not found');
+    }
+    this.assertMember(team, requesterUserId);
+
+    const ids = team.squadMembers.map((m) => m.userId.toString());
+    const roleByUserId = new Map(
+      team.squadMembers.map((m) => [m.userId.toString(), m.role]),
+    );
+    const teamIdStr = team._id.toString();
+    const users = await this.userModel
+      .find({ _id: { $in: team.squadMembers.map((m) => m.userId) } })
+      .select(
+        'username role avatarKey avatarUpdatedAt presenceStatus lastPresenceAt lastAppActiveAt gameIdentities',
+      )
+      .lean<
+        Array<{
+          _id: Types.ObjectId;
+          username?: string;
+          role?: string;
+          avatarKey?: string | null;
+          avatarUpdatedAt?: Date | null;
+          presenceStatus?: string | null;
+          lastPresenceAt?: Date | null;
+          lastAppActiveAt?: Date | null;
+          gameIdentities?: UserDocument['gameIdentities'];
+        }>
+      >()
+      .exec();
+    const toIso = (v: Date | string | null | undefined): string | null => {
+      if (v == null) return null;
+      if (v instanceof Date) return v.toISOString();
+      if (typeof v === 'string' && v.trim().length > 0) return v.trim();
+      return null;
+    };
+    const byId = new Map(
+      users.map((u) => [
+        u._id.toString(),
+        {
+          username: this.gameIdentities.resolveMemberDisplayNickname(
+            u as UserDocument,
+            teamIdStr,
+          ),
+          role: u.role,
+          avatarRelativeUrl: buildAvatarRelativeUrl(
+            u._id.toString(),
+            u.avatarKey,
+            u.avatarUpdatedAt,
+          ),
+          presenceStatus: u.presenceStatus ?? null,
+          lastPresenceAt: toIso(u.lastPresenceAt),
+          lastAppActiveAt: toIso(u.lastAppActiveAt),
+        },
+      ]),
+    );
+    const leaderStr = team.leaderUserId.toString();
+    const members: TeamMemberRow[] = ids.map((id) => {
+      const teamRole =
+        roleByUserId.get(id) ??
+        (id === leaderStr ? PlayerTeamMemberRole.R5 : PlayerTeamMemberRole.R1);
+      const row = byId.get(id);
+      return {
+        userId: id,
+        username: row?.username ?? '?',
+        isLeader: id === leaderStr,
+        accountRole: normalizeAllianceRole(row?.role ?? AllianceRole.MEMBER),
+        teamRole,
+        avatarRelativeUrl: row?.avatarRelativeUrl ?? null,
+        presenceStatus: row?.presenceStatus ?? null,
+        lastPresenceAt: row?.lastPresenceAt ?? null,
+        lastAppActiveAt: row?.lastAppActiveAt ?? null,
+      };
+    });
     const nowMs = Date.now();
     const staleMs = TeamsService.OVERLAY_PRESENCE_LIST_STALE_MS;
     const ingame: TeamMemberRow[] = [];
     const recentlyActive: TeamMemberRow[] = [];
-    for (const row of detail.members) {
+    for (const row of members) {
       if (this.isOverlayIngameRow(row, nowMs, staleMs)) {
         ingame.push(row);
       } else if (this.isRecentlyActiveOverlayRow(row, nowMs, staleMs)) {
