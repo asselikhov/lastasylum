@@ -3,8 +3,10 @@ package com.lastasylum.alliance.push
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
 import android.graphics.Typeface
 import android.text.TextPaint
 import androidx.core.graphics.createBitmap
@@ -18,12 +20,18 @@ import com.lastasylum.alliance.ui.util.resolvedProfileAvatarUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Large notification icon: round avatar + squad rank chip on bottom edge (as in chat). */
+/**
+ * Large notification icon: transparent canvas, round avatar, squad rank chip on the bottom edge
+ * (same layout as overlay «Участники онлайн» / [com.lastasylum.alliance.ui.chat.SquadRankChipOnAvatar]).
+ */
 object PushNotificationSenderAvatar {
     private const val OUTPUT_PX = 128
-    /** Slightly smaller than canvas so rank chip fits inside the circular mask. */
-    private const val AVATAR_PX = 96
-    private const val AVATAR_TOP_PX = 8f
+    /** ~48dp avatar in a 128px icon (overlay online panel). */
+    private const val AVATAR_DIAMETER_PX = 88
+    /** Chip sits [CHIP_OFFSET_RATIO] below avatar bottom (6dp on 38dp in chat). */
+    private const val CHIP_OFFSET_RATIO = 6f / 38f
+    private const val OVERLAY_AVATAR_FILL = 0xFF1E2A3A.toInt()
+    private const val OVERLAY_INITIAL_COLOR = 0xFF94A8C0.toInt()
 
     suspend fun loadLargeIcon(
         context: Context,
@@ -50,7 +58,7 @@ object PushNotificationSenderAvatar {
             val request = SquadRelayImageRequests.chatAvatar(appContext, url)
             when (val result = loader.execute(request)) {
                 is SuccessResult -> {
-                    return result.image.toBitmap().scale(AVATAR_PX, AVATAR_PX)
+                    return result.image.toBitmap().scale(AVATAR_DIAMETER_PX, AVATAR_DIAMETER_PX)
                 }
                 is ErrorResult -> {
                     if (attempt == 0) {
@@ -63,26 +71,31 @@ object PushNotificationSenderAvatar {
     }
 
     private fun initialsBitmap(fallbackName: String?): Bitmap {
-        val bmp = createBitmap(AVATAR_PX, AVATAR_PX)
+        val bmp = createBitmap(AVATAR_DIAMETER_PX, AVATAR_DIAMETER_PX)
         val canvas = Canvas(bmp)
-        val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF2A3444.toInt() }
-        canvas.drawCircle(AVATAR_PX / 2f, AVATAR_PX / 2f, AVATAR_PX / 2f, bg)
+        val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = OVERLAY_AVATAR_FILL }
+        canvas.drawCircle(
+            AVATAR_DIAMETER_PX / 2f,
+            AVATAR_DIAMETER_PX / 2f,
+            AVATAR_DIAMETER_PX / 2f,
+            bg,
+        )
         val initial = fallbackName?.trim()?.firstOrNull { it.isLetterOrDigit() }
             ?.uppercaseChar()
             ?.toString()
             ?: "?"
         val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFFC8D4E4.toInt()
-            textSize = AVATAR_PX * 0.42f
+            color = OVERLAY_INITIAL_COLOR
+            textSize = AVATAR_DIAMETER_PX * 0.42f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
         }
-        val y = AVATAR_PX / 2f - (text.descent() + text.ascent()) / 2f
-        canvas.drawText(initial, AVATAR_PX / 2f, y, text)
+        val y = AVATAR_DIAMETER_PX / 2f - (text.descent() + text.ascent()) / 2f
+        canvas.drawText(initial, AVATAR_DIAMETER_PX / 2f, y, text)
         return bmp
     }
 
-    private fun composeWithRank(
+    internal fun composeWithRank(
         avatar: Bitmap?,
         squadRole: String?,
         fallbackName: String?,
@@ -90,25 +103,32 @@ object PushNotificationSenderAvatar {
         val base = avatar ?: initialsBitmap(fallbackName)
         val out = createBitmap(OUTPUT_PX, OUTPUT_PX)
         val canvas = Canvas(out)
-        val avatarLeft = (OUTPUT_PX - AVATAR_PX) / 2f
-        val centerX = avatarLeft + AVATAR_PX / 2f
-        val centerY = AVATAR_TOP_PX + AVATAR_PX / 2f
-        val radius = AVATAR_PX / 2f - 1f
+        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+
+        val chipOffsetPx = AVATAR_DIAMETER_PX * CHIP_OFFSET_RATIO
+        val contentHeight = AVATAR_DIAMETER_PX + chipOffsetPx
+        val avatarTop = ((OUTPUT_PX - contentHeight) / 2f).coerceAtLeast(0f)
+        val avatarLeft = (OUTPUT_PX - AVATAR_DIAMETER_PX) / 2f
+        val centerX = avatarLeft + AVATAR_DIAMETER_PX / 2f
+        val centerY = avatarTop + AVATAR_DIAMETER_PX / 2f
+        val radius = AVATAR_DIAMETER_PX / 2f
+
         val clip = Path().apply {
             addCircle(centerX, centerY, radius, Path.Direction.CW)
         }
         canvas.save()
         canvas.clipPath(clip)
-        canvas.drawBitmap(base, avatarLeft, AVATAR_TOP_PX, null)
+        canvas.drawBitmap(base, avatarLeft, avatarTop, null)
         canvas.restore()
+
         val role = squadRole?.trim()?.uppercase().orEmpty()
         if (role.isNotBlank()) {
             SquadRankChipCanvas.drawOnAvatarBottom(
                 canvas = canvas,
                 role = role,
-                avatarSizePx = AVATAR_PX,
+                avatarSizePx = AVATAR_DIAMETER_PX,
                 avatarLeftPx = avatarLeft,
-                avatarTopPx = AVATAR_TOP_PX,
+                avatarTopPx = avatarTop,
             )
         }
         return out

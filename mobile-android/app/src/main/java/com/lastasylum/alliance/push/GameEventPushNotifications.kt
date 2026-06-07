@@ -132,9 +132,6 @@ object GameEventPushNotifications {
             .setContentIntent(pending)
             .setColor(color)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            builder.setColorized(true)
-        }
         builder.setLargeIcon(senderLargeIcon)
         val notification = builder.build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

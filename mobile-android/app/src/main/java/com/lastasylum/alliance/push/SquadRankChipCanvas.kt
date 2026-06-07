@@ -11,13 +11,13 @@ import com.lastasylum.alliance.ui.theme.roleAccentColor
 /** Canvas rank chip matching [com.lastasylum.alliance.ui.chat.SquadRankChipOnAvatar]. */
 internal object SquadRankChipCanvas {
     /** 10sp on 38dp avatar ≈ 26% of avatar diameter. */
-    private const val TEXT_SIZE_RATIO = 0.263f
-    /** Bottom offset 6dp on 38dp avatar. */
+    const val TEXT_SIZE_RATIO = 0.263f
+    /** Bottom offset 6dp on 38dp avatar (Compose [offset] on chip). */
     private const val BOTTOM_OFFSET_RATIO = 6f / 38f
     private const val FILL_ALPHA = 0.14f
     private const val STROKE_ALPHA = 0.35f
     private const val H_PAD_RATIO = 6f / 38f
-    private const val V_PAD_RATIO = 2f / 38f
+    const val V_PAD_RATIO = 2f / 38f
 
     fun drawOnAvatarBottom(
         canvas: Canvas,
@@ -33,7 +33,7 @@ internal object SquadRankChipCanvas {
         val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = accent.toArgb()
             this.textSize = textSize
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.DEFAULT, 600, false)
             textAlign = Paint.Align.CENTER
         }
         val padH = avatarSizePx * H_PAD_RATIO
