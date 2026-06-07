@@ -21,6 +21,9 @@ import kotlinx.coroutines.withContext
 /** Large notification icon: round avatar + squad rank chip on bottom edge (as in chat). */
 object PushNotificationSenderAvatar {
     private const val OUTPUT_PX = 128
+    /** Slightly smaller than canvas so rank chip fits inside the circular mask. */
+    private const val AVATAR_PX = 96
+    private const val AVATAR_TOP_PX = 8f
 
     suspend fun loadLargeIcon(
         context: Context,
@@ -47,7 +50,7 @@ object PushNotificationSenderAvatar {
             val request = SquadRelayImageRequests.chatAvatar(appContext, url)
             when (val result = loader.execute(request)) {
                 is SuccessResult -> {
-                    return result.image.toBitmap().scale(OUTPUT_PX, OUTPUT_PX)
+                    return result.image.toBitmap().scale(AVATAR_PX, AVATAR_PX)
                 }
                 is ErrorResult -> {
                     if (attempt == 0) {
@@ -60,22 +63,22 @@ object PushNotificationSenderAvatar {
     }
 
     private fun initialsBitmap(fallbackName: String?): Bitmap {
-        val bmp = createBitmap(OUTPUT_PX, OUTPUT_PX)
+        val bmp = createBitmap(AVATAR_PX, AVATAR_PX)
         val canvas = Canvas(bmp)
         val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF2A3444.toInt() }
-        canvas.drawCircle(OUTPUT_PX / 2f, OUTPUT_PX / 2f, OUTPUT_PX / 2f, bg)
+        canvas.drawCircle(AVATAR_PX / 2f, AVATAR_PX / 2f, AVATAR_PX / 2f, bg)
         val initial = fallbackName?.trim()?.firstOrNull { it.isLetterOrDigit() }
             ?.uppercaseChar()
             ?.toString()
             ?: "?"
         val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFFC8D4E4.toInt()
-            textSize = OUTPUT_PX * 0.42f
+            textSize = AVATAR_PX * 0.42f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
         }
-        val y = OUTPUT_PX / 2f - (text.descent() + text.ascent()) / 2f
-        canvas.drawText(initial, OUTPUT_PX / 2f, y, text)
+        val y = AVATAR_PX / 2f - (text.descent() + text.ascent()) / 2f
+        canvas.drawText(initial, AVATAR_PX / 2f, y, text)
         return bmp
     }
 
@@ -87,16 +90,26 @@ object PushNotificationSenderAvatar {
         val base = avatar ?: initialsBitmap(fallbackName)
         val out = createBitmap(OUTPUT_PX, OUTPUT_PX)
         val canvas = Canvas(out)
+        val avatarLeft = (OUTPUT_PX - AVATAR_PX) / 2f
+        val centerX = avatarLeft + AVATAR_PX / 2f
+        val centerY = AVATAR_TOP_PX + AVATAR_PX / 2f
+        val radius = AVATAR_PX / 2f - 1f
         val clip = Path().apply {
-            addCircle(OUTPUT_PX / 2f, OUTPUT_PX / 2f, OUTPUT_PX / 2f - 2f, Path.Direction.CW)
+            addCircle(centerX, centerY, radius, Path.Direction.CW)
         }
         canvas.save()
         canvas.clipPath(clip)
-        canvas.drawBitmap(base, 0f, 0f, null)
+        canvas.drawBitmap(base, avatarLeft, AVATAR_TOP_PX, null)
         canvas.restore()
         val role = squadRole?.trim()?.uppercase().orEmpty()
         if (role.isNotBlank()) {
-            SquadRankChipCanvas.drawOnAvatarBottom(canvas, role, OUTPUT_PX)
+            SquadRankChipCanvas.drawOnAvatarBottom(
+                canvas = canvas,
+                role = role,
+                avatarSizePx = AVATAR_PX,
+                avatarLeftPx = avatarLeft,
+                avatarTopPx = AVATAR_TOP_PX,
+            )
         }
         return out
     }

@@ -704,14 +704,14 @@ export class UsersService implements OnModuleInit {
       .exec();
   }
 
-  /** Push alerts: treat overlay as inactive after ~120s without ingame ping. */
-  private static readonly OVERLAY_INGAME_STALE_MS = 120_000;
+  /** Push alerts: treat overlay as inactive after ~60s without ingame ping. */
+  private static readonly OVERLAY_INGAME_STALE_MS = 60_000;
 
   /**
    * «Участники онлайн» / broadcast reactions — matches Android
-   * [OVERLAY_INGAME_PRESENCE_STALE_MS] (~2.5× overlay heartbeat 45 s).
+   * [OVERLAY_INGAME_PRESENCE_STALE_MS].
    */
-  static readonly OVERLAY_INGAME_LIST_STALE_MS = 120_000;
+  static readonly OVERLAY_INGAME_LIST_STALE_MS = 60_000;
   /** Push: shorter ingame exclusion so offline users still get FCM after brief overlay session. */
   static readonly GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS = 30_000;
 

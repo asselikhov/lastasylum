@@ -4,6 +4,7 @@ import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketEvent
 import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
 import com.lastasylum.alliance.data.voice.VoicePeerState
+import com.lastasylum.alliance.ui.util.OVERLAY_INGAME_LIVE_MS
 import com.lastasylum.alliance.ui.util.OVERLAY_INGAME_PRESENCE_STALE_MS
 import com.lastasylum.alliance.ui.util.isOverlayIngameNow
 import com.lastasylum.alliance.ui.util.parseIsoInstant
@@ -56,8 +57,6 @@ data class OverlayOnlinePresenceLists(
     val recentlyActive: List<PlayerTeamMemberDto>,
 )
 
-internal const val OVERLAY_PRESENCE_STALE_SOON_MS = 60_000L
-
 /** Placeholder when roster username is not yet available (never show ObjectId fragments). */
 internal const val OVERLAY_UNKNOWN_MEMBER_USERNAME = "Участник"
 
@@ -86,7 +85,7 @@ fun presenceFreshness(
     val instant = parseIsoInstant(iso) ?: return PresenceFreshness.Stale
     val ageMs = Duration.between(instant, now).toMillis().coerceAtLeast(0)
     return when {
-        ageMs <= OVERLAY_PRESENCE_STALE_SOON_MS -> PresenceFreshness.Fresh
+        ageMs <= OVERLAY_INGAME_LIVE_MS -> PresenceFreshness.Fresh
         ageMs < OVERLAY_INGAME_PRESENCE_STALE_MS -> PresenceFreshness.StaleSoon
         else -> PresenceFreshness.Stale
     }

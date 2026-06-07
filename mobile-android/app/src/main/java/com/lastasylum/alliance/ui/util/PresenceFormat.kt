@@ -6,8 +6,8 @@ import java.time.Instant
 /** «В игре» — свежий ingame ping (синхрон с push exclusion / heartbeat). */
 const val OVERLAY_INGAME_LIVE_MS = 45_000L
 
-/** Окно «недавно активен» (~2.5× heartbeat оверлея 45 с). */
-const val OVERLAY_INGAME_PRESENCE_STALE_MS = 120_000L
+/** Окно «недавно активен» — после этого участник считается офлайн в списке. */
+const val OVERLAY_INGAME_PRESENCE_STALE_MS = 60_000L
 
 /** Fallback poll when panel is backgrounded and socket is disconnected. */
 const val OVERLAY_ONLINE_PANEL_POLL_MS = 60_000L

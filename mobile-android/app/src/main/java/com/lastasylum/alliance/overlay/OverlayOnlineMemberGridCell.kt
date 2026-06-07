@@ -9,13 +9,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -37,7 +35,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
@@ -202,7 +199,7 @@ fun OverlayOnlineMemberGridCell(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Box(contentAlignment = Alignment.BottomCenter) {
-                        MemberAvatar(
+                        OverlayOnlineMemberAvatar(
                             username = member.username,
                             avatarRelativeUrl = member.avatarRelativeUrl,
                             inGameNow = member.inGameNow,
@@ -322,74 +319,6 @@ fun OverlayOnlineMemberGridCellFromDto(
         selected = selected,
         onToggleSelect = onToggleSelect,
     )
-}
-
-@Composable
-private fun MemberAvatar(
-    username: String,
-    avatarRelativeUrl: String?,
-    inGameNow: Boolean,
-    freshness: PresenceFreshness,
-) {
-    val tokens = OverlayOnlineMemberTokens
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    val avatarModel = avatarRelativeUrl?.trim()?.takeIf { it.isNotEmpty() }
-        ?.let { com.lastasylum.alliance.ui.util.profileAvatarImageRequestOrChatFallback(ctx, it) }
-    val letter = username.trim().take(1).uppercase().ifBlank { "?" }
-    val ringColor = when {
-        inGameNow && freshness == PresenceFreshness.StaleSoon -> tokens.borderStaleSoon
-        inGameNow -> tokens.livePulse
-        else -> Color.Transparent
-    }
-    Box(
-        modifier = Modifier
-            .size(tokens.avatarOuter)
-            .then(
-                if (inGameNow) {
-                    Modifier
-                        .clip(CircleShape)
-                        .background(ringColor.copy(alpha = 0.28f))
-                        .padding(tokens.avatarRingWidth)
-                } else {
-                    Modifier
-                },
-            ),
-        contentAlignment = Alignment.BottomEnd,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(CircleShape)
-                .background(Color(0xFF1E2A3A)),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (avatarModel != null) {
-                AsyncImage(
-                    model = avatarModel,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Text(
-                    text = letter,
-                    style = tokens.titleStyle.copy(color = tokens.metaColor),
-                )
-            }
-        }
-        val dotColor = when {
-            inGameNow && freshness == PresenceFreshness.Fresh -> tokens.livePulse
-            inGameNow && freshness == PresenceFreshness.StaleSoon -> tokens.borderStaleSoon
-            else -> tokens.mutedColor
-        }
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(dotColor)
-                .border(1.dp, Color(0xFF10141E), CircleShape),
-        )
-    }
 }
 
 @Composable

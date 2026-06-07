@@ -143,9 +143,9 @@ class OverlayTeamOnlinePresenceLogicTest {
     @Test
     fun presenceFreshness_boundaries() {
         val now = Instant.now()
-        val freshAt = now.minusMillis(59_000).toString()
-        val staleSoonAt = now.minusMillis(75_000).toString()
-        val staleAt = now.minusMillis(121_000).toString()
+        val freshAt = now.minusMillis(44_000).toString()
+        val staleSoonAt = now.minusMillis(50_000).toString()
+        val staleAt = now.minusMillis(61_000).toString()
         assertEquals(PresenceFreshness.Fresh, presenceFreshness(freshAt, now))
         assertEquals(PresenceFreshness.StaleSoon, presenceFreshness(staleSoonAt, now))
         assertEquals(PresenceFreshness.Stale, presenceFreshness(staleAt, now))

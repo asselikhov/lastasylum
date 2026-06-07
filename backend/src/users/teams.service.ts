@@ -798,7 +798,7 @@ export class TeamsService {
   static readonly OVERLAY_INGAME_LIVE_MS = 45_000;
 
   /** Matches Android [OVERLAY_INGAME_PRESENCE_STALE_MS] for recent bucket. */
-  static readonly OVERLAY_PRESENCE_LIST_STALE_MS = 120_000;
+  static readonly OVERLAY_PRESENCE_LIST_STALE_MS = 60_000;
 
   private isOverlayIngameRow(
     row: TeamMemberRow,

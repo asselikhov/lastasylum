@@ -86,7 +86,7 @@ internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
                     cid,
                 )
             }
-            if (cid in confirmedOutgoingClientMessageIds) return
+            return
         }
         if (shouldBlockOwnOutgoingRealtime(message)) return
         if (isOwn) {

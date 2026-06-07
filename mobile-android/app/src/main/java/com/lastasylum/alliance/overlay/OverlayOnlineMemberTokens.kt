@@ -15,6 +15,9 @@ object OverlayOnlineMemberTokens {
     val avatarOuter = 48.dp
     val avatarInner = 44.dp
     val avatarRingWidth = 2.dp
+    val presenceDotSize = 10.dp
+    /** Half of dot sits outside avatar so it rests on the top-left border. */
+    val presenceDotOverlap = 4.dp
     val gridSpacing = 10.dp
     val gridPaddingH = 14.dp
     val chipRadius = 10.dp

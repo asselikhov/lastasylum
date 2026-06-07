@@ -92,7 +92,25 @@ internal fun ChatViewModel.confirmOutgoingByClientMessageIdImpl(
         ?: pendingOutgoingByClientMessageId.remove(cid)
         ?: outboxRoomSnapshot.pendingToClientId.entries.firstOrNull { it.value == cid }?.key
     if (pendingId.isNullOrEmpty()) {
-        confirmedOutgoingClientMessageIds.remove(cid)
+        vmScope.launch {
+            incomingApplyMutex.withLock {
+                withContext(Dispatchers.Main.immediate) {
+                    val serverId = sent._id?.trim().orEmpty()
+                    if (serverId.isNotEmpty() && messageIdIndex.containsKey(serverId)) {
+                        return@withContext
+                    }
+                    applyIncomingMessage(sent, clearComposer = false)
+                }
+            }
+            withContext(Dispatchers.IO) {
+                chatOutbox.confirmSend(
+                    userId = currentUserId,
+                    clientMessageId = cid,
+                    serverMessage = sent,
+                    httpAckSpanId = httpAckSpanId,
+                )
+            }
+        }
         return
     }
     pendingOutgoingByClientMessageId.remove(cid)
@@ -695,7 +713,10 @@ internal fun ChatViewModel.insertOptimisticOutgoingSynchronouslyImpl(
                 idIndex = messageIdIndex,
             )
             val capped = capMessagesForMemory(
-                dedupeMessagesByIdNewestFirst(update.messages),
+                dedupeOwnOutgoingByClientMessageId(
+                    dedupeMessagesByIdNewestFirst(update.messages),
+                    currentUserId,
+                ),
             )
             rebuildMessageIdIndex(capped, messageIdIndex)
             message._id?.let { registerOutgoingLazyColumnKey(it) }
@@ -768,7 +789,12 @@ internal fun ChatViewModel.shouldDeferOwnOutgoingSocketEchoImpl(message: ChatMes
 internal fun ChatViewModel.confirmPendingOutgoingMessageImpl(pendingId: String?, sent: ChatMessage) {
         val pending = pendingId?.trim().orEmpty()
         val serverId = sent._id?.trim().orEmpty()
-        if (pending.isEmpty() || serverId.isEmpty()) {
+        if (pending.isEmpty()) {
+            if (serverId.isNotEmpty() && messageIdIndex.containsKey(serverId)) return
+            applyIncomingMessage(sent, clearComposer = false)
+            return
+        }
+        if (serverId.isEmpty()) {
             applyIncomingMessage(sent, clearComposer = false)
             return
         }

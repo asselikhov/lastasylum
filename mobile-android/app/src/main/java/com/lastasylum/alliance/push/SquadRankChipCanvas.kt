@@ -19,7 +19,13 @@ internal object SquadRankChipCanvas {
     private const val H_PAD_RATIO = 6f / 38f
     private const val V_PAD_RATIO = 2f / 38f
 
-    fun drawOnAvatarBottom(canvas: Canvas, role: String, avatarSizePx: Int) {
+    fun drawOnAvatarBottom(
+        canvas: Canvas,
+        role: String,
+        avatarSizePx: Int,
+        avatarLeftPx: Float = 0f,
+        avatarTopPx: Float = 0f,
+    ) {
         val normalizedRole = role.trim().uppercase()
         if (normalizedRole.isEmpty()) return
         val accent = roleAccentColor(normalizedRole)
@@ -35,9 +41,9 @@ internal object SquadRankChipCanvas {
         val textW = textPaint.measureText(normalizedRole)
         val chipW = textW + padH * 2f
         val chipH = textPaint.textSize + padV * 2f
-        val left = (avatarSizePx - chipW) / 2f
+        val left = avatarLeftPx + (avatarSizePx - chipW) / 2f
         val bottomOffset = avatarSizePx * BOTTOM_OFFSET_RATIO
-        val top = avatarSizePx + bottomOffset - chipH
+        val top = avatarTopPx + avatarSizePx + bottomOffset - chipH
         val rect = RectF(left, top, left + chipW, top + chipH)
         val radius = chipH / 2f
         val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {

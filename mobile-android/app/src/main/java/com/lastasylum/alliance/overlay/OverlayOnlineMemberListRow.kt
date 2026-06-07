@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -22,13 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.formatOverlayPresenceAgeRu
@@ -76,9 +73,12 @@ fun OverlayOnlineMemberListRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        ListRowAvatar(
+        OverlayOnlineMemberAvatar(
             username = member.username,
             avatarRelativeUrl = member.avatarRelativeUrl,
+            inGameNow = false,
+            freshness = PresenceFreshness.Stale,
+            outerSize = tokens.avatarOuter * 0.85f,
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -107,47 +107,3 @@ fun OverlayOnlineMemberListRow(
     }
 }
 
-@Composable
-private fun ListRowAvatar(
-    username: String,
-    avatarRelativeUrl: String?,
-) {
-    val tokens = OverlayOnlineMemberTokens
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    val avatarModel = avatarRelativeUrl?.trim()?.takeIf { it.isNotEmpty() }
-        ?.let { com.lastasylum.alliance.ui.util.profileAvatarImageRequestOrChatFallback(ctx, it) }
-    val letter = username.trim().take(1).uppercase().ifBlank { "?" }
-    Box(
-        modifier = Modifier.size(tokens.avatarOuter * 0.85f),
-        contentAlignment = Alignment.BottomEnd,
-    ) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .clip(CircleShape)
-                .background(Color(0xFF1E2A3A)),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (avatarModel != null) {
-                AsyncImage(
-                    model = avatarModel,
-                    contentDescription = null,
-                    modifier = Modifier.matchParentSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Text(
-                    text = letter,
-                    style = tokens.titleStyle.copy(color = tokens.metaColor),
-                )
-            }
-        }
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(tokens.mutedColor)
-                .border(1.dp, Color(0xFF10141E), CircleShape),
-        )
-    }
-}
