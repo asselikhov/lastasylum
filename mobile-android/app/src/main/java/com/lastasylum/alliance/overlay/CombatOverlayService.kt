@@ -5815,29 +5815,31 @@ class CombatOverlayService : Service() {
                 if (OverlayQuickCommandStripPolicy.shouldSuppressOwnStripCard(msg.text)) {
                     OverlayQuickCommandStripPolicy.clearOutgoingQuickCommand(msg.text)
                 }
-            } else {
-                val allowIngest = shouldIngestInboundRaidStrip(normalized)
-                if (allowIngest) {
-                    ingestOverlayRaidMessage(
-                        normalized,
-                        refreshNow = true,
-                        inbound = true,
-                    )
-                    revealStripForInboundRaidIfNeeded()
-                    ensureOverlayMessageStripIfNeeded()
-                } else if (BuildConfig.DEBUG) {
-                    Log.d(
-                        OVERLAY_DIAG_TAG,
-                        "stripDrop reason=not_eligible id=${normalized._id} self=$isSelf " +
-                            "listener=${overlayMessageListener != null} " +
-                            "stripEnabled=${isOverlayChatStripEnabled()} " +
-                            "ingamePresence=$overlayIngamePresenceActive " +
-                            "stripEligible=${isOverlayRaidStripEligible()} " +
-                            "inGameUi=${isInGameOverlayUiActive()}",
-                    )
-                }
+                forwardOverlayRaidMessageToViewModel(msg, pendingOverlayQuickCommandId)
+                pendingOverlayQuickCommandId = null
+                return
             }
-            if (!isSelf && !activityChatViewModelHandlesUnread()) {
+            val allowIngest = shouldIngestInboundRaidStrip(normalized)
+            if (allowIngest) {
+                ingestOverlayRaidMessage(
+                    normalized,
+                    refreshNow = true,
+                    inbound = true,
+                )
+                revealStripForInboundRaidIfNeeded()
+                ensureOverlayMessageStripIfNeeded()
+            } else if (BuildConfig.DEBUG) {
+                Log.d(
+                    OVERLAY_DIAG_TAG,
+                    "stripDrop reason=not_eligible id=${normalized._id} self=$isSelf " +
+                        "listener=${overlayMessageListener != null} " +
+                        "stripEnabled=${isOverlayChatStripEnabled()} " +
+                        "ingamePresence=$overlayIngamePresenceActive " +
+                        "stripEligible=${isOverlayRaidStripEligible()} " +
+                        "inGameUi=${isInGameOverlayUiActive()}",
+                )
+            }
+            if (!activityChatViewModelHandlesUnread()) {
                 resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
             }
         } else if (isHub) {

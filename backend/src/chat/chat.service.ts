@@ -34,6 +34,7 @@ import { ChatRoomReadState } from './schemas/chat-room-read-state.schema';
 import { ChatSystemMeta } from './schemas/chat-system-meta.schema';
 import { ChatAttachmentsService } from './chat-attachments.service';
 import { assertStickerPayload } from './sticker-payload.util';
+import { buildAvatarRelativeUrl } from '../users/user-avatar.util';
 import {
   buildPinnedPreviewFromChatMessage,
   buildStubPinnedPreview,
@@ -219,7 +220,7 @@ export class ChatService {
     return view;
   }
 
-  async assertUserMayUseChat(userId: string): Promise<void> {
+  async assertUserMayUseChat(userId: string): Promise<UserDocument> {
     const u = await this.usersService.findById(userId);
     if (
       !u ||
@@ -227,6 +228,15 @@ export class ChatService {
     ) {
       throw new ForbiddenException('Chat is not available for this account');
     }
+    return u;
+  }
+
+  /** Room access for a user already loaded (avoids duplicate findById). */
+  async resolveRoomAccess(
+    user: UserDocument,
+    roomId: string,
+  ): Promise<{ allianceId: string; roomObjectId: Types.ObjectId }> {
+    return this.assertRoomForUser(user._id.toString(), roomId, user);
   }
 
   private hasCompleteTeamBranding(user: UserDocument): boolean {
@@ -730,8 +740,9 @@ export class ChatService {
   private async assertRoomForUser(
     userId: string,
     roomId: string,
+    userHint?: UserDocument | null,
   ): Promise<{ allianceId: string; roomObjectId: Types.ObjectId }> {
-    const user = await this.usersService.findById(userId);
+    const user = userHint ?? (await this.usersService.findById(userId));
     if (!user) {
       throw new ForbiddenException('User not found');
     }
@@ -933,16 +944,16 @@ export class ChatService {
         ...forwardSenderIds,
       ]),
     ];
-    const squadRoleMap =
-      await this.teamsService.resolveSquadRolesByUserIds(senderIds);
-    const senderAvatarMap =
-      await this.usersService.findAvatarRelativeUrlsByIds(senderIds);
-    const senderTeamTagMap =
-      await this.usersService.findTeamTagsByIds(senderIds);
-    const senderServerNumberMap =
-      await this.gameIdentities.buildSenderServerNumberMap(senderIds);
-    const displayNameMap =
-      await this.gameIdentities.buildSenderDisplayNameMap(senderIds);
+    const [squadRoleMap, enrichment] = await Promise.all([
+      this.teamsService.resolveSquadRolesByUserIds(senderIds),
+      this.gameIdentities.buildChatSenderEnrichmentMaps(senderIds),
+    ]);
+    const {
+      avatarMap: senderAvatarMap,
+      teamTagMap: senderTeamTagMap,
+      displayNameMap,
+      serverNumberMap: senderServerNumberMap,
+    } = enrichment;
     const replyMapWithRoles = new Map(
       [...replyMap.entries()].map(([id, doc]) => [
         id,
@@ -986,6 +997,54 @@ export class ChatService {
     return replyTarget;
   }
 
+  private viewCreatedMessage(
+    message: MessageLean,
+    authorUser: UserDocument,
+    squadRole: PlayerTeamMemberRole,
+    viewerUserId: string,
+    replyTarget: MessageLean | null,
+  ): Promise<ChatMessageView> {
+    if (replyTarget) {
+      return this.viewMessageForUser(message, viewerUserId);
+    }
+    const userId = authorUser._id.toString();
+    const squadRoleMap = new Map([[userId, squadRole]]);
+    const avatarMap = new Map([
+      [
+        userId,
+        buildAvatarRelativeUrl(
+          userId,
+          authorUser.avatarKey,
+          authorUser.avatarUpdatedAt,
+        ),
+      ],
+    ]);
+    const teamTagMap = new Map([[userId, authorUser.teamTag ?? null]]);
+    const serverNumberMap = new Map([
+      [userId, this.gameIdentities.resolveSenderServerNumber(authorUser)],
+    ]);
+    const displayNameMap = new Map([
+      [
+        userId,
+        this.gameIdentities.resolvePublicDisplayName(
+          authorUser,
+          authorUser.playerTeamId?.toString() ?? null,
+        ),
+      ],
+    ]);
+    return Promise.resolve(
+      this.serializeMessage(
+        this.withSquadDisplayRoles(message, squadRoleMap),
+        new Map(),
+        avatarMap,
+        teamTagMap,
+        viewerUserId,
+        serverNumberMap,
+        displayNameMap,
+      ),
+    );
+  }
+
   async createMessage(input: {
     text?: string;
     author: MessageAuthor;
@@ -993,8 +1052,12 @@ export class ChatService {
     replyToMessageId?: string;
     attachments?: MessageAttachment[];
     clientMessageId?: string;
+    authorUser?: UserDocument;
+    roomContext?: { allianceId: string; roomObjectId: Types.ObjectId };
   }): Promise<ChatCreateMessageResult> {
-    const authorUser = await this.usersService.findById(input.author.userId);
+    const authorUser =
+      input.authorUser ??
+      (await this.usersService.findById(input.author.userId));
     if (
       !authorUser ||
       this.usersService.effectiveMembership(authorUser) !==
@@ -1004,10 +1067,13 @@ export class ChatService {
     }
     this.assertNotMuted(authorUser);
 
-    const { allianceId, roomObjectId } = await this.assertRoomForUser(
-      input.author.userId,
-      input.roomId,
-    );
+    const { allianceId, roomObjectId } =
+      input.roomContext ??
+      (await this.assertRoomForUser(
+        input.author.userId,
+        input.roomId,
+        authorUser,
+      ));
     this.assertGlobalChatBrandingIfNeeded(allianceId, authorUser);
     const replyTarget = await this.getReplyTarget(
       allianceId,
@@ -1071,9 +1137,12 @@ export class ChatService {
       clientMessageId,
     });
     return {
-      message: await this.viewMessageForUser(
+      message: await this.viewCreatedMessage(
         created.toObject<MessageLean>(),
+        authorUser,
+        senderSquadRole,
         input.author.userId,
+        replyTarget,
       ),
       created: true,
     };
@@ -1149,13 +1218,14 @@ export class ChatService {
   async getRecentMessages(
     userId: string,
     roomId: string,
-    options?: { limit?: number; before?: string },
+    options?: { limit?: number; before?: string; userHint?: UserDocument },
   ) {
     const rawLimit = options?.limit ?? 30;
     const limit = Math.min(100, Math.max(1, Math.floor(rawLimit)));
     const { allianceId, roomObjectId } = await this.assertRoomForUser(
       userId,
       roomId,
+      options?.userHint,
     );
     const filter: Record<string, unknown> = {
       allianceId,
@@ -1380,6 +1450,98 @@ export class ChatService {
     roomIds: string[],
   ): Promise<Map<string, string>> {
     return this.readStatesByRoomIds(userId, roomIds);
+  }
+
+  async getReadStatesForUsersInRoom(
+    roomId: string,
+    userIds: string[],
+  ): Promise<
+    Map<
+      string,
+      {
+        lastReadMessageId?: string | null;
+        hiddenBeforeMessageId?: string | null;
+      }
+    >
+  > {
+    if (!Types.ObjectId.isValid(roomId) || userIds.length === 0) {
+      return new Map();
+    }
+    const roomOid = new Types.ObjectId(roomId);
+    const unique = [...new Set(userIds.filter(Boolean))];
+    const rows = await this.chatReadStateModel
+      .find({ roomId: roomOid, userId: { $in: unique } })
+      .select('userId lastReadMessageId hiddenBeforeMessageId')
+      .lean<
+        Array<{
+          userId: string;
+          lastReadMessageId?: string;
+          hiddenBeforeMessageId?: string | null;
+        }>
+      >()
+      .exec();
+    return new Map(
+      rows.map((row) => [
+        row.userId,
+        {
+          lastReadMessageId: row.lastReadMessageId ?? null,
+          hiddenBeforeMessageId: row.hiddenBeforeMessageId ?? null,
+        },
+      ]),
+    );
+  }
+
+  async countUnreadInRoomForUser(
+    userId: string,
+    roomId: string,
+    readStateHint?: {
+      lastReadMessageId?: string | null;
+      hiddenBeforeMessageId?: string | null;
+    } | null,
+  ): Promise<number> {
+    if (!Types.ObjectId.isValid(roomId)) {
+      return 0;
+    }
+    const roomOid = new Types.ObjectId(roomId);
+    let readState = readStateHint;
+    if (readStateHint === undefined) {
+      readState = await this.chatReadStateModel
+        .findOne({ roomId: roomOid, userId })
+        .select('lastReadMessageId hiddenBeforeMessageId')
+        .lean()
+        .exec();
+    }
+    const filter: Record<string, unknown> = {
+      roomId: roomOid,
+      deletedAt: null,
+      senderId: { $ne: userId },
+    };
+    const idBounds = this.unreadMessageIdLowerBound(readState);
+    if (idBounds) {
+      filter._id = idBounds;
+    }
+    return this.messageModel.countDocuments(filter).exec();
+  }
+
+  private unreadMessageIdLowerBound(
+    readState?: {
+      lastReadMessageId?: string | null;
+      hiddenBeforeMessageId?: string | null;
+    } | null,
+  ): { $gt: Types.ObjectId } | undefined {
+    const hidden = readState?.hiddenBeforeMessageId?.trim();
+    const lastRead = readState?.lastReadMessageId?.trim();
+    let lowerBound: Types.ObjectId | null = null;
+    if (hidden && Types.ObjectId.isValid(hidden)) {
+      lowerBound = new Types.ObjectId(hidden);
+    }
+    if (lastRead && Types.ObjectId.isValid(lastRead)) {
+      const lastReadOid = new Types.ObjectId(lastRead);
+      if (!lowerBound || lastReadOid > lowerBound) {
+        lowerBound = lastReadOid;
+      }
+    }
+    return lowerBound ? { $gt: lowerBound } : undefined;
   }
 
   async countUnreadByRoomIds(

@@ -95,7 +95,7 @@ describe('ChatGateway fanout dedup', () => {
     expect(listOverlayIngameTeammateIds).toHaveBeenCalled();
   });
 
-  it('skips personal fanout for game-event notify messages', async () => {
+  it('fans out game-event notify to personal and ingame teammates', async () => {
     const message = {
       _id: 'msg-ge',
       roomId: 'raid-room',
@@ -111,6 +111,8 @@ describe('ChatGateway fanout dedup', () => {
     const userTargetCalls = to.mock.calls.filter(
       (call) => typeof call[0] === 'string' && call[0].startsWith('user:'),
     );
-    expect(userTargetCalls.map((c) => c[0])).toEqual(['user:t2']);
+    expect(userTargetCalls.map((c) => c[0])).toEqual(
+      expect.arrayContaining(['user:t2', 'user:t3']),
+    );
   });
 });

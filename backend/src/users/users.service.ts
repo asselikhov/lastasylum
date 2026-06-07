@@ -711,6 +711,8 @@ export class UsersService implements OnModuleInit {
    * [OVERLAY_INGAME_PRESENCE_STALE_MS] (~2.5× overlay heartbeat 45 s).
    */
   static readonly OVERLAY_INGAME_LIST_STALE_MS = 120_000;
+  /** Push: shorter ingame exclusion so offline users still get FCM after brief overlay session. */
+  static readonly GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS = 45_000;
 
   /** Fresh overlay «ingame» ping (same window as list/broadcast). */
   async isOverlayIngameNow(userId: string): Promise<boolean> {
@@ -961,7 +963,7 @@ export class UsersService implements OnModuleInit {
       >()
       .exec();
     const staleBeforeMs =
-      Date.now() - UsersService.OVERLAY_INGAME_LIST_STALE_MS;
+      Date.now() - UsersService.GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS;
     const out: string[] = [];
     let excludedOverlayIngame = 0;
     let excludedOptOut = 0;

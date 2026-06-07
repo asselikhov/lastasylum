@@ -131,3 +131,5 @@ MessageSchema.index({ allianceId: 1, roomId: 1, createdAt: -1 });
  * Add a supporting compound index to avoid gaps and keep the query efficient.
  */
 MessageSchema.index({ allianceId: 1, roomId: 1, deletedAt: 1, _id: -1 });
+/** Unread counts and room-scoped history (roomId-only filters). */
+MessageSchema.index({ roomId: 1, deletedAt: 1, senderId: 1, _id: 1 });

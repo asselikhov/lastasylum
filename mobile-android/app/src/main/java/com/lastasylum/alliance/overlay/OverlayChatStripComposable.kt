@@ -94,6 +94,8 @@ fun OverlayChatStrip(
 ) {
     val keep = remember { mutableStateListOf<ChatMessage>() }
     val leaving = remember { mutableStateMapOf<String, Boolean>() }
+    /** User dismissed via ✕ — hide until server buffer drops the row. */
+    val dismissedKeys = remember { mutableStateListOf<String>() }
     val dismissRegions = remember { mutableStateMapOf<String, Rect>() }
     val latestMessages by rememberUpdatedState(messages)
     val stripScroll = rememberLazyListState()
@@ -106,6 +108,7 @@ fun OverlayChatStrip(
 
     LaunchedEffect(latestMessages) {
         val valid = latestMessages.map { keyOf(it) }.toSet()
+        dismissedKeys.removeAll { key -> key !in valid }
         val stale = dismissRegions.keys.filter { it !in valid }
         if (stale.isNotEmpty()) {
             stale.forEach { dismissRegions.remove(it) }
@@ -136,7 +139,10 @@ fun OverlayChatStrip(
     LaunchedEffect(latestMessages) {
         latestMessages.forEach { m ->
             val key = keyOf(m)
-            leaving.remove(key)
+            if (key in dismissedKeys) return@forEach
+            if (leaving[key] != true) {
+                leaving.remove(key)
+            }
             val i = keep.indexOfFirst { keyOf(it) == key }
             if (i >= 0) {
                 keep[i] = m
@@ -145,11 +151,11 @@ fun OverlayChatStrip(
             }
         }
         val currentKeys = latestMessages.map { keyOf(it) }.toSet()
-        val removed = keep.filter { keyOf(it) !in currentKeys }
+        val removed = keep.filter { keyOf(it) !in currentKeys || keyOf(it) in dismissedKeys }
         if (removed.isNotEmpty()) {
             removed.forEach { m -> leaving[keyOf(m)] = true }
             delay(STRIP_EXIT_ANIM_MS)
-            keep.removeAll { keyOf(it) !in currentKeys }
+            keep.removeAll { keyOf(it) !in currentKeys || keyOf(it) in dismissedKeys }
             removed.forEach { m -> leaving.remove(keyOf(m)) }
         }
         val orderIndex = latestMessages.mapIndexed { index, msg -> keyOf(msg) to index }.toMap()
@@ -166,8 +172,9 @@ fun OverlayChatStrip(
     }
 
     val leavingCount = leaving.size
-    val displayMessages = remember(keep.size, leavingCount) {
-        keep.asReversed()
+    val dismissedCount = dismissedKeys.size
+    val displayMessages = remember(keep.size, leavingCount, dismissedCount) {
+        keep.filter { keyOf(it) !in dismissedKeys }.asReversed()
     }
 
     LaunchedEffect(latestMessages, atStripBottom) {
@@ -219,7 +226,9 @@ fun OverlayChatStrip(
                     messageKey = key,
                     onNoticeClick = onNoticeClick,
                     onDismiss = {
+                        if (!dismissedKeys.contains(key)) dismissedKeys.add(key)
                         leaving[key] = true
+                        dismissRegions.remove(key)
                         onDismissMessage(msg)
                     },
                     onReportDismissBounds = { mk, rect -> reportBounds(mk, rect) },

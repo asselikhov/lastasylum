@@ -294,7 +294,7 @@ export class ChatGateway {
         payload.gameEventAlert,
         payload.excavationAlert,
       );
-      await this.afterMessageCreated({
+      this.afterMessageCreated({
         roomId,
         message,
         senderUserId: client.data.user.userId,
@@ -684,8 +684,9 @@ export class ChatGateway {
 
   /**
    * HTTP + WS: broadcast message, unread snapshots, optional game-event push.
+   * Unread/push run in the background so POST /chat/messages returns quickly.
    */
-  async afterMessageCreated(input: {
+  afterMessageCreated(input: {
     roomId: string;
     message: unknown;
     senderUserId: string;
@@ -694,60 +695,23 @@ export class ChatGateway {
     messageAllianceId?: string;
     messageId?: string;
     senderName?: string;
-  }): Promise<void> {
+  }): void {
     const roomId = input.roomId.trim();
     const senderUserId = input.senderUserId.trim();
     if (!roomId || !senderUserId) return;
     const eventId = input.gameEventId?.trim();
-    await this.notifyRoomUnreadAfterNewMessage(roomId, senderUserId);
     this.broadcastNewMessageWithOverlayFanout(
       roomId,
       input.message,
       senderUserId,
     );
+    void this.notifyRoomUnreadAfterNewMessage(roomId, senderUserId);
     if (
       eventId &&
       input.messageAllianceId &&
       input.messageAllianceId !== GLOBAL_CHAT_ALLIANCE_ID
     ) {
-      const pushSender = gameEventPushSenderFromMessage(input.message);
-      const senderName =
-        pushSender.senderName || (input.senderName ?? '').trim();
-      const senderLine = formatGameEventPushSenderLine({
-        username: senderName,
-        teamTag: pushSender.senderTeamTag || null,
-        serverNumber: pushSender.senderServerNumber,
-      });
-      const senderTeamDisplayName =
-        await this.usersService.resolveTeamDisplayNameForGameEventPush(
-          senderUserId,
-          input.messageAllianceId,
-        );
-      let senderAvatarRelativeUrl = pushSender.senderAvatarRelativeUrl;
-      if (!senderAvatarRelativeUrl) {
-        const avatarMap =
-          await this.usersService.findAvatarRelativeUrlsByIds([senderUserId]);
-        senderAvatarRelativeUrl = (avatarMap.get(senderUserId) ?? '').trim();
-      }
-      void this.pushNotifications
-        .notifyGameEventAlert({
-          allianceId: input.messageAllianceId,
-          excludeUserId: senderUserId,
-          eventId,
-          senderName,
-          senderLine,
-          senderAvatarRelativeUrl,
-          senderSquadRole: pushSender.senderSquadRole,
-          senderTeamTag: pushSender.senderTeamTag,
-          senderServerNumber: pushSender.senderServerNumber,
-          senderTeamDisplayName,
-          body: input.gameEventText ?? '',
-          data: {
-            roomId,
-            messageId: input.messageId ?? '',
-          },
-        })
-        .catch(() => undefined);
+      void this.sendGameEventPushAfterMessage(input, eventId, roomId, senderUserId);
     } else if (
       input.messageAllianceId &&
       input.messageAllianceId !== GLOBAL_CHAT_ALLIANCE_ID
@@ -766,6 +730,60 @@ export class ChatGateway {
           },
         })
         .catch(() => undefined);
+    }
+  }
+
+  private async sendGameEventPushAfterMessage(
+    input: {
+      message: unknown;
+      messageAllianceId?: string;
+      messageId?: string;
+      gameEventText?: string;
+      senderName?: string;
+    },
+    eventId: string,
+    roomId: string,
+    senderUserId: string,
+  ): Promise<void> {
+    try {
+      const pushSender = gameEventPushSenderFromMessage(input.message);
+      const senderName =
+        pushSender.senderName || (input.senderName ?? '').trim();
+      const senderLine = formatGameEventPushSenderLine({
+        username: senderName,
+        teamTag: pushSender.senderTeamTag || null,
+        serverNumber: pushSender.senderServerNumber,
+      });
+      const senderTeamDisplayName =
+        await this.usersService.resolveTeamDisplayNameForGameEventPush(
+          senderUserId,
+          input.messageAllianceId!,
+        );
+      let senderAvatarRelativeUrl = pushSender.senderAvatarRelativeUrl;
+      if (!senderAvatarRelativeUrl) {
+        const avatarMap =
+          await this.usersService.findAvatarRelativeUrlsByIds([senderUserId]);
+        senderAvatarRelativeUrl = (avatarMap.get(senderUserId) ?? '').trim();
+      }
+      await this.pushNotifications.notifyGameEventAlert({
+        allianceId: input.messageAllianceId!,
+        excludeUserId: senderUserId,
+        eventId,
+        senderName,
+        senderLine,
+        senderAvatarRelativeUrl,
+        senderSquadRole: pushSender.senderSquadRole,
+        senderTeamTag: pushSender.senderTeamTag,
+        senderServerNumber: pushSender.senderServerNumber,
+        senderTeamDisplayName,
+        body: input.gameEventText ?? '',
+        data: {
+          roomId,
+          messageId: input.messageId ?? '',
+        },
+      });
+    } catch {
+      // push is best-effort
     }
   }
 
@@ -847,22 +865,21 @@ export class ChatGateway {
     if (!rid || !uid) return;
     const inRoom = this.userIdsInChatRoom(rid);
     const messageText = (message as { text?: string }).text?.trim() ?? '';
-    const skipPersonalFanout = isGameEventNotifyMessageText(messageText);
-    const personalTargets = skipPersonalFanout
-      ? new Set<string>()
-      : await this.fanOutChatEventToEligibleUsersNotInRoom(
-          rid,
-          'message:new',
-          message,
-          uid,
-          inRoom,
-        );
+    const isGameEventNotify = isGameEventNotifyMessageText(messageText);
+    const personalTargets = await this.fanOutChatEventToEligibleUsersNotInRoom(
+      rid,
+      'message:new',
+      message,
+      uid,
+      inRoom,
+    );
     await this.fanOutRaidMessageToIngameOverlayTeammates(
       rid,
       message,
       uid,
       inRoom,
       personalTargets,
+      isGameEventNotify,
     );
   }
 
@@ -917,6 +934,7 @@ export class ChatGateway {
     senderUserId: string,
     inRoom: Set<string>,
     personalTargets: Set<string>,
+    isGameEventNotify = false,
   ): Promise<void> {
     const rid = roomId?.trim();
     const uid = senderUserId?.trim();
@@ -930,7 +948,7 @@ export class ChatGateway {
     let skippedPersonal = 0;
     for (const teammateId of teammateIds) {
       if (teammateId === uid) continue;
-      if (inRoom.has(teammateId)) {
+      if (!isGameEventNotify && inRoom.has(teammateId)) {
         skippedInRoom++;
         continue;
       }
@@ -952,14 +970,14 @@ export class ChatGateway {
     const uid = userId?.trim();
     const rid = roomId?.trim();
     if (!uid || !rid) return;
-    const unreadMap = await this.chatService.countUnreadByRoomIds(uid, [rid]);
+    const unreadCount = await this.chatService.countUnreadInRoomForUser(uid, rid);
     const lastReadMap = await this.chatService.getLastReadMessageIdsByRoomIds(
       uid,
       [rid],
     );
     this.server?.to(`user:${uid}`).emit('rooms:unread', {
       roomId: rid,
-      unreadCount: unreadMap.get(rid) ?? 0,
+      unreadCount,
       lastReadMessageId: lastReadMap.get(rid) ?? null,
     });
   }
@@ -980,8 +998,25 @@ export class ChatGateway {
     const eligible = await this.listEligibleUserIdsForRoom(roomId);
     const targets = eligible.filter((userId) => userId !== exclude);
     if (targets.length === 0) return;
+
+    const readByUser = await this.chatService.getReadStatesForUsersInRoom(
+      roomId,
+      targets,
+    );
     await Promise.all(
-      targets.map((userId) => this.emitUnreadToUser(userId, roomId)),
+      targets.map(async (userId) => {
+        const readState = readByUser.get(userId) ?? null;
+        const unreadCount = await this.chatService.countUnreadInRoomForUser(
+          userId,
+          roomId,
+          readState,
+        );
+        this.server?.to(`user:${userId}`).emit('rooms:unread', {
+          roomId,
+          unreadCount,
+          lastReadMessageId: readState?.lastReadMessageId ?? null,
+        });
+      }),
     );
   }
 

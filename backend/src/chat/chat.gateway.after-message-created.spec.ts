@@ -69,9 +69,9 @@ describe('ChatGateway.afterMessageCreated', () => {
       .mockImplementation(notifyRoomUnreadAfterNewMessage);
   });
 
-  it('uses overlay fanout for game-event quick commands', async () => {
+  it('uses overlay fanout for game-event quick commands', () => {
     const message = { _id: 'msg1', text: 'HQ excavation', roomId: 'raid-room' };
-    await gateway.afterMessageCreated({
+    gateway.afterMessageCreated({
       roomId: 'raid-room',
       message,
       senderUserId: 'sender1',
@@ -92,9 +92,9 @@ describe('ChatGateway.afterMessageCreated', () => {
     );
   });
 
-  it('uses overlay fanout for coordinate quick commands', async () => {
+  it('uses overlay fanout for coordinate quick commands', () => {
     const message = { _id: 'msg2', text: 'Штурм X:1 Y:2', roomId: 'raid-room' };
-    await gateway.afterMessageCreated({
+    gateway.afterMessageCreated({
       roomId: 'raid-room',
       message,
       senderUserId: 'sender1',
@@ -106,7 +106,7 @@ describe('ChatGateway.afterMessageCreated', () => {
     );
   });
 
-  it('awaits unread notify before overlay fanout', async () => {
+  it('broadcasts immediately and schedules unread notify in background', () => {
     const order: string[] = [];
     notifyRoomUnreadAfterNewMessage.mockImplementation(async () => {
       order.push('notify');
@@ -114,12 +114,12 @@ describe('ChatGateway.afterMessageCreated', () => {
     broadcastNewMessageWithOverlayFanout.mockImplementation(() => {
       order.push('broadcast');
     });
-    await gateway.afterMessageCreated({
+    gateway.afterMessageCreated({
       roomId: 'raid-room',
       message: { _id: 'msg3', text: 'ping', roomId: 'raid-room' },
       senderUserId: 'sender1',
     });
-    expect(order).toEqual(['notify', 'broadcast']);
+    expect(order[0]).toBe('broadcast');
     expect(notifyRoomUnreadAfterNewMessage).toHaveBeenCalledWith(
       'raid-room',
       'sender1',

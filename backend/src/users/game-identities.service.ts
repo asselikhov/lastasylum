@@ -17,6 +17,14 @@ import {
 } from './schemas/game-identity.schema';
 import { PlayerTeam, PlayerTeamDocument } from './schemas/player-team.schema';
 import { User, UserDocument } from './schemas/user.schema';
+import { buildAvatarRelativeUrl } from './user-avatar.util';
+
+export type ChatSenderEnrichmentMaps = {
+  avatarMap: Map<string, string | null>;
+  teamTagMap: Map<string, string | null>;
+  displayNameMap: Map<string, string>;
+  serverNumberMap: Map<string, number | null>;
+};
 
 export type AdminServerSummary = {
   serverNumber: number;
@@ -756,6 +764,58 @@ export class GameIdentitiesService {
       out.set(user._id.toString(), this.resolveSenderServerNumber(user));
     }
     return out;
+  }
+
+  /** One user query for chat message list enrichment (avatars, tags, names, servers). */
+  async buildChatSenderEnrichmentMaps(
+    userIds: string[],
+  ): Promise<ChatSenderEnrichmentMaps> {
+    const unique = [
+      ...new Set(userIds.filter((id) => Types.ObjectId.isValid(id))),
+    ];
+    const avatarMap = new Map<string, string | null>();
+    const teamTagMap = new Map<string, string | null>();
+    const displayNameMap = new Map<string, string>();
+    const serverNumberMap = new Map<string, number | null>();
+    if (!unique.length) {
+      return { avatarMap, teamTagMap, displayNameMap, serverNumberMap };
+    }
+    type LeanUser = Pick<
+      UserDocument,
+      | '_id'
+      | 'avatarKey'
+      | 'avatarUpdatedAt'
+      | 'teamTag'
+      | 'gameIdentities'
+      | 'activeGameIdentityId'
+      | 'playerTeamId'
+      | 'username'
+    >;
+    const users = await this.userModel
+      .find({ _id: { $in: unique.map((id) => new Types.ObjectId(id)) } })
+      .select(
+        '_id avatarKey avatarUpdatedAt teamTag gameIdentities activeGameIdentityId playerTeamId username',
+      )
+      .lean<LeanUser[]>()
+      .exec();
+    for (const user of users) {
+      const uid = user._id.toString();
+      avatarMap.set(
+        uid,
+        buildAvatarRelativeUrl(uid, user.avatarKey, user.avatarUpdatedAt),
+      );
+      teamTagMap.set(uid, user.teamTag ?? null);
+      const teamId = user.playerTeamId?.toString() ?? null;
+      displayNameMap.set(
+        uid,
+        this.resolvePublicDisplayName(user as UserDocument, teamId),
+      );
+      serverNumberMap.set(
+        uid,
+        this.resolveSenderServerNumber(user as UserDocument),
+      );
+    }
+    return { avatarMap, teamTagMap, displayNameMap, serverNumberMap };
   }
 
   /** Team ids that have at least one identity on [serverNumber]. */

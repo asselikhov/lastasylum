@@ -221,12 +221,15 @@ export class ChatController {
     if (!roomId?.trim()) {
       throw new BadRequestException('roomId query parameter is required');
     }
-    await this.chatService.assertUserMayUseChat(req.user.userId);
+    const authorUser = await this.chatService.assertUserMayUseChat(
+      req.user.userId,
+    );
     const parsed = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
     const limit = Number.isFinite(parsed) ? parsed : undefined;
     return this.chatService.getRecentMessages(req.user.userId, roomId, {
       before,
       limit,
+      userHint: authorUser,
     });
   }
 
@@ -236,20 +239,16 @@ export class ChatController {
     @Req() req: { user: RequestUser },
     @Body() dto: CreateMessageDto,
   ) {
-    await this.chatService.assertUserMayUseChat(req.user.userId);
+    const authorUser = await this.chatService.assertUserMayUseChat(
+      req.user.userId,
+    );
+    const { allianceId, roomObjectId } = await this.chatService.resolveRoomAccess(
+      authorUser,
+      dto.roomId,
+    );
     const attachmentIds =
       dto.attachments?.slice(0, 8).filter((id) => Types.ObjectId.isValid(id)) ??
       [];
-    const anyChat = this.chatService as unknown as {
-      assertRoomForUser: (
-        userId: string,
-        roomId: string,
-      ) => Promise<{ allianceId: string; roomObjectId: Types.ObjectId }>;
-    };
-    const { allianceId, roomObjectId } = await anyChat.assertRoomForUser(
-      req.user.userId,
-      dto.roomId,
-    );
     const resolvedAttachments = await this.attachmentsService.resolveForRoom({
       allianceId,
       roomObjectId,
@@ -262,6 +261,8 @@ export class ChatController {
       author: req.user,
       attachments: resolvedAttachments,
       clientMessageId: dto.clientMessageId,
+      authorUser,
+      roomContext: { allianceId, roomObjectId },
     });
     if (created) {
       const messageId =
@@ -275,7 +276,7 @@ export class ChatController {
         dto.gameEventAlert,
         dto.excavationAlert,
       );
-      await this.chatGateway.afterMessageCreated({
+      this.chatGateway.afterMessageCreated({
         roomId: dto.roomId,
         message,
         senderUserId: req.user.userId,
