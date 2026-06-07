@@ -779,14 +779,17 @@ export class UsersService implements OnModuleInit {
       if (!teamId) {
         return [];
       }
-      const teamOid = new Types.ObjectId(teamId);
+      const memberIds = await this.teamsService.listSquadMemberUserIds(teamId);
+      if (memberIds.length === 0) {
+        return [];
+      }
+      const memberOids = memberIds
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
       rows = await this.userModel
         .find({
           ...base,
-          $or: [
-            { playerTeamId: teamOid },
-            { 'gameIdentities.playerTeamId': teamOid },
-          ],
+          _id: { $in: memberOids },
         })
         .select(select)
         .lean<Row[]>()

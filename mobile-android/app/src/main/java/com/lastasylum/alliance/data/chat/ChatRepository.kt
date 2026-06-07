@@ -76,6 +76,9 @@ class ChatRepository(
         )
     }
 
+    fun setOutgoingMessageAckListener(listener: (clientMessageId: String, message: ChatMessage) -> Unit) =
+        realtime.setOutgoingMessageAckListener(listener)
+
     /** App/overlay chat UI: parallel socket + HTTP with shared [clientMessageId] for fast peer delivery. */
     suspend fun sendMessageWithRetriesForChatUi(
         text: String,

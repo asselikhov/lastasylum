@@ -1544,6 +1544,45 @@ export class ChatService {
     return lowerBound ? { $gt: lowerBound } : undefined;
   }
 
+  /** Batch unread for room fanout — one message scan, many users. */
+  async countUnreadInRoomForUsers(
+    roomId: string,
+    userIds: string[],
+    readByUser: Map<
+      string,
+      {
+        lastReadMessageId?: string | null;
+        hiddenBeforeMessageId?: string | null;
+      }
+    >,
+  ): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    const unique = [...new Set(userIds.filter(Boolean))];
+    if (!Types.ObjectId.isValid(roomId) || unique.length === 0) {
+      return out;
+    }
+    for (const uid of unique) {
+      out.set(uid, 0);
+    }
+    const roomOid = new Types.ObjectId(roomId);
+    const rows = await this.messageModel
+      .find({ roomId: roomOid, deletedAt: null })
+      .select('_id senderId')
+      .lean<Array<{ _id: Types.ObjectId; senderId: string }>>()
+      .exec();
+    for (const row of rows) {
+      const sender = row.senderId?.trim() ?? '';
+      const msgId = row._id;
+      for (const uid of unique) {
+        if (sender === uid) continue;
+        const bounds = this.unreadMessageIdLowerBound(readByUser.get(uid));
+        if (bounds && msgId <= bounds.$gt) continue;
+        out.set(uid, (out.get(uid) ?? 0) + 1);
+      }
+    }
+    return out;
+  }
+
   async countUnreadByRoomIds(
     userId: string,
     roomIds: string[],

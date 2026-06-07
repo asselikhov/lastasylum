@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
+import io.socket.client.Ack
 import io.socket.client.IO
 import io.socket.client.Socket
 import java.util.concurrent.CopyOnWriteArrayList
@@ -37,6 +38,8 @@ class ChatSocketManager(
     private val overlayReactionLogReactionListeners =
         CopyOnWriteArrayList<(OverlayReactionLogEntryDto) -> Unit>()
     private val chatHistoryClearedListeners = CopyOnWriteArrayList<() -> Unit>()
+    private val outgoingMessageAckListeners =
+        CopyOnWriteArrayList<(clientMessageId: String, message: ChatMessage) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var reconnectAttempt = 0
     private var intentionalDisconnect = false
@@ -282,6 +285,14 @@ class ChatSocketManager(
         openSocket(base, token, rooms)
     }
 
+    fun addOutgoingMessageAckListener(listener: (clientMessageId: String, message: ChatMessage) -> Unit) {
+        outgoingMessageAckListeners.add(listener)
+    }
+
+    fun removeOutgoingMessageAckListener(listener: (clientMessageId: String, message: ChatMessage) -> Unit) {
+        outgoingMessageAckListeners.remove(listener)
+    }
+
     fun sendMessage(
         text: String,
         roomId: String,
@@ -295,13 +306,32 @@ class ChatSocketManager(
         if (!replyToMessageId.isNullOrBlank()) {
             payload.put("replyToMessageId", replyToMessageId)
         }
-        clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            payload.put("clientMessageId", it)
-        }
+        val cid = clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
+        cid?.let { payload.put("clientMessageId", it) }
         gameEventAlert?.trim()?.takeIf { it.isNotEmpty() }?.let {
             payload.put("gameEventAlert", it)
         }
-        socket?.emit("message:send", payload)
+        val ack = Ack { args ->
+            val parsed = parseMessageSentAck(args.firstOrNull()) ?: return@Ack
+            val ackCid = parsed.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
+                ?: cid
+                ?: return@Ack
+            cid?.let {
+                latencyTracker?.endSpanByCorrelation(LatencySpanType.ChatSendToSocket, it, "ok")
+            }
+            dispatchOutgoingAckOnMain(ackCid, parsed)
+        }
+        socket?.emit("message:send", payload, ack)
+    }
+
+    private fun dispatchOutgoingAckOnMain(clientMessageId: String, message: ChatMessage) {
+        val listeners = outgoingMessageAckListeners.toList()
+        if (listeners.isEmpty()) return
+        mainHandler.post {
+            listeners.forEach { listener ->
+                runCatching { listener(clientMessageId, message) }
+            }
+        }
     }
 
     fun emitTyping(roomId: String) {
@@ -328,6 +358,7 @@ class ChatSocketManager(
         overlayReactionLogListeners.clear()
         overlayReactionLogReactionListeners.clear()
         chatHistoryClearedListeners.clear()
+        outgoingMessageAckListeners.clear()
     }
 
     private fun cancelReconnect() {
@@ -752,7 +783,18 @@ private fun JSONObject.toChatMessage(): ChatMessage {
         deletedAt = optString("deletedAt").takeIf { it.isNotBlank() },
         deletedByUserId = optString("deletedByUserId").takeIf { it.isNotBlank() },
         attachments = parseChatAttachments(),
+        clientMessageId = optString("clientMessageId").trim().takeIf { it.isNotEmpty() },
     )
+}
+
+/** NestJS WS handler return: `{ event: 'message:sent', data: ChatMessage }`. */
+internal fun parseMessageSentAck(raw: Any?): ChatMessage? {
+    val root = raw as? JSONObject ?: return null
+    val data = root.optJSONObject("data") ?: root
+    if (data.has("_id") || data.has("roomId")) {
+        return data.toChatMessage()
+    }
+    return null
 }
 
 private fun JSONObject.toPinnedMessagePreviewDto(): PinnedMessagePreviewDto? {

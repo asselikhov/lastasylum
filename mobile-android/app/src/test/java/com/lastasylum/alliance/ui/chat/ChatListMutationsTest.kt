@@ -297,6 +297,27 @@ class ChatListMutationsTest {
         assertTrue(ids.containsAll(listOf("raid", "hub", "other")))
     }
 
+    @Test
+    fun orderRealtimeSubscriptionRoomIds_badgeOnlyWhenNotSubscribeAll() {
+        val rooms = listOf(
+            roomDto("raid", unread = 0),
+            roomDto("hub", unread = 0),
+            roomDto("unread-room", unread = 3),
+            roomDto("quiet", unread = 0),
+        )
+        val ids = orderRealtimeSubscriptionRoomIds(
+            rooms = rooms,
+            selectedRoomId = "quiet",
+            raidRoomId = "raid",
+            hubRoomId = "hub",
+            subscribeAllRooms = false,
+        )
+        assertEquals("quiet", ids.first())
+        assertTrue(ids.containsAll(listOf("raid", "hub", "unread-room")))
+        assertFalse(ids.contains("quiet") && ids.count { it == "quiet" } > 1)
+        assertEquals(4, ids.toSet().size)
+    }
+
     private fun roomDto(id: String, unread: Int) =
         com.lastasylum.alliance.data.chat.ChatRoomDto(
             id = id,

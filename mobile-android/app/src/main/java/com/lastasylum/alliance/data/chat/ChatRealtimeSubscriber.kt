@@ -46,6 +46,13 @@ class ChatRealtimeSubscriber(
     private val overlayHistoryClearedListeners =
         java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var outgoingMessageAckListener: ((clientMessageId: String, message: ChatMessage) -> Unit)? = null
+
+    fun setOutgoingMessageAckListener(listener: (clientMessageId: String, message: ChatMessage) -> Unit) {
+        outgoingMessageAckListener?.let { socketManager.removeOutgoingMessageAckListener(it) }
+        outgoingMessageAckListener = listener
+        socketManager.addOutgoingMessageAckListener(listener)
+    }
 
     /** Activity [ChatViewModel] holds the primary socket callbacks when non-null. */
     fun hasPrimaryRealtimeSubscription(): Boolean = realtimeUiListener != null

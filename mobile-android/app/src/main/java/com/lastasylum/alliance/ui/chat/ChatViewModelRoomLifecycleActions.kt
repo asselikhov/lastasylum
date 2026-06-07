@@ -960,7 +960,27 @@ internal fun ChatViewModel.scheduleUnreadSyncFromServerImpl() {
         }
     }
 
-internal fun ChatViewModel.shouldSkipBackgroundMessageRefreshForRoomImpl(roomId: String): Boolean = false
+internal fun ChatViewModel.shouldSkipBackgroundMessageRefreshForRoomImpl(roomId: String): Boolean {
+    val rid = roomId.trim()
+    if (rid.isEmpty()) return false
+    if (forceBackgroundRefreshAfterReconnect) return false
+    val visible = filterMessagesForRoom(vmState.value.messages, rid)
+    if (hasOptimisticOutgoingPending(visible, currentUserId)) return false
+    val sessionCache = ChatSessionCache.getFreshMessages(rid)
+    val roomCache = roomMessageCache[rid]?.messages?.let {
+        messagesWithoutLocallyRemoved(filterMessagesForRoom(it, rid))
+    }
+    if (!roomCache.isNullOrEmpty() && roomCache.size > visible.size) return false
+    return shouldSkipBackgroundMessageRefresh(
+        visible = visible,
+        sessionCache = sessionCache,
+        roomCache = roomCache,
+        pageSize = com.lastasylum.alliance.data.chat.sync.CHAT_PAGE_SIZE,
+        lastRestSyncAtMs = lastBackgroundRefreshAtMs[rid] ?: 0L,
+        forceAfterReconnect = forceBackgroundRefreshAfterReconnect,
+        overlayPanelVisible = overlayChatPanelVisible,
+    )
+}
 
     /** Pull peer rows from [roomMessageCache] into visible UI after tab/foreground resume. */
 internal fun ChatViewModel.rehydrateSelectedRoomMessagesFromCacheImpl(): Boolean =

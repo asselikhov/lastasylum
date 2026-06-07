@@ -148,6 +148,11 @@ export class ChatGateway {
 
   /** socketId:roomId -> last typing broadcast (ms). */
   private readonly wsTypingLastEmit = new Map<string, number>();
+  private readonly eligibleUsersCache = new Map<
+    string,
+    { userIds: string[]; until: number }
+  >();
+  private static readonly ELIGIBLE_USERS_CACHE_MS = 15_000;
 
   constructor(
     private readonly chatService: ChatService,
@@ -700,12 +705,21 @@ export class ChatGateway {
     const senderUserId = input.senderUserId.trim();
     if (!roomId || !senderUserId) return;
     const eventId = input.gameEventId?.trim();
-    this.broadcastNewMessageWithOverlayFanout(
-      roomId,
-      input.message,
-      senderUserId,
-    );
-    void this.notifyRoomUnreadAfterNewMessage(roomId, senderUserId);
+    this.broadcastNewMessage(roomId, input.message);
+    void (async () => {
+      const eligible = await this.getEligibleUserIdsCached(roomId);
+      await this.fanOutNewMessageToEligibleOverlayClients(
+        roomId,
+        input.message,
+        senderUserId,
+        eligible,
+      );
+      await this.notifyRoomUnreadAfterNewMessage(
+        roomId,
+        senderUserId,
+        eligible,
+      );
+    })();
     if (
       eventId &&
       input.messageAllianceId &&
@@ -859,6 +873,7 @@ export class ChatGateway {
     roomId: string,
     message: unknown,
     senderUserId: string,
+    eligibleUserIds?: string[],
   ): Promise<void> {
     const rid = roomId.trim();
     const uid = senderUserId.trim();
@@ -872,6 +887,7 @@ export class ChatGateway {
       message,
       uid,
       inRoom,
+      eligibleUserIds,
     );
     await this.fanOutRaidMessageToIngameOverlayTeammates(
       rid,
@@ -889,8 +905,10 @@ export class ChatGateway {
     payload: unknown,
     excludeUserId?: string,
     inRoomOverride?: Set<string>,
+    eligibleOverride?: string[],
   ): Promise<Set<string>> {
-    const eligible = await this.listEligibleUserIdsForRoom(roomId);
+    const eligible =
+      eligibleOverride ?? (await this.getEligibleUserIdsCached(roomId));
     const inRoom = inRoomOverride ?? this.userIdsInChatRoom(roomId);
     const targets = filterPersonalChatFanoutUserIds(
       eligible,
@@ -918,10 +936,27 @@ export class ChatGateway {
     return out;
   }
 
-  private async listEligibleUserIdsForRoom(roomId: string): Promise<string[]> {
-    const room = await this.chatRoomsService.findById(roomId);
+  private async getEligibleUserIdsCached(roomId: string): Promise<string[]> {
+    const rid = roomId.trim();
+    if (!rid) return [];
+    const now = Date.now();
+    const cached = this.eligibleUsersCache.get(rid);
+    if (cached && cached.until > now) {
+      return cached.userIds;
+    }
+    const room = await this.chatRoomsService.findById(rid);
     if (!room) return [];
-    return this.usersService.listActiveUserIdsForChatRoomAccess(room);
+    const userIds =
+      await this.usersService.listActiveUserIdsForChatRoomAccess(room);
+    this.eligibleUsersCache.set(rid, {
+      userIds,
+      until: now + ChatGateway.ELIGIBLE_USERS_CACHE_MS,
+    });
+    return userIds;
+  }
+
+  private async listEligibleUserIdsForRoom(roomId: string): Promise<string[]> {
+    return this.getEligibleUserIdsCached(roomId);
   }
 
   broadcastNewMessage(roomId: string, message: unknown) {
@@ -986,16 +1021,19 @@ export class ChatGateway {
   async notifyRoomUnreadAfterNewMessage(
     roomId: string,
     excludeUserId: string,
+    eligibleOverride?: string[],
   ): Promise<void> {
-    await this.emitUnreadSnapshotsForRoom(roomId, excludeUserId);
+    await this.emitUnreadSnapshotsForRoom(roomId, excludeUserId, eligibleOverride);
   }
 
   private async emitUnreadSnapshotsForRoom(
     roomId: string,
     excludeUserId: string,
+    eligibleOverride?: string[],
   ): Promise<void> {
     const exclude = excludeUserId.trim();
-    const eligible = await this.listEligibleUserIdsForRoom(roomId);
+    const eligible =
+      eligibleOverride ?? (await this.getEligibleUserIdsCached(roomId));
     const targets = eligible.filter((userId) => userId !== exclude);
     if (targets.length === 0) return;
 
@@ -1003,21 +1041,18 @@ export class ChatGateway {
       roomId,
       targets,
     );
-    await Promise.all(
-      targets.map(async (userId) => {
-        const readState = readByUser.get(userId) ?? null;
-        const unreadCount = await this.chatService.countUnreadInRoomForUser(
-          userId,
-          roomId,
-          readState,
-        );
-        this.server?.to(`user:${userId}`).emit('rooms:unread', {
-          roomId,
-          unreadCount,
-          lastReadMessageId: readState?.lastReadMessageId ?? null,
-        });
-      }),
+    const unreadByUser = await this.chatService.countUnreadInRoomForUsers(
+      roomId,
+      targets,
+      readByUser,
     );
+    for (const userId of targets) {
+      this.server?.to(`user:${userId}`).emit('rooms:unread', {
+        roomId,
+        unreadCount: unreadByUser.get(userId) ?? 0,
+        lastReadMessageId: readByUser.get(userId)?.lastReadMessageId ?? null,
+      });
+    }
   }
 
   broadcastMessageDeleted(roomId: string, payload: unknown) {

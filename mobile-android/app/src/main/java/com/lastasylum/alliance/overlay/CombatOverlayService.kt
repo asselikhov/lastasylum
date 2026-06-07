@@ -5049,6 +5049,7 @@ class CombatOverlayService : Service() {
         val id = roomId?.trim()?.takeIf { it.isNotEmpty() } ?: return
         trustedOverlayRaidRoomId = id
         AppContainer.from(this).chatRoomPreferences.setRaidRoomId(id)
+        AppContainer.from(this).chatRepository.ensureRoomJoined(id)
         flushPendingStripIngest()
     }
 
@@ -5517,8 +5518,9 @@ class CombatOverlayService : Service() {
     }
 
     private fun syncOverlayRaidRoomSubscription() {
-        resolveOverlayRaidRoomId()?.let { rememberOverlayRaidRoomId(it) }
+        val raidId = resolveOverlayRaidRoomId()?.also { rememberOverlayRaidRoomId(it) }
         if (overlayMessageListener == null) return
+        raidId?.let { AppContainer.from(this).chatRepository.ensureRoomJoined(it) }
         AppContainer.from(this).chatRepository.refreshOverlayRealtimeSubscriptions()
     }
 

@@ -159,10 +159,8 @@ export class TeamForumService {
   ): Promise<TeamForumMessageRow[]> {
     if (rows.length === 0) return rows;
     const senderIds = [...new Set(rows.map((r) => r.senderUserId))];
-    const avatarMap =
-      await this.usersService.findAvatarRelativeUrlsByIds(senderIds);
-    const displayNameMap =
-      await this.gameIdentities.buildSenderDisplayNameMap(senderIds);
+    const { avatarMap, displayNameMap } =
+      await this.gameIdentities.buildChatSenderEnrichmentMaps(senderIds);
     return rows.map((r) => ({
       ...r,
       senderUsername: this.gameIdentities.coalesceDisplayName(
@@ -192,12 +190,10 @@ export class TeamForumService {
       const lastId = row.lastMessageSenderUserId?.trim();
       if (lastId) userIds.add(lastId);
     }
-    const avatarMap = await this.usersService.findAvatarRelativeUrlsByIds([
-      ...userIds,
-    ]);
-    const displayNameMap = await this.gameIdentities.buildSenderDisplayNameMap([
-      ...userIds,
-    ]);
+    const enrichment =
+      await this.gameIdentities.buildChatSenderEnrichmentMaps([...userIds]);
+    const avatarMap = enrichment.avatarMap;
+    const displayNameMap = enrichment.displayNameMap;
     return rows.map((r) => ({
       ...r,
       createdByAvatarRelativeUrl: avatarMap.get(r.createdByUserId) ?? null,

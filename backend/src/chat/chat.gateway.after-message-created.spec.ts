@@ -14,7 +14,10 @@ describe('ChatGateway.afterMessageCreated', () => {
   let gateway: ChatGateway;
   const emit = jest.fn();
   const to = jest.fn().mockReturnValue({ emit });
-  const broadcastNewMessageWithOverlayFanout = jest.fn();
+  const broadcastNewMessage = jest.fn();
+  const fanOutNewMessageToEligibleOverlayClients = jest
+    .fn()
+    .mockResolvedValue(undefined);
   const notifyRoomUnreadAfterNewMessage = jest.fn().mockResolvedValue(undefined);
   const listActiveUserIdsForChatRoomAccess = jest
     .fn()
@@ -62,14 +65,17 @@ describe('ChatGateway.afterMessageCreated', () => {
       sockets: new Map(),
     } as never;
     jest
-      .spyOn(gateway, 'broadcastNewMessageWithOverlayFanout')
-      .mockImplementation(broadcastNewMessageWithOverlayFanout);
+      .spyOn(gateway, 'broadcastNewMessage')
+      .mockImplementation(broadcastNewMessage);
+    jest
+      .spyOn(gateway as unknown as { fanOutNewMessageToEligibleOverlayClients: typeof fanOutNewMessageToEligibleOverlayClients }, 'fanOutNewMessageToEligibleOverlayClients')
+      .mockImplementation(fanOutNewMessageToEligibleOverlayClients);
     jest
       .spyOn(gateway, 'notifyRoomUnreadAfterNewMessage')
       .mockImplementation(notifyRoomUnreadAfterNewMessage);
   });
 
-  it('uses overlay fanout for game-event quick commands', () => {
+  it('broadcasts room message immediately for game-event quick commands', () => {
     const message = { _id: 'msg1', text: 'HQ excavation', roomId: 'raid-room' };
     gateway.afterMessageCreated({
       roomId: 'raid-room',
@@ -81,49 +87,32 @@ describe('ChatGateway.afterMessageCreated', () => {
       messageId: 'msg1',
       senderName: 'Alice',
     });
-    expect(broadcastNewMessageWithOverlayFanout).toHaveBeenCalledWith(
-      'raid-room',
-      message,
-      'sender1',
-    );
-    expect(notifyRoomUnreadAfterNewMessage).toHaveBeenCalledWith(
-      'raid-room',
-      'sender1',
-    );
+    expect(broadcastNewMessage).toHaveBeenCalledWith('raid-room', message);
   });
 
-  it('uses overlay fanout for coordinate quick commands', () => {
+  it('broadcasts room message immediately for coordinate quick commands', () => {
     const message = { _id: 'msg2', text: 'Штурм X:1 Y:2', roomId: 'raid-room' };
     gateway.afterMessageCreated({
       roomId: 'raid-room',
       message,
       senderUserId: 'sender1',
     });
-    expect(broadcastNewMessageWithOverlayFanout).toHaveBeenCalledWith(
-      'raid-room',
-      message,
-      'sender1',
-    );
+    expect(broadcastNewMessage).toHaveBeenCalledWith('raid-room', message);
   });
 
-  it('broadcasts immediately and schedules unread notify in background', () => {
-    const order: string[] = [];
-    notifyRoomUnreadAfterNewMessage.mockImplementation(async () => {
-      order.push('notify');
-    });
-    broadcastNewMessageWithOverlayFanout.mockImplementation(() => {
-      order.push('broadcast');
-    });
+  it('schedules overlay fanout and unread in background', async () => {
     gateway.afterMessageCreated({
       roomId: 'raid-room',
       message: { _id: 'msg3', text: 'ping', roomId: 'raid-room' },
       senderUserId: 'sender1',
     });
-    expect(order[0]).toBe('broadcast');
+    expect(broadcastNewMessage).toHaveBeenCalled();
+    await new Promise((r) => setImmediate(r));
+    expect(fanOutNewMessageToEligibleOverlayClients).toHaveBeenCalled();
     expect(notifyRoomUnreadAfterNewMessage).toHaveBeenCalledWith(
       'raid-room',
       'sender1',
+      ['teammate1'],
     );
-    expect(broadcastNewMessageWithOverlayFanout).toHaveBeenCalled();
   });
 });

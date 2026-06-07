@@ -7,6 +7,7 @@ import { RedisIoAdapter } from './common/redis-io.adapter';
 import { AppModule } from './app.module';
 
 const SLOW_REQUEST_MS = 2_000;
+const CHAT_SLOW_REQUEST_MS = 500;
 
 function installSlowRequestLogger(app: INestApplication): void {
   const logger = new Logger('SlowRequest');
@@ -20,8 +21,12 @@ function installSlowRequestLogger(app: INestApplication): void {
       const started = Date.now();
       res.on('finish', () => {
         const ms = Date.now() - started;
-        if (ms >= SLOW_REQUEST_MS) {
-          logger.warn(`${req.method ?? '?'} ${req.url ?? '?'} ${ms}ms`);
+        const url = req.url ?? '';
+        const isChatMessages =
+          url.includes('/chat/messages') || url.includes('/chat/sync-state');
+        const threshold = isChatMessages ? CHAT_SLOW_REQUEST_MS : SLOW_REQUEST_MS;
+        if (ms >= threshold) {
+          logger.warn(`${req.method ?? '?'} ${url} ${ms}ms`);
         }
       });
       next();

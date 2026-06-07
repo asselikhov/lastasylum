@@ -78,6 +78,34 @@ private fun ChatViewModel.untrackActiveOutgoingClientMessageId(clientMessageId: 
     clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { activeOutgoingClientMessageIds.remove(it) }
 }
 
+internal fun ChatViewModel.confirmOutgoingByClientMessageIdImpl(
+    clientMessageId: String,
+    sent: ChatMessage,
+    pendingIdHint: String? = null,
+    httpAckSpanId: Long? = null,
+) {
+    val cid = clientMessageId.trim()
+    if (cid.isEmpty()) return
+    if (!confirmedOutgoingClientMessageIds.add(cid)) return
+    val pendingId = pendingIdHint?.trim()?.takeIf { it.isNotEmpty() }
+        ?: pendingOutgoingByClientMessageId.remove(cid)
+        ?: outboxRoomSnapshot.pendingToClientId.entries.firstOrNull { it.value == cid }?.key
+    if (pendingId.isNullOrEmpty()) {
+        confirmedOutgoingClientMessageIds.remove(cid)
+        return
+    }
+    pendingOutgoingByClientMessageId.remove(cid)
+    confirmPendingOutgoingMessage(pendingId, sent)
+    vmScope.launch(Dispatchers.IO) {
+        chatOutbox.confirmSend(
+            userId = currentUserId,
+            clientMessageId = cid,
+            serverMessage = sent,
+            httpAckSpanId = httpAckSpanId,
+        )
+    }
+}
+
 private fun ChatViewModel.finishFastOutgoingSend(
     prepared: OutboxEnqueueResult,
     trimmed: String,
@@ -87,8 +115,10 @@ private fun ChatViewModel.finishFastOutgoingSend(
 ) {
     insertOptimisticOutgoingSynchronously(prepared.optimisticMessage, clearComposer = true)
     trackActiveOutgoingClientMessageId(prepared.clientMessageId)
+    pendingOutgoingByClientMessageId[prepared.clientMessageId] = prepared.pendingMessageId
     afterOptimistic()
     vmScope.launch {
+        val cid = prepared.clientMessageId
         val persistError = runCatching {
             coroutineScope {
                 launch(Dispatchers.IO) {
@@ -97,7 +127,7 @@ private fun ChatViewModel.finishFastOutgoingSend(
                             text = trimmed,
                             roomId = roomId,
                             replyToMessageId = replyToMessageId,
-                            clientMessageId = prepared.clientMessageId,
+                            clientMessageId = cid,
                             excavationAlert = prepared.excavationAlert,
                         )
                     }
@@ -108,6 +138,8 @@ private fun ChatViewModel.finishFastOutgoingSend(
             }
         }.exceptionOrNull()
         if (persistError != null) {
+            pendingOutgoingByClientMessageId.remove(cid)
+            confirmedOutgoingClientMessageIds.remove(cid)
             removePendingOutgoingMessage(prepared.pendingMessageId)
             vmState.value = vmState.value.copy(
                 isSending = false,
@@ -119,13 +151,17 @@ private fun ChatViewModel.finishFastOutgoingSend(
             )
             return@launch
         }
-        chatSyncEngine.sendEnqueuedOutbox(prepared.clientMessageId, skipSocket = true)
+        chatSyncEngine.sendEnqueuedOutbox(cid, skipSocket = true)
             .onSuccess { sent ->
-                withContext(Dispatchers.Main.immediate) {
-                    confirmPendingOutgoingMessage(prepared.pendingMessageId, sent)
+                if (!confirmedOutgoingClientMessageIds.contains(cid)) {
+                    withContext(Dispatchers.Main.immediate) {
+                        confirmPendingOutgoingMessage(prepared.pendingMessageId, sent)
+                    }
                 }
             }
             .onFailure { throwable ->
+                if (confirmedOutgoingClientMessageIds.contains(cid)) return@onFailure
+                pendingOutgoingByClientMessageId.remove(cid)
                 removePendingOutgoingMessage(prepared.pendingMessageId)
                 vmState.value = vmState.value.copy(
                     isSending = false,
@@ -330,6 +366,8 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
         }.let(::mergeGameEventAlert).also { row ->
             overlayQuickCommandPrepared[pending] = row
         }
+        pendingOutgoingByClientMessageId[prepared.clientMessageId] = pending
+        trackActiveOutgoingClientMessageId(prepared.clientMessageId)
         val persistError = runCatching {
             coroutineScope {
                 launch(Dispatchers.IO) {
@@ -349,6 +387,7 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
         }.exceptionOrNull()
         if (persistError != null) {
             overlayQuickCommandPrepared.remove(pending)
+            pendingOutgoingByClientMessageId.remove(prepared.clientMessageId)
             withContext(Dispatchers.Main.immediate) {
                 removePendingOutgoingMessage(pending)
             }
@@ -358,11 +397,15 @@ internal suspend fun ChatViewModel.sendOverlayRaidQuickCommandImpl(
             .also { result ->
                 result.onSuccess { sent ->
                     overlayQuickCommandPrepared.remove(pending)
-                    withContext(Dispatchers.Main.immediate) {
-                        confirmPendingOutgoingMessage(pending, sent)
+                    if (!confirmedOutgoingClientMessageIds.contains(prepared.clientMessageId)) {
+                        withContext(Dispatchers.Main.immediate) {
+                            confirmPendingOutgoingMessage(pending, sent)
+                        }
                     }
                 }.onFailure {
+                    if (confirmedOutgoingClientMessageIds.contains(prepared.clientMessageId)) return@onFailure
                     overlayQuickCommandPrepared.remove(pending)
+                    pendingOutgoingByClientMessageId.remove(prepared.clientMessageId)
                     withContext(Dispatchers.Main.immediate) {
                         removePendingOutgoingMessage(pending)
                     }

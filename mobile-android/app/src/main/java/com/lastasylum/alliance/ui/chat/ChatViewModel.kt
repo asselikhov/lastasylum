@@ -166,6 +166,11 @@ class ChatViewModel(
     /** In-flight sends keyed by [ChatMessage.clientMessageId] — blocks socket echo before Room Flow updates. */
     internal val activeOutgoingClientMessageIds =
         java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
+    /** Socket ack already confirmed these client ids — HTTP must not duplicate UI swap. */
+    internal val confirmedOutgoingClientMessageIds =
+        java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
+    /** clientMessageId → pendingMessageId for socket-first confirm. */
+    internal val pendingOutgoingByClientMessageId = java.util.concurrent.ConcurrentHashMap<String, String>()
     /** Optimistic overlay quick commands waiting for [sendOverlayRaidQuickCommandImpl]. */
     internal val overlayQuickCommandPrepared =
         java.util.concurrent.ConcurrentHashMap<String, com.lastasylum.alliance.data.chat.outbox.OutboxEnqueueResult>()
@@ -568,6 +573,7 @@ class ChatViewModel(
                 if (!isChatTabActive && !overlayChatPanelVisible) continue
                 val roomId = _state.value.selectedRoomId?.trim().orEmpty()
                 if (roomId.isEmpty()) continue
+                if (shouldSkipBackgroundMessageRefreshForRoom(roomId)) continue
                 refreshMessagesInBackground(roomId, force = false)
             }
         }
@@ -576,6 +582,10 @@ class ChatViewModel(
                 .filter { it == ChatConnectionState.Connected }
                 .collect { onChatSocketConnected() }
         }
+        val outgoingAckListener: (String, ChatMessage) -> Unit = { cid, msg ->
+            confirmOutgoingByClientMessageId(cid, msg)
+        }
+        repository.setOutgoingMessageAckListener(outgoingAckListener)
     }
 
     /** Admin wiped all chat history (socket or overlay forward). */
@@ -936,7 +946,7 @@ class ChatViewModel(
             selectedRoomId = _state.value.selectedRoomId,
             raidRoomId = chatRoomPreferences.getRaidRoomId(),
             hubRoomId = ChatRoomKindResolver.allianceHubRoom(rooms)?.id,
-            subscribeAllRooms = true,
+            subscribeAllRooms = isChatTabActive || overlayChatPanelVisible,
         )
 
     fun refreshChat() {
@@ -1528,6 +1538,14 @@ class ChatViewModel(
             }
         }
     }
+
+    internal fun confirmOutgoingByClientMessageId(
+        clientMessageId: String,
+        sent: ChatMessage,
+        pendingIdHint: String? = null,
+        httpAckSpanId: Long? = null,
+    ) = confirmOutgoingByClientMessageIdImpl(clientMessageId, sent, pendingIdHint, httpAckSpanId)
+
     internal fun applyIncomingMessage(message: ChatMessage, clearComposer: Boolean = false) =
         applyIncomingMessageImpl(message, clearComposer)
     internal fun launchTextOutgoingSend(

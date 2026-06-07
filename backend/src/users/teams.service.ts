@@ -606,18 +606,29 @@ export class TeamsService {
         ? []
         : await this.teamModel
             .find({ 'squadMembers.userId': { $in: validOids } })
+            .select('squadMembers leaderUserId memberUserIds')
+            .lean<
+              Array<{
+                _id: Types.ObjectId;
+                squadMembers: PlayerTeamDocument['squadMembers'];
+                leaderUserId: Types.ObjectId;
+                memberUserIds?: Types.ObjectId[];
+              }>
+            >()
             .exec();
 
     const teamIdByUserId = new Map<string, string>();
     for (const team of rosterTeams) {
-      await this.migrateLegacyIfNeeded(team);
+      if (!team.squadMembers?.length) continue;
       const teamIdStr = team._id.toString();
       for (const m of team.squadMembers) {
         teamIdByUserId.set(m.userId.toString(), teamIdStr);
       }
     }
 
-    const teamById = new Map(rosterTeams.map((t) => [t._id.toString(), t]));
+    const teamById = new Map(
+      rosterTeams.map((t) => [t._id.toString(), t as unknown as PlayerTeamDocument]),
+    );
 
     for (const id of unique) {
       if (!Types.ObjectId.isValid(id)) {

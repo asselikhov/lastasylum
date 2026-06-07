@@ -34,6 +34,7 @@ private fun ChatViewModel.shouldBlockOwnOutgoingRealtimeUnlocked(message: ChatMe
         val selfId = currentUserId.trim()
         if (selfId.isEmpty() || message.senderId.trim() != selfId) return false
         message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { cid ->
+            if (cid in confirmedOutgoingClientMessageIds) return false
             if (cid in activeOutgoingClientMessageIds) return true
         }
         val snapshot = outboxRoomSnapshot
@@ -74,6 +75,7 @@ internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
         }
         val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
         if (cid != null && message.senderId.trim() == currentUserId.trim()) {
+            confirmOutgoingByClientMessageId(cid, message)
             vmScope.launch(Dispatchers.IO) {
                 chatSyncEngine.onSocketMessageConfirmed(
                     currentUserId,
