@@ -15,9 +15,10 @@ import androidx.room.RoomDatabase
         ForumTopicEntity::class,
         ForumMessageEntity::class,
         ForumReadCursorEntity::class,
+        ForumOutboxEntity::class,
         LatencySampleEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class SquadRelayDatabase : RoomDatabase() {
@@ -29,6 +30,7 @@ abstract class SquadRelayDatabase : RoomDatabase() {
     abstract fun forumTopicDao(): ForumTopicDao
     abstract fun forumMessageDao(): ForumMessageDao
     abstract fun forumReadCursorDao(): ForumReadCursorDao
+    abstract fun forumOutboxDao(): ForumOutboxDao
     abstract fun latencySampleDao(): LatencySampleDao
 
     companion object {

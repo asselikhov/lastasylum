@@ -177,7 +177,11 @@ internal object OverlayGameStatusHudRefresh {
                         apiForumUnread,
                     )
                     val raw = maxOf(clientCounts?.rawServer ?: 0, apiForumUnread ?: 0)
-                    maxOf(effective, raw)
+                    TeamInboxBadgeDeriver.mergeForDisplay(
+                        effectiveUnread = effective,
+                        previouslyDisplayed = cachedForumUnread,
+                        rawServerUnread = raw,
+                    )
                 }
                 cachedForumUnread = forumUnread
                 cachedForumAtMs = now

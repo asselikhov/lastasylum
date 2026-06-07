@@ -37,6 +37,7 @@ class ForumListViewModel(
     private var reloadJob: Job? = null
     private var topicActivityJob: Job? = null
     private var openTopicId: String? = null
+    private val lastActivityMessageIdByTopic = mutableMapOf<String, String>()
 
     fun setOpenTopicId(topicId: String?) {
         openTopicId = topicId?.trim()?.takeIf { it.isNotEmpty() }
@@ -79,6 +80,12 @@ class ForumListViewModel(
     fun applyTopicActivity(event: TeamForumTopicActivityEvent) {
         if (event.senderUserId.trim() == currentUserId.trim()) return
         if (event.topicId == openTopicId) return
+        val messageId = event.messageId.trim()
+        if (messageId.isNotEmpty()) {
+            val prev = lastActivityMessageIdByTopic[event.topicId]
+            if (prev == messageId) return
+            lastActivityMessageIdByTopic[event.topicId] = messageId
+        }
         topicActivityJob?.cancel()
         topicActivityJob = viewModelScope.launch {
             delay(300)

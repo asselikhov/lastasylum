@@ -65,7 +65,7 @@ internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
         val mid = message._id?.trim().orEmpty()
         val rid = message.roomId.trim()
         if (mid.isNotEmpty() && rid.isNotEmpty()) {
-            if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.markMessageNewSeen(rid, mid)) {
+            if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.claimForChatList(rid, mid)) {
                 return
             }
         }

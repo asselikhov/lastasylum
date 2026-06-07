@@ -14,6 +14,7 @@ import com.lastasylum.alliance.data.chat.sync.ChatSyncEngine
 import com.lastasylum.alliance.data.chat.sync.asSyncGateway
 import com.lastasylum.alliance.data.telemetry.DeliveryLatencyTracker
 import com.lastasylum.alliance.data.telemetry.DeliveryTelemetryUploader
+import com.lastasylum.alliance.data.teams.forum.ForumOutbox
 import com.lastasylum.alliance.data.teams.forum.ForumRepository
 import com.lastasylum.alliance.overlay.OverlayHudBadgeBus
 import com.lastasylum.alliance.overlay.OverlayHudBadgeReducer
@@ -179,6 +180,10 @@ class AppContainer private constructor(context: Context) {
             repository = chatRepository.asSyncGateway(),
             latencyTracker = deliveryLatencyTracker,
         )
+    }
+
+    val forumOutbox: ForumOutbox by lazy {
+        ForumOutbox(db = squadRelayDatabase)
     }
 
     val forumRepository: ForumRepository by lazy {

@@ -180,12 +180,28 @@ class ForumRepository(
         mimeType: String,
     ): Result<UploadedTeamNewsImageDto> = teamsRepository.uploadForumImage(teamId, bytes, fileName, mimeType)
 
+    suspend fun uploadForumImageFromFile(
+        teamId: String,
+        file: java.io.File,
+        fileName: String,
+        mimeType: String,
+    ): Result<UploadedTeamNewsImageDto> =
+        teamsRepository.uploadForumImageFromFile(teamId, file, fileName, mimeType)
+
     suspend fun uploadForumFile(
         teamId: String,
         bytes: ByteArray,
         fileName: String,
         mimeType: String,
     ): Result<UploadedTeamNewsImageDto> = teamsRepository.uploadForumFile(teamId, bytes, fileName, mimeType)
+
+    suspend fun uploadForumFileFromFile(
+        teamId: String,
+        file: java.io.File,
+        fileName: String,
+        mimeType: String,
+    ): Result<UploadedTeamNewsImageDto> =
+        teamsRepository.uploadForumFileFromFile(teamId, file, fileName, mimeType)
 
     suspend fun createForumTopic(teamId: String, title: String): Result<TeamForumTopicDto> =
         teamsRepository.createForumTopic(teamId, title)
@@ -230,6 +246,14 @@ class ForumRepository(
         }
         result
     }
+
+    suspend fun syncMessages(
+        userId: String,
+        teamId: String,
+        topicId: String,
+        force: Boolean = false,
+    ): Result<List<TeamForumMessageDto>> =
+        listForumMessages(userId, teamId, topicId, bypassCache = force)
 
     suspend fun postForumMessageWithRetries(
         userId: String,

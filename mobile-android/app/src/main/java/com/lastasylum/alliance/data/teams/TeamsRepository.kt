@@ -5,7 +5,9 @@ import com.lastasylum.alliance.data.chat.ToggleReactionRequest
 import kotlinx.coroutines.delay
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
 
 class TeamsRepository(
     private val teamsApi: TeamsApi,
@@ -178,6 +180,18 @@ class TeamsRepository(
             teamsApi.uploadForumAttachment(teamId, part)
         }
 
+    suspend fun uploadForumImageFromFile(
+        teamId: String,
+        file: File,
+        fileName: String,
+        mimeType: String,
+    ): Result<UploadedTeamNewsImageDto> =
+        runCatching {
+            val body = file.asRequestBody(mimeType.toMediaTypeOrNull())
+            val part = MultipartBody.Part.createFormData("file", fileName, body)
+            teamsApi.uploadForumAttachment(teamId, part)
+        }
+
     suspend fun uploadForumFile(
         teamId: String,
         bytes: ByteArray,
@@ -190,10 +204,40 @@ class TeamsRepository(
             teamsApi.uploadForumFileAttachment(teamId, part)
         }
 
+    suspend fun uploadForumFileFromFile(
+        teamId: String,
+        file: File,
+        fileName: String,
+        mimeType: String,
+    ): Result<UploadedTeamNewsImageDto> =
+        runCatching {
+            val body = file.asRequestBody(mimeType.toMediaTypeOrNull())
+            val part = MultipartBody.Part.createFormData("file", fileName, body)
+            teamsApi.uploadForumFileAttachment(teamId, part)
+        }
+
     fun invalidateForumTopicsCache(teamId: String) {
         val key = teamId.trim()
         synchronized(forumTopicsResultCache) {
             forumTopicsResultCache.remove(key)
+        }
+    }
+
+    fun patchForumTopicReadInCache(teamId: String, topicId: String, messageId: String) {
+        val key = teamId.trim()
+        val tpid = topicId.trim()
+        val mid = messageId.trim()
+        if (key.isEmpty() || tpid.isEmpty() || mid.isEmpty()) return
+        synchronized(forumTopicsResultCache) {
+            val entry = forumTopicsResultCache[key] ?: return
+            val idx = entry.topics.indexOfFirst { it.id == tpid }
+            if (idx < 0) return
+            val updated = entry.topics.toMutableList()
+            updated[idx] = updated[idx].copy(unreadCount = 0, lastReadMessageId = mid)
+            forumTopicsResultCache[key] = entry.copy(
+                topics = updated,
+                fetchedAtMs = System.currentTimeMillis(),
+            )
         }
     }
 
@@ -286,7 +330,7 @@ class TeamsRepository(
             )
             Unit
         }.also { result ->
-            if (result.isSuccess) invalidateForumTopicsCache(teamId)
+            if (result.isSuccess) patchForumTopicReadInCache(teamId, topicId, messageId)
         }
 
     suspend fun getForumPeerReadCursor(

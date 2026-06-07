@@ -2795,7 +2795,7 @@ class CombatOverlayService : Service() {
         val mid = messageId?.trim().orEmpty()
         val hubId = AppContainer.from(this).chatRoomPreferences.getHubRoomId()?.trim().orEmpty()
         if (mid.isNotEmpty() && hubId.isNotEmpty()) {
-            if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.markMessageNewSeen(hubId, mid)) {
+            if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.claimForUnreadBump(hubId, mid)) {
                 return
             }
         }
@@ -2913,13 +2913,7 @@ class CombatOverlayService : Service() {
         val applyViaOverlayPanel = overlayChatTeamPanelVisible &&
             (!activityChatViewModelHandlesUnread() || selectedId == msgRoomId)
         if (!roomSelected && !applyViaOverlayPanel) return
-        val mid = msg._id?.trim().orEmpty()
-        if (mid.isNotEmpty() && msgRoomId.isNotEmpty()) {
-            if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.markMessageNewSeen(msgRoomId, mid)) {
-                return
-            }
-        }
-        vm.applyOverlayChatMessageFromSocket(msg)
+        vm.applyOverlayIncomingMessage(msg)
     }
 
     private fun forwardOverlayRaidMessageToViewModel(msg: ChatMessage, pendingId: String? = null) {

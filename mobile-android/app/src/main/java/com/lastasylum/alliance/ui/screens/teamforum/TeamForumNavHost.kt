@@ -286,6 +286,20 @@ fun TeamForumNavHost(
     LaunchedEffect(activeMarkReadAction) {
         onRegisterMarkReadAction(activeMarkReadAction)
     }
+    LaunchedEffect(teamId, currentUserId) {
+        val app = AppContainer.from(context.applicationContext)
+        ForumMessageStash.setOverflowListener { overflowTeamId, overflowTopicId ->
+            if (overflowTeamId.trim() != teamId.trim()) return@setOverflowListener
+            val uid = currentUserId.trim()
+            if (uid.isEmpty()) return@setOverflowListener
+            scope.launch {
+                app.forumRepository.syncMessages(uid, overflowTeamId, overflowTopicId, force = true)
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { ForumMessageStash.setOverflowListener(null) }
+    }
     LaunchedEffect(listRefreshNonce) {
         if (listRefreshNonce > 0) onForumInboxChanged()
     }

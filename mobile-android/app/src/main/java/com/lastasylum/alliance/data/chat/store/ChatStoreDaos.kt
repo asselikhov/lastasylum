@@ -150,6 +150,32 @@ interface ForumReadCursorDao {
 }
 
 @Dao
+interface ForumOutboxDao {
+    @Query("SELECT * FROM forum_outbox WHERE userId = :userId AND state IN ('pending','sending','failed') ORDER BY createdAtMs ASC")
+    suspend fun getResumable(userId: String): List<ForumOutboxEntity>
+
+    @Query("SELECT * FROM forum_outbox WHERE clientMessageId = :clientMessageId LIMIT 1")
+    suspend fun getByClientId(clientMessageId: String): ForumOutboxEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(row: ForumOutboxEntity)
+
+    @Query("DELETE FROM forum_outbox WHERE clientMessageId = :clientMessageId")
+    suspend fun delete(clientMessageId: String)
+
+    @Query(
+        """
+        UPDATE forum_outbox SET state = 'sending'
+        WHERE clientMessageId = :clientMessageId AND state IN ('pending','failed')
+        """,
+    )
+    suspend fun tryMarkSending(clientMessageId: String): Int
+
+    @Query("DELETE FROM forum_outbox WHERE userId = :userId")
+    suspend fun deleteForUser(userId: String)
+}
+
+@Dao
 interface LatencySampleDao {
     @Insert
     suspend fun insert(sample: LatencySampleEntity)

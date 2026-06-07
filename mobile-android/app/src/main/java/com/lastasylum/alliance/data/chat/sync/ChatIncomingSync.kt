@@ -1,5 +1,7 @@
 package com.lastasylum.alliance.data.chat.sync
 
+import android.util.Log
+import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
@@ -125,7 +127,12 @@ class ChatIncomingSync(
         } else {
             batch.filter { it.roomId.trim() == selectedRoom }
         }.filterNot { host.shouldBlockOwnOutgoingRealtime(it) }
-        if (scopedBatch.isEmpty()) return
+        if (scopedBatch.isEmpty()) {
+            if (batch.isNotEmpty() && !BuildConfig.DEBUG) {
+                Log.w("ChatIncomingSync", "non_empty_batch_filtered_empty input=${batch.size}")
+            }
+            return
+        }
         scope.launch(Dispatchers.Default) {
             incomingApplyMutex.withLock {
                 val work = synchronized(chatMutationLock) {

@@ -926,7 +926,7 @@ internal fun ChatViewModel.shouldTrackUnreadForMessageImpl(roomId: String, messa
     }
 
 internal fun ChatViewModel.bumpRoomUnreadLocallyImpl(roomId: String, messageId: String) {
-        if (!ChatSocketIngress.markMessageNewSeen(roomId, messageId)) return
+        if (!ChatSocketIngress.claimForUnreadBump(roomId, messageId)) return
         val room = vmState.value.rooms.find { it.id == roomId }
         val effectiveBase = room?.let { effectiveUnreadForRoom(it) } ?: 0
         val prevDisplayed = room?.unreadCount ?: 0

@@ -98,6 +98,7 @@ class ChatRealtimeSubscriber(
         )
     }
 
+    /** Primary VM listener — must register before overlay listeners for correct fanout order. */
     fun connectRealtimeRooms(
         roomIds: List<String>,
         onMessage: (ChatMessage) -> Unit,

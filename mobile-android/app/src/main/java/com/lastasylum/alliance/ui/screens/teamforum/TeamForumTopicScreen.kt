@@ -130,6 +130,7 @@ import com.lastasylum.alliance.ui.chat.scrollReverseChatCompensateExpand
 import com.lastasylum.alliance.ui.chat.scrollReverseChatRevealLatest
 import com.lastasylum.alliance.ui.chat.scrollTimelineItemToViewportCenter
 import com.lastasylum.alliance.ui.chat.shouldBlockOwnForumOutgoingRealtime
+import com.lastasylum.alliance.ui.chat.FORUM_GAP_RECONCILE_THRESHOLD_MS
 import com.lastasylum.alliance.ui.chat.shouldTriggerGapReconcile
 import com.lastasylum.alliance.ui.chat.stabilizeComposerImageUris
 import com.lastasylum.alliance.ui.chat.toDisplayChatMessage
@@ -137,6 +138,8 @@ import com.lastasylum.alliance.ui.components.CenteredScreenLoading
 import com.lastasylum.alliance.ui.components.premium.PremiumGlassBar
 import com.lastasylum.alliance.ui.components.team.ForumTopicCardTokens
 import com.lastasylum.alliance.ui.teamforum.ForumListViewModel
+import com.lastasylum.alliance.ui.teamforum.ForumTopicViewModel
+import com.lastasylum.alliance.data.teams.forum.ForumOutboxEntry
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
@@ -235,6 +238,9 @@ fun TeamForumTopicScreen(
 
     val listViewModel: ForumListViewModel = viewModel(key = "forum_list_$teamId") {
         ForumListViewModel.create(context.applicationContext as Application, teamId)
+    }
+    val topicViewModel: ForumTopicViewModel = viewModel(key = "forum_topic_${teamId}_$topicId") {
+        ForumTopicViewModel(context.applicationContext as Application)
     }
 
     DisposableEffect(teamId, topicId) {
@@ -578,7 +584,7 @@ fun TeamForumTopicScreen(
         forumPrefs.setLastReadMessageId(teamId, topicId, messageId)
     }
 
-    var markForumReadJob by remember(teamId, topicId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val forumMarkReadCoalescer = remember { topicViewModel.markReadCoalescer }
 
     fun notifyForumInboxAfterRead(messageId: String) {
         listViewModel.applyTopicReadLocal(topicId, messageId)
@@ -601,23 +607,21 @@ fun TeamForumTopicScreen(
     }
 
     fun scheduleMarkForumTopicRead(messageId: String) {
-        mergeReadCursor(messageId)
-        markForumReadJob?.cancel()
-        markForumReadJob = scope.launch {
-            delay(320)
-            forumRepository.markForumTopicRead(teamId, topicId, messageId)
-                .onSuccess { notifyForumInboxAfterRead(messageId) }
-        }
+        forumMarkReadCoalescer.schedule(
+            topicId = topicId,
+            messageId = messageId,
+            getCurrentCursor = { lastReadCursor },
+            onOptimisticAdvance = { _, mid -> mergeReadCursor(mid) },
+            onNetworkMarkRead = { _, mid ->
+                forumRepository.markForumTopicRead(teamId, topicId, mid)
+                    .onSuccess { notifyForumInboxAfterRead(mid) }
+            },
+        )
     }
 
     fun flushPendingMarkForumTopicRead() {
-        markForumReadJob?.cancel()
-        markForumReadJob = null
-        val cursor = lastReadCursor?.trim().orEmpty()
-        if (cursor.isBlank()) return
         scope.launch {
-            forumRepository.markForumTopicRead(teamId, topicId, cursor)
-                .onSuccess { notifyForumInboxAfterRead(cursor) }
+            forumMarkReadCoalescer.flushAndAwait(topicId)
         }
     }
 
@@ -879,7 +883,13 @@ fun TeamForumTopicScreen(
         }
         if (source == "socket") {
             val visibleNewestId = messages.lastOrNull()?.id
-            if (shouldTriggerGapReconcile(visibleNewestId, msg.id, knownForumMessageIds)) {
+            if (shouldTriggerGapReconcile(
+                    visibleNewestId,
+                    msg.id,
+                    knownForumMessageIds,
+                    thresholdMs = FORUM_GAP_RECONCILE_THRESHOLD_MS,
+                )
+            ) {
                 if (BuildConfig.DEBUG) {
                     Log.i("SR_Forum", "gapReconcile team=$teamId topic=$topicId trigger=socket_jump")
                 }
@@ -931,6 +941,12 @@ fun TeamForumTopicScreen(
             } else {
                 markTopicReadToLatest()
             }
+        }
+    }
+
+    LaunchedEffect(currentUserId, teamId, topicId) {
+        topicViewModel.resumePendingOutbox(currentUserId) { confirmed ->
+            mergeNew(confirmed, source = "outbox")
         }
     }
 
@@ -1189,13 +1205,7 @@ fun TeamForumTopicScreen(
             ) { tokenStore.getAccessToken() }
             onDispose {
                 if (overlayUi) {
-                    markForumReadJob?.cancel()
-                    val cursor = lastReadCursor?.trim().orEmpty()
-                    if (cursor.isNotEmpty()) {
-                        scope.launch {
-                            forumRepository.markForumTopicRead(teamId, topicId, cursor)
-                        }
-                    }
+                    scope.launch { forumMarkReadCoalescer.flushAndAwait(topicId) }
                 } else {
                     markTopicReadToLatest(forceSync = true)
                 }
@@ -1660,6 +1670,22 @@ fun TeamForumTopicScreen(
                                     }
                                 uploadingImage = false
                             }
+                            val outboxEntry = ForumOutboxEntry(
+                                clientMessageId = clientMessageId,
+                                userId = currentUserId,
+                                teamId = teamId,
+                                topicId = topicId,
+                                pendingMessageId = optimistic.id,
+                                text = trimmed,
+                                replyToMessageId = replyId,
+                                imageFileIds = imageFileIds,
+                                fileFileId = apkFileId,
+                                state = "pending",
+                                attempts = 0,
+                                createdAtMs = System.currentTimeMillis(),
+                                lastError = null,
+                            )
+                            topicViewModel.persistOutbox(outboxEntry)
                             forumRepository.postForumMessageWithRetries(
                                 currentUserId,
                                 teamId,
@@ -1671,8 +1697,16 @@ fun TeamForumTopicScreen(
                                 fileFileId = apkFileId,
                                 clientMessageId = clientMessageId,
                             )
-                                .onSuccess { mergeNew(it, source = "http") }
+                                .onSuccess {
+                                    topicViewModel.markOutboxSent(clientMessageId)
+                                    mergeNew(it, source = "http")
+                                }
                                 .onFailure { e ->
+                                    topicViewModel.markOutboxFailed(
+                                        clientMessageId,
+                                        e.message ?: "send_failed",
+                                        currentUserId,
+                                    )
                                     removePendingForumOutgoing(messages, clientMessageId)
                                     inFlightForumClientMessageIds =
                                         inFlightForumClientMessageIds - clientMessageId
@@ -1707,6 +1741,22 @@ fun TeamForumTopicScreen(
                         replyToMessage = null
                         sending = false
                         scope.launch {
+                            val outboxEntry = ForumOutboxEntry(
+                                clientMessageId = clientMessageId,
+                                userId = currentUserId,
+                                teamId = teamId,
+                                topicId = topicId,
+                                pendingMessageId = optimistic.id,
+                                text = payload,
+                                replyToMessageId = replyId,
+                                imageFileIds = null,
+                                fileFileId = null,
+                                state = "pending",
+                                attempts = 0,
+                                createdAtMs = System.currentTimeMillis(),
+                                lastError = null,
+                            )
+                            topicViewModel.persistOutbox(outboxEntry)
                             forumRepository.postForumMessageWithRetries(
                                 userId = currentUserId,
                                 teamId = teamId,
@@ -1717,8 +1767,16 @@ fun TeamForumTopicScreen(
                                 imageFileIds = null,
                                 clientMessageId = clientMessageId,
                             )
-                                .onSuccess { mergeNew(it, source = "http") }
+                                .onSuccess {
+                                    topicViewModel.markOutboxSent(clientMessageId)
+                                    mergeNew(it, source = "http")
+                                }
                                 .onFailure { e ->
+                                    topicViewModel.markOutboxFailed(
+                                        clientMessageId,
+                                        e.message ?: "send_failed",
+                                        currentUserId,
+                                    )
                                     removePendingForumOutgoing(messages, clientMessageId)
                                     inFlightForumClientMessageIds =
                                         inFlightForumClientMessageIds - clientMessageId
@@ -2049,10 +2107,9 @@ private suspend fun uploadSingleForumImageFromUri(
                     res.getString(R.string.chat_attachment_unsupported),
                 ),
             )
-        val bytes = tmp.readBytes()
         val name =
             "forum_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}.${guessExt(mime)}"
-        val uploaded = forumRepository.uploadForumImage(teamId, bytes, name, mime).getOrElse { err ->
+        val uploaded = forumRepository.uploadForumImageFromFile(teamId, tmp, name, mime).getOrElse { err ->
             return@withContext Result.failure(err)
         }
         Result.success(uploaded.fileId to uploaded.url)
@@ -2085,10 +2142,9 @@ private suspend fun uploadForumApkFromUri(
                 IllegalStateException(res.getString(R.string.chat_attachment_prepare_failed)),
             )
         }
-        val bytes = tmp.readBytes()
-        val uploaded = forumRepository.uploadForumFile(
+        val uploaded = forumRepository.uploadForumFileFromFile(
             teamId = teamId,
-            bytes = bytes,
+            file = tmp,
             fileName = safeName,
             mimeType = "application/vnd.android.package-archive",
         ).getOrElse { return@withContext Result.failure(it) }

@@ -105,7 +105,13 @@ internal object OverlayColdStartHydrator {
                 val forumCounts = forumTopics?.let { topics ->
                     TeamInboxBadgeDeriver.computeForumUnreadCounts(topics, localForumRead)
                 }
-                val forumUnread = forumCounts?.let { maxOf(it.effective, it.rawServer) } ?: 0
+                val forumUnread = forumCounts?.let { counts ->
+                    TeamInboxBadgeDeriver.mergeForDisplay(
+                        effectiveUnread = counts.effective,
+                        previouslyDisplayed = 0,
+                        rawServerUnread = counts.rawServer,
+                    )
+                } ?: 0
                 OverlayGameStatusHudRefresh.seedBadgesFromDisk(teamId, newsUnread, forumUnread)
                 seededBadges = true
                 hasAnyDisk = true

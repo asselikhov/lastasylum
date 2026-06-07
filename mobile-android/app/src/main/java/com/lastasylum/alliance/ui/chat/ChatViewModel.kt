@@ -40,8 +40,9 @@ import com.lastasylum.alliance.data.chat.store.ChatRoomStoreBindings
 import com.lastasylum.alliance.data.chat.store.MessageStore
 import com.lastasylum.alliance.data.chat.sync.CHAT_ACTIVE_ROOM_RECONCILE_INTERVAL_MS
 import com.lastasylum.alliance.data.chat.sync.CHAT_BACKGROUND_MESSAGE_REFRESH_DEFER_MS
-import com.lastasylum.alliance.data.chat.sync.CHAT_INCOMING_SOCKET_DEBOUNCE_BURST_MS
+import com.lastasylum.alliance.data.chat.sync.CHAT_INCOMING_SOCKET_DEBOUNCE_SINGLE_MS
 import com.lastasylum.alliance.data.chat.sync.CHAT_INCOMING_SOCKET_DEBOUNCE_MS
+import com.lastasylum.alliance.data.chat.sync.CHAT_INCOMING_SOCKET_DEBOUNCE_BURST_MS
 import com.lastasylum.alliance.data.chat.sync.CHAT_INITIAL_PAGE_SIZE
 import com.lastasylum.alliance.data.chat.sync.CHAT_PAGE_SIZE
 import com.lastasylum.alliance.data.chat.sync.CHAT_ROOMS_SYNC_ON_RESUME_TTL_MS
@@ -552,9 +553,11 @@ class ChatViewModel(
                     val debounceMs = when {
                         pending.size >= 4 -> CHAT_INCOMING_SOCKET_DEBOUNCE_BURST_MS
                         pending.size >= 2 -> CHAT_INCOMING_SOCKET_DEBOUNCE_MS / 2
+                        overlayChatPanelVisible || isChatTabActive ->
+                            CHAT_INCOMING_SOCKET_DEBOUNCE_SINGLE_MS
                         else -> CHAT_INCOMING_SOCKET_DEBOUNCE_MS
                     }
-                    delay(debounceMs)
+                    if (debounceMs > 0L) delay(debounceMs)
                     flushPending()
                 }
             }
@@ -745,6 +748,34 @@ class ChatViewModel(
         }
     }
 
+    /** Overlay socket → visible list without re-claiming [ChatSocketIngress] (strip path is separate). */
+    fun applyOverlayIncomingMessage(message: ChatMessage) {
+        if (message.isCompactReactionSocketUpdate()) {
+            applyKnownChatMessageUpdate(message)
+            return
+        }
+        val roomId = message.roomId.trim()
+        if (roomId.isBlank()) return
+        if (isKnownChatMessageId(message._id)) {
+            applyKnownChatMessageUpdate(message)
+            return
+        }
+        val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
+        if (cid != null && message.senderId.trim() == currentUserId.trim()) {
+            vmScope.launch(Dispatchers.IO) {
+                chatSyncEngine.onSocketMessageConfirmed(
+                    currentUserId,
+                    message.roomId,
+                    message,
+                    cid,
+                )
+            }
+        }
+        if (shouldBlockOwnOutgoingRealtime(message)) return
+        if (!isIncomingMessageVisible(message)) return
+        dispatchIncomingBatch(listOf(message))
+    }
+
     /** Overlay socket while in-game chat panel is open (primary listener may be absent). */
     fun applyOverlayChatMessageFromSocket(message: ChatMessage) {
         if (message.isCompactReactionSocketUpdate()) {
@@ -826,7 +857,7 @@ class ChatViewModel(
 
     internal fun queuePendingUnreadBump(roomId: String, messageId: String) {
         pendingUnreadBumps.addLast(roomId to messageId)
-        while (pendingUnreadBumps.size > 64) {
+        while (pendingUnreadBumps.size > 512) {
             pendingUnreadBumps.removeFirst()
         }
     }

@@ -1,21 +1,21 @@
 package com.lastasylum.alliance.data.teams
 
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 internal class InFlightDedup<K, V> {
     private val mutex = Mutex()
-    private var inFlight: Pair<K, CompletableDeferred<Result<V>>>? = null
+    private val inFlight = ConcurrentHashMap<K, CompletableDeferred<Result<V>>>()
 
     suspend fun run(key: K, block: suspend () -> Result<V>): Result<V> {
         val (isLeader, deferred) = mutex.withLock {
-            val current = inFlight
-            if (current?.first == key) {
-                return@withLock false to current.second
+            inFlight[key]?.let { existing ->
+                return@withLock false to existing
             }
             val next = CompletableDeferred<Result<V>>()
-            inFlight = key to next
+            inFlight[key] = next
             true to next
         }
         return if (isLeader) {
@@ -29,9 +29,7 @@ internal class InFlightDedup<K, V> {
                 failure
             } finally {
                 mutex.withLock {
-                    if (inFlight?.second === deferred) {
-                        inFlight = null
-                    }
+                    inFlight.remove(key, deferred)
                 }
             }
         } else {

@@ -25,8 +25,16 @@ class ChatRegressionChecklistTest {
             "Overlay chat panel close flushes debounced mark-read before badge reconcile",
             "Forum tab badge clears while reading topic without navigating back",
             "Forum list topic row unread zeroes immediately after mark-read in topic",
+            "Forum kill app mid-send completes via outbox after reopen",
+            "Hub read locally shows overlay chip zero with stale DTO",
+            "Forum stash overflow triggers force sync without message loss",
         )
-        assertTrue(scenarios.size >= 15)
+        assertTrue(scenarios.size >= 18)
+    }
+
+    @Test
+    fun forumGapReconcileThreshold_isFortyFiveSeconds() {
+        assertEquals(45_000L, FORUM_GAP_RECONCILE_THRESHOLD_MS)
     }
 
     @Test

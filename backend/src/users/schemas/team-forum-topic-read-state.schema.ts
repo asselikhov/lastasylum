@@ -20,6 +20,10 @@ export class TeamForumTopicReadState {
 
   @Prop({ type: String, required: true })
   lastReadMessageId: string;
+
+  /** Materialized unread count; maintained on postMessage / markTopicRead. */
+  @Prop({ type: Number, default: 0 })
+  unreadCount: number;
 }
 
 export const TeamForumTopicReadStateSchema = SchemaFactory.createForClass(

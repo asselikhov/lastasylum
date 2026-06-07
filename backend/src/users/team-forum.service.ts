@@ -500,13 +500,38 @@ export class TeamForumService {
     userId: string,
     topicIds: Types.ObjectId[],
   ): Promise<Map<string, string>> {
+    const details = await this.readStateDetailsByTopicIds(userId, topicIds);
+    return new Map(
+      [...details.entries()].map(([topicId, state]) => [
+        topicId,
+        state.lastReadMessageId,
+      ]),
+    );
+  }
+
+  private async readStateDetailsByTopicIds(
+    userId: string,
+    topicIds: Types.ObjectId[],
+  ): Promise<
+    Map<string, { lastReadMessageId: string; unreadCount: number | null }>
+  > {
     if (topicIds.length === 0) return new Map();
     const readStates = await this.topicReadStateModel
       .find({ userId, topicId: { $in: topicIds } })
+      .select('topicId lastReadMessageId unreadCount')
       .lean()
       .exec();
     return new Map(
-      readStates.map((r) => [r.topicId.toString(), r.lastReadMessageId]),
+      readStates.map((r) => [
+        r.topicId.toString(),
+        {
+          lastReadMessageId: r.lastReadMessageId,
+          unreadCount:
+            r.unreadCount != null
+              ? Math.max(0, Number(r.unreadCount))
+              : null,
+        },
+      ]),
     );
   }
 
@@ -608,8 +633,15 @@ export class TeamForumService {
     const docById = new Map(
       (topicDocs ?? []).map((doc) => [doc._id.toString(), doc]),
     );
+    const stateDetails = await this.readStateDetailsByTopicIds(userId, topicIds);
     const readMap =
-      lastReadMap ?? (await this.readStatesByTopicIds(userId, topicIds));
+      lastReadMap ??
+      new Map(
+        [...stateDetails.entries()].map(([topicId, state]) => [
+          topicId,
+          state.lastReadMessageId,
+        ]),
+      );
     const needsHeavy: Types.ObjectId[] = [];
 
     for (const topicId of topicIds) {
@@ -627,6 +659,11 @@ export class TeamForumService {
         new Types.ObjectId(lastRead) >= lastMsgId
       ) {
         out.set(id, 0);
+        continue;
+      }
+      const materialized = stateDetails.get(id)?.unreadCount;
+      if (materialized != null && lastRead) {
+        out.set(id, materialized);
         continue;
       }
       needsHeavy.push(topicId);
@@ -682,7 +719,7 @@ export class TeamForumService {
       await this.topicReadStateModel
         .updateOne(
           { topicId: topOid, userId },
-          { $set: { lastReadMessageId: messageId } },
+          { $set: { lastReadMessageId: messageId, unreadCount: 0 } },
           { upsert: true },
         )
         .exec();
@@ -1760,6 +1797,16 @@ export class TeamForumService {
     topic.lastMessageSenderUserId = doc.senderUserId;
     topic.lastMessageSenderUsername = doc.senderUsername;
     await topic.save();
+    const memberIds = await this.teams.listSquadMemberUserIds(teamId);
+    const recipientIds = memberIds.filter((id) => id !== userId);
+    if (recipientIds.length > 0) {
+      await this.topicReadStateModel
+        .updateMany(
+          { topicId: topOid, userId: { $in: recipientIds } },
+          { $inc: { unreadCount: 1 } },
+        )
+        .exec();
+    }
     await this.invalidateUnreadSumCacheForTeam(teamId);
     const row = this.messageRow(doc, replyTarget, userId);
     return {

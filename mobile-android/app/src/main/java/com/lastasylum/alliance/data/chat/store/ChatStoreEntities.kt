@@ -103,6 +103,26 @@ data class ForumReadCursorEntity(
 )
 
 @Entity(
+    tableName = "forum_outbox",
+    indices = [Index(value = ["teamId", "topicId"]), Index("state")],
+)
+data class ForumOutboxEntity(
+    @PrimaryKey val clientMessageId: String,
+    val userId: String,
+    val teamId: String,
+    val topicId: String,
+    val pendingMessageId: String,
+    val text: String,
+    val replyToMessageId: String?,
+    val imageFileIdsJson: String?,
+    val fileFileId: String?,
+    val state: String,
+    val attempts: Int,
+    val createdAtMs: Long,
+    val lastError: String? = null,
+)
+
+@Entity(
     tableName = "latency_samples",
     indices = [Index("spanType"), Index("startedAtMs")],
 )
