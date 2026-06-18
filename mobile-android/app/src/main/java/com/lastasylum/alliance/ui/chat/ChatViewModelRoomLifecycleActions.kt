@@ -374,9 +374,11 @@ internal fun ChatViewModel.onChatTabResumedImpl() {
         isChatTabActive = true
         reconnectRealtimeIfNeeded()
         syncReadStateFromPreferences()
+        val roomIdEarly = vmState.value.selectedRoomId?.trim().orEmpty()
+        if (roomIdEarly.isNotEmpty()) {
+            rehydrateSelectedRoomMessagesFromCache()
+        }
         vmScope.launch {
-            // Let the tab compose and draw once before room sync / cache hydration.
-            delay(32)
             if (!isChatTabActive) return@launch
             refreshStickerPackAccess()
             val cachedRooms = ChatSessionCache.getFreshRooms()
@@ -398,7 +400,8 @@ internal fun ChatViewModel.onChatTabResumedImpl() {
             if (roomId.isEmpty()) return@launch
             rehydrateSelectedRoomMessagesFromCache()
             refreshPinBarForSelectedRoom()
-            refreshMessagesInBackground(roomId, force = true)
+            val socketLive = vmRepository.isChatSocketConnected()
+            refreshMessagesInBackground(roomId, force = !socketLive)
             if (vmState.value.selectedRoomId.isNullOrBlank()) {
                 ensureAllianceHubRoomSelected()
             }

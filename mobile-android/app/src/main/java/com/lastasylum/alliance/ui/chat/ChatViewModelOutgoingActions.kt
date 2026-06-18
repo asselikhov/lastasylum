@@ -88,7 +88,9 @@ internal fun ChatViewModel.confirmOutgoingByClientMessageIdImpl(
     val cid = clientMessageId.trim()
     if (cid.isEmpty()) return
     val normalizedSent = sent.withOutgoingClientMessageId(cid)
-    vmScope.launch {
+    val preferFast = isChatRealtimeViewActive()
+    val dispatcher = if (preferFast) Dispatchers.Main.immediate else Dispatchers.Default
+    vmScope.launch(dispatcher) {
         incomingApplyMutex.withLock {
             val alreadyConfirmed = cid in confirmedOutgoingClientMessageIds
             val pendingId = resolvePendingOutgoingIdForConfirm(

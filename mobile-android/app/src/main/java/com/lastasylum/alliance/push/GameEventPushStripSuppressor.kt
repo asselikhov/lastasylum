@@ -1,7 +1,7 @@
 package com.lastasylum.alliance.push
 
 /**
- * Offline game-event pushes should not replay as overlay strip cards when the player enters the game.
+ * Offline pushes should not replay as overlay strip cards when the player enters the game.
  */
 object GameEventPushStripSuppressor {
     private const val MAX_ENTRIES = 64

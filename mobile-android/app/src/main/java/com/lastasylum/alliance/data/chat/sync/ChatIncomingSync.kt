@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.data.chat.sync
 
+import android.os.Looper
 import android.util.Log
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -80,6 +81,8 @@ class ChatIncomingSync(
         fun overlayChatPanelVisible(): Boolean
         fun preferFastIncomingApply(): Boolean
 
+        fun rehydrateSelectedRoomFromStashNow()
+
         fun filterMessagesForRoom(messages: List<ChatMessage>, roomId: String): List<ChatMessage>
 
         /** @return sanitized messages written to UI, or null when commit was skipped. */
@@ -141,9 +144,8 @@ class ChatIncomingSync(
             }
             return
         }
-        val applyDispatcher = if (
-            scopedBatch.size == 1 && host.preferFastIncomingApply()
-        ) {
+        val fastMainApply = scopedBatch.size == 1 && host.preferFastIncomingApply()
+        val applyDispatcher = if (fastMainApply) {
             Dispatchers.Main.immediate
         } else {
             Dispatchers.Default
@@ -176,10 +178,10 @@ class ChatIncomingSync(
                         chatMessagesListContentEqual(cappedMessages, work.cappedMessages)
                     },
                 )
-                withContext(Dispatchers.Main) {
+                val commitUi: () -> Unit = commitUi@{
                     if (roomId != null && host.selectedRoomId() != roomId) {
                         scopedBatch.forEach { host.stashIncomingMessageForRoom(it) }
-                        return@withContext
+                        return@commitUi
                     }
                     val snapshot = host.stateSnapshot()
                     val batchHasPeer = scopedBatch.any { message ->
@@ -191,7 +193,7 @@ class ChatIncomingSync(
                         !batchHasPeer &&
                         chatMessagesListContentEqual(snapshot.messages, cappedMessages)
                     ) {
-                        return@withContext
+                        return@commitUi
                     }
                     val committedMessages = host.commitIncomingBatchUi(
                         roomId = roomId,
@@ -218,7 +220,15 @@ class ChatIncomingSync(
                             host.messageIdIndex().putAll(indexSnapshot.messageIdIndex)
                         }
                         scopedBatch.forEach { host.stashIncomingMessageForRoom(it) }
+                        if (host.preferFastIncomingApply()) {
+                            host.rehydrateSelectedRoomFromStashNow()
+                        }
                     }
+                }
+                if (fastMainApply && Looper.myLooper() == Looper.getMainLooper()) {
+                    commitUi()
+                } else {
+                    withContext(Dispatchers.Main) { commitUi() }
                 }
             }
         }

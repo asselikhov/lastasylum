@@ -6,8 +6,8 @@ import org.junit.Test
 
 class OverlayRaidStripIngestPolicyTest {
     @Test
-    fun inbound_ingest_when_overlay_listener_active_without_ingame_probe() {
-        assertTrue(
+    fun inbound_drop_when_only_listener_without_ingame() {
+        assertFalse(
             OverlayRaidStripIngestPolicy.shouldIngestInbound(
                 overlayRealtimeListenerActive = true,
                 overlayStripEnabled = true,

@@ -108,6 +108,10 @@ import java.util.UUID
 private const val PEER_READ_CURSOR_POLL_DELAY_MS = 2_000L
 internal const val CHAT_LIST_DERIVE_DEBOUNCE_MS = 24L
 private const val CHAT_DERIVE_DEBOUNCE_MS = CHAT_LIST_DERIVE_DEBOUNCE_MS
+
+/** Active chat tab or overlay HUD chat — skip debounce/coalesce on the visible timeline. */
+internal fun ChatViewModel.isChatRealtimeViewActive(): Boolean =
+    isChatTabActive || overlayChatPanelVisible
 internal const val CHAT_PROFILE_GATE_TTL_MS = 5 * 60_000L
 private const val PROFILE_GATE_TTL_MS = CHAT_PROFILE_GATE_TTL_MS
 
@@ -396,7 +400,11 @@ class ChatViewModel(
         override fun overlayChatPanelVisible(): Boolean = overlayChatPanelVisible
 
         override fun preferFastIncomingApply(): Boolean =
-            isChatTabActive || overlayChatPanelVisible
+            this@ChatViewModel.isChatRealtimeViewActive()
+
+        override fun rehydrateSelectedRoomFromStashNow() {
+            rehydrateSelectedRoomMessagesFromCache()
+        }
 
         override fun filterMessagesForRoom(messages: List<ChatMessage>, roomId: String): List<ChatMessage> =
             this@ChatViewModel.filterMessagesForRoom(messages, roomId)
@@ -838,7 +846,6 @@ class ChatViewModel(
         if (!isIncomingMessageVisible(message)) return
         dispatchIncomingBatch(listOf(message))
     }
-
     /** Overlay socket while in-game chat panel is open (primary listener may be absent). */
     fun applyOverlayChatMessageFromSocket(message: ChatMessage) {
         if (message.isCompactReactionSocketUpdate()) {
@@ -1293,8 +1300,6 @@ class ChatViewModel(
             reconnectRealtimeIfNeeded()
             viewModelScope.launch {
                 if (!overlayChatPanelVisible) return@launch
-                delay(32)
-                if (!overlayChatPanelVisible) return@launch
                 mergeSessionCacheForSelectedRoom()
                 rehydrateSelectedRoomMessagesFromCache()
                 refreshPinBarForSelectedRoom()
@@ -1304,7 +1309,7 @@ class ChatViewModel(
                 recomputeRoomUnreadBadges()
                 val roomId = _state.value.selectedRoomId
                 if (!roomId.isNullOrBlank()) {
-                    refreshMessagesInBackground(roomId, force = true)
+                    refreshMessagesInBackground(roomId, force = !repository.isChatSocketConnected())
                 }
                 if (!overlayHubReadyForPanel()) {
                     scheduleBootstrap(preferAllianceHubRoom = true, force = false)

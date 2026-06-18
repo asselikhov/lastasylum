@@ -55,8 +55,9 @@ internal fun ChatViewModel.publishMessagesDerivedNowImpl(messages: List<ChatMess
             return
         }
         val expected = messages
+        val debounceMs = if (isChatRealtimeViewActive()) 0L else CHAT_LIST_DERIVE_DEBOUNCE_MS
         deriveDebounceJob = vmScope.launch {
-            delay(CHAT_LIST_DERIVE_DEBOUNCE_MS)
+            if (debounceMs > 0L) delay(debounceMs)
             deriveJob = launch(Dispatchers.Default) {
                 val derived = buildChatMessagesListDerived(expected)
                 if (chatMessagesListContentEqual(expected, vmState.value.messages)) {

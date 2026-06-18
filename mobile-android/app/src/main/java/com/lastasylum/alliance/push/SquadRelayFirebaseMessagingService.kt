@@ -36,7 +36,15 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
                 message,
                 fallbackEventId = "hq_excavation",
             )
+            "chat_message", "raid_pin" -> ackChatPushForStripSuppress(message)
             else -> super.onMessageReceived(message)
+        }
+    }
+
+    private fun ackChatPushForStripSuppress(message: RemoteMessage) {
+        if (CombatOverlayService.inGameOverlayUiActive.value) return
+        message.data["messageId"]?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            GameEventPushStripSuppressor.ackPushDelivered(it)
         }
     }
 

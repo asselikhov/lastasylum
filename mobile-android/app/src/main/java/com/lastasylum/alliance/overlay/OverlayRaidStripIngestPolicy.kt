@@ -1,8 +1,7 @@
 package com.lastasylum.alliance.overlay
 
 /**
- * Inbound raid strip: game-event notifies only while ingame (or grace); other raid traffic may
- * arrive on the overlay FGS socket while the listener is up.
+ * Inbound raid strip: only while ingame (or short grace). Socket listener alone does not qualify.
  *
  * Outbound/self: strip eligibility only (optimistic send uses a separate path).
  */
@@ -15,10 +14,6 @@ object OverlayRaidStripIngestPolicy {
         isGameEventNotify: Boolean = false,
     ): Boolean {
         if (!overlayStripEnabled) return false
-        if (isGameEventNotify) {
-            return overlayIngamePresenceActive || stripEligible
-        }
-        if (overlayRealtimeListenerActive) return true
         return overlayIngamePresenceActive || stripEligible
     }
 

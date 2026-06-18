@@ -887,19 +887,27 @@ export class ChatGateway {
     const rid = roomId.trim();
     const uid = senderUserId.trim();
     if (!rid || !uid) return;
-    const personalTargets = await this.fanOutChatEventToEligibleUsersNotInRoom(
-      rid,
-      'message:new',
-      message,
-      uid,
-      eligibleUserIds,
-    );
-    await this.fanOutRaidMessageToIngameOverlayTeammates(
-      rid,
-      message,
-      uid,
-      personalTargets,
-    );
+    const room = await this.chatRoomsService.findById(rid);
+    const isRaidRoom = room?.title === ALLIANCE_RAID_ROOM_TITLE;
+    const eligible =
+      eligibleUserIds ?? (await this.getEligibleUserIdsCached(rid));
+    const personalTargets = isRaidRoom
+      ? new Set<string>()
+      : await this.fanOutChatEventToEligibleUsersNotInRoom(
+          rid,
+          'message:new',
+          message,
+          uid,
+          eligible,
+        );
+    if (isRaidRoom) {
+      await this.fanOutRaidMessageToIngameOverlayTeammates(
+        rid,
+        message,
+        uid,
+        personalTargets,
+      );
+    }
   }
 
   private async fanOutChatEventToEligibleUsersNotInRoom(

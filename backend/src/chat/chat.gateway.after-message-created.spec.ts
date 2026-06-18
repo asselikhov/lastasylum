@@ -8,6 +8,7 @@ import { UsersService } from '../users/users.service';
 import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatAttachmentsService } from './chat-attachments.service';
 import { OverlayReactionLogService } from './overlay-reaction-log.service';
+import { ChatEligibleUsersCacheService } from './chat-eligible-users-cache.service';
 import { ALLIANCE_RAID_ROOM_TITLE } from '../common/constants/chat-room-constants';
 
 describe('ChatGateway.afterMessageCreated', () => {
@@ -56,6 +57,7 @@ describe('ChatGateway.afterMessageCreated', () => {
         },
         { provide: ChatAttachmentsService, useValue: {} },
         { provide: OverlayReactionLogService, useValue: {} },
+        ChatEligibleUsersCacheService,
       ],
     }).compile();
     gateway = module.get(ChatGateway);

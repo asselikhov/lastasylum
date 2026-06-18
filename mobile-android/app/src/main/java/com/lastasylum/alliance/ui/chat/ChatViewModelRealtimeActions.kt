@@ -103,6 +103,11 @@ internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
         if (!isOwn && mid.isNotEmpty()) {
             com.lastasylum.alliance.data.chat.OverlaySocketMessageStash.stash(message)
         }
+        if (isChatRealtimeViewActive()) {
+            if (shouldBlockOwnOutgoingRealtime(message) || !isIncomingMessageVisible(message)) return
+            dispatchIncomingBatch(listOf(message))
+            return
+        }
         if (!incomingMessages.trySend(message).isSuccess) {
             vmScope.launch(Dispatchers.Main) {
                 if (shouldBlockOwnOutgoingRealtime(message) || !isIncomingMessageVisible(message)) return@launch
@@ -466,8 +471,11 @@ internal fun ChatViewModel.scheduleRehydrateSelectedRoomFromStashImpl(roomId: St
         val rid = roomId.trim()
         if (rid.isEmpty() || vmState.value.selectedRoomId != rid) return
         stashRehydrateJob?.cancel()
+        if (isChatRealtimeViewActive()) {
+            rehydrateRoomMessagesFromCache(rid)
+            return
+        }
         stashRehydrateJob = vmScope.launch {
-            delay(0L)
             if (vmState.value.selectedRoomId != rid) return@launch
             rehydrateRoomMessagesFromCache(rid)
         }

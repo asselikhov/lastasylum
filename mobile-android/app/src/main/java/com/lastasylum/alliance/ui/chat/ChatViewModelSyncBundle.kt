@@ -354,6 +354,7 @@ internal class ChatViewModelSyncBundle(
         override fun refreshPinBarForSelectedRoom() = vm.refreshPinBarForSelectedRoom()
         override fun persistRoomMessagesToCache(roomId: String, messages: List<ChatMessage>, hasMoreOlder: Boolean) =
             vm.persistRoomMessagesToCache(roomId, messages, hasMoreOlder)
+        override fun isChatSocketConnected(): Boolean = vm.vmRepository.isChatSocketConnected()
     }
 
     val overlaySync = com.lastasylum.alliance.data.chat.sync.ChatOverlaySync(

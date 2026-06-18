@@ -8,6 +8,7 @@ import { UsersService } from '../users/users.service';
 import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatAttachmentsService } from './chat-attachments.service';
 import { OverlayReactionLogService } from './overlay-reaction-log.service';
+import { ChatEligibleUsersCacheService } from './chat-eligible-users-cache.service';
 import { ALLIANCE_RAID_ROOM_TITLE } from '../common/constants/chat-room-constants';
 
 describe('ChatGateway fanout dedup', () => {
@@ -54,6 +55,7 @@ describe('ChatGateway fanout dedup', () => {
         },
         { provide: ChatAttachmentsService, useValue: {} },
         { provide: OverlayReactionLogService, useValue: {} },
+        ChatEligibleUsersCacheService,
       ],
     }).compile();
     gateway = module.get(ChatGateway);
@@ -97,7 +99,7 @@ describe('ChatGateway fanout dedup', () => {
     expect(listOverlayIngameTeammateIds).toHaveBeenCalled();
   });
 
-  it('fans out game-event notify to personal and ingame teammate sockets', async () => {
+  it('fans out raid room notify only to ingame teammate sockets', async () => {
     gateway.server = {
       to,
       adapter: {
@@ -126,8 +128,8 @@ describe('ChatGateway fanout dedup', () => {
       'sender1',
     );
     await new Promise((r) => setTimeout(r, 20));
-    expect(to.mock.calls.map((c) => c[0])).toEqual(
-      expect.arrayContaining(['socket-t2', 'socket-t3']),
-    );
+    const targets = to.mock.calls.map((c) => c[0]);
+    expect(targets).toEqual(expect.arrayContaining(['chat:raid-room', 'socket-t2']));
+    expect(targets).not.toContain('socket-t3');
   });
 });

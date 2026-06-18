@@ -46,6 +46,7 @@ class ChatOverlaySync(
         fun publishMessagesDerived(messages: List<ChatMessage>)
         fun refreshPinBarForSelectedRoom()
         fun persistRoomMessagesToCache(roomId: String, messages: List<ChatMessage>, hasMoreOlder: Boolean)
+        fun isChatSocketConnected(): Boolean
     }
 
     fun primeOverlayChatFromCache(
@@ -200,7 +201,7 @@ class ChatOverlaySync(
     fun scheduleOverlayRoomHistorySync(roomId: String) {
         val rid = roomId.trim()
         if (rid.isEmpty()) return
-        pagingSync.refreshMessagesInBackground(rid, force = true)
+        pagingSync.refreshMessagesInBackground(rid, force = !host.isChatSocketConnected())
     }
 
     fun overlayHubAlreadyReady(rooms: List<ChatRoomDto>): Boolean {

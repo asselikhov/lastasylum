@@ -274,6 +274,7 @@ class CombatOverlayService : Service() {
             },
             canUseOverlayVoiceNow = { canUseOverlayVoiceNow() },
             onStopVoice = { stopOverlayVoice() },
+            onIngameSessionStarted = { markOverlayStripIngameSessionStarted() },
         )
     }
 
@@ -973,6 +974,9 @@ class CombatOverlayService : Service() {
     private var lastForegroundHintPkg: String? = null
     @Volatile
     private var lastOverlayInGameAtMs: Long = 0L
+    /** Drop inbound strip cards created before this ingame session (push-only while absent). */
+    @Volatile
+    private var overlayStripIngameSessionStartedAtMs: Long = 0L
     /** Последний результат foreground-пробы «в игре» (не путать с UI-гейтом при открытом чате). */
     @Volatile
     private var overlayInGameProbeActive: Boolean = false
@@ -2949,7 +2953,7 @@ class CombatOverlayService : Service() {
         vm?.stashOverlayRealtimeMessage(msg)
         if (vm == null) return
         if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
-        if (shouldDeferHubApplyToPrimaryListener(vm)) return
+        if (shouldDeferHubApplyToPrimaryListener(vm, msg)) return
         val selectedId = vm.state.value.selectedRoomId?.trim().orEmpty()
         val msgRoomId = msg.roomId.trim()
         val hubId = resolveOverlayHubRoomId()
@@ -2970,12 +2974,15 @@ class CombatOverlayService : Service() {
     }
 
     /**
-     * Skip overlay apply when the primary socket listener on the activity VM already applies.
+     * Skip overlay apply only when the primary listener will show the message live.
      */
-    private fun shouldDeferHubApplyToPrimaryListener(vm: ChatViewModel): Boolean {
+    private fun shouldDeferHubApplyToPrimaryListener(vm: ChatViewModel, msg: ChatMessage): Boolean {
         if (!activityChatViewModelHandlesUnread()) return false
         val primary = activityScopedChatViewModel ?: ChatViewModelRegistry.shared ?: return false
-        return vm === primary
+        if (vm !== primary) return false
+        val roomId = msg.roomId.trim()
+        if (roomId.isEmpty()) return false
+        return primary.isRoomActivelyViewed(roomId, msg)
     }
 
     private fun forwardOverlayRaidMessageToViewModel(msg: ChatMessage, pendingId: String? = null) {
@@ -4443,7 +4450,7 @@ class CombatOverlayService : Service() {
         }
         if (stripUiCoalescePosted) return
         stripUiCoalescePosted = true
-        mainHandler.post(stripUiCoalesceRunnable)
+        mainHandler.postAtFrontOfQueue(stripUiCoalesceRunnable)
     }
 
     private fun refreshOverlayChatStrip() = scheduleRefreshOverlayChatStrip()
@@ -4857,7 +4864,7 @@ class CombatOverlayService : Service() {
                 gameEventAlert = gameEventAlert,
             )
             result.onSuccess { sent ->
-                mainHandler.post {
+                withContext(Dispatchers.Main.immediate) {
                     publishQuickCommandToStrip(
                         sent = sent,
                         raidRoomId = roomId,
@@ -5175,6 +5182,24 @@ class CombatOverlayService : Service() {
         )
     }
 
+    private fun markOverlayStripIngameSessionStarted() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { markOverlayStripIngameSessionStarted() }
+            return
+        }
+        overlayStripIngameSessionStartedAtMs = System.currentTimeMillis()
+    }
+
+    private fun isBeforeOverlayIngameSession(msg: ChatMessage): Boolean {
+        val sessionStart = overlayStripIngameSessionStartedAtMs
+        if (sessionStart <= 0L) return false
+        val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+        if (selfId.isNotEmpty() && msg.senderId.trim() == selfId) return false
+        val parsed = OverlayChatTime.parseInstant(msg.createdAt) ?: return false
+        val cutoff = Instant.ofEpochMilli(sessionStart - OVERLAY_STRIP_SESSION_SKEW_MS)
+        return parsed.isBefore(cutoff)
+    }
+
     private fun isStaleOverlayStripMessage(msg: ChatMessage): Boolean {
         val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
         if (selfId.isNotEmpty() && msg.senderId.trim() == selfId) {
@@ -5217,6 +5242,7 @@ class CombatOverlayService : Service() {
                 ?: return@launch
             mainHandler.post {
                 for (msg in tail) {
+                    if (isBeforeOverlayIngameSession(msg)) continue
                     if (isStaleOverlayStripMessage(msg)) continue
                     val normalized = normalizeStripRaidMessage(msg, raidId)
                     if (!shouldIngestInboundRaidStrip(normalized)) continue
@@ -5269,7 +5295,6 @@ class CombatOverlayService : Service() {
                 return
             }
             if (
-                GameEventCatalog.isNotifyMessageText(normalized.text) &&
                 GameEventPushStripSuppressor.shouldSuppressStrip(normalized._id)
             ) {
                 ChatDeliveryMetrics.logStripDrop(normalized._id, "push_ack")
@@ -5287,6 +5312,16 @@ class CombatOverlayService : Service() {
             ChatDeliveryMetrics.logStripDrop(normalized._id, "sender_self")
             if (BuildConfig.DEBUG) {
                 Log.d(OVERLAY_DIAG_TAG, "stripDrop reason=sender_self id=${normalized._id}")
+            }
+            return
+        }
+        if (!forceIngest && isBeforeOverlayIngameSession(normalized)) {
+            ChatDeliveryMetrics.logStripDrop(normalized._id, "before_ingame_session")
+            if (BuildConfig.DEBUG) {
+                Log.d(
+                    OVERLAY_DIAG_TAG,
+                    "stripDrop reason=before_ingame_session id=${normalized._id}",
+                )
             }
             return
         }
@@ -7786,6 +7821,7 @@ class CombatOverlayService : Service() {
         private const val GAME_GATE_RECENT_INGAME_WINDOW_MS = 45_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */
         private const val OVERLAY_INGAME_GRACE_MS = 3_500L
+        private const val OVERLAY_STRIP_SESSION_SKEW_MS = 2_000L
         /** Sustained «not in game» (краткий лаг usage-stats) перед снятием окон. */
         /** Чуть дольше hold после закрытия панели — иначе гейт успевает снять HUD до истечения hold. */
         private const val GATE_DISMISS_AFTER_MS = 3_000L
