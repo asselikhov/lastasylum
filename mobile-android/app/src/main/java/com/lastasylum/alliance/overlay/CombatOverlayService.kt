@@ -4921,14 +4921,17 @@ class CombatOverlayService : Service() {
 
     private fun scheduleOverlayRaidRealtimeWarm(roomId: String) {
         rememberOverlayRaidRoomId(roomId)
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            ensureOverlayRaidRealtimeIfNeeded()
-            syncOverlayRaidRoomSubscription()
-        } else {
-            mainHandler.post {
-                ensureOverlayRaidRealtimeIfNeeded()
+        val warm = {
+            if (overlayMessageListener != null) {
                 syncOverlayRaidRoomSubscription()
+            } else {
+                ensureOverlayRaidRealtimeIfNeeded()
             }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            warm()
+        } else {
+            mainHandler.post(warm)
         }
     }
 
@@ -5847,13 +5850,25 @@ class CombatOverlayService : Service() {
         resolveCachedAllianceHubRoomId()
     }
 
+    @Volatile
+    private var overlayChatSubscriptionStarting: Boolean = false
+
     private fun beginOverlayChatSubscription() {
         if (overlayMessageListener != null) {
             syncOverlayRaidRoomSubscription()
             refreshOverlayHubUnreadFromCache()
             return
         }
-        resolveCachedRaidRoomIdForSend()?.let { scheduleOverlayRaidRealtimeWarm(it) }
+        if (overlayChatSubscriptionStarting) return
+        overlayChatSubscriptionStarting = true
+        try {
+            beginOverlayChatSubscriptionImpl()
+        } finally {
+            overlayChatSubscriptionStarting = false
+        }
+    }
+
+    private fun beginOverlayChatSubscriptionImpl() {
         unregisterOverlayReactionListenersIfRegistered()
         prefetchOverlayRaidRoomForStrip()
         registerVoiceMicPermissionReceiver()
@@ -5942,6 +5957,7 @@ class CombatOverlayService : Service() {
             }
         overlayMessageListener = listener
         overlayMessageDeletedListener = deleteListener
+        resolveCachedRaidRoomIdForSend()?.let { rememberOverlayRaidRoomId(it) }
         registerOverlayChatListenersOnMain(
             listener,
             deleteListener,
