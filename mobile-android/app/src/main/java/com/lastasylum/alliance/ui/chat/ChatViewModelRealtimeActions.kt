@@ -79,8 +79,7 @@ internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
         val selfId = currentUserId.trim()
         val isOwn = selfId.isNotEmpty() && message.senderId.trim() == selfId
         if (isOwn) {
-            val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
-                ?: activeOutgoingClientMessageIds.singleOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+            val cid = resolveOutgoingClientMessageId(message, activeOutgoingClientMessageIds)
             if (cid != null) {
                 val normalized = message.withOutgoingClientMessageId(cid)
                 confirmOutgoingByClientMessageId(cid, normalized)
@@ -409,8 +408,7 @@ internal fun ChatViewModel.stashIncomingMessageForRoomImpl(message: ChatMessage)
         if (roomId.isBlank()) return
         val selfId = currentUserId.trim()
         if (selfId.isNotEmpty() && message.senderId.trim() == selfId) {
-            val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
-                ?: activeOutgoingClientMessageIds.singleOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+            val cid = resolveOutgoingClientMessageId(message, activeOutgoingClientMessageIds)
             if (cid != null) {
                 confirmOutgoingByClientMessageId(cid, message.withOutgoingClientMessageId(cid))
                 return

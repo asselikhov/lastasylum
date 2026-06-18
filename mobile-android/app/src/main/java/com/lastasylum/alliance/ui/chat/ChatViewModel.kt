@@ -492,6 +492,9 @@ class ChatViewModel(
             ChatSessionCache.updateMessages(roomId, committedMessages)
             val prevHead = work.previousMessages.firstOrNull()?._id
             val incomingHead = scopedBatch.firstOrNull()?._id
+            val previousKnownIds = work.previousMessages.mapNotNull {
+                it._id?.trim()?.takeIf { id -> id.isNotEmpty() }
+            }.toSet()
             val gapThreshold = if (isAllianceRaidRoom(roomId)) {
                 RAID_GAP_RECONCILE_THRESHOLD_MS
             } else {
@@ -500,7 +503,7 @@ class ChatViewModel(
             if (shouldTriggerGapReconcile(
                     prevHead,
                     incomingHead,
-                    knownMessageIds,
+                    previousKnownIds,
                     gapThreshold,
                 )
             ) {
@@ -791,7 +794,7 @@ class ChatViewModel(
         }
     }
 
-    /** Overlay socket → visible list without re-claiming [ChatSocketIngress] (strip path is separate). */
+    /** Overlay socket → visible list; shares [ChatSocketIngress] with primary listener. */
     fun applyOverlayIncomingMessage(message: ChatMessage) {
         if (message.isCompactReactionSocketUpdate()) {
             applyKnownChatMessageUpdate(message)
@@ -803,11 +806,16 @@ class ChatViewModel(
             applyKnownChatMessageUpdate(message)
             return
         }
+        val messageId = message._id?.trim().orEmpty()
+        if (messageId.isNotEmpty()) {
+            if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.claimForChatList(roomId, messageId)) {
+                return
+            }
+        }
         val selfId = currentUserId.trim()
         val isOwn = selfId.isNotEmpty() && message.senderId.trim() == selfId
         if (isOwn) {
-            val cid = message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
-                ?: activeOutgoingClientMessageIds.singleOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+            val cid = resolveOutgoingClientMessageId(message, activeOutgoingClientMessageIds)
             if (cid != null) {
                 val normalized = message.withOutgoingClientMessageId(cid)
                 confirmOutgoingByClientMessageId(cid, normalized)
@@ -1045,7 +1053,6 @@ class ChatViewModel(
     internal fun schedulePersistChatSnapshot() = schedulePersistChatSnapshotImpl()
     internal fun persistChatSnapshot() = persistChatSnapshotImpl()
     internal fun shouldAutoMarkReadSelectedRoom() = shouldAutoMarkReadSelectedRoomImpl()
-    internal fun shouldOverlayAutoMarkReadSelectedRoom() = shouldOverlayAutoMarkReadSelectedRoomImpl()
     internal suspend fun hydratePeerReadCursor(roomId: String, force: Boolean = false) =
         hydratePeerReadCursorImpl(roomId, force)
     fun markOverlayVisibleMessagesAsRead(messageIds: List<String>) = markOverlayVisibleMessagesAsReadImpl(messageIds)
@@ -1406,7 +1413,7 @@ class ChatViewModel(
         )
     }
 
-    /** Gap-fill after socket reconnect: merge stash + REST for selected room only. */
+    /** Gap-fill after socket reconnect: merge stash + REST for active rooms. */
     internal fun onChatSocketConnected() {
         forceBackgroundRefreshAfterReconnect = true
         rehydrateSelectedRoomMessagesFromCache()
@@ -1415,9 +1422,16 @@ class ChatViewModel(
             chatSyncEngine.reconnectOutboxResume(viewModelScope)
             OutboxResumeScheduler.schedule(getApplication(), currentUserId)
         }
-        val selectedId = _state.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() } ?: return
-        viewModelScope.launch { hydratePeerReadCursor(selectedId) }
-        refreshMessagesInBackground(selectedId, force = true)
+        val roomsToRefresh = buildSet {
+            _state.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+            chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+            chatRoomPreferences.getHubRoomId()?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+            _state.value.rooms.filter { it.unreadCount > 0 }.forEach { add(it.id.trim()) }
+        }
+        roomsToRefresh.forEach { roomId ->
+            viewModelScope.launch { hydratePeerReadCursor(roomId) }
+            refreshMessagesInBackground(roomId, force = true)
+        }
     }
 
     internal suspend fun openRoom(

@@ -2911,7 +2911,10 @@ class CombatOverlayService : Service() {
             return
         }
         if (shouldBumpOverlayHubUnread(msg, hubId)) {
-            if (!activityChatViewModelHandlesUnread()) {
+            val primaryHandles = activityChatViewModelHandlesUnread()
+            val primarySubscribedHub = primaryHandles &&
+                AppContainer.from(this).chatRepository.isPrimaryRealtimeRoom(hubId)
+            if (!primaryHandles || !primarySubscribedHub) {
                 bumpAllianceHubUnreadLocally(msg._id)
             }
             return
@@ -2929,6 +2932,7 @@ class CombatOverlayService : Service() {
     /** Merge socket stash into visible chat after overlay pane switches to Chat. */
     private fun rehydrateOverlayChatFeedFromStash() {
         val vm = resolveChatViewModel() ?: return
+        vm.mergeSessionCacheForSelectedRoom()
         vm.rehydrateSelectedRoomMessagesFromCache()
         val roomId = vm.state.value.selectedRoomId?.trim().orEmpty()
         if (roomId.isNotEmpty()) {
@@ -2942,6 +2946,7 @@ class CombatOverlayService : Service() {
         vm?.stashOverlayRealtimeMessage(msg)
         if (vm == null) return
         if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
+        if (shouldDeferHubApplyToPrimaryListener(vm)) return
         val selectedId = vm.state.value.selectedRoomId?.trim().orEmpty()
         val msgRoomId = msg.roomId.trim()
         val hubId = resolveOverlayHubRoomId()
@@ -2958,19 +2963,16 @@ class CombatOverlayService : Service() {
         }
         val roomSelected = selectedId.isNotEmpty() && selectedId == msgRoomId
         if (!roomSelected) return
-        if (roomSelected && shouldDeferHubApplyToPrimaryListener(vm)) return
         vm.applyOverlayIncomingMessage(msg)
     }
 
     /**
-     * Skip overlay apply only when the primary socket listener is on the same VM instance
-     * that already received the message via [ChatViewModel.onIncomingMessage].
+     * Skip overlay apply when the primary socket listener on the activity VM already applies.
      */
     private fun shouldDeferHubApplyToPrimaryListener(vm: ChatViewModel): Boolean {
         if (!activityChatViewModelHandlesUnread()) return false
-        val fallback = overlayFallbackChatViewModel
-        if (fallback != null && fallback !== vm) return false
-        return true
+        val primary = activityScopedChatViewModel ?: ChatViewModelRegistry.shared ?: return false
+        return vm === primary
     }
 
     private fun forwardOverlayRaidMessageToViewModel(msg: ChatMessage, pendingId: String? = null) {
@@ -5201,6 +5203,32 @@ class CombatOverlayService : Service() {
         ensureStripWindowVisibleForRaidTraffic()
     }
 
+    /** REST tail merge for raid strip after overlay socket (re)connect. */
+    private fun catchUpOverlayRaidStripFromRest() {
+        if (!isOverlayChatStripEnabled()) return
+        serviceScope.launch {
+            val raidId = resolveOverlayRaidRoomId()?.trim().orEmpty()
+            if (raidId.isEmpty()) return@launch
+            val container = AppContainer.from(this@CombatOverlayService)
+            val tail = container.chatRepository.loadRecentMessages(raidId, limit = 12).getOrNull()
+                ?: return@launch
+            mainHandler.post {
+                for (msg in tail) {
+                    if (isStaleOverlayStripMessage(msg)) continue
+                    val normalized = normalizeStripRaidMessage(msg, raidId)
+                    if (!shouldIngestInboundRaidStrip(normalized)) continue
+                    ingestOverlayRaidMessage(
+                        normalized,
+                        refreshNow = false,
+                        forceIngest = true,
+                        inbound = true,
+                    )
+                }
+                scheduleRefreshOverlayChatStrip()
+            }
+        }
+    }
+
     private fun ingestOverlayRaidMessage(
         msg: ChatMessage,
         refreshNow: Boolean,
@@ -5845,6 +5873,7 @@ class CombatOverlayService : Service() {
             }
         }
         ensureOverlaySessionPresenceStarted()
+        catchUpOverlayRaidStripFromRest()
     }
 
     private fun dispatchOverlayIncomingChatMessage(msg: ChatMessage) {
@@ -5904,7 +5933,6 @@ class CombatOverlayService : Service() {
             handleOverlayHubMessage(msg)
         } else if (!activityChatViewModelHandlesUnread()) {
             resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
-            return
         }
         forwardOverlaySocketMessageToViewModel(msg)
     }
@@ -6369,6 +6397,13 @@ class CombatOverlayService : Service() {
             vm.primeFromLaunchDisk()
             vm.primeOverlayChatFromCache(preferAllianceHubRoom = true)
         }
+    }
+
+    private fun releaseOverlayFallbackWhenActivityBound(activityVm: ChatViewModel) {
+        val fallback = overlayFallbackChatViewModel ?: return
+        if (fallback === activityVm) return
+        overlayFallbackChatViewModel = null
+        fallback.setOverlayChatPanelVisible(false)
     }
 
     private fun finalizeOverlayChatSessionAfterClose() {
@@ -7412,6 +7447,9 @@ class CombatOverlayService : Service() {
 
         fun bindActivityChatViewModel(viewModel: ChatViewModel?) {
             activityScopedChatViewModel = viewModel
+            if (viewModel != null) {
+                runningInstance?.releaseOverlayFallbackWhenActivityBound(viewModel)
+            }
         }
 
         /** Activity VM, then app registry, then overlay fallback when game runs without activity UI. */

@@ -33,6 +33,7 @@ internal fun objectIdTimestampGapMs(olderId: String, newerId: String): Long {
 
 /**
  * True when a newer socket message suggests messages were missed between visible head and incoming.
+ * [knownMessageIds] should be ids present before the batch apply (not after commit).
  */
 internal fun shouldTriggerGapReconcile(
     visibleNewestId: String?,
@@ -45,5 +46,16 @@ internal fun shouldTriggerGapReconcile(
     if (newest.isEmpty() || incoming.isEmpty()) return false
     if (incoming in knownMessageIds) return false
     if (!isObjectIdNewer(incoming, newest)) return false
+    val counterGap = objectIdCounterGap(newest, incoming)
+    if (counterGap > 1L) return true
     return objectIdTimestampGapMs(newest, incoming) >= thresholdMs
+}
+
+/** Same ObjectId second-bucket; counter delta when machine/process share prefix. */
+internal fun objectIdCounterGap(olderId: String, newerId: String): Long {
+    val older = olderId.trim()
+    val newer = newerId.trim()
+    if (older.length != 24 || newer.length != 24) return 0L
+    if (older.substring(0, 18) != newer.substring(0, 18)) return 0L
+    return (newer.substring(18).toLong(16) - older.substring(18).toLong(16)).coerceAtLeast(0L)
 }

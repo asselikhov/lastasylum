@@ -19,23 +19,11 @@ class ChatDualListenerTest {
     }
 
     @Test
-    fun overlayDirectApply_doesNotReclaimChatListIngress() {
+    fun overlayApply_claimsChatListIngress() {
         val room = "raid-room"
         val id = "507f1f77bcf86cd799439011"
-        val msg = ChatMessage(
-            _id = id,
-            allianceId = "alliance-1",
-            roomId = room,
-            senderId = "peer-user",
-            senderUsername = "peer",
-            senderRole = "R1",
-            text = "hello",
-        )
-        // VM primary path claims first (simulated)
         assertTrue(ChatSocketIngress.claimForChatList(room, id))
-        // Overlay direct apply skips ingress — batch still applies
         assertFalse(ChatSocketIngress.claimForChatList(room, id))
-        assertTrue(msg.roomId == room)
     }
 
     @Test

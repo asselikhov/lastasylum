@@ -298,9 +298,14 @@ class ChatRepository(
 
     fun onAccessTokenRefreshed() = realtime.onAccessTokenRefreshed()
 
+    fun configureReconnectSessionRefresh(refresh: suspend () -> Unit) =
+        realtime.configureReconnectSessionRefresh(refresh)
+
     fun disconnectRealtime() = realtime.disconnectRealtime()
 
     fun hasPrimaryRealtimeSubscription(): Boolean = realtime.hasPrimaryRealtimeSubscription()
+
+    fun isPrimaryRealtimeRoom(roomId: String): Boolean = realtime.isPrimaryRealtimeRoom(roomId)
 
     fun addOverlayMessageListener(listener: (ChatMessage) -> Unit) =
         realtime.addOverlayMessageListener(listener)

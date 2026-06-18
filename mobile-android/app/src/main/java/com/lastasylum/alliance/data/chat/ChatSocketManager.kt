@@ -44,6 +44,11 @@ class ChatSocketManager(
     private var reconnectAttempt = 0
     private var intentionalDisconnect = false
     private var reconnectScheduled = false
+    private var staleTokenRefreshHandler: (() -> Unit)? = null
+
+    fun setStaleTokenRefreshHandler(handler: () -> Unit) {
+        staleTokenRefreshHandler = handler
+    }
 
     private val reconnectRunnable = Runnable {
         reconnectScheduled = false
@@ -52,6 +57,10 @@ class ChatSocketManager(
         val rooms = subscribedRoomIds
         if (rooms.isEmpty()) return@Runnable
         val token = tokenProvider?.invoke() ?: return@Runnable
+        if (!JwtAccessTokenClaims.isAccessTokenValid(token)) {
+            staleTokenRefreshHandler?.invoke() ?: scheduleReconnect()
+            return@Runnable
+        }
         openSocket(base, token, rooms)
     }
 

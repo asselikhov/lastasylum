@@ -1,49 +1,63 @@
-import { buildMessageReactionBroadcastPayload, filterPersonalChatFanoutUserIds } from './chat-realtime-broadcast.util';
+import {
+  emitPersonalChatFanoutToSockets,
+  emitRaidOverlayFanoutToTeammateSockets,
+  filterPersonalChatFanoutUserIds,
+} from './chat-realtime-broadcast.util';
 
-describe('buildMessageReactionBroadcastPayload', () => {
-  it('maps userIds to count without reactedByMe', () => {
-    const payload = buildMessageReactionBroadcastPayload({
-      messageId: 'msg1',
-      roomId: 'room1',
-      reactions: [
-        { emoji: '👍', userIds: ['u1', 'u2'] },
-        { emoji: '❤️', userIds: [] },
-      ],
-    });
-    expect(payload).toEqual({
-      messageId: 'msg1',
-      roomId: 'room1',
-      reactions: [
-        { emoji: '👍', count: 2, userIds: ['u1', 'u2'] },
-        { emoji: '❤️', count: 0, userIds: [] },
-      ],
-    });
-    expect(JSON.stringify(payload)).not.toContain('reactedByMe');
-  });
-});
+describe('chat-realtime-broadcast.util per-socket fanout', () => {
+  const emit = jest.fn();
+  const to = jest.fn().mockReturnValue({ emit });
+  const server = { to };
 
-describe('filterPersonalChatFanoutUserIds', () => {
-  it('excludes sender and users already in chat room socket', () => {
-    const inRoom = new Set(['u1', 'u2']);
-    expect(
-      filterPersonalChatFanoutUserIds(
-        ['u1', 'u2', 'u3', 'u4'],
-        inRoom,
-        'sender',
-      ),
-    ).toEqual(['u3', 'u4']);
+  beforeEach(() => {
+    jest.clearAllMocks();
   });
 
-  it('keeps eligible overlay users not joined to chat room', () => {
-    const inRoom = new Set<string>();
-    expect(
-      filterPersonalChatFanoutUserIds(['overlay1', 'overlay2'], inRoom),
-    ).toEqual(['overlay1', 'overlay2']);
+  it('emitPersonalChatFanoutToSockets targets sockets not in chat room', () => {
+    const adapterRooms = new Map<string, Set<string>>([
+      ['chat:raid-room', new Set(['socket-in-room'])],
+      ['user:t1', new Set(['socket-in-room', 'socket-overlay'])],
+      ['user:t2', new Set(['socket-only'])],
+    ]);
+    const targets = emitPersonalChatFanoutToSockets(
+      server,
+      adapterRooms,
+      ['t1', 't2'],
+      'raid-room',
+      'message:new',
+      { _id: 'm1' },
+      'sender',
+    );
+    expect(targets).toEqual(new Set(['t1', 't2']));
+    expect(to).toHaveBeenCalledWith('socket-overlay');
+    expect(to).toHaveBeenCalledWith('socket-only');
+    expect(to).not.toHaveBeenCalledWith('socket-in-room');
   });
 
-  it('skips blank ids', () => {
-    expect(
-      filterPersonalChatFanoutUserIds(['', '  ', 'u1'], new Set()),
-    ).toEqual(['u1']);
+  it('filterPersonalChatFanoutUserIds skips user with any in-room socket', () => {
+    const out = filterPersonalChatFanoutUserIds(
+      ['t1', 't2'],
+      new Set(['t1']),
+      'sender',
+    );
+    expect(out).toEqual(['t2']);
+  });
+
+  it('emitRaidOverlayFanoutToTeammateSockets skips personal targets', () => {
+    const adapterRooms = new Map<string, Set<string>>([
+      ['chat:raid-room', new Set()],
+      ['user:t2', new Set(['socket-t2'])],
+    ]);
+    const count = emitRaidOverlayFanoutToTeammateSockets(
+      server,
+      adapterRooms,
+      ['t2'],
+      'raid-room',
+      { _id: 'm1' },
+      'sender',
+      new Set(['t2']),
+    );
+    expect(count).toBe(0);
+    expect(emit).not.toHaveBeenCalled();
   });
 });

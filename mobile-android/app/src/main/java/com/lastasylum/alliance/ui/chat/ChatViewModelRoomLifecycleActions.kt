@@ -48,15 +48,6 @@ internal fun ChatViewModel.shouldAutoMarkReadSelectedRoomImpl(): Boolean {
         return isRoomActivelyViewed(roomId)
     }
 
-internal fun ChatViewModel.shouldOverlayAutoMarkReadSelectedRoomImpl(): Boolean {
-        if (!overlayChatPanelVisible) return false
-        if (!CombatOverlayService.isOverlayChatTabActive()) return false
-        val roomId = vmState.value.selectedRoomId?.trim().orEmpty()
-        if (roomId.isEmpty()) return false
-        return CombatOverlayService.isOverlayChatPanelOpenInGame() ||
-            com.lastasylum.alliance.overlay.OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
-    }
-
 internal fun ChatViewModel.flushOverlayChatViewportMarkReadImpl() {
         markOverlayVisibleMessagesAsReadImpl(
             messageIds = lastOverlayVisibleMessageIds,
@@ -993,6 +984,7 @@ internal fun ChatViewModel.shouldSkipBackgroundMessageRefreshForRoomImpl(roomId:
         lastRestSyncAtMs = lastBackgroundRefreshAtMs[rid] ?: 0L,
         forceAfterReconnect = forceBackgroundRefreshAfterReconnect,
         overlayPanelVisible = overlayChatPanelVisible,
+        socketConnected = vmRepository.isChatSocketConnected(),
     )
 }
 

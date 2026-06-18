@@ -65,6 +65,8 @@ describe('ChatGateway fanout dedup', () => {
             'chat:raid-room',
             new Set(['socket-in-room']),
           ],
+          ['user:t2', new Set(['socket-t2'])],
+          ['user:t3', new Set(['socket-t3'])],
         ]),
       },
       sockets: new Map([
@@ -95,7 +97,23 @@ describe('ChatGateway fanout dedup', () => {
     expect(listOverlayIngameTeammateIds).toHaveBeenCalled();
   });
 
-  it('fans out game-event notify to personal and ingame teammates', async () => {
+  it('fans out game-event notify to personal and ingame teammate sockets', async () => {
+    gateway.server = {
+      to,
+      adapter: {
+        rooms: new Map([
+          ['chat:raid-room', new Set(['socket-in-room'])],
+          ['user:t2', new Set(['socket-t2'])],
+          ['user:t3', new Set(['socket-t3'])],
+        ]),
+      },
+      sockets: new Map([
+        [
+          'socket-in-room',
+          { data: { user: { userId: 't1' } } },
+        ],
+      ]),
+    } as never;
     const message = {
       _id: 'msg-ge',
       roomId: 'raid-room',
@@ -108,11 +126,8 @@ describe('ChatGateway fanout dedup', () => {
       'sender1',
     );
     await new Promise((r) => setTimeout(r, 20));
-    const userTargetCalls = to.mock.calls.filter(
-      (call) => typeof call[0] === 'string' && call[0].startsWith('user:'),
-    );
-    expect(userTargetCalls.map((c) => c[0])).toEqual(
-      expect.arrayContaining(['user:t2', 'user:t3']),
+    expect(to.mock.calls.map((c) => c[0])).toEqual(
+      expect.arrayContaining(['socket-t2', 'socket-t3']),
     );
   });
 });

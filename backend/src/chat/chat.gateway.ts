@@ -28,7 +28,10 @@ import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatAttachmentsService } from './chat-attachments.service';
 import { OverlayReactionLogService } from './overlay-reaction-log.service';
 import { normalizeOverlayChatStickerReaction } from './overlay-sticker-reaction.util';
-import { filterPersonalChatFanoutUserIds } from './chat-realtime-broadcast.util';
+import {
+  emitPersonalChatFanoutToSockets,
+  emitRaidOverlayFanoutToTeammateSockets,
+} from './chat-realtime-broadcast.util';
 import {
   isGameEventNotifyMessageText,
   resolveGameEventId,
@@ -230,6 +233,7 @@ export class ChatGateway {
     const key = `chat:${roomId}`;
     /** Allow multiple chat rooms per socket (e.g. selected room + «Рейд» for overlay). */
     await client.join(key);
+    this.invalidateEligibleUsersCache(roomId);
 
     return { event: 'room:joined', data: { roomId } };
   }
@@ -709,18 +713,24 @@ export class ChatGateway {
     const eventId = input.gameEventId?.trim();
     this.broadcastNewMessage(roomId, input.message);
     void (async () => {
-      const eligible = await this.getEligibleUserIdsCached(roomId);
-      await this.fanOutNewMessageToEligibleOverlayClients(
-        roomId,
-        input.message,
-        senderUserId,
-        eligible,
-      );
-      await this.notifyRoomUnreadAfterNewMessage(
-        roomId,
-        senderUserId,
-        eligible,
-      );
+      try {
+        const eligible = await this.getEligibleUserIdsCached(roomId);
+        await this.fanOutNewMessageToEligibleOverlayClients(
+          roomId,
+          input.message,
+          senderUserId,
+          eligible,
+        );
+        await this.notifyRoomUnreadAfterNewMessage(
+          roomId,
+          senderUserId,
+          eligible,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `afterMessageCreated fanout failed room=${roomId}: ${(err as Error).message}`,
+        );
+      }
     })();
     if (
       eventId &&
@@ -880,24 +890,18 @@ export class ChatGateway {
     const rid = roomId.trim();
     const uid = senderUserId.trim();
     if (!rid || !uid) return;
-    const inRoom = this.userIdsInChatRoom(rid);
-    const messageText = (message as { text?: string }).text?.trim() ?? '';
-    const isGameEventNotify = isGameEventNotifyMessageText(messageText);
     const personalTargets = await this.fanOutChatEventToEligibleUsersNotInRoom(
       rid,
       'message:new',
       message,
       uid,
-      inRoom,
       eligibleUserIds,
     );
     await this.fanOutRaidMessageToIngameOverlayTeammates(
       rid,
       message,
       uid,
-      inRoom,
       personalTargets,
-      isGameEventNotify,
     );
   }
 
@@ -906,22 +910,19 @@ export class ChatGateway {
     event: string,
     payload: unknown,
     excludeUserId?: string,
-    inRoomOverride?: Set<string>,
     eligibleOverride?: string[],
   ): Promise<Set<string>> {
     const eligible =
       eligibleOverride ?? (await this.getEligibleUserIdsCached(roomId));
-    const inRoom = inRoomOverride ?? this.userIdsInChatRoom(roomId);
-    const targets = filterPersonalChatFanoutUserIds(
+    return emitPersonalChatFanoutToSockets(
+      this.server,
+      this.server?.adapter.rooms,
       eligible,
-      inRoom,
+      roomId,
+      event,
+      payload,
       excludeUserId,
     );
-    for (const userId of targets) {
-      // Personal socket for overlay/FGS clients that missed `chat:room` join.
-      this.server?.to(`user:${userId}`).emit(event, payload);
-    }
-    return new Set(targets);
   }
 
   private userIdsInChatRoom(roomId: string): Set<string> {
@@ -957,6 +958,15 @@ export class ChatGateway {
     return userIds;
   }
 
+  invalidateEligibleUsersCache(roomId?: string): void {
+    const rid = roomId?.trim();
+    if (rid) {
+      this.eligibleUsersCache.delete(rid);
+      return;
+    }
+    this.eligibleUsersCache.clear();
+  }
+
   private async listEligibleUserIdsForRoom(roomId: string): Promise<string[]> {
     return this.getEligibleUserIdsCached(roomId);
   }
@@ -969,9 +979,7 @@ export class ChatGateway {
     roomId: string,
     message: unknown,
     senderUserId: string,
-    inRoom: Set<string>,
     personalTargets: Set<string>,
-    isGameEventNotify = false,
   ): Promise<void> {
     const rid = roomId?.trim();
     const uid = senderUserId?.trim();
@@ -980,25 +988,18 @@ export class ChatGateway {
     if (!room || room.title !== ALLIANCE_RAID_ROOM_TITLE) return;
     const teammateIds =
       await this.usersService.listOverlayIngameTeammateIds(uid);
-    let fanoutCount = 0;
-    let skippedInRoom = 0;
-    let skippedPersonal = 0;
-    for (const teammateId of teammateIds) {
-      if (teammateId === uid) continue;
-      if (!isGameEventNotify && inRoom.has(teammateId)) {
-        skippedInRoom++;
-        continue;
-      }
-      if (personalTargets.has(teammateId)) {
-        skippedPersonal++;
-        continue;
-      }
-      this.server?.to(`user:${teammateId}`).emit('message:new', message);
-      fanoutCount++;
-    }
+    const fanoutCount = emitRaidOverlayFanoutToTeammateSockets(
+      this.server,
+      this.server?.adapter.rooms,
+      teammateIds,
+      rid,
+      message,
+      uid,
+      personalTargets,
+    );
     this.logger.debug(
       `raid overlay fanout room=${rid} teammates=${teammateIds.length} ` +
-        `emitted=${fanoutCount} skippedInRoom=${skippedInRoom} skippedPersonal=${skippedPersonal}`,
+        `emitted=${fanoutCount} skippedPersonal=${personalTargets.size}`,
     );
   }
 

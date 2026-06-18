@@ -94,6 +94,7 @@ internal class ChatViewModelSyncBundle(
         override fun setForceBackgroundRefreshAfterReconnect(value: Boolean) {
             vm.forceBackgroundRefreshAfterReconnect = value
         }
+        override fun isChatSocketConnected(): Boolean = vm.vmRepository.isChatSocketConnected()
         override fun isRoomAuthoritativeEmpty(roomId: String): Boolean = vm.isRoomAuthoritativeEmpty(roomId)
         override fun clearRoomAuthoritativeEmpty(roomId: String) = vm.clearRoomAuthoritativeEmpty(roomId)
         override fun applyLoadedPageToUi(roomId: String, capped: List<ChatMessage>, hasMoreOlder: Boolean) {

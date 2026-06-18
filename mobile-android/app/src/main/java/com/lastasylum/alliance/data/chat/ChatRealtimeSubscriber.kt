@@ -5,7 +5,11 @@ import android.os.Looper
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.overlay.CombatOverlayService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import java.util.concurrent.CopyOnWriteArraySet
 
 /** Socket.IO subscriptions and overlay listener wiring. */
@@ -47,6 +51,22 @@ class ChatRealtimeSubscriber(
         java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var outgoingMessageAckListener: ((clientMessageId: String, message: ChatMessage) -> Unit)? = null
+    private val reconnectAuthScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var reconnectSessionRefresh: (suspend () -> Unit)? = null
+
+    init {
+        socketManager.setStaleTokenRefreshHandler {
+            val refresh = reconnectSessionRefresh ?: return@setStaleTokenRefreshHandler
+            reconnectAuthScope.launch {
+                runCatching { refresh() }
+                socketManager.reconnectWithFreshToken()
+            }
+        }
+    }
+
+    fun configureReconnectSessionRefresh(refresh: suspend () -> Unit) {
+        reconnectSessionRefresh = refresh
+    }
 
     fun setOutgoingMessageAckListener(listener: (clientMessageId: String, message: ChatMessage) -> Unit) {
         outgoingMessageAckListener?.let { socketManager.removeOutgoingMessageAckListener(it) }
@@ -57,11 +77,18 @@ class ChatRealtimeSubscriber(
     /** Activity [ChatViewModel] holds the primary socket callbacks when non-null. */
     fun hasPrimaryRealtimeSubscription(): Boolean = realtimeUiListener != null
 
+    fun isPrimaryRealtimeRoom(roomId: String): Boolean {
+        val rid = roomId.trim()
+        return rid.isNotEmpty() && primaryRealtimeRoomIds.contains(rid)
+    }
+
     private fun realtimeRoomIdsForPrimary(primaryRoomId: String): List<String> {
         val raid = chatRoomPreferences.getRaidRoomId()
+        val hub = chatRoomPreferences.getHubRoomId()
         return buildList {
             add(primaryRoomId)
             if (!raid.isNullOrBlank() && raid != primaryRoomId) add(raid)
+            if (!hub.isNullOrBlank() && hub != primaryRoomId && hub != raid) add(hub)
         }
     }
 

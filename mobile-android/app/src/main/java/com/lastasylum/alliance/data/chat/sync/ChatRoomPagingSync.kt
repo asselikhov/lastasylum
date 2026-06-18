@@ -59,6 +59,7 @@ class ChatRoomPagingSync(
         fun setLastBackgroundRefreshAtMs(roomId: String, atMs: Long)
         fun forceBackgroundRefreshAfterReconnect(): Boolean
         fun setForceBackgroundRefreshAfterReconnect(value: Boolean)
+        fun isChatSocketConnected(): Boolean
 
         fun applyLoadedPageToUi(
             roomId: String,
@@ -328,6 +329,7 @@ class ChatRoomPagingSync(
             lastRestSyncAtMs = host.lastBackgroundRefreshAtMs(rid),
             forceAfterReconnect = host.forceBackgroundRefreshAfterReconnect(),
             overlayPanelVisible = host.overlayChatPanelVisible(),
+            socketConnected = host.isChatSocketConnected(),
         )
     }
 }

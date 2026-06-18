@@ -607,7 +607,9 @@ internal fun shouldSkipBackgroundMessageRefresh(
     activeRoomReconcileIntervalMs: Long = 60_000L,
     overlayPanelVisible: Boolean = false,
     forceAfterReconnect: Boolean = false,
+    socketConnected: Boolean = true,
 ): Boolean {
+    if (!socketConnected) return false
     if (forceAfterReconnect) return false
     val reconcileInterval = if (overlayPanelVisible) {
         CHAT_OVERLAY_ACTIVE_ROOM_RECONCILE_INTERVAL_MS

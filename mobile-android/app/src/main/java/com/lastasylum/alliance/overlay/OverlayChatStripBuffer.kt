@@ -23,7 +23,7 @@ class OverlayChatStripBuffer(
      */
     private var visibleSince: Instant? = null
 
-    /** Та же структура, что раньше в сервисе — для [OverlayChatHistoryPanel]. */
+    /** Preview row for overlay raid strip UI. */
     fun receivedAtMap(): MutableMap<String, Instant> = receivedAt
 
     /** Новая игровая сессия оверлея — сбросить накопленное «офлайн» и показывать только новый трафик. */

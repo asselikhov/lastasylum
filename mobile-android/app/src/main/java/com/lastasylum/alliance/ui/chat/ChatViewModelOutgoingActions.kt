@@ -1055,7 +1055,7 @@ private fun ChatViewModel.prependConfirmedOutgoingMessage(sent: ChatMessage) {
     if (serverId.isEmpty()) return
     val normalized = sent.withOutgoingClientMessageId(
         sent.clientMessageId?.trim().orEmpty().ifEmpty {
-            activeOutgoingClientMessageIds.singleOrNull()?.trim().orEmpty()
+            resolveOutgoingClientMessageId(sent, activeOutgoingClientMessageIds).orEmpty()
         },
     )
     replaceMatchingPendingOutgoing(

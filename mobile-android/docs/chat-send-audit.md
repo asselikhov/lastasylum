@@ -1,6 +1,25 @@
 # Chat send / wipe audit (2026-06)
 
-## Fixed in this pass
+## Fixed in delivery audit pass (2026-06-07)
+
+| Area | Issue | Fix |
+|------|-------|-----|
+| Dual listener | Overlay `applyOverlayIncomingMessage` bypassed `ChatSocketIngress` → duplicate rows | Unified ingress claim on overlay apply |
+| Overlay forward | Hub policy applied before primary defer | Defer check runs first when activity VM is primary |
+| Overlay stash | Non-raid early `return` skipped `OverlaySocketMessageStash` | Always `forwardOverlaySocketMessageToViewModel` |
+| Dual VM | Fallback + activity VM coexistence disabled defer | Clear fallback on activity bind; defer when resolved VM is primary |
+| Send dup | `singleOrNull()` clientMessageId with multi-send | `resolveOutgoingClientMessageId` — guess only when one inflight |
+| Backend fanout | Per-user inRoom dedup dropped overlay sockets | Per-socket fanout to `user:{id}` sockets not in `chat:{room}` |
+| Gap reconcile | Only 60–120s ObjectId time jumps | Counter-gap + pre-batch known ids; reconnect REST for badged rooms |
+| Hub realtime | Primary subscription omitted hub room | Hub added to `realtimeRoomIdsForPrimary` |
+| Hub badge | Overlay skipped bump when primary active but hub not subscribed | Bump when primary lacks hub in room set |
+| Reconnect | Stale JWT on socket reconnect | `configureReconnectSessionRefresh` + token validity check |
+| REST skip | Suppressed refresh while socket disconnected | `socketConnected=false` forces refresh |
+| Overlay strip | No REST catch-up after reconnect | `catchUpOverlayRaidStripFromRest` on overlay chat subscribe |
+| Rehydrate | Chat pane switch missed session merge | `mergeSessionCacheForSelectedRoom` before rehydrate |
+| Dead code | Unused `OverlayChatHistoryPanel`, `shouldOverlayAutoMarkReadSelectedRoom` | Removed |
+
+## Fixed in prior pass
 
 | Area | Issue | Fix |
 |------|-------|-----|
@@ -31,6 +50,10 @@
 ## Smoke test checklist
 
 1. Send text in raid room — single row for sender, peers see one message.
-2. Send overlay quick command — HUD stays visible, no crash.
-3. Admin clears all chat — sender and peers see empty history after refresh.
-4. Participants online panel — no header refresh button; pull-to-refresh still works.
+2. Send 5 rapid messages — exactly 5 rows, no duplicates.
+3. Send overlay quick command — HUD stays visible, no crash.
+4. Admin clears all chat — sender and peers see empty history after refresh.
+5. Main app + overlay simultaneously — hub message: one list row, badge correct.
+6. Receiver in game (overlay): raid strip + panel show all peer messages.
+7. Receiver off chat tab in quiet room — badge + full history on open.
+8. Reconnect after API sleep — missed messages visible within ~5s.

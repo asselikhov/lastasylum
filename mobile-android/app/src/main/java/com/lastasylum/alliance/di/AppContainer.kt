@@ -157,7 +157,12 @@ class AppContainer private constructor(context: Context) {
                     tokenStore = tokenStore,
                     socketManager = chatSocketManager,
                     chatRoomPreferences = chatRoomPreferences,
-                ).also { chatRepositoryInstance = it }
+                ).also { repo ->
+                    repo.configureReconnectSessionRefresh {
+                        authRepository.refreshSession().getOrThrow()
+                    }
+                    chatRepositoryInstance = repo
+                }
             }
         }
 
