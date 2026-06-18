@@ -62,6 +62,20 @@ class ForumRepositoryTest {
     }
 
     @Test
+    fun onForumSocketMessage_patchesTopicMetadata() = runBlocking {
+        repo.syncTopics("user1", "team1", bypassCache = true).getOrThrow()
+        repo.onForumSocketMessage(
+            userId = "user1",
+            teamId = "team1",
+            topicId = "topic-1",
+            message = sampleMessage("msg-peer"),
+        )
+        val observed = repo.observeTopics("user1", "team1").first()
+        assertEquals(1, observed.first().messageCount)
+        assertEquals(1, observed.first().unreadCount)
+    }
+
+    @Test
     fun onForumSocketMessage_endsForumSendSpan() = runBlocking {
         tracker.startSpan(LatencySpanType.ForumSendToSocket, "forum-client-1")
         repo.onForumSocketMessage(

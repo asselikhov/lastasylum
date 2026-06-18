@@ -246,7 +246,9 @@ fun TeamForumListScreen(
             app.userSettingsPreferences,
             uid,
         )
-        if (!overlayUi) {
+        if (overlayUi) {
+            refreshReadCursorsFromPrefs()
+        } else {
             withContext(Dispatchers.IO) {
                 ReadCursorSession.syncAllInboxReadCursors(
                     usersRepository = app.usersRepository,
@@ -448,6 +450,7 @@ fun TeamForumListScreen(
                                             listIndex = index,
                                             messageMeta = formatForumTopicListTimeRu(timeIso),
                                             displayUnreadCount = unread,
+                                            displayMessageCount = t.messageCount.coerceAtLeast(0),
                                             animationTier = animationTier,
                                             emberBoost = if (unread > 0 && unreadRank in 0..2) 1.45f else 1f,
                                             onClick = { onOpenTopic(t) },

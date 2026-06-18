@@ -49,6 +49,7 @@ internal fun ChatViewModel.shouldAutoMarkReadSelectedRoomImpl(): Boolean {
     }
 
 internal fun ChatViewModel.flushOverlayChatViewportMarkReadImpl() {
+        if (lastOverlayVisibleMessageIds.isEmpty()) return
         markOverlayVisibleMessagesAsReadImpl(
             messageIds = lastOverlayVisibleMessageIds,
             forceFlushOnClose = true,

@@ -261,6 +261,29 @@ class InboxReadCursorTest {
     }
 
     @Test
+    fun displayedForumTopicUnread_seedsFromServerRawWhenFloorMatchesUnread() {
+        val topic = com.lastasylum.alliance.data.teams.TeamForumTopicDto(
+            id = "topic1",
+            teamId = "team1",
+            title = "Topic",
+            createdByUserId = "u1",
+            messageCount = 8,
+            unreadCount = 3,
+            lastReadMessageId = "000000000000000000000070",
+            createdAt = "2020-01-01T00:00:00Z",
+            updatedAt = "2020-01-01T00:00:00Z",
+        )
+        assertEquals(
+            3,
+            com.lastasylum.alliance.data.teams.TeamInboxUnread.displayedForumTopicUnread(
+                topic = topic,
+                localLastReadMessageId = "000000000000000000000070",
+                optimisticFloor = 3,
+            ),
+        )
+    }
+
+    @Test
     fun reconcileDisplayedUnread_clearsWhenServerZero() {
         assertEquals(0, reconcileDisplayedUnread(serverUnread = 0, previouslyDisplayed = 5))
     }

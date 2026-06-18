@@ -54,25 +54,27 @@ fun ForumTopicFeedCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     displayUnreadCount: Int? = null,
+    displayMessageCount: Int? = null,
     animationTier: FeedAnimationTier = FeedAnimationTier.Off,
     emberBoost: Float = 1f,
     menu: @Composable () -> Unit = {},
 ) {
     val accent = ForumTopicCardTokens.accentForIndex(listIndex)
     val badgeUnread = (displayUnreadCount ?: topic.unreadCount).coerceAtLeast(0)
-    val activityLevel = ForumTopicCardTokens.activityLevel(badgeUnread, topic.messageCount)
+    val pillMessageCount = (displayMessageCount ?: topic.messageCount).coerceAtLeast(0)
+    val activityLevel = ForumTopicCardTokens.activityLevel(badgeUnread, pillMessageCount)
     val hasUnread = badgeUnread > 0
     val pinPreview = topic.pinnedMessage
-    val metaDesc = remember(topic.id, topic.title, topic.messageCount, badgeUnread, messageMeta) {
+    val metaDesc = remember(topic.id, topic.title, pillMessageCount, badgeUnread, messageMeta) {
         buildString {
             append(topic.title)
-            if (topic.messageCount > 0) append(", ${topic.messageCount} сообщений")
+            if (pillMessageCount > 0) append(", $pillMessageCount сообщений")
             if (hasUnread) append(", непрочитано: $badgeUnread")
             if (messageMeta.isNotBlank()) append(", $messageMeta")
         }
     }
     val metaLine = buildForumTopicMetaLine(
-        messageCount = topic.messageCount,
+        messageCount = pillMessageCount,
         timeMeta = messageMeta,
         unreadCount = badgeUnread,
     )

@@ -73,9 +73,47 @@ class ForumRepository(
         topicId: String,
         message: TeamForumMessageDto,
         correlationId: String = message.id,
-    ) {
+    ) = withContext(Dispatchers.IO) {
         latencyTracker?.endSpanByCorrelation(LatencySpanType.ForumSendToSocket, correlationId, "ok")
         upsertMessages(userId, teamId, topicId, listOf(message))
+        patchTopicOnSocketMessage(userId, teamId, topicId, message)
+    }
+
+    /** Keep topic row metadata in sync with realtime messages (messageCount / unread / last activity). */
+    private suspend fun patchTopicOnSocketMessage(
+        userId: String,
+        teamId: String,
+        topicId: String,
+        message: TeamForumMessageDto,
+    ) {
+        val uid = userId.trim()
+        val tid = teamId.trim()
+        val tpid = topicId.trim()
+        if (uid.isEmpty() || tid.isEmpty() || tpid.isEmpty()) return
+
+        val existing = topicDao.getTopic(uid, tid, tpid)
+            ?.let { ChatStoreJson.forumTopicFromJson(it.payloadJson) }
+        val isOwn = message.senderUserId.trim() == uid
+        val base = existing ?: return
+        val patched = base.copy(
+            messageCount = base.messageCount + 1,
+            unreadCount = if (isOwn) base.unreadCount else base.unreadCount + 1,
+            lastMessageAt = message.createdAt,
+            lastMessageSenderUserId = message.senderUserId,
+            lastMessageSenderUsername = message.senderUsername,
+            lastMessageSenderAvatarRelativeUrl = message.senderAvatarRelativeUrl,
+            updatedAt = message.updatedAt,
+        )
+        upsertTopics(uid, tid, listOf(patched))
+        launchDiskCache.loadForumTopics(uid, tid)?.toMutableList()?.let { cached ->
+            val idx = cached.indexOfFirst { it.id == tpid }
+            if (idx >= 0) {
+                cached[idx] = patched
+            } else {
+                cached.add(patched)
+            }
+            launchDiskCache.saveForumTopics(uid, tid, cached)
+        }
     }
 
     suspend fun upsertTopics(userId: String, teamId: String, topics: List<TeamForumTopicDto>) {

@@ -144,6 +144,22 @@ class ForumListViewModelTest {
     }
 
     @Test
+    fun mergeTopicsFromRoom_preservesInMemorySocketBumps() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val vm = ForumListViewModel(app, forumRepository, forumPrefs, "user1")
+        val memory = ForumListUiState(
+            teamId = "team1",
+            topics = listOf(
+                sampleTopic("t1", "General").copy(unreadCount = 2, messageCount = 5),
+            ),
+        )
+        val room = listOf(sampleTopic("t1", "General").copy(unreadCount = 0, messageCount = 4))
+        val merged = vm.mergeTopicsFromRoom(room, memory)
+        assertEquals(2, merged.first().unreadCount)
+        assertEquals(5, merged.first().messageCount)
+    }
+
+    @Test
     fun applyTopicActivity_skipsWhenLocalCursorAlreadyRead() = runBlocking {
         val app = ApplicationProvider.getApplicationContext<Application>()
         val vm = ForumListViewModel(app, forumRepository, forumPrefs, "user1")

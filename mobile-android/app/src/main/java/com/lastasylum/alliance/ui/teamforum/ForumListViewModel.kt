@@ -51,8 +51,13 @@ class ForumListViewModel(
         if (tid.isEmpty() || _state.value.teamId == tid) return
         _state.value = ForumListUiState(teamId = tid, loading = true)
         viewModelScope.launch {
-            forumRepository.observeTopics(currentUserId, tid).collect { topics ->
-                _state.update { it.copy(topics = topics, loading = false) }
+            forumRepository.observeTopics(currentUserId, tid).collect { roomTopics ->
+                _state.update { st ->
+                    st.copy(
+                        topics = mergeTopicsFromRoom(roomTopics, st),
+                        loading = false,
+                    )
+                }
             }
         }
         reload(force = false)
@@ -82,10 +87,27 @@ class ForumListViewModel(
                                 displayedUnread = displayed,
                             )
                         }
+                        val seededFloors = topics.mapNotNull { topic ->
+                            val localLast = teamForumPreferences.getLastReadMessageId(teamId, topic.id)
+                            val displayed = displayedForumTopicUnread(
+                                topic = topic,
+                                localLastReadMessageId = localLast,
+                                optimisticFloor = 0,
+                            )
+                            if (topic.unreadCount > 0 && displayed == 0) {
+                                topic.id to topic.unreadCount.coerceAtMost(999)
+                            } else {
+                                null
+                            }
+                        }.toMap()
+                        val mergedFloors = floors.toMutableMap()
+                        seededFloors.forEach { (topicId, floor) ->
+                            mergedFloors[topicId] = maxOf(mergedFloors[topicId] ?: 0, floor)
+                        }
                         st.copy(
-                            topics = topics,
+                            topics = mergeTopicsFromRoom(topics, st),
                             loading = false,
-                            optimisticUnreadFloorByTopic = floors,
+                            optimisticUnreadFloorByTopic = mergedFloors,
                         )
                     }
                 }
@@ -172,6 +194,35 @@ class ForumListViewModel(
                     this[idx] = row.copy(unreadCount = 0, lastReadMessageId = mid)
                 },
                 optimisticUnreadFloorByTopic = st.optimisticUnreadFloorByTopic - tpid,
+            )
+        }
+    }
+
+    /** Preserve in-memory socket bumps when Room emits stale topic rows. */
+    internal fun mergeTopicsFromRoom(
+        roomTopics: List<TeamForumTopicDto>,
+        current: ForumListUiState,
+    ): List<TeamForumTopicDto> {
+        if (current.topics.isEmpty()) return roomTopics
+        val memoryById = current.topics.associateBy { it.id }
+        return roomTopics.map { roomRow ->
+            val memRow = memoryById[roomRow.id] ?: return@map roomRow
+            val mergedUnread = maxOf(roomRow.unreadCount, memRow.unreadCount)
+            val mergedMessageCount = maxOf(roomRow.messageCount, memRow.messageCount)
+            val mergedLastMessageAt = when {
+                memRow.lastMessageAt.isNullOrBlank() -> roomRow.lastMessageAt
+                roomRow.lastMessageAt.isNullOrBlank() -> memRow.lastMessageAt
+                memRow.lastMessageAt > roomRow.lastMessageAt -> memRow.lastMessageAt
+                else -> roomRow.lastMessageAt
+            }
+            roomRow.copy(
+                unreadCount = mergedUnread,
+                messageCount = mergedMessageCount,
+                lastMessageAt = mergedLastMessageAt,
+                lastMessageSenderUserId = memRow.lastMessageSenderUserId ?: roomRow.lastMessageSenderUserId,
+                lastMessageSenderUsername = memRow.lastMessageSenderUsername ?: roomRow.lastMessageSenderUsername,
+                lastMessageSenderAvatarRelativeUrl =
+                    memRow.lastMessageSenderAvatarRelativeUrl ?: roomRow.lastMessageSenderAvatarRelativeUrl,
             )
         }
     }

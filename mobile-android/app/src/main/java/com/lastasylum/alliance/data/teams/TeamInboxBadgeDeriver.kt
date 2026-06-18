@@ -1,6 +1,5 @@
 package com.lastasylum.alliance.data.teams
 
-import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
@@ -87,7 +86,6 @@ object TeamInboxBadgeDeriver {
         teamId: String,
     ): ForumUnreadCounts {
         val topics = teamsRepository.listForumTopics(teamId).getOrNull() ?: return ForumUnreadCounts(0, 0)
-        InboxUnreadReconciler.hydrateForumPrefsFromTopics(forumPrefs, teamId, topics)
         val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
         return computeForumUnreadCounts(topics, localRead)
     }

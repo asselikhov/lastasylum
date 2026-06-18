@@ -20,6 +20,9 @@ import org.junit.Test
  * - [ ] Forum topic open: peer msg realtime; Forum→Chat→Forum stash recovery
  * - [ ] Own message: optimistic → confirm without duplicate (chat + forum)
  * - [ ] HUD forum badge = sum of cards after mark-read
+ * - [ ] Quick command (coords + game event) → raid chat instant + strip sync
+ * - [ ] Peer hub msg with overlay closed → badge stays until hub opened & scrolled
+ * - [ ] Forum: peer post → fire animation + count +1; read topic → no fire on reopen
  */
 class OverlayChatForumRealtimeQaTest {
     @Test
@@ -93,6 +96,18 @@ class OverlayChatForumRealtimeQaTest {
                 selectedRoomId = "hub",
                 messageRoomId = "hub",
                 hubRoomId = "hub",
+            ),
+        )
+    }
+
+    @Test
+    fun raidForwardPolicy_appliesWhenRaidRoomSelected() {
+        assertTrue(
+            OverlayRaidChatForwardPolicy.shouldApplyToVisibleChat(
+                selectedRoomId = "raid-room",
+                messageRoomId = "raid-room",
+                overlayPanelVisible = true,
+                isPeerMessage = true,
             ),
         )
     }

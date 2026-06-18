@@ -1,7 +1,6 @@
 package com.lastasylum.alliance.overlay
 
 import android.content.Context
-import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.chat.ChatHubRoomSync
 import com.lastasylum.alliance.data.chat.ChatSessionCache
@@ -87,13 +86,6 @@ internal object OverlayColdStartHydrator {
             val newsPage = disk.loadTeamNews(uid, teamId)
             val forumTopics = disk.loadForumTopics(uid, teamId)
             if (newsPage != null || !forumTopics.isNullOrEmpty()) {
-                forumTopics?.let { topics ->
-                    InboxUnreadReconciler.hydrateForumPrefsFromTopics(
-                        container.teamForumPreferences,
-                        teamId,
-                        topics,
-                    )
-                }
                 val newsUnread = newsPage?.items?.let { items ->
                     TeamInboxUnread.countUnreadNews(
                         items,

@@ -121,6 +121,15 @@ interface ForumTopicDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(topics: List<ForumTopicEntity>)
 
+    @Query(
+        """
+        SELECT * FROM forum_topics
+        WHERE userId = :userId AND teamId = :teamId AND topicId = :topicId
+        LIMIT 1
+        """,
+    )
+    suspend fun getTopic(userId: String, teamId: String, topicId: String): ForumTopicEntity?
+
     @Query("DELETE FROM forum_topics WHERE userId = :userId AND teamId = :teamId")
     suspend fun deleteTeam(userId: String, teamId: String)
 }
