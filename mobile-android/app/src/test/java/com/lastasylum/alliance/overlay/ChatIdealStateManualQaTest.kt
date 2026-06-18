@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.overlay
 
+import com.lastasylum.alliance.overlay.OverlayHubUnreadPolicy
 import com.lastasylum.alliance.ui.chat.FORUM_GAP_RECONCILE_THRESHOLD_MS
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -10,6 +11,11 @@ import org.junit.Test
  * Device scenarios from [com.lastasylum.alliance.ui.chat.ChatRegressionChecklistTest] still require in-game pass.
  */
 class ChatIdealStateManualQaTest {
+    @Test
+    fun unreadChecklist_hubGraceTwoSeconds() {
+        assertEquals(2_000L, OverlayHubUnreadPolicy.RECONCILE_GRACE_MS)
+    }
+
     @Test
     fun unreadChecklist_forumGapReconcileWithinThirtySeconds() {
         assertEquals(30_000L, FORUM_GAP_RECONCILE_THRESHOLD_MS)

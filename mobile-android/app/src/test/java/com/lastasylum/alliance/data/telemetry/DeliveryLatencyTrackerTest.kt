@@ -37,10 +37,29 @@ class DeliveryLatencyTrackerTest {
 
     @Test
     fun overlayRaidQuickCommandSend_recordsSampleInSnapshot() {
-        tracker.startSpan(LatencySpanType.OverlayRaidQuickCommandSend, "pending-abc")
-        tracker.endSpanByCorrelation(LatencySpanType.OverlayRaidQuickCommandSend, "pending-abc", "ok")
+        tracker.startSpan(LatencySpanType.OverlayRaidQuickCommandSend, "client-abc")
+        tracker.endSpanByCorrelation(LatencySpanType.OverlayRaidQuickCommandSend, "client-abc", "ok")
         val stats = tracker.snapshot().byType[LatencySpanType.OverlayRaidQuickCommandSend]
         assertEquals(1, stats?.count)
+    }
+
+    @Test
+    fun sendChain_optimisticPaint_httpAck_socketAndPeerVisible() {
+        val clientId = "chain-client-1"
+        tracker.startSpan(LatencySpanType.ChatSendToOptimisticPaint, clientId)
+        tracker.startSpan(LatencySpanType.ChatSendToHttpAck, clientId)
+        tracker.startSpan(LatencySpanType.ChatSendToSocket, clientId)
+        tracker.endSpanByCorrelation(LatencySpanType.ChatSendToOptimisticPaint, clientId, "ok")
+        tracker.endSpanByCorrelation(LatencySpanType.ChatSendToHttpAck, clientId, "ok")
+        tracker.endSpanByCorrelation(LatencySpanType.ChatSendToSocket, clientId, "ok")
+        val peerId = "507f1f77bcf86cd799439011"
+        tracker.startSpan(LatencySpanType.ChatPeerMessageVisible, peerId)
+        tracker.endSpanByCorrelation(LatencySpanType.ChatPeerMessageVisible, peerId, "ok")
+        val snap = tracker.snapshot()
+        assertEquals(1, snap.byType[LatencySpanType.ChatSendToOptimisticPaint]?.count)
+        assertEquals(1, snap.byType[LatencySpanType.ChatSendToHttpAck]?.count)
+        assertEquals(1, snap.byType[LatencySpanType.ChatSendToSocket]?.count)
+        assertEquals(1, snap.byType[LatencySpanType.ChatPeerMessageVisible]?.count)
     }
 
     @Test

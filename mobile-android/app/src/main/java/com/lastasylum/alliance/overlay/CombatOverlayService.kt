@@ -2156,7 +2156,7 @@ class CombatOverlayService : Service() {
                     }
                     val hubBumpGraceActive = !hubLocallyRead &&
                         hubUnreadOptimisticFloor > 0 &&
-                        System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
+                        System.currentTimeMillis() - hubUnreadLastBumpAtMs < OverlayHubUnreadPolicy.RECONCILE_GRACE_MS
                     val hubMerged = when {
                         hubLocallyRead -> 0
                         hubBumpGraceActive || shouldDeferHubUnreadReconcile() ->
@@ -2242,7 +2242,7 @@ class CombatOverlayService : Service() {
         if (isAllianceHubLocallyReadSuppressedNow()) return false
         if (hubUnreadStickyUntilUserRead && hubUnreadOptimisticFloor > 0) return true
         if (hubUnreadOptimisticFloor <= 0) return false
-        return System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
+        return System.currentTimeMillis() - hubUnreadLastBumpAtMs < OverlayHubUnreadPolicy.RECONCILE_GRACE_MS
     }
 
     /** Hub «Альянс» badge on mail chip — routes through coalesced inbox refresh. */
@@ -2409,7 +2409,7 @@ class CombatOverlayService : Service() {
         val effective = serverEffectiveCount.coerceAtLeast(0)
         if (effective <= 0) {
             val hubBumpGraceActive = hubUnreadOptimisticFloor > 0 &&
-                System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
+                System.currentTimeMillis() - hubUnreadLastBumpAtMs < OverlayHubUnreadPolicy.RECONCILE_GRACE_MS
             if (shouldDeferHubUnreadReconcile() || hubBumpGraceActive) {
                 return maxOf(prev.allianceChatUnread, hubUnreadOptimisticFloor)
             }
@@ -2685,7 +2685,7 @@ class CombatOverlayService : Service() {
         val effective = serverEffectiveCount.coerceAtLeast(0)
         if (effective <= 0) {
             val hubBumpGraceActive = hubUnreadOptimisticFloor > 0 &&
-                System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
+                System.currentTimeMillis() - hubUnreadLastBumpAtMs < OverlayHubUnreadPolicy.RECONCILE_GRACE_MS
             val stickyActive = hubUnreadStickyUntilUserRead && hubUnreadOptimisticFloor > 0
             if (shouldDeferHubUnreadReconcile() || hubBumpGraceActive || stickyActive) {
                 val kept = maxOf(currentHudBadgeState().allianceChatUnread, hubUnreadOptimisticFloor)
@@ -2821,7 +2821,7 @@ class CombatOverlayService : Service() {
 
         if (serverUnread <= 0) {
             val hubBumpGraceActive = hubUnreadOptimisticFloor > 0 &&
-                System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
+                System.currentTimeMillis() - hubUnreadLastBumpAtMs < OverlayHubUnreadPolicy.RECONCILE_GRACE_MS
             val stickyActive = hubUnreadStickyUntilUserRead && hubUnreadOptimisticFloor > 0
             if (shouldDeferHubUnreadReconcile() || hubBumpGraceActive || stickyActive) {
                 val kept = maxOf(
@@ -3133,7 +3133,7 @@ class CombatOverlayService : Service() {
         pendingHubHudRefresh = true
         val delayMs = if (hubUnreadOptimisticFloor > 0) {
             maxOf(
-                HUB_UNREAD_RECONCILE_GRACE_MS,
+                OverlayHubUnreadPolicy.RECONCILE_GRACE_MS,
                 HUB_HUD_REFRESH_DEBOUNCE_MS + 1_500L,
             )
         } else {
@@ -4928,10 +4928,6 @@ class CombatOverlayService : Service() {
         gameEventAlert: String? = null,
     ) {
         val vm = ensureChatViewModelForQuickCommandSend() ?: return
-        deliveryLatencyTracker.startSpan(
-            LatencySpanType.OverlayRaidQuickCommandSend,
-            pendingId.trim(),
-        )
         if (overlayChatTeamPanelVisible) {
             showOverlayHudPane(OverlayHudPane.Chat)
         }
@@ -5103,14 +5099,7 @@ class CombatOverlayService : Service() {
         if (wm != null && isOverlayChatStripEnabled()) {
             runCatching { ensureChatStripWindow(wm) }
         }
-        sent.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { clientId ->
-            deliveryLatencyTracker.endSpanByCorrelation(
-                LatencySpanType.OverlayRaidQuickCommandSend,
-                clientId,
-                "ok",
-            )
-            OverlayPerfDiag.logDeliveryLatency(deliveryLatencyTracker)
-        }
+        OverlayPerfDiag.logDeliveryLatency(deliveryLatencyTracker)
         chatStripPreviewFlow.value = preview
         publishStripAfterLocalRaidSend()
         Log.i(
@@ -5904,22 +5893,17 @@ class CombatOverlayService : Service() {
         resolveCachedAllianceHubRoomId()
     }
 
-    @Volatile
-    private var overlayChatSubscriptionStarting: Boolean = false
+    private val overlayChatSubscriptionCoordinator = OverlayChatSubscriptionCoordinator()
 
     private fun beginOverlayChatSubscription() {
-        if (overlayMessageListener != null) {
-            syncOverlayRaidRoomSubscription()
-            refreshOverlayHubUnreadFromCache()
-            return
-        }
-        if (overlayChatSubscriptionStarting) return
-        overlayChatSubscriptionStarting = true
-        try {
-            beginOverlayChatSubscriptionImpl()
-        } finally {
-            overlayChatSubscriptionStarting = false
-        }
+        overlayChatSubscriptionCoordinator.begin(
+            hasActiveListener = overlayMessageListener != null,
+            onAlreadySubscribed = {
+                syncOverlayRaidRoomSubscription()
+                refreshOverlayHubUnreadFromCache()
+            },
+            onStartSubscription = { beginOverlayChatSubscriptionImpl() },
+        )
     }
 
     private fun beginOverlayChatSubscriptionImpl() {
@@ -7178,7 +7162,9 @@ class CombatOverlayService : Service() {
                         }
                         LaunchedEffect(selectedTab) {
                             overlayChatTeamTabIndex = selectedTab
-                            if (selectedTab == 0 && overlayPane == null) {
+                            val chatTabActive = selectedTab == 0 &&
+                                (overlayPane == null || overlayPane == OverlayHudPane.Chat)
+                            if (chatTabActive) {
                                 syncOverlayChatPanelVisibilityToViewModel(true)
                                 rehydrateOverlayChatFeedFromStash()
                             } else if (selectedTab != 0 && overlayPane == null) {
@@ -8135,8 +8121,6 @@ class CombatOverlayService : Service() {
         private const val GATE_STABLE_TICKS_FOR_SLOW_POLL = 5
         private const val HUD_REFRESH_MIN_INTERVAL_MS = 2_000L
         private const val HUB_HUD_REFRESH_DEBOUNCE_MS = 500L
-        /** After socket/VM bump, ignore stale listRooms that would zero the chip. */
-        private const val HUB_UNREAD_RECONCILE_GRACE_MS = 4_000L
         private const val OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS = 80L
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 0L

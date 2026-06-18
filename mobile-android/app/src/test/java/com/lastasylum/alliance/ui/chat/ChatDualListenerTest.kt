@@ -54,4 +54,13 @@ class ChatDualListenerTest {
         assertTrue(ChatSocketIngress.claimForUnreadBump(room, id))
         assertFalse(ChatSocketIngress.claimForUnreadBump(room, id))
     }
+
+    @Test
+    fun overlayAndVm_canBothObserveUnreadBump_withoutStealingListClaim() {
+        val room = "raid-room"
+        val id = "507f1f77bcf86cd799439013"
+        assertTrue(ChatSocketIngress.claimForUnreadBump(room, id))
+        assertTrue(ChatSocketIngress.claimForChatList(room, id))
+        assertFalse(ChatSocketIngress.claimForChatList(room, id))
+    }
 }

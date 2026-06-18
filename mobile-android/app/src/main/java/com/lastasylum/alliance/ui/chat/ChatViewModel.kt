@@ -501,6 +501,20 @@ class ChatViewModel(
             clearComposer: Boolean,
         ) {
             ChatDeliveryMetrics.logApply(roomId, scopedBatch.size)
+            val selfId = currentUserId.trim()
+            scopedBatch.forEach { message ->
+                val messageId = message._id?.trim().orEmpty()
+                if (messageId.isNotEmpty() &&
+                    selfId.isNotEmpty() &&
+                    message.senderId.trim() != selfId
+                ) {
+                    deliveryLatencyTracker.endSpanByCorrelation(
+                        com.lastasylum.alliance.data.telemetry.LatencySpanType.ChatPeerMessageVisible,
+                        messageId,
+                        "ok",
+                    )
+                }
+            }
             roomMessageCache[roomId] = ChatRoomMessageCache(
                 messages = committedMessages,
                 hasMoreOlder = _state.value.hasMoreOlder,
@@ -722,6 +736,19 @@ class ChatViewModel(
     }
 
     internal fun dispatchIncomingBatch(batch: List<ChatMessage>) {
+        val selfId = currentUserId.trim()
+        batch.forEach { message ->
+            val messageId = message._id?.trim().orEmpty()
+            if (messageId.isNotEmpty() &&
+                selfId.isNotEmpty() &&
+                message.senderId.trim() != selfId
+            ) {
+                deliveryLatencyTracker.startSpan(
+                    com.lastasylum.alliance.data.telemetry.LatencySpanType.ChatPeerMessageVisible,
+                    messageId,
+                )
+            }
+        }
         chatIncomingSync.dispatchIncomingBatch(batch)
     }
 

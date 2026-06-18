@@ -61,6 +61,7 @@ class ChatOutbox(
             clientMessageId = clientMessageId,
         )
         val httpAckSpanId = latencyTracker.startSpan(LatencySpanType.ChatSendToHttpAck, clientMessageId)
+        latencyTracker.startSpan(LatencySpanType.ChatSendToOptimisticPaint, clientMessageId)
         return OutboxEnqueueResult(
             clientMessageId = clientMessageId,
             pendingMessageId = pendingMessageId,

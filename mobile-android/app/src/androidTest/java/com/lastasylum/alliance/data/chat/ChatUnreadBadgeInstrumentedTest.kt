@@ -3,6 +3,7 @@ package com.lastasylum.alliance.data.chat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.effectiveUnreadCount
+import com.lastasylum.alliance.overlay.OverlayHubUnreadPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -12,6 +13,11 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class ChatUnreadBadgeInstrumentedTest {
+    @Test
+    fun hubUnreadGrace_twoSeconds() {
+        assertEquals(2_000L, OverlayHubUnreadPolicy.RECONCILE_GRACE_MS)
+    }
+
     @Test
     fun tabBadgeTotal_emptyRooms() {
         assertEquals(0, ChatUnreadCounts.tabBadgeTotal(emptyList()))

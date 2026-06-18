@@ -80,14 +80,17 @@ internal object OverlayPerfDiag {
     fun logDeliveryLatency(tracker: com.lastasylum.alliance.data.telemetry.DeliveryLatencyTracker) {
         if (!BuildConfig.DEBUG) return
         val snap = tracker.snapshot()
-        val quick = snap.byType[com.lastasylum.alliance.data.telemetry.LatencySpanType.OverlayRaidQuickCommandSend]
-        val strip = snap.byType[com.lastasylum.alliance.data.telemetry.LatencySpanType.OverlayStripIngest]
-        if (quick != null && quick.count > 0) {
-            Log.d(TAG, "latency raidQuickSend p50=${quick.p50Ms}ms p95=${quick.p95Ms}ms n=${quick.count}")
+        fun log(type: com.lastasylum.alliance.data.telemetry.LatencySpanType, label: String) {
+            val stats = snap.byType[type] ?: return
+            if (stats.count <= 0) return
+            Log.d(TAG, "latency $label p50=${stats.p50Ms}ms p95=${stats.p95Ms}ms n=${stats.count}")
         }
-        if (strip != null && strip.count > 0) {
-            Log.d(TAG, "latency stripIngest p50=${strip.p50Ms}ms p95=${strip.p95Ms}ms n=${strip.count}")
-        }
+        log(com.lastasylum.alliance.data.telemetry.LatencySpanType.OverlayRaidQuickCommandSend, "raidQuickSend")
+        log(com.lastasylum.alliance.data.telemetry.LatencySpanType.OverlayStripIngest, "stripIngest")
+        log(com.lastasylum.alliance.data.telemetry.LatencySpanType.ChatSendToOptimisticPaint, "optimisticPaint")
+        log(com.lastasylum.alliance.data.telemetry.LatencySpanType.ChatSendToHttpAck, "httpAck")
+        log(com.lastasylum.alliance.data.telemetry.LatencySpanType.ChatSendToSocket, "socketAck")
+        log(com.lastasylum.alliance.data.telemetry.LatencySpanType.ChatPeerMessageVisible, "peerVisible")
     }
 
     fun logGateState(

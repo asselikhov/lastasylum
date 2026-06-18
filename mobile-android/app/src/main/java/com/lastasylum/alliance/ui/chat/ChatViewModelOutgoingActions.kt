@@ -446,6 +446,10 @@ internal fun ChatViewModel.prepareOverlayRaidQuickCommandOutgoingImpl(
             gameEventAlert = gameEventAlert,
         )
         overlayQuickCommandPrepared[pending] = prepared
+        deliveryLatencyTracker.startSpan(
+            com.lastasylum.alliance.data.telemetry.LatencySpanType.OverlayRaidQuickCommandSend,
+            prepared.clientMessageId,
+        )
         insertOptimisticOutgoingSynchronously(prepared.optimisticMessage, clearComposer = false)
         trackActiveOutgoingClientMessageId(prepared.clientMessageId)
     }
@@ -870,6 +874,18 @@ internal fun ChatViewModel.insertOptimisticOutgoingSynchronouslyImpl(
         }
         vmState.value = syncSelections(nextState)
         publishMessagesDerivedImmediate(capped)
+        message.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { clientId ->
+            deliveryLatencyTracker.endSpanByCorrelation(
+                com.lastasylum.alliance.data.telemetry.LatencySpanType.ChatSendToOptimisticPaint,
+                clientId,
+                "ok",
+            )
+            deliveryLatencyTracker.endSpanByCorrelation(
+                com.lastasylum.alliance.data.telemetry.LatencySpanType.OverlayRaidQuickCommandSend,
+                clientId,
+                "ok",
+            )
+        }
         val rid = vmState.value.selectedRoomId
         if (!rid.isNullOrBlank()) {
             roomMessageCache[rid] = ChatRoomMessageCache(
