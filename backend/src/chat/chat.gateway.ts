@@ -27,6 +27,7 @@ import { Types } from 'mongoose';
 import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatAttachmentsService } from './chat-attachments.service';
 import { OverlayReactionLogService } from './overlay-reaction-log.service';
+import { ChatEligibleUsersCacheService } from './chat-eligible-users-cache.service';
 import { normalizeOverlayChatStickerReaction } from './overlay-sticker-reaction.util';
 import {
   emitPersonalChatFanoutToSockets,
@@ -151,11 +152,6 @@ export class ChatGateway {
 
   /** socketId:roomId -> last typing broadcast (ms). */
   private readonly wsTypingLastEmit = new Map<string, number>();
-  private readonly eligibleUsersCache = new Map<
-    string,
-    { userIds: string[]; until: number }
-  >();
-  private static readonly ELIGIBLE_USERS_CACHE_MS = 15_000;
 
   constructor(
     private readonly chatService: ChatService,
@@ -166,6 +162,7 @@ export class ChatGateway {
     private readonly pushNotifications: PushNotificationsService,
     private readonly attachmentsService: ChatAttachmentsService,
     private readonly overlayReactionLogService: OverlayReactionLogService,
+    private readonly eligibleUsersCache: ChatEligibleUsersCacheService,
   ) {}
 
   handleConnection(client: AuthSocket) {
@@ -233,7 +230,7 @@ export class ChatGateway {
     const key = `chat:${roomId}`;
     /** Allow multiple chat rooms per socket (e.g. selected room + «Рейд» for overlay). */
     await client.join(key);
-    this.invalidateEligibleUsersCache(roomId);
+    this.eligibleUsersCache.invalidate(roomId);
 
     return { event: 'room:joined', data: { roomId } };
   }
@@ -937,20 +934,16 @@ export class ChatGateway {
     if (!room) return [];
     const userIds =
       await this.usersService.listActiveUserIdsForChatRoomAccess(room);
-    this.eligibleUsersCache.set(rid, {
+    this.eligibleUsersCache.set(
+      rid,
       userIds,
-      until: now + ChatGateway.ELIGIBLE_USERS_CACHE_MS,
-    });
+      now + ChatEligibleUsersCacheService.CACHE_MS,
+    );
     return userIds;
   }
 
   invalidateEligibleUsersCache(roomId?: string): void {
-    const rid = roomId?.trim();
-    if (rid) {
-      this.eligibleUsersCache.delete(rid);
-      return;
-    }
-    this.eligibleUsersCache.clear();
+    this.eligibleUsersCache.invalidate(roomId);
   }
 
   private async listEligibleUserIdsForRoom(roomId: string): Promise<string[]> {

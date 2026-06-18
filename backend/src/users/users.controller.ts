@@ -5,7 +5,6 @@ import {
   Delete,
   Get,
   Header,
-  Inject,
   Logger,
   NotFoundException,
   Param,
@@ -17,7 +16,6 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  forwardRef,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -39,7 +37,7 @@ import { UpdateUsernameDto } from './dto/update-username.dto';
 import { UpdateTelegramDto } from './dto/update-telegram.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { MuteUserDto } from './dto/mute-user.dto';
-import { ChatGateway } from '../chat/chat.gateway';
+import { ChatEligibleUsersCacheService } from '../chat/chat-eligible-users-cache.service';
 import {
   RegisterPushTokenDto,
   UpdatePresenceDto,
@@ -69,8 +67,7 @@ export class UsersController {
     private readonly gameIdentities: GameIdentitiesService,
     private readonly teamPresenceGateway: TeamPresenceGateway,
     private readonly userAvatarService: UserAvatarService,
-    @Inject(forwardRef(() => ChatGateway))
-    private readonly chatGateway: ChatGateway,
+    private readonly eligibleUsersCache: ChatEligibleUsersCacheService,
   ) {}
 
   @Get('me')
@@ -351,7 +348,7 @@ export class UsersController {
     if (!updatedUser) {
       throw new NotFoundException('User not found');
     }
-    this.chatGateway.invalidateEligibleUsersCache();
+    this.eligibleUsersCache.invalidate();
     return await this.usersService.toSafeUser(updatedUser);
   }
 

@@ -27,6 +27,7 @@ import {
   OverlayReactionLogReadStateSchema,
 } from './schemas/overlay-reaction-log-read-state.schema';
 import { OverlayReactionLogService } from './overlay-reaction-log.service';
+import { ChatEligibleUsersCacheService } from './chat-eligible-users-cache.service';
 import { StorageModule } from '../storage/storage.module';
 import {
   PlayerTeam,
@@ -64,7 +65,14 @@ import {
     ChatRoomsService,
     ChatAttachmentsService,
     OverlayReactionLogService,
+    ChatEligibleUsersCacheService,
   ],
-  exports: [ChatService, ChatRoomsService, ChatGateway, OverlayReactionLogService],
+  exports: [
+    ChatService,
+    ChatRoomsService,
+    ChatGateway,
+    OverlayReactionLogService,
+    ChatEligibleUsersCacheService,
+  ],
 })
 export class ChatModule {}

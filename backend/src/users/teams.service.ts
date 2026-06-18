@@ -8,7 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { ChatRoomsService } from '../chat/chat-rooms.service';
-import { ChatGateway } from '../chat/chat.gateway';
+import { ChatEligibleUsersCacheService } from '../chat/chat-eligible-users-cache.service';
 import { playerTeamChatAllianceId } from '../chat/chat-alliance-scope';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -123,13 +123,12 @@ export class TeamsService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     @Inject(forwardRef(() => ChatRoomsService))
     private readonly chatRoomsService: ChatRoomsService,
-    @Inject(forwardRef(() => ChatGateway))
-    private readonly chatGateway: ChatGateway,
+    private readonly eligibleUsersCache: ChatEligibleUsersCacheService,
     private readonly gameIdentities: GameIdentitiesService,
   ) {}
 
   private invalidateChatEligibleUsersCache(): void {
-    this.chatGateway.invalidateEligibleUsersCache();
+    this.eligibleUsersCache.invalidate();
   }
 
   /** Display name for game-event push banner (FCM data). */
