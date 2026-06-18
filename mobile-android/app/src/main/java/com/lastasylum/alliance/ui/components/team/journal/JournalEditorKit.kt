@@ -26,9 +26,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.outlined.Article
 import androidx.compose.material.icons.outlined.Poll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -183,7 +183,7 @@ fun JournalModeChips(
                 JournalEditorMode.PollOnly -> pollLabel
             }
             val icon = when (mode) {
-                JournalEditorMode.News -> Icons.Outlined.Article
+                JournalEditorMode.News -> Icons.AutoMirrored.Outlined.Article
                 JournalEditorMode.PollOnly -> Icons.Outlined.Poll
             }
             JournalModeChip(
@@ -488,7 +488,7 @@ fun JournalPrimaryButton(
 fun JournalEmptyState(
     message: String,
     modifier: Modifier = Modifier,
-    icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Outlined.Article,
+    icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.AutoMirrored.Outlined.Article,
 ) {
     Column(
         modifier = modifier
