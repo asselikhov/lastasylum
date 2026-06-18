@@ -87,6 +87,25 @@ class OverlayHudBadgePanelCloseTest {
     }
 
     @Test
+    fun panelClose_newsListWithoutMarkRead_keepsOptimisticBadge() {
+        val (bus, coordinator) = busWithCoordinator()
+        coordinator.bumpNewsOptimistic(2)
+        bus.emit(OverlayHudBadgeEvent.NewsUnread(2, useAuthoritative = false))
+        ShadowLooper.idleMainLooper()
+        assertEquals(2, bus.current().teamNewsUnread)
+
+        // Closing news list without mark-read flush must not clear optimistic floor.
+        bus.emit(
+            OverlayHudBadgeEvent.NewsUnread(
+                2,
+                useAuthoritative = true,
+            ),
+        )
+        ShadowLooper.idleMainLooper()
+        assertEquals(2, bus.current().teamNewsUnread)
+    }
+
+    @Test
     fun panelClose_fullRefreshAfterMarkRead_keepsZeroBadges() {
         val (bus, coordinator) = busWithCoordinator()
         coordinator.bumpNewsOptimistic(1)

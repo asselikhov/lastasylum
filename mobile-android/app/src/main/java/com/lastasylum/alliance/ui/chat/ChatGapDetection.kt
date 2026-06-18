@@ -2,11 +2,14 @@ package com.lastasylum.alliance.ui.chat
 
 import com.lastasylum.alliance.data.isObjectIdNewer
 
-/** Forum topics: align gap window with general chat (apply-first, background reconcile). */
-internal const val FORUM_GAP_RECONCILE_THRESHOLD_MS = 120_000L
+/** Forum topics: faster background reconcile after missed socket events. */
+internal const val FORUM_GAP_RECONCILE_THRESHOLD_MS = 30_000L
+
+/** Forum topics: reconcile on any ObjectId counter gap (single missed message). */
+internal const val FORUM_GAP_MIN_COUNTER = 1L
 
 /** Max ObjectId timestamp gap before we assume missed messages and force REST reconcile. */
-internal const val CHAT_GAP_RECONCILE_THRESHOLD_MS = 120_000L
+internal const val CHAT_GAP_RECONCILE_THRESHOLD_MS = 30_000L
 
 /** Raid room: shorter gap window — overlay stash + quick commands need faster reconcile. */
 internal const val RAID_GAP_RECONCILE_THRESHOLD_MS = 60_000L
@@ -40,6 +43,7 @@ internal fun shouldTriggerGapReconcile(
     incomingId: String?,
     knownMessageIds: Set<String>,
     thresholdMs: Long = CHAT_GAP_RECONCILE_THRESHOLD_MS,
+    minCounterGap: Long = 2L,
 ): Boolean {
     val newest = visibleNewestId?.trim().orEmpty()
     val incoming = incomingId?.trim().orEmpty()
@@ -47,7 +51,7 @@ internal fun shouldTriggerGapReconcile(
     if (incoming in knownMessageIds) return false
     if (!isObjectIdNewer(incoming, newest)) return false
     val counterGap = objectIdCounterGap(newest, incoming)
-    if (counterGap > 1L) return true
+    if (counterGap >= minCounterGap) return true
     return objectIdTimestampGapMs(newest, incoming) >= thresholdMs
 }
 

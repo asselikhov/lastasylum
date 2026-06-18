@@ -36,6 +36,14 @@ class DeliveryLatencyTrackerTest {
     }
 
     @Test
+    fun overlayRaidQuickCommandSend_recordsSampleInSnapshot() {
+        tracker.startSpan(LatencySpanType.OverlayRaidQuickCommandSend, "pending-abc")
+        tracker.endSpanByCorrelation(LatencySpanType.OverlayRaidQuickCommandSend, "pending-abc", "ok")
+        val stats = tracker.snapshot().byType[LatencySpanType.OverlayRaidQuickCommandSend]
+        assertEquals(1, stats?.count)
+    }
+
+    @Test
     fun snapshot_aggregatesMultipleSamples() {
         repeat(3) { i ->
             val id = tracker.startSpan(LatencySpanType.ChatReadReceipt, "msg-$i")

@@ -194,4 +194,30 @@ class ChatOutboxTest {
         }
         assertEquals(2, sendCount)
     }
+
+    @Test
+    fun pendingRow_survivesProcessRestartSimulation() = runBlocking {
+        val dao = db.chatOutboxDao()
+        dao.upsert(
+            ChatOutboxEntity(
+                clientMessageId = "client-kill",
+                userId = "user1",
+                roomId = "room1",
+                pendingMessageId = "pending-kill",
+                text = "after kill",
+                replyToMessageId = null,
+                attachmentsJson = null,
+                excavationAlert = false,
+                source = OutboxSendSource.ChatUi.wire,
+                state = OutboxSendState.Pending.wire,
+                attempts = 0,
+                createdAtMs = 99L,
+            ),
+        )
+        val reloadedDb = SquadRelayDatabase.createInMemory(context)
+        reloadedDb.chatOutboxDao().upsert(dao.getByClientId("client-kill")!!)
+        val resumable = reloadedDb.chatOutboxDao().getResumable("user1")
+        assertEquals(1, resumable.size)
+        assertEquals("client-kill", resumable.first().clientMessageId)
+    }
 }

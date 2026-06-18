@@ -74,15 +74,17 @@ object TeamNewsReadCursorSync {
         teamId: String,
         createdAt: String?,
     ) {
-        markSeenJob?.cancel()
-        pendingSeenIso = null
-        pendingTeamId = null
-        val iso = createdAt?.trim().orEmpty()
-        if (iso.isEmpty()) return
-        mergeSeenAtIntoPrefs(iso, prefs, teamId)
         val tid = teamId.trim()
         if (tid.isNotEmpty()) {
-            teamsRepository.advanceTeamNewsReadCursor(tid, iso)
+            flushPendingNewsCursor(teamsRepository, prefs, tid)
+        }
+        val iso = createdAt?.trim().orEmpty()
+        if (iso.isEmpty()) return
+        val localIso = prefs.getLastSeenTeamNewsCreatedAt(tid)?.trim().orEmpty()
+        val effectiveIso = maxSeenIso(iso, localIso) ?: iso
+        mergeSeenAtIntoPrefs(effectiveIso, prefs, teamId)
+        if (tid.isNotEmpty()) {
+            teamsRepository.advanceTeamNewsReadCursor(tid, effectiveIso)
         }
         CombatOverlayService.notifyOverlayTeamInboxChanged(news = true)
     }
@@ -142,4 +144,14 @@ object TeamNewsReadCursorSync {
             CombatOverlayService.notifyOverlayTeamInboxChanged(news = true)
         }
     }
+
+    private fun maxSeenIso(vararg candidates: String): String? =
+        candidates.asSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .mapNotNull { iso ->
+                runCatching { Instant.parse(iso) }.getOrNull()?.let { parsed -> iso to parsed }
+            }
+            .maxByOrNull { it.second }
+            ?.first
 }

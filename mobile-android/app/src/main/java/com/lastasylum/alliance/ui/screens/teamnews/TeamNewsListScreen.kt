@@ -26,6 +26,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -95,6 +96,7 @@ internal fun TeamNewsListScreen(
     var newsNextCursor by remember { mutableStateOf(cachedPage?.nextCursor) }
     var loadingMore by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    var readCursorRevision by remember(teamId) { mutableIntStateOf(0) }
 
     suspend fun loadNewsPage(cursor: String?, append: Boolean, silent: Boolean = false) {
         if (append) loadingMore = true else if (!silent) loading = true
@@ -144,6 +146,7 @@ internal fun TeamNewsListScreen(
                     teamId = teamId,
                     currentUserId = currentUserId,
                 )
+                readCursorRevision++
                 onNewsInboxChanged()
                 loadNewsPage(cursor = null, append = false, silent = true)
             }
@@ -153,7 +156,7 @@ internal fun TeamNewsListScreen(
         onDispose { onProvideMarkReadAction("list", null) }
     }
 
-    val unreadNewsIds = remember(newsItems, currentUserId) {
+    val unreadNewsIds = remember(newsItems, currentUserId, readCursorRevision) {
         val currentUser = currentUserId.trim()
         val lastSeen = newsPrefs.getLastSeenTeamNewsCreatedAt(teamId)
             ?.let { runCatching { Instant.parse(it) }.getOrNull() }
@@ -229,6 +232,7 @@ internal fun TeamNewsListScreen(
             .collect { newestSeen ->
                 val iso = newestSeen ?: return@collect
                 markNewsSeenUpToRef.value(iso)
+                readCursorRevision++
             }
     }
     if (overlayUi) {
@@ -240,6 +244,7 @@ internal fun TeamNewsListScreen(
                         prefs = newsPrefs,
                         teamId = teamId,
                     )
+                    readCursorRevision++
                 }
             }
         }

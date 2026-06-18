@@ -108,6 +108,15 @@ class OverlayInboxBadgeCoordinatorTest {
     }
 
     @Test
+    fun invalidateNewsBadgeCachesFully_clearsCoordinatorAndHudRefreshCache() {
+        val coordinator = OverlayInboxBadgeCoordinator()
+        coordinator.cacheAuthoritativeNews("team1", 3)
+        OverlayGameStatusHudRefresh.seedBadgesFromDisk("team1", newsUnread = 3, forumUnread = 0)
+        coordinator.invalidateNewsBadgeCachesFully()
+        assertEquals(null, coordinator.readCachedNews("team1"))
+    }
+
+    @Test
     fun cacheAuthoritative_storesServerNotDisplayed() {
         val coordinator = OverlayInboxBadgeCoordinator()
         coordinator.cacheAuthoritativeNews("team1", 0)

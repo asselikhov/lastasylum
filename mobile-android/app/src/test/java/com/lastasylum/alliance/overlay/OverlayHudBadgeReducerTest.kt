@@ -78,4 +78,23 @@ class OverlayHudBadgeBusPartialRefreshTest {
         ShadowLooper.idleMainLooper()
         assertEquals(0, flow.value.allianceChatUnread)
     }
+
+    @Test
+    fun bus_coalescedPartialRefresh_doesNotZeroExistingChip() {
+        val flow = MutableStateFlow(OverlayGameStatusHudState(teamNewsUnread = 4))
+        val coordinator = OverlayInboxBadgeCoordinator()
+        val reducer = OverlayHudBadgeReducer(flow)
+        val bus = OverlayHudBadgeBus(
+            reducer = reducer,
+            mergeNews = coordinator::mergeHudNews,
+            mergeForum = { effective, prev, raw, useAuthoritative ->
+                coordinator.mergeHudForum(effective, prev, useAuthoritative, raw)
+            },
+        )
+        coordinator.bumpForumOptimistic(2)
+        bus.emit(OverlayHudBadgeEvent.ForumUnread(2, rawServer = 2, useAuthoritative = false))
+        ShadowLooper.idleMainLooper()
+        assertEquals(4, flow.value.teamNewsUnread)
+        assertEquals(2, flow.value.forumUnread)
+    }
 }

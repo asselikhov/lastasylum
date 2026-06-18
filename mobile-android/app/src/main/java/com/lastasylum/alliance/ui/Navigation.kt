@@ -269,6 +269,7 @@ fun AppNavigation(
     val msgDeleted = stringResource(R.string.admin_ok_deleted)
     val msgOverlaySaved = stringResource(R.string.admin_ok_overlay)
     val msgStickerSaved = stringResource(R.string.admin_sticker_saved)
+    // Bottom nav CHAT badge sums all rooms; overlay mail HUD chip is alliance hub only (by design).
     val chatTabUnreadTotal by chatViewModel.state
         .map { it.tabUnreadBadge }
         .distinctUntilChanged()

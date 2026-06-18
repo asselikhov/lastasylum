@@ -77,6 +77,19 @@ internal object OverlayPerfDiag {
         Log.d(TAG, "panelOpen pane=$pane")
     }
 
+    fun logDeliveryLatency(tracker: com.lastasylum.alliance.data.telemetry.DeliveryLatencyTracker) {
+        if (!BuildConfig.DEBUG) return
+        val snap = tracker.snapshot()
+        val quick = snap.byType[com.lastasylum.alliance.data.telemetry.LatencySpanType.OverlayRaidQuickCommandSend]
+        val strip = snap.byType[com.lastasylum.alliance.data.telemetry.LatencySpanType.OverlayStripIngest]
+        if (quick != null && quick.count > 0) {
+            Log.d(TAG, "latency raidQuickSend p50=${quick.p50Ms}ms p95=${quick.p95Ms}ms n=${quick.count}")
+        }
+        if (strip != null && strip.count > 0) {
+            Log.d(TAG, "latency stripIngest p50=${strip.p50Ms}ms p95=${strip.p95Ms}ms n=${strip.count}")
+        }
+    }
+
     fun logGateState(
         inGame: Boolean,
         showUi: Boolean,

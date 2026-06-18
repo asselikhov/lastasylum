@@ -414,6 +414,8 @@ class CombatOverlayService : Service() {
 
     private val overlayHudBadgeReducer = OverlayHudBadgeReducer(overlayStatusHudFlow)
     private var overlayInboxPartialRefreshJob: Job? = null
+
+    private val inboxBadgeRefreshPipeline = OverlayInboxBadgeRefreshPipeline()
     private val overlayHudBadgeBus: OverlayHudBadgeBus by lazy {
         OverlayHudBadgeBus(
             reducer = overlayHudBadgeReducer,
@@ -1140,9 +1142,16 @@ class CombatOverlayService : Service() {
         pendingHubHudRefresh = false
         pendingForumHudRefresh = false
         pendingNewsHudRefresh = false
-        if (doHub) refreshOverlayHubUnreadOnly()
-        if (doForum) refreshOverlayForumBadgeOnly()
-        if (doNews) refreshOverlayNewsBadgeOnly()
+        if (doHub || doForum || doNews) {
+            refreshOverlayInboxBadgesCoalesced(
+                includeHub = doHub,
+                includeNews = doNews,
+                includeForum = doForum,
+                forceHubReconcile = doHub,
+                forceNewsReconcile = doNews,
+                forceForumReconcile = doForum,
+            )
+        }
     }
 
     @Volatile
@@ -2208,6 +2217,7 @@ class CombatOverlayService : Service() {
                     refreshOverlayStatusHudData()
                 } else {
                     hudRefreshPending = false
+                    flushPendingOverlayInboxCoalescedRefresh()
                 }
             }
         }
@@ -2235,16 +2245,47 @@ class CombatOverlayService : Service() {
         return System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
     }
 
-    /** Hub «Альянс» badge on mail chip — cache-first, API reconcile. */
+    /** Hub «Альянс» badge on mail chip — routes through coalesced inbox refresh. */
     private fun refreshOverlayHubUnreadOnly() {
-        if (!isInGameOverlayUiActive()) return
-        if (shouldDeferHubUnreadReconcile()) return
-        serviceScope.launch(Dispatchers.IO) {
-            val counts = fetchAllianceHubUnreadCounts() ?: return@launch
-            mainHandler.post {
-                applyAllianceHubUnreadReconciled(counts.first, counts.second)
-            }
-        }
+        refreshOverlayInboxBadgesCoalesced(
+            includeHub = true,
+            includeNews = false,
+            includeForum = false,
+            forceHubReconcile = true,
+        )
+    }
+
+    private fun queueOverlayInboxCoalescedRefresh(
+        includeHub: Boolean,
+        includeNews: Boolean,
+        includeForum: Boolean,
+        forceHubReconcile: Boolean,
+        forceNewsReconcile: Boolean,
+        forceForumReconcile: Boolean,
+        includeReactionLog: Boolean,
+    ) {
+        inboxBadgeRefreshPipeline.queue(
+            includeHub = includeHub,
+            includeNews = includeNews,
+            includeForum = includeForum,
+            forceHubReconcile = forceHubReconcile,
+            forceNewsReconcile = forceNewsReconcile,
+            forceForumReconcile = forceForumReconcile,
+            includeReactionLog = includeReactionLog,
+        )
+    }
+
+    private fun flushPendingOverlayInboxCoalescedRefresh() {
+        val pending = inboxBadgeRefreshPipeline.takePending() ?: return
+        refreshOverlayInboxBadgesCoalesced(
+            includeHub = pending.includeHub,
+            includeNews = pending.includeNews,
+            includeForum = pending.includeForum,
+            forceHubReconcile = pending.forceHubReconcile,
+            forceNewsReconcile = pending.forceNewsReconcile,
+            forceForumReconcile = pending.forceForumReconcile,
+            includeReactionLog = pending.includeReactionLog,
+        )
     }
 
     /**
@@ -2254,10 +2295,23 @@ class CombatOverlayService : Service() {
     private fun refreshOverlayInboxBadgesCoalesced(
         includeReactionLog: Boolean = false,
         forceForumReconcile: Boolean = false,
+        forceNewsReconcile: Boolean = false,
+        forceHubReconcile: Boolean = false,
+        includeHub: Boolean = true,
+        includeNews: Boolean = true,
+        includeForum: Boolean = true,
     ) {
         if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
         if (hudRefreshInFlight) {
-            hudRefreshPending = true
+            queueOverlayInboxCoalescedRefresh(
+                includeHub = includeHub,
+                includeNews = includeNews,
+                includeForum = includeForum,
+                forceHubReconcile = forceHubReconcile,
+                forceNewsReconcile = forceNewsReconcile,
+                forceForumReconcile = forceForumReconcile,
+                includeReactionLog = includeReactionLog,
+            )
             return
         }
         overlayInboxPartialRefreshJob?.cancel()
@@ -2267,20 +2321,25 @@ class CombatOverlayService : Service() {
                 val profile = container.usersRepository.resolveMyProfilePreferCache()
                 val teamId = profile?.playerTeamId?.trim().orEmpty()
                 val userId = profile?.id?.trim().orEmpty()
-                val hubCounts = if (!shouldDeferHubUnreadReconcile()) {
-                    computeAllianceHubUnreadFromCache()
+                val hubCounts = if (includeHub && !shouldDeferHubUnreadReconcile()) {
+                    if (forceHubReconcile) {
+                        fetchAllianceHubUnreadCounts()
+                    } else {
+                        computeAllianceHubUnreadFromCache()
+                    }
                 } else {
                     null
                 }
-                val newsCount = if (teamId.isNotEmpty() && userId.isNotEmpty() &&
-                    !inboxBadgeCoordinator.shouldDeferNewsReconcile() &&
-                    !inboxBadgeCoordinator.isNewsOptimisticActive()
+                val newsCount = if (includeNews && teamId.isNotEmpty() && userId.isNotEmpty() &&
+                    (forceNewsReconcile ||
+                        (!inboxBadgeCoordinator.shouldDeferNewsReconcile() &&
+                            !inboxBadgeCoordinator.isNewsOptimisticActive()))
                 ) {
                     inboxBadgeCoordinator.fetchNewsUnread(this@CombatOverlayService, teamId, userId)
                 } else {
                     null
                 }
-                val forumCounts = if (teamId.isNotEmpty() &&
+                val forumCounts = if (includeForum && teamId.isNotEmpty() &&
                     (forceForumReconcile ||
                         (!inboxBadgeCoordinator.shouldDeferForumReconcile() &&
                             !inboxBadgeCoordinator.isForumOptimisticActive()))
@@ -2387,28 +2446,12 @@ class CombatOverlayService : Service() {
     }
 
     private fun refreshOverlayNewsBadgeOnly(force: Boolean = false) {
-        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
-        if (!force &&
-            (inboxBadgeCoordinator.shouldDeferNewsReconcile() ||
-                inboxBadgeCoordinator.isNewsOptimisticActive())
-        ) {
-            return
-        }
-        serviceScope.launch(Dispatchers.IO) {
-            val container = AppContainer.from(this@CombatOverlayService)
-            val profile = container.usersRepository.resolveMyProfilePreferCache() ?: return@launch
-            val teamId = profile.playerTeamId?.trim().orEmpty()
-            if (teamId.isEmpty()) return@launch
-            val userId = profile.id.trim()
-            val count = inboxBadgeCoordinator.fetchNewsUnread(this@CombatOverlayService, teamId, userId)
-            mainHandler.post {
-                if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return@post
-                inboxBadgeCoordinator.cacheAuthoritativeNews(teamId, count)
-                overlayHudBadgeBus.emit(
-                    OverlayHudBadgeEvent.NewsUnread(count, useAuthoritative = true),
-                )
-            }
-        }
+        refreshOverlayInboxBadgesCoalesced(
+            includeHub = false,
+            includeNews = true,
+            includeForum = false,
+            forceNewsReconcile = force,
+        )
     }
 
     /**
@@ -2417,6 +2460,18 @@ class CombatOverlayService : Service() {
      */
     private fun applyInstantOverlayHudFromLocalCaches() {
         if (!isInGameOverlayUiActive()) return
+        if (hudRefreshInFlight) {
+            queueOverlayInboxCoalescedRefresh(
+                includeHub = true,
+                includeNews = true,
+                includeForum = true,
+                forceHubReconcile = false,
+                forceNewsReconcile = false,
+                forceForumReconcile = false,
+                includeReactionLog = false,
+            )
+            return
+        }
         val instant = OverlayGameStatusHudRefresh.buildInstantLocalState(this) ?: return
         val prev = overlayHudBadgeReducer.current()
         overlayHudBadgeBus.emit(
@@ -2507,34 +2562,12 @@ class CombatOverlayService : Service() {
     }
 
     private fun refreshOverlayForumBadgeOnly(force: Boolean = false) {
-        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
-        if (!force &&
-            (inboxBadgeCoordinator.shouldDeferForumReconcile() ||
-                inboxBadgeCoordinator.isForumOptimisticActive())
-        ) {
-            return
-        }
-        serviceScope.launch(Dispatchers.IO) {
-            val container = AppContainer.from(this@CombatOverlayService)
-            val teamId = container.usersRepository.resolveMyProfilePreferCache()?.playerTeamId?.trim().orEmpty()
-            if (teamId.isEmpty()) return@launch
-            val counts = inboxBadgeCoordinator.fetchForumUnreadCounts(this@CombatOverlayService, teamId)
-            mainHandler.post {
-                if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return@post
-                inboxBadgeCoordinator.cacheAuthoritativeForum(
-                    teamId,
-                    counts.effective,
-                    counts.rawServer,
-                )
-                overlayHudBadgeBus.emit(
-                    OverlayHudBadgeEvent.ForumUnread(
-                        effective = counts.effective,
-                        rawServer = counts.rawServer,
-                        useAuthoritative = true,
-                    ),
-                )
-            }
-        }
+        refreshOverlayInboxBadgesCoalesced(
+            includeHub = false,
+            includeNews = false,
+            includeForum = true,
+            forceForumReconcile = force,
+        )
     }
 
     private fun refreshOverlayReactionLogUnreadBadge() {
@@ -2971,19 +3004,29 @@ class CombatOverlayService : Service() {
 
     /** Forum pane open: bump list refresh + badge from stash/inbox. */
     private fun rehydrateOverlayForumFromStash() {
-        OverlayGameStatusHudRefresh.invalidateForumCache()
+        inboxBadgeCoordinator.invalidateForumBadgeCachesFully()
         mainHandler.post {
             overlayForumRehydrateAction?.invoke()
-            refreshOverlayForumBadgeOnly(force = true)
+            refreshOverlayInboxBadgesCoalesced(
+                includeHub = false,
+                includeNews = false,
+                includeForum = true,
+                forceForumReconcile = true,
+            )
         }
     }
 
     /** News pane open: bump list refresh + badge from stash/inbox. */
     private fun rehydrateOverlayNewsFromStash() {
-        OverlayGameStatusHudRefresh.invalidateNewsCache()
+        inboxBadgeCoordinator.invalidateNewsBadgeCachesFully()
         mainHandler.post {
             overlayNewsRehydrateAction?.invoke()
-            refreshOverlayNewsBadgeOnly(force = true)
+            refreshOverlayInboxBadgesCoalesced(
+                includeHub = false,
+                includeNews = true,
+                includeForum = false,
+                forceNewsReconcile = true,
+            )
         }
     }
 
@@ -4051,7 +4094,6 @@ class CombatOverlayService : Service() {
             if (uid.isNotEmpty()) {
                 serviceScope.launch(Dispatchers.IO) {
                     OverlayColdStartHydrator.hydrate(this@CombatOverlayService, uid)
-                    mainHandler.post { applyInstantOverlayHudFromLocalCaches() }
                 }
             }
             seedOverlayInboxBadgesBeforeRefresh()
@@ -4059,7 +4101,6 @@ class CombatOverlayService : Service() {
                 OverlayGameStatusHudRefresh.invalidateNewsForumCache()
             }
             lastHudRefreshCompletedAtMs = 0L
-            syncOverlayHubBadgeFromAppReadState()
             repairDetachedOverlayShellIfNeeded()
             attachOverlayHudWindowsIfNeeded()
             mainHandler.post {
@@ -4679,7 +4720,7 @@ class CombatOverlayService : Service() {
                     bumpForumUnreadLocally(event.messageId)
                     return@post
                 }
-                OverlayGameStatusHudRefresh.invalidateForumCache()
+                inboxBadgeCoordinator.invalidateForumBadgeCachesFully()
                 if (isInGameOverlayUiActive() || isOverlayUiHoldActive()) {
                     scheduleDebouncedForumHudRefresh()
                 }
@@ -4696,6 +4737,7 @@ class CombatOverlayService : Service() {
             val baseUrl = BuildConfig.API_BASE_URL.trimEnd('/')
             mainHandler.post {
                 if (!shouldRetainOverlayRaidRealtime()) return@post
+                if (container.teamForumSocket.activeSubscribedTopicId() != null) return@post
                 container.teamForumSocket.connectTeamInbox(baseUrl, teamId) {
                     container.tokenStore.getAccessToken()
                 }
@@ -4886,6 +4928,10 @@ class CombatOverlayService : Service() {
         gameEventAlert: String? = null,
     ) {
         val vm = ensureChatViewModelForQuickCommandSend() ?: return
+        deliveryLatencyTracker.startSpan(
+            LatencySpanType.OverlayRaidQuickCommandSend,
+            pendingId.trim(),
+        )
         if (overlayChatTeamPanelVisible) {
             showOverlayHudPane(OverlayHudPane.Chat)
         }
@@ -5056,6 +5102,14 @@ class CombatOverlayService : Service() {
         val wm = windowManager ?: systemWindowManager()
         if (wm != null && isOverlayChatStripEnabled()) {
             runCatching { ensureChatStripWindow(wm) }
+        }
+        sent.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { clientId ->
+            deliveryLatencyTracker.endSpanByCorrelation(
+                LatencySpanType.OverlayRaidQuickCommandSend,
+                clientId,
+                "ok",
+            )
+            OverlayPerfDiag.logDeliveryLatency(deliveryLatencyTracker)
         }
         chatStripPreviewFlow.value = preview
         publishStripAfterLocalRaidSend()
@@ -6264,6 +6318,7 @@ class CombatOverlayService : Service() {
         chatVmSnapshot: ChatViewModel?,
     ) {
         var forumFlushSucceeded = false
+        var newsFlushSucceeded = false
         withContext(Dispatchers.IO) {
             runCatching {
                 when (closingPane) {
@@ -6287,18 +6342,7 @@ class CombatOverlayService : Service() {
                     OverlayHudPane.News -> {
                         if (newsFlushSnapshot != null) {
                             newsFlushSnapshot.invoke()
-                        } else {
-                            val container = AppContainer.from(this@CombatOverlayService)
-                            val ctx = OverlayTeamContextCache.load(
-                                usersRepository = container.usersRepository,
-                                teamsRepository = container.teamsRepository,
-                                forceRefresh = false,
-                            ).getOrNull() ?: return@runCatching
-                            TeamNewsReadCursorSync.flushPendingNewsCursor(
-                                teamsRepository = container.teamsRepository,
-                                prefs = container.userSettingsPreferences,
-                                teamId = ctx.teamId,
-                            )
+                            newsFlushSucceeded = true
                         }
                     }
                     OverlayHudPane.Forum -> {
@@ -6316,6 +6360,7 @@ class CombatOverlayService : Service() {
                 closingPane,
                 legacyChatTabIndex,
                 forumFlushSucceeded = forumFlushSucceeded,
+                newsFlushSucceeded = newsFlushSucceeded,
             )
         }
     }
@@ -6411,19 +6456,21 @@ class CombatOverlayService : Service() {
         closingPane: OverlayHudPane?,
         legacyChatTabIndex: Int,
         forumFlushSucceeded: Boolean = false,
+        newsFlushSucceeded: Boolean = false,
     ) {
         when (closingPane) {
             OverlayHudPane.Chat -> Unit
             OverlayHudPane.News -> {
-                inboxBadgeCoordinator.clearNewsOptimistic()
-                inboxBadgeCoordinator.invalidateNewsCache()
-                OverlayGameStatusHudRefresh.invalidateNewsCache()
+                if (newsFlushSucceeded) {
+                    inboxBadgeCoordinator.clearNewsOptimistic()
+                }
+                inboxBadgeCoordinator.invalidateNewsBadgeCachesFully()
             }
             OverlayHudPane.Forum -> {
                 if (forumFlushSucceeded) {
                     inboxBadgeCoordinator.clearForumOptimistic()
                 }
-                OverlayGameStatusHudRefresh.invalidateForumCache()
+                inboxBadgeCoordinator.invalidateForumBadgeCachesFully()
             }
             OverlayHudPane.Notifications, OverlayHudPane.Participants -> Unit
             null -> Unit
@@ -6431,6 +6478,7 @@ class CombatOverlayService : Service() {
         refreshOverlayInboxBadgesCoalesced(
             includeReactionLog = closingPane == OverlayHudPane.Notifications,
             forceForumReconcile = closingPane == OverlayHudPane.Forum,
+            forceNewsReconcile = closingPane == OverlayHudPane.News,
         )
     }
 
@@ -6988,8 +7036,13 @@ class CombatOverlayService : Service() {
                                                     currentUserId = userId,
                                                     teamsRepository = container.teamsRepository,
                                                     onNewsInboxChanged = {
-                                                        OverlayGameStatusHudRefresh.invalidateNewsCache()
-                                                        refreshOverlayNewsBadgeOnly()
+                                                        inboxBadgeCoordinator.invalidateNewsBadgeCachesFully()
+                                                        refreshOverlayInboxBadgesCoalesced(
+                                                            includeHub = false,
+                                                            includeNews = true,
+                                                            includeForum = false,
+                                                            forceNewsReconcile = true,
+                                                        )
                                                     },
                                                     onRegisterMarkReadAction = { newsMarkReadAction = it },
                                                 )
@@ -6999,8 +7052,13 @@ class CombatOverlayService : Service() {
                                                     currentUserId = userId,
                                                     teamsRepository = container.teamsRepository,
                                                     onForumInboxChanged = {
-                                                        OverlayGameStatusHudRefresh.invalidateForumCache()
-                                                        refreshOverlayForumBadgeOnly()
+                                                        inboxBadgeCoordinator.invalidateForumBadgeCachesFully()
+                                                        refreshOverlayInboxBadgesCoalesced(
+                                                            includeHub = false,
+                                                            includeNews = false,
+                                                            includeForum = true,
+                                                            forceForumReconcile = true,
+                                                        )
                                                     },
                                                     onRegisterMarkReadAction = { forumMarkReadAction = it },
                                                 )
@@ -7201,7 +7259,13 @@ class CombatOverlayService : Service() {
                             .map { it.tabUnreadBadge }
                             .distinctUntilChanged()
                             .collectAsStateWithLifecycle(chatVm.state.value.tabUnreadBadge, owner)
-                        val teamTabUnread = statusHud.teamNewsUnread + statusHud.forumUnread
+                        val teamTabUnread = remember(
+                            panelHost.openGeneration,
+                            statusHud.teamNewsUnread,
+                            statusHud.forumUnread,
+                        ) {
+                            statusHud.teamNewsUnread + statusHud.forumUnread
+                        }
 
                         var showClearRoomHistoryConfirm by remember { mutableStateOf(false) }
                         var showChatMarkAllReadConfirm by remember { mutableStateOf(false) }
@@ -7918,13 +7982,18 @@ class CombatOverlayService : Service() {
             val service = runningInstance ?: return
             service.mainHandler.post {
                 if (news) {
-                    OverlayGameStatusHudRefresh.invalidateNewsCache()
-                    service.refreshOverlayNewsBadgeOnly()
+                    service.inboxBadgeCoordinator.invalidateNewsBadgeCachesFully()
                 }
                 if (forum) {
-                    OverlayGameStatusHudRefresh.invalidateForumCache()
-                    service.refreshOverlayForumBadgeOnly()
+                    service.inboxBadgeCoordinator.invalidateForumBadgeCachesFully()
                 }
+                service.refreshOverlayInboxBadgesCoalesced(
+                    includeHub = false,
+                    includeNews = news,
+                    includeForum = forum,
+                    forceNewsReconcile = news,
+                    forceForumReconcile = forum,
+                )
             }
         }
 
@@ -7946,8 +8015,13 @@ class CombatOverlayService : Service() {
         fun refreshOverlayForumBadgeFromApp() {
             val service = runningInstance ?: return
             service.mainHandler.post {
-                OverlayGameStatusHudRefresh.invalidateForumCache()
-                service.refreshOverlayForumBadgeOnly()
+                service.inboxBadgeCoordinator.invalidateForumBadgeCachesFully()
+                service.refreshOverlayInboxBadgesCoalesced(
+                    includeHub = false,
+                    includeNews = false,
+                    includeForum = true,
+                    forceForumReconcile = true,
+                )
             }
         }
 

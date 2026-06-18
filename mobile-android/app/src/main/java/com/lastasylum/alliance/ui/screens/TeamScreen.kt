@@ -88,6 +88,8 @@ import com.lastasylum.alliance.ui.screens.teamforum.TeamForumNavHost
 import com.lastasylum.alliance.ui.screens.teamnews.TeamNewsNavHost
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
+import com.lastasylum.alliance.overlay.OverlayMarkAllReadConfirmDialog
+import com.lastasylum.alliance.overlay.OverlayMarkAsReadIconButton
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.ui.components.GlassSurface
 import com.lastasylum.alliance.ui.components.TeamSectionTabAccents
@@ -188,6 +190,8 @@ fun TeamScreen(
         mutableIntStateOf(initialMainSection?.ordinal ?: TeamMainSection.News.ordinal)
     }
     var forumTabReselectSignal by remember { mutableStateOf(0) }
+    var newsMarkReadAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var showNewsMarkAllConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(mainSectionOrdinal) {
         if (mainSectionOrdinal !in TeamMainSection.entries.indices) {
@@ -371,6 +375,13 @@ fun TeamScreen(
                         val enabledStickerPackKeys = remember(profile.enabledStickerPacks) {
                             profile.enabledStickerPacks.toSet()
                         }
+                        LaunchedEffect(mainTabActive, mainSectionOrdinal, isLeader) {
+                            if (overlayUi || !mainTabActive) return@LaunchedEffect
+                            if (mainSectionOrdinal != TeamMainSection.Members.ordinal || !isLeader) {
+                                return@LaunchedEffect
+                            }
+                            reloadProfileAndTeam(force = true)
+                        }
                         Surface(
                             modifier = Modifier
                                 .weight(1f, fill = true)
@@ -438,6 +449,29 @@ fun TeamScreen(
                                             vertical = 8.dp,
                                         ),
                                 )
+                                if (!overlayUi &&
+                                    activeSection == TeamMainSection.News &&
+                                    sectionBadges.newsUnread > 0 &&
+                                    newsMarkReadAction != null
+                                ) {
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(
+                                                horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                                            ),
+                                        horizontalArrangement = Arrangement.End,
+                                    ) {
+                                        OverlayMarkAsReadIconButton(
+                                            onClick = {
+                                                OverlayChatInteractionHold
+                                                    .prepareOverlayModalInteraction(false)
+                                                showNewsMarkAllConfirm = true
+                                            },
+                                            enabled = true,
+                                        )
+                                    }
+                                }
                                 val sectionModifier = Modifier
                                     .weight(1f, fill = true)
                                     .fillMaxWidth()
@@ -459,10 +493,11 @@ fun TeamScreen(
                                                 activeSection == TeamMainSection.News,
                                             modifier = Modifier.fillMaxSize(),
                                             onNewsInboxChanged = {
-                                                teamViewModel.refreshSectionBadges()
+                                                teamViewModel.refreshSectionBadges(force = true)
                                                 com.lastasylum.alliance.overlay.CombatOverlayService
                                                     .notifyOverlayTeamInboxChanged(news = true)
                                             },
+                                            onRegisterMarkReadAction = { newsMarkReadAction = it },
                                         )
                                     }
                                     TeamRetainedSection(
@@ -522,6 +557,18 @@ fun TeamScreen(
                     }
                 }
             }
+    }
+
+    if (showNewsMarkAllConfirm) {
+        OverlayMarkAllReadConfirmDialog(
+            title = stringResource(R.string.overlay_news_mark_all_read_confirm_title),
+            message = stringResource(R.string.overlay_news_mark_all_read_confirm_message),
+            onDismissRequest = { showNewsMarkAllConfirm = false },
+            onConfirm = {
+                showNewsMarkAllConfirm = false
+                newsMarkReadAction?.invoke()
+            },
+        )
     }
 
     if (showCreate) {

@@ -60,6 +60,18 @@ class TeamInboxUnreadTest {
     }
 
     @Test
+    fun countUnreadNews_reactsWhenLastSeenAdvances() {
+        val prefs = prefs()
+        val items = listOf(
+            newsItem(authorUserId = "other", createdAt = "2026-06-01T00:00:00Z"),
+            newsItem(authorUserId = "other", createdAt = "2026-05-01T00:00:00Z"),
+        )
+        assertEquals(2, TeamInboxUnread.countUnreadNews(items, prefs, teamId, "me"))
+        prefs.setLastSeenTeamNewsCreatedAt(teamId, "2026-05-15T00:00:00Z")
+        assertEquals(1, TeamInboxUnread.countUnreadNews(items, prefs, teamId, "me"))
+    }
+
+    @Test
     fun coordinator_mergeNews_doesNotDropForumFloor() {
         val coordinator = OverlayInboxBadgeCoordinator()
         coordinator.bumpForumOptimistic(3)

@@ -58,6 +58,18 @@ class OverlayInboxBadgeCoordinator {
         cachedBadgeAtMs = 0L
     }
 
+    /** Invalidate overlay coordinator + [OverlayGameStatusHudRefresh] news caches together. */
+    fun invalidateNewsBadgeCachesFully() {
+        invalidateNewsCache()
+        OverlayGameStatusHudRefresh.invalidateNewsCache()
+    }
+
+    /** Invalidate overlay coordinator + [OverlayGameStatusHudRefresh] forum caches together. */
+    fun invalidateForumBadgeCachesFully() {
+        invalidateForumCache()
+        OverlayGameStatusHudRefresh.invalidateForumCache()
+    }
+
     fun invalidateAllCaches() {
         cachedBadgeAtMs = 0L
     }

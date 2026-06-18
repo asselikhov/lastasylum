@@ -91,6 +91,11 @@ internal fun TeamNewsDetailRoute(
         teamsRepository.getTeamNews(teamId, newsId)
             .onSuccess { doc ->
                 detail = doc
+                TeamNewsReadCursorSync.flushPendingNewsCursor(
+                    app.teamsRepository,
+                    app.userSettingsPreferences,
+                    teamId,
+                )
                 TeamNewsReadCursorSync.markNewsSeen(
                     app.teamsRepository,
                     app.userSettingsPreferences,

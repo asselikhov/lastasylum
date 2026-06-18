@@ -6,6 +6,8 @@ enum class LatencySpanType(val wire: String) {
     ChatReadReceipt("chat_read_receipt"),
     ForumSendToSocket("forum_send_to_socket"),
     OverlayStripIngest("overlay_strip_ingest"),
+    /** Quick command tap → optimistic row / strip paint (overlay raid). */
+    OverlayRaidQuickCommandSend("overlay_raid_quick_send"),
 }
 
 data class LatencySnapshot(
