@@ -1796,12 +1796,14 @@ export class TeamForumService {
     const memberIds = await this.teams.listSquadMemberUserIds(teamId);
     const recipientIds = memberIds.filter((id) => id !== userId);
     if (recipientIds.length > 0) {
-      await this.topicReadStateModel
-        .updateMany(
-          { topicId: topOid, userId: { $in: recipientIds } },
-          { $inc: { unreadCount: 1 } },
-        )
-        .exec();
+      const bulkOps = recipientIds.map((recipientId) => ({
+        updateOne: {
+          filter: { topicId: topOid, userId: recipientId },
+          update: { $inc: { unreadCount: 1 } },
+          upsert: true,
+        },
+      }));
+      await this.topicReadStateModel.bulkWrite(bulkOps);
     }
     await this.invalidateUnreadSumCacheForTeam(teamId);
     const row = this.messageRow(doc, replyTarget, userId);

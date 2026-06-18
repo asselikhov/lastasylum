@@ -13,7 +13,7 @@ import { Socket, Namespace } from 'socket.io';
 import { authenticateSocketConnectionOrDisconnect } from '../common/socket-auth.util';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
-import { filterPersonalChatFanoutUserIds } from '../chat/chat-realtime-broadcast.util';
+import { emitForumPersonalFanoutToSockets } from '../chat/chat-realtime-broadcast.util';
 import {
   TeamForumService,
   TeamForumMessageRow,
@@ -253,13 +253,18 @@ export class TeamForumGateway {
     const topId = topicId.trim();
     const uid = senderUserId.trim();
     if (!tid || !topId) return;
-    const inRoom = this.userIdsInForumTopicRoom(tid, topId);
     const eligible = await this.teams.listSquadMemberUserIds(tid);
-    const targets = filterPersonalChatFanoutUserIds(eligible, inRoom, uid);
     const payload = { ...message, teamId: tid, topicId: topId };
-    for (const userId of targets) {
-      this.server?.to(`user:${userId}`).emit('message:new', payload);
-    }
+    emitForumPersonalFanoutToSockets(
+      this.server,
+      this.server?.adapter.rooms,
+      eligible,
+      tid,
+      topId,
+      'message:new',
+      payload,
+      uid,
+    );
   }
 
   private userIdsInForumTopicRoom(teamId: string, topicId: string): Set<string> {

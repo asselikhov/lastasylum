@@ -879,7 +879,7 @@ fun TeamForumTopicScreen(
         }
     }
 
-    fun mergeNew(msg: TeamForumMessageDto, source: String = "socket") {
+    fun mergeNewLocked(msg: TeamForumMessageDto, source: String = "socket") {
         if (source == "socket") {
             val visibleNewestId = messages.lastOrNull()?.id
             if (shouldTriggerGapReconcile(
@@ -887,6 +887,7 @@ fun TeamForumTopicScreen(
                     msg.id,
                     knownForumMessageIds,
                     thresholdMs = FORUM_GAP_RECONCILE_THRESHOLD_MS,
+                    minCounterGap = 1L,
                 )
             ) {
                 if (BuildConfig.DEBUG) {
@@ -944,6 +945,14 @@ fun TeamForumTopicScreen(
         }
     }
 
+    fun mergeNew(msg: TeamForumMessageDto, source: String = "socket") {
+        scope.launch {
+            forumLoadMutex.withLock {
+                mergeNewLocked(msg, source)
+            }
+        }
+    }
+
     LaunchedEffect(currentUserId, teamId, topicId) {
         topicViewModel.resumePendingOutbox(currentUserId) { confirmed ->
             mergeNew(confirmed, source = "outbox")
@@ -985,11 +994,12 @@ fun TeamForumTopicScreen(
 
     LaunchedEffect(teamId, topicId, sectionActive) {
         if (!sectionActive) return@LaunchedEffect
-        val stashed = ForumMessageStash.drain(teamId, topicId)
-        for (msg in stashed) {
-            mergeNew(msg, source = "stash")
+        forumLoadMutex.withLock {
+            ForumMessageStash.drain(teamId, topicId).forEach { msg ->
+                mergeNewLocked(msg, source = "stash")
+            }
         }
-        loadForumMessages(before = null, appendOlder = false, forceRefresh = false)
+        loadForumMessages(before = null, appendOlder = false, forceRefresh = true)
     }
 
     var forumSocketHadConnected by remember(teamId, topicId) { mutableStateOf(false) }

@@ -10,10 +10,18 @@ object TeamForumReadCursorSync {
         forumPrefs: TeamForumPreferences,
         teamId: String,
     ) {
+        repairOnly(teamsRepository, forumPrefs, teamId)
+    }
+
+    /** Repair stale server unread without overwriting device read cursors from server topics. */
+    suspend fun repairOnly(
+        teamsRepository: TeamsRepository,
+        forumPrefs: TeamForumPreferences,
+        teamId: String,
+    ) {
         val tid = teamId.trim()
         if (tid.isEmpty()) return
         val topics = teamsRepository.listForumTopics(tid).getOrNull() ?: return
-        InboxUnreadReconciler.hydrateForumPrefsFromTopics(forumPrefs, tid, topics)
         InboxUnreadReconciler.repairForumStaleUnread(teamsRepository, forumPrefs, tid, topics)
         OverlayGameStatusHudRefresh.invalidateForumCache()
     }

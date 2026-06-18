@@ -47,6 +47,7 @@ import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.teams.TeamInboxUnread.displayedForumTopicUnread
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.teams.TeamForumMarkRead
+import com.lastasylum.alliance.data.teams.TeamForumReadCursorSync
 import com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
@@ -227,6 +228,7 @@ fun TeamForumListScreen(
         onProvideMarkReadAction(FORUM_MARK_READ_LIST_KEY) {
             scope.launch {
                 TeamForumMarkRead.markAllTopicsRead(forumRepository, currentUserId, forumPrefs, teamId)
+                refreshReadCursorsFromPrefs()
                 onInboxChanged()
                 reload()
             }
@@ -248,6 +250,14 @@ fun TeamForumListScreen(
         )
         if (overlayUi) {
             refreshReadCursorsFromPrefs()
+            withContext(Dispatchers.IO) {
+                TeamForumReadCursorSync.repairOnly(
+                    teamsRepository = app.teamsRepository,
+                    forumPrefs = forumPrefs,
+                    teamId = teamId,
+                )
+                refreshReadCursorsFromPrefs()
+            }
         } else {
             withContext(Dispatchers.IO) {
                 ReadCursorSession.syncAllInboxReadCursors(

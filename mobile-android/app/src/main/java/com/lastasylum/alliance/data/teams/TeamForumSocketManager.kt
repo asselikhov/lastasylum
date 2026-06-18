@@ -192,6 +192,10 @@ class TeamForumSocketManager {
             return
         }
         if (socket?.connected() == true && subscribedTeamId == teamId) {
+            if (activeSubscribedTopicId() != null) {
+                // Topic thread is live — keep topic:join; team inbox still receives topic:activity.
+                return
+            }
             leaveTopic()
             subscribedTopicId = null
             emitTeamAndTopicJoin(teamId, null)
@@ -331,8 +335,8 @@ class TeamForumSocketManager {
         )
     }
 
-    /** Topic room for socket handlers — must track [joinTopic], not the [openSocket] closure. */
-    private fun activeSubscribedTopicId(): String? =
+    /** Topic room for socket routing — null when in team inbox mode. */
+    fun activeSubscribedTopicId(): String? =
         subscribedTopicId?.trim()?.takeIf { it.isNotEmpty() }
 
     private fun openSocket(

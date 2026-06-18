@@ -43,12 +43,17 @@ describe('TeamForumGateway personal fanout dedup', () => {
       adapter: {
         rooms: new Map([
           ['forum:team1:topic1', new Set(['socket-in-room'])],
+          ['user:user-outside', new Set(['socket-outside'])],
         ]),
       },
       sockets: new Map([
         [
           'socket-in-room',
           { data: { user: { userId: 'user-in-room' } } },
+        ],
+        [
+          'socket-outside',
+          { data: { user: { userId: 'user-outside' } } },
         ],
       ]),
     } as any;
@@ -87,11 +92,9 @@ describe('TeamForumGateway personal fanout dedup', () => {
 
     await new Promise((r) => setTimeout(r, 20));
 
-    const personalTargets = to.mock.calls
-      .map((call) => call[0] as string)
-      .filter((room) => room.startsWith('user:'));
-    expect(personalTargets).toEqual(['user:user-outside']);
-    expect(personalTargets).not.toContain('user:user-in-room');
+    const personalTargets = to.mock.calls.map((call) => call[0] as string);
+    expect(personalTargets).toContain('socket-outside');
+    expect(personalTargets).not.toContain('socket-in-room');
     expect(personalTargets).not.toContain('user:sender1');
   });
 });

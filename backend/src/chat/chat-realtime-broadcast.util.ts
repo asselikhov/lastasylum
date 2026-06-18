@@ -109,3 +109,35 @@ export function emitRaidOverlayFanoutToTeammateSockets(
   }
   return fanoutCount;
 }
+
+/** Personal fanout for forum topic room — per-socket, like chat Path C. */
+export function emitForumPersonalFanoutToSockets(
+  server: SocketEmitServer | undefined,
+  adapterRooms: Map<string, Set<string>> | undefined,
+  eligibleUserIds: string[],
+  teamId: string,
+  topicId: string,
+  event: string,
+  payload: unknown,
+  excludeUserId?: string,
+): number {
+  const forumRoomKey = `forum:${teamId.trim()}:${topicId.trim()}`;
+  const exclude = excludeUserId?.trim();
+  const inRoomSocketIds = adapterRooms?.get(forumRoomKey) ?? new Set<string>();
+  let fanoutCount = 0;
+  for (const raw of eligibleUserIds) {
+    const userId = raw.trim();
+    if (!userId) continue;
+    if (exclude && userId === exclude) continue;
+    const userSockets = adapterRooms?.get(`user:${userId}`);
+    if (!userSockets) continue;
+    let emitted = false;
+    for (const socketId of userSockets) {
+      if (inRoomSocketIds.has(socketId)) continue;
+      server?.to(socketId).emit(event, payload);
+      emitted = true;
+    }
+    if (emitted) fanoutCount++;
+  }
+  return fanoutCount;
+}
