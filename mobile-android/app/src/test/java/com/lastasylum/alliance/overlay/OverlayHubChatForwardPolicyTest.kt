@@ -19,12 +19,25 @@ class OverlayHubChatForwardPolicyTest {
     }
 
     @Test
+    fun skipsHubWhenSelectedRoomDiffers() {
+        assertFalse(
+            OverlayHubChatForwardPolicy.shouldApplyToVisibleChat(
+                overlayPanelVisible = true,
+                overlayChatContentActive = true,
+                selectedRoomId = "other-room",
+                messageRoomId = "hub-room",
+                hubRoomId = "hub-room",
+            ),
+        )
+    }
+
+    @Test
     fun appliesWhenOverlayChatOpenOnHubEvenIfDifferentSelection() {
         assertTrue(
             OverlayHubChatForwardPolicy.shouldApplyToVisibleChat(
                 overlayPanelVisible = true,
                 overlayChatContentActive = true,
-                selectedRoomId = "other-room",
+                selectedRoomId = "hub-room",
                 messageRoomId = "hub-room",
                 hubRoomId = "hub-room",
             ),

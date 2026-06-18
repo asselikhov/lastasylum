@@ -5,13 +5,25 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.lastasylum.alliance.data.teams.TeamNewsReadCursorSync
 import com.lastasylum.alliance.data.teams.TeamsRepository
+import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayPollVotersSheetHost
 
@@ -21,6 +33,8 @@ private object TeamNewsRoutes {
     fun detail(id: String) = "news_detail/$id"
     fun edit(id: String) = "news_edit/$id"
 }
+
+private const val NEWS_MARK_READ_LIST_KEY = "list"
 
 @Composable
 fun TeamNewsNavHost(
@@ -32,9 +46,66 @@ fun TeamNewsNavHost(
     modifier: Modifier = Modifier,
     sectionActive: Boolean = true,
     onNewsInboxChanged: () -> Unit = {},
+    onRegisterMarkReadAction: ((() -> Unit)?) -> Unit = {},
 ) {
+    val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
+    val app = remember(context) { AppContainer.from(context.applicationContext) }
     val nav = rememberNavController()
+    var listRefreshNonce by remember { mutableIntStateOf(0) }
+    var markReadHandlers by remember { mutableStateOf<Map<String, () -> Unit>>(emptyMap()) }
+    val registerMarkReadAction: (String, (() -> Unit)?) -> Unit = { key, action ->
+        markReadHandlers = if (action == null) {
+            markReadHandlers - key
+        } else {
+            markReadHandlers + (key to action)
+        }
+    }
+    val navBackStackEntry by nav.currentBackStackEntryAsState()
+    val activeMarkReadAction = remember(markReadHandlers, navBackStackEntry) {
+        when (navBackStackEntry?.destination?.route) {
+            TeamNewsRoutes.LIST -> markReadHandlers[NEWS_MARK_READ_LIST_KEY]
+            else -> null
+        }
+    }
+    LaunchedEffect(activeMarkReadAction) {
+        onRegisterMarkReadAction(activeMarkReadAction)
+    }
+    LaunchedEffect(overlayUi, navBackStackEntry?.destination?.route) {
+        if (!overlayUi) {
+            CombatOverlayService.registerOverlayNewsFlushPendingRead(null)
+            return@LaunchedEffect
+        }
+        val route = navBackStackEntry?.destination?.route
+        val onList = route == TeamNewsRoutes.LIST
+        CombatOverlayService.registerOverlayNewsFlushPendingRead(
+            if (onList) {
+                {
+                    TeamNewsReadCursorSync.flushPendingNewsCursor(
+                        teamsRepository = teamsRepository,
+                        prefs = app.userSettingsPreferences,
+                        teamId = teamId,
+                    )
+                }
+            } else {
+                null
+            },
+        )
+    }
+    LaunchedEffect(listRefreshNonce) {
+        if (listRefreshNonce > 0) onNewsInboxChanged()
+    }
+    DisposableEffect(overlayUi) {
+        if (overlayUi) {
+            val bumpListRefresh: () -> Unit = { listRefreshNonce++ }
+            CombatOverlayService.registerOverlayNewsRehydrateAction(bumpListRefresh)
+            onDispose {
+                CombatOverlayService.registerOverlayNewsRehydrateAction(null)
+            }
+        } else {
+            onDispose { }
+        }
+    }
     val navHost = @Composable {
         NavHost(
             navController = nav,
@@ -52,8 +123,10 @@ fun TeamNewsNavHost(
                     canPublishNews = canPublishNews,
                     teamsRepository = teamsRepository,
                     sectionActive = sectionActive,
+                    refreshNonce = listRefreshNonce,
                     onOpenDetail = { nav.navigate(TeamNewsRoutes.detail(it)) },
                     onCreate = { nav.navigate(TeamNewsRoutes.CREATE) },
+                    onProvideMarkReadAction = registerMarkReadAction,
                 )
             }
             composable(
@@ -61,6 +134,9 @@ fun TeamNewsNavHost(
                 arguments = listOf(navArgument("newsId") { type = NavType.StringType }),
             ) { entry ->
                 val id = entry.arguments?.getString("newsId")
+                DisposableEffect(id) {
+                    onDispose { listRefreshNonce++ }
+                }
                 if (id.isNullOrBlank()) {
                     TeamNewsNavInvalidArgs(onBack = { nav.popBackStack() })
                     return@composable

@@ -321,6 +321,19 @@ fun TeamForumNavHost(
     LaunchedEffect(listRefreshNonce) {
         if (listRefreshNonce > 0) onForumInboxChanged()
     }
+    DisposableEffect(overlayUi) {
+        if (overlayUi) {
+            val bumpListRefresh: () -> Unit = { listRefreshNonce++ }
+            com.lastasylum.alliance.overlay.CombatOverlayService.registerOverlayForumRehydrateAction(
+                bumpListRefresh,
+            )
+            onDispose {
+                com.lastasylum.alliance.overlay.CombatOverlayService.registerOverlayForumRehydrateAction(null)
+            }
+        } else {
+            onDispose { }
+        }
+    }
     DisposableEffect(teamId, sectionActive) {
         if (!sectionActive) {
             onDispose { }

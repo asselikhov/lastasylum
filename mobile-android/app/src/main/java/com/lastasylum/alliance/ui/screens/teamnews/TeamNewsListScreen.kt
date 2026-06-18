@@ -42,6 +42,7 @@ import androidx.compose.ui.zIndex
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
+import com.lastasylum.alliance.data.teams.TeamNewsMarkRead
 import com.lastasylum.alliance.data.teams.TeamNewsReadCursorSync
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
@@ -67,8 +68,11 @@ internal fun TeamNewsListScreen(
     canPublishNews: Boolean,
     teamsRepository: TeamsRepository,
     sectionActive: Boolean = true,
+    refreshNonce: Int = 0,
     onOpenDetail: (String) -> Unit,
     onCreate: () -> Unit,
+    onNewsInboxChanged: () -> Unit = {},
+    onProvideMarkReadAction: (String, (() -> Unit)?) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val res = context.resources
@@ -126,9 +130,32 @@ internal fun TeamNewsListScreen(
         )
     }
 
+    LaunchedEffect(teamId, refreshNonce, sectionActive) {
+        if (!sectionActive || refreshNonce <= 0) return@LaunchedEffect
+        loadNewsPage(cursor = null, append = false, silent = true)
+    }
+
+    LaunchedEffect(teamId) {
+        onProvideMarkReadAction("list") {
+            scope.launch {
+                TeamNewsMarkRead.markAllNewsRead(
+                    teamsRepository = teamsRepository,
+                    prefs = newsPrefs,
+                    teamId = teamId,
+                    currentUserId = currentUserId,
+                )
+                onNewsInboxChanged()
+                loadNewsPage(cursor = null, append = false, silent = true)
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { onProvideMarkReadAction("list", null) }
+    }
+
     val unreadNewsIds = remember(newsItems, currentUserId) {
         val currentUser = currentUserId.trim()
-        val lastSeen = newsPrefs.getLastSeenTeamNewsCreatedAt()
+        val lastSeen = newsPrefs.getLastSeenTeamNewsCreatedAt(teamId)
             ?.let { runCatching { Instant.parse(it) }.getOrNull() }
         if (lastSeen == null) {
             newsItems.asSequence()

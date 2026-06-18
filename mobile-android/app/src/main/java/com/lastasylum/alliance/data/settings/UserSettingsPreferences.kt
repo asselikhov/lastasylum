@@ -216,19 +216,29 @@ class UserSettingsPreferences(context: Context) {
     fun clearNewsReadCursor() {
         val editor = prefs.edit()
         editor.remove(KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT)
-        activeUserId?.trim()?.takeIf { it.isNotEmpty() }?.let { uid ->
-            editor.remove(newsCursorKey(uid))
+        val uid = activeUserId?.trim().orEmpty()
+        if (uid.isNotEmpty()) {
+            val prefix = "$KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT:$uid:"
+            prefs.all.keys.filter { it.startsWith(prefix) || it == "$KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT:$uid" }
+                .forEach { editor.remove(it) }
         }
         editor.apply()
     }
 
-    /** ISO-8601: newest team news the user has seen (overlay HUD + news badge). */
-    fun getLastSeenTeamNewsCreatedAt(): String? =
-        prefs.getString(newsCursorKey(), null)?.takeIf { it.isNotBlank() }
+    /** ISO-8601: newest team news the user has seen for [teamId] (overlay HUD + news badge). */
+    fun getLastSeenTeamNewsCreatedAt(teamId: String): String? {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return null
+        migrateLegacyNewsCursorForTeam(tid)
+        return prefs.getString(newsCursorKey(teamId = tid), null)?.takeIf { it.isNotBlank() }
+    }
 
-    fun setLastSeenTeamNewsCreatedAt(iso: String?) {
+    fun setLastSeenTeamNewsCreatedAt(teamId: String, iso: String?) {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
+        migrateLegacyNewsCursorForTeam(tid)
         val edit = prefs.edit()
-        val key = newsCursorKey()
+        val key = newsCursorKey(teamId = tid)
         if (iso.isNullOrBlank()) {
             edit.remove(key)
         } else {
@@ -237,12 +247,31 @@ class UserSettingsPreferences(context: Context) {
         edit.apply()
     }
 
-    private fun newsCursorKey(userId: String? = activeUserId): String {
+    private fun newsCursorKey(userId: String? = activeUserId, teamId: String): String {
         val uid = userId?.trim().orEmpty()
+        val tid = teamId.trim()
         return if (uid.isBlank()) {
-            KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT
+            "$KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT:$tid"
         } else {
-            "$KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT:$uid"
+            "$KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT:$uid:$tid"
+        }
+    }
+
+    /** Migrate per-user global cursor to per-user per-team on first team access. */
+    private fun migrateLegacyNewsCursorForTeam(teamId: String) {
+        val uid = activeUserId?.trim().orEmpty()
+        if (uid.isNotEmpty()) {
+            migrateLegacyNewsCursor(uid)
+        }
+        val scoped = newsCursorKey(teamId = teamId)
+        if (prefs.contains(scoped)) return
+        val legacyPerUser = if (uid.isNotBlank()) {
+            prefs.getString("$KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT:$uid", null)?.trim().orEmpty()
+        } else {
+            prefs.getString(KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT, null)?.trim().orEmpty()
+        }
+        if (legacyPerUser.isNotBlank()) {
+            prefs.edit().putString(scoped, legacyPerUser).apply()
         }
     }
 
@@ -250,7 +279,7 @@ class UserSettingsPreferences(context: Context) {
     private fun migrateLegacyNewsCursor(userId: String) {
         val legacy = prefs.getString(KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT, null)?.trim().orEmpty()
         if (legacy.isBlank()) return
-        val scoped = newsCursorKey(userId)
+        val scoped = "$KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT:$userId"
         val existing = prefs.getString(scoped, null)?.trim().orEmpty()
         val edit = prefs.edit()
         if (existing.isBlank()) {

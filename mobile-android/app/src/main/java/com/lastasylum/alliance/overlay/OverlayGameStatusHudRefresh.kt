@@ -245,18 +245,21 @@ internal object OverlayGameStatusHudRefresh {
     fun countUnreadNews(
         items: List<TeamNewsListItemDto>,
         prefs: UserSettingsPreferences,
+        teamId: String,
         currentUserId: String = "",
-    ): Int = TeamInboxUnread.countUnreadNews(items, prefs, currentUserId)
+    ): Int = TeamInboxUnread.countUnreadNews(items, prefs, teamId, currentUserId)
 
     /** Advance last-seen cursor when the user opens a news post (not on list load alone). */
-    fun markTeamNewsSeenAt(createdAt: String?, prefs: UserSettingsPreferences) {
+    fun markTeamNewsSeenAt(createdAt: String?, teamId: String, prefs: UserSettingsPreferences) {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
         val iso = createdAt?.trim().orEmpty()
         if (iso.isBlank()) return
         val incoming = runCatching { Instant.parse(iso) }.getOrNull() ?: return
-        val prevIso = prefs.getLastSeenTeamNewsCreatedAt()
+        val prevIso = prefs.getLastSeenTeamNewsCreatedAt(tid)
         val prev = prevIso?.let { runCatching { Instant.parse(it) }.getOrNull() }
         if (prev == null || incoming.isAfter(prev)) {
-            prefs.setLastSeenTeamNewsCreatedAt(iso)
+            prefs.setLastSeenTeamNewsCreatedAt(tid, iso)
             invalidateNewsCache()
         }
     }

@@ -217,6 +217,19 @@ class InboxReadCursorTest {
     }
 
     @Test
+    fun displayedUnread_doesNotResurrectFloorWhenEffectiveZeroAndRawPositive() {
+        assertEquals(
+            0,
+            displayedUnreadCount(
+                effectiveUnread = 0,
+                previouslyDisplayed = 2,
+                rawServerUnread = 5,
+                optimisticFloor = 3,
+            ),
+        )
+    }
+
+    @Test
     fun displayedForumTopicUnread_keepsOptimisticFloorWhenCursorsEqual() {
         val topic = com.lastasylum.alliance.data.teams.TeamForumTopicDto(
             id = "topic1",

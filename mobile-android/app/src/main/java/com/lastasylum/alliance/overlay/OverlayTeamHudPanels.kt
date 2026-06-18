@@ -20,7 +20,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.lastasylum.alliance.data.teams.TeamNewsMarkRead
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
@@ -157,26 +156,6 @@ fun OverlayTeamNewsPanel(
     onRegisterMarkReadAction: ((() -> Unit)?) -> Unit = {},
 ) {
     OverlayTeamHudScaffold(modifier = modifier) { ctx ->
-        val context = LocalContext.current
-        val app = remember { AppContainer.from(context.applicationContext) }
-        val scope = rememberCoroutineScope()
-        val uid = currentUserId.ifBlank { ctx.currentUserId }
-        LaunchedEffect(ctx.teamId, uid) {
-            onRegisterMarkReadAction {
-                scope.launch {
-                    TeamNewsMarkRead.markAllNewsRead(
-                        teamsRepository = teamsRepository,
-                        prefs = app.userSettingsPreferences,
-                        teamId = ctx.teamId,
-                        currentUserId = uid,
-                    )
-                    onNewsInboxChanged()
-                }
-            }
-        }
-        DisposableEffect(Unit) {
-            onDispose { onRegisterMarkReadAction(null) }
-        }
         Box(Modifier.fillMaxSize()) {
             TeamNewsNavHost(
                 teamId = ctx.teamId,
@@ -186,6 +165,7 @@ fun OverlayTeamNewsPanel(
                 teamsRepository = teamsRepository,
                 modifier = Modifier.fillMaxSize(),
                 onNewsInboxChanged = onNewsInboxChanged,
+                onRegisterMarkReadAction = onRegisterMarkReadAction,
             )
         }
     }

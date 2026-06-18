@@ -61,8 +61,9 @@ object TeamInboxBadgeDeriver {
     fun computeNewsUnread(
         items: List<TeamNewsListItemDto>,
         prefs: UserSettingsPreferences,
+        teamId: String,
         currentUserId: String,
-    ): Int = TeamInboxUnread.countUnreadNews(items, prefs, currentUserId)
+    ): Int = TeamInboxUnread.countUnreadNews(items, prefs, teamId, currentUserId)
 
     fun computeForumUnread(
         topics: List<TeamForumTopicDto>,

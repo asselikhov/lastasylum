@@ -17,6 +17,7 @@ import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.data.users.UsersRepository
+import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayGameStatusHudRefresh
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -188,7 +189,7 @@ class TeamViewModel(
                     return@withLock
                 }
                 lastBadgeRefreshAtMs = now
-                val newsAfter = userSettingsPreferences.getLastSeenTeamNewsCreatedAt()
+                val newsAfter = userSettingsPreferences.getLastSeenTeamNewsCreatedAt(teamId)
                 val localForumRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
                 val cachedTopics = teamsRepository.peekCachedForumTopics(teamId)
                 coroutineScope {
@@ -210,6 +211,11 @@ class TeamViewModel(
                                 apiUnread = badges.forumUnread,
                             )
                             val forumRaw = forumCounts?.rawServer ?: badges.forumUnread.coerceAtLeast(0)
+                            val prevNewsUnread = _data.value.sectionBadges.newsUnread
+                            val nextNewsUnread = badges.newsUnread.coerceAtLeast(0)
+                            if (nextNewsUnread > prevNewsUnread) {
+                                CombatOverlayService.notifyOverlayTeamNewsActivity()
+                            }
                             _data.update { state ->
                                 val mergedForum = TeamInboxBadgeDeriver.mergeForDisplay(
                                     effectiveUnread = forumUnread,
@@ -218,7 +224,7 @@ class TeamViewModel(
                                 )
                                 state.copy(
                                     sectionBadges = TeamSectionBadges(
-                                        newsUnread = badges.newsUnread.coerceAtLeast(0),
+                                        newsUnread = nextNewsUnread,
                                         forumUnread = mergedForum,
                                     ),
                                 )
@@ -244,6 +250,7 @@ class TeamViewModel(
                                 TeamInboxUnread.countUnreadNews(
                                     items,
                                     userSettingsPreferences,
+                                    teamId,
                                     profileId,
                                 )
                             }

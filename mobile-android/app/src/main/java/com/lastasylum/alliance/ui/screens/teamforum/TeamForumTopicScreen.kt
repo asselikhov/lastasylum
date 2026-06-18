@@ -86,6 +86,7 @@ import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.overlay.OverlayReactionLogJumpToUnreadFab
 import com.lastasylum.alliance.ui.chat.ACTIVE_FORUM_RECONCILE_INTERVAL_MS
+import com.lastasylum.alliance.ui.chat.OVERLAY_ACTIVE_FORUM_RECONCILE_INTERVAL_MS
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthCap
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction
@@ -147,6 +148,7 @@ import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
 import com.lastasylum.alliance.ui.util.forumMessageHasMenuCopyAction
 import com.lastasylum.alliance.ui.util.formatForumTopicTimeRu
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -267,6 +269,8 @@ fun TeamForumTopicScreen(
     var downloadingForumFileUrl by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
     val forumSendMutex = remember { Mutex() }
+    val forumLoadMutex = remember { Mutex() }
+    var forumLoadJob by remember { mutableStateOf<Job?>(null) }
     var typingHint by remember { mutableStateOf<String?>(null) }
     var knownForumMessageIds by remember(teamId, topicId) { mutableStateOf(setOf<String>()) }
     var inFlightForumClientMessageIds by remember { mutableStateOf(setOf<String>()) }
@@ -796,10 +800,27 @@ fun TeamForumTopicScreen(
         }
 
     fun loadForumMessages(before: String?, appendOlder: Boolean, forceRefresh: Boolean = false) {
-        scope.launch {
-            if (appendOlder) {
+        if (appendOlder) {
+            scope.launch {
                 loadingOlder = true
-            } else {
+                val bypassCache = forceRefresh || forceForumRefreshAfterReconnect
+                forumRepository.listForumMessages(currentUserId, teamId, topicId, before = before, limit = 50, bypassCache = bypassCache)
+                    .onSuccess { page ->
+                        val visible = visibleForumMessages(page)
+                        val existingIds = messages.asSequence().map { it.id }.toHashSet()
+                        val older = visible.filter { it.id !in existingIds }
+                        messages.addAll(0, older)
+                        capForumMessagesTrimNewestOnly(messages)
+                        bumpMessagesGeneration()
+                        hasMoreOlder = page.size >= 50 && messages.isNotEmpty()
+                    }
+                loadingOlder = false
+            }
+            return
+        }
+        forumLoadJob?.cancel()
+        forumLoadJob = scope.launch {
+            forumLoadMutex.withLock {
                 error = null
                 val knownEmpty = (topicSnapshot?.messageCount ?: -1) == 0
                 val stashed = ForumMessageStash.drain(teamId, topicId)
@@ -831,21 +852,13 @@ fun TeamForumTopicScreen(
                 } else {
                     loading = true
                 }
-            }
-            val bypassCache = forceRefresh || forceForumRefreshAfterReconnect || !appendOlder
-            forumRepository.listForumMessages(currentUserId, teamId, topicId, before = before, limit = 50, bypassCache = bypassCache)
-                .onSuccess { page ->
-                    val visible = visibleForumMessages(page)
-                    if (appendOlder) {
-                        val existingIds = messages.asSequence().map { it.id }.toHashSet()
-                        val older = visible.filter { it.id !in existingIds }
-                        messages.addAll(0, older)
-                        capForumMessagesTrimNewestOnly(messages)
-                        bumpMessagesGeneration()
-                    } else {
-                        val stashed = ForumMessageStash.drain(teamId, topicId)
+                val bypassCache = forceRefresh || forceForumRefreshAfterReconnect || !appendOlder
+                forumRepository.listForumMessages(currentUserId, teamId, topicId, before = before, limit = 50, bypassCache = bypassCache)
+                    .onSuccess { page ->
+                        val visible = visibleForumMessages(page)
+                        val stashedAfter = ForumMessageStash.drain(teamId, topicId)
                         val merged = mergeForumMessagesPage(
-                            mergeForumMessagesPage(messages.toList(), stashed),
+                            mergeForumMessagesPage(messages.toList(), stashedAfter),
                             visible,
                         )
                         messages.clear()
@@ -853,19 +866,16 @@ fun TeamForumTopicScreen(
                         capForumMessagesOldestFirst(messages)
                         bumpMessagesGeneration()
                         knownForumMessageIds = messages.map { it.id.trim() }.filter { it.isNotEmpty() }.toSet()
-                    }
-                    hasMoreOlder = page.size >= 50 && messages.isNotEmpty()
-                    if (!appendOlder) {
+                        hasMoreOlder = page.size >= 50 && messages.isNotEmpty()
                         persistForumMessagesToDisk()
                         lastForumBackgroundSyncAtMs = System.currentTimeMillis()
                         forceForumRefreshAfterReconnect = false
                     }
-                }
-                .onFailure { e ->
-                    if (!appendOlder && messages.isEmpty()) error = e.toUserMessageRu(res)
-                }
-            loading = false
-            loadingOlder = false
+                    .onFailure { e ->
+                        if (messages.isEmpty()) error = e.toUserMessageRu(res)
+                    }
+                loading = false
+            }
         }
     }
 
@@ -979,6 +989,7 @@ fun TeamForumTopicScreen(
         for (msg in stashed) {
             mergeNew(msg, source = "stash")
         }
+        loadForumMessages(before = null, appendOlder = false, forceRefresh = false)
     }
 
     var forumSocketHadConnected by remember(teamId, topicId) { mutableStateOf(false) }
@@ -1007,13 +1018,18 @@ fun TeamForumTopicScreen(
         }
     }
 
-    LaunchedEffect(teamId, topicId, sectionActive) {
+    LaunchedEffect(teamId, topicId, sectionActive, overlayUi) {
         if (!sectionActive) return@LaunchedEffect
+        val reconcileInterval = if (overlayUi) {
+            OVERLAY_ACTIVE_FORUM_RECONCILE_INTERVAL_MS
+        } else {
+            ACTIVE_FORUM_RECONCILE_INTERVAL_MS
+        }
         while (true) {
-            delay(ACTIVE_FORUM_RECONCILE_INTERVAL_MS)
+            delay(reconcileInterval)
             if (!sectionActive) break
             val elapsed = System.currentTimeMillis() - lastForumBackgroundSyncAtMs
-            if (elapsed >= ACTIVE_FORUM_RECONCILE_INTERVAL_MS) {
+            if (elapsed >= reconcileInterval) {
                 loadForumMessages(before = null, appendOlder = false, forceRefresh = true)
             }
         }
@@ -1233,6 +1249,10 @@ fun TeamForumTopicScreen(
                 topicId,
             ) { tokenStore.getAccessToken() }
             onDispose {
+                forumSocket.connectTeamInbox(
+                    BuildConfig.API_BASE_URL,
+                    teamId,
+                ) { tokenStore.getAccessToken() }
                 if (overlayUi) {
                     scope.launch { forumMarkReadCoalescer.flushAndAwait(topicId) }
                 } else {
@@ -1245,10 +1265,6 @@ fun TeamForumTopicScreen(
                 forumSocket.removeTypingListener(onTyping)
                 forumSocket.removeTopicPinChangedListener(onPin)
                 forumSocket.removeTopicReadListener(onTopicRead)
-                forumSocket.connectTeamInbox(
-                    BuildConfig.API_BASE_URL,
-                    teamId,
-                ) { tokenStore.getAccessToken() }
             }
         }
     }

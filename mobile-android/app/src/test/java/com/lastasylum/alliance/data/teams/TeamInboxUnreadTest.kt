@@ -16,18 +16,20 @@ import java.time.Instant
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class TeamInboxUnreadTest {
+    private val teamId = "t1"
+
     @Test
     fun isNewsItemUnread_falseForAuthor() {
         val prefs = prefs()
         val item = newsItem(authorUserId = "me", createdAt = Instant.now().toString())
-        assertFalse(TeamInboxUnread.isNewsItemUnread(item, prefs, "me"))
+        assertFalse(TeamInboxUnread.isNewsItemUnread(item, prefs, teamId, "me"))
     }
 
     @Test
     fun isNewsItemUnread_trueWhenNewerThanLastSeen() {
-        val prefs = prefs().also { it.setLastSeenTeamNewsCreatedAt("2020-01-01T00:00:00Z") }
+        val prefs = prefs().also { it.setLastSeenTeamNewsCreatedAt(teamId, "2020-01-01T00:00:00Z") }
         val item = newsItem(authorUserId = "other", createdAt = "2026-01-01T00:00:00Z")
-        assertTrue(TeamInboxUnread.isNewsItemUnread(item, prefs, "me"))
+        assertTrue(TeamInboxUnread.isNewsItemUnread(item, prefs, teamId, "me"))
     }
 
     @Test
@@ -54,7 +56,7 @@ class TeamInboxUnreadTest {
             newsItem(authorUserId = "me", createdAt = "2026-01-02T00:00:00Z"),
             newsItem(authorUserId = "other", createdAt = "2026-01-01T00:00:00Z"),
         )
-        assertEquals(1, TeamInboxUnread.countUnreadNews(items, prefs, "me"))
+        assertEquals(1, TeamInboxUnread.countUnreadNews(items, prefs, teamId, "me"))
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.screens.teamnews
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +45,7 @@ import com.lastasylum.alliance.data.teams.CreateTeamNewsBody
 import com.lastasylum.alliance.data.teams.TeamNewsPollCreateBody
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.teams.UpdateTeamNewsBody
+import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.ui.components.team.journal.JournalEditorMode
@@ -91,6 +93,10 @@ internal fun TeamNewsEditorScreen(
     var titleError by remember { mutableStateOf(false) }
     var bodyError by remember { mutableStateOf(false) }
     var pollError by remember { mutableStateOf(false) }
+
+    if (overlayUi) {
+        BackHandler(enabled = !saving) { onBack() }
+    }
 
     LaunchedEffect(teamId, newsId) {
         val nid = newsId ?: return@LaunchedEffect
@@ -211,7 +217,7 @@ internal fun TeamNewsEditorScreen(
             Modifier
                 .padding(pad)
                 .fillMaxSize()
-                .imePadding(),
+                .then(if (!overlayUi) Modifier.imePadding() else Modifier),
         ) {
             Column(
                 Modifier
@@ -393,6 +399,7 @@ internal fun TeamNewsEditorScreen(
                                         created.createdAt,
                                     )
                                     onNewsInboxChanged()
+                                    CombatOverlayService.notifyOverlayTeamNewsActivity()
                                     saving = false
                                     onDone()
                                 }

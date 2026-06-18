@@ -58,8 +58,9 @@ fun displayedUnreadCount(
         return 0
     }
     if (effective == 0) {
-        // Do not resurrect cleared badges from [previouslyDisplayed] when leaving/re-entering chat.
-        return floor
+        // Pure optimistic bump before server reports unread; never resurrect cleared badges.
+        if (raw == 0 && floor > 0) return floor
+        return 0
     }
     // Trust server effective count only — do not stack with a previously cleared badge.
     return maxOf(effective, floor)

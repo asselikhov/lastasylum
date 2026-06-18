@@ -98,6 +98,7 @@ internal object OverlayColdStartHydrator {
                     TeamInboxUnread.countUnreadNews(
                         items,
                         container.userSettingsPreferences,
+                        teamId,
                         uid,
                     )
                 } ?: 0

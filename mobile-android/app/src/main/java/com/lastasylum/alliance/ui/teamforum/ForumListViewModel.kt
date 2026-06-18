@@ -30,6 +30,7 @@ data class ForumListUiState(
 class ForumListViewModel(
     application: Application,
     private val forumRepository: ForumRepository,
+    private val teamForumPreferences: com.lastasylum.alliance.data.teams.TeamForumPreferences,
     private val currentUserId: String,
 ) : AndroidViewModel(application) {
 
@@ -68,9 +69,11 @@ class ForumListViewModel(
                     _state.update { st ->
                         val floors = st.optimisticUnreadFloorByTopic.filter { (topicId, floor) ->
                             val topic = topics.find { it.id == topicId } ?: return@filter false
+                            val localLast = teamForumPreferences
+                                .getLastReadMessageId(teamId, topicId)
                             val displayed = displayedForumTopicUnread(
                                 topic = topic,
-                                localLastReadMessageId = null,
+                                localLastReadMessageId = localLast,
                                 optimisticFloor = floor,
                             )
                             !shouldClearOptimisticUnreadFloor(
@@ -106,6 +109,18 @@ class ForumListViewModel(
             val prev = lastActivityMessageIdByTopic[event.topicId]
             if (prev == messageId) return
             lastActivityMessageIdByTopic[event.topicId] = messageId
+            val teamId = _state.value.teamId.trim()
+            if (teamId.isNotEmpty()) {
+                val localLast = teamForumPreferences
+                    .getLastReadMessageId(teamId, event.topicId)
+                    ?.trim()
+                    .orEmpty()
+                if (localLast.isNotEmpty() &&
+                    !com.lastasylum.alliance.data.isObjectIdNewer(messageId, localLast)
+                ) {
+                    return
+                }
+            }
         }
         topicActivityJob?.cancel()
         topicActivityJob = viewModelScope.launch {
@@ -168,6 +183,7 @@ class ForumListViewModel(
             return ForumListViewModel(
                 application = application,
                 forumRepository = container.forumRepository,
+                teamForumPreferences = container.teamForumPreferences,
                 currentUserId = userId,
             ).also { it.bindTeam(teamId) }
         }

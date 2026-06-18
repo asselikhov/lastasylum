@@ -112,6 +112,10 @@ private const val CHAT_DERIVE_DEBOUNCE_MS = CHAT_LIST_DERIVE_DEBOUNCE_MS
 /** Active chat tab or overlay HUD chat — skip debounce/coalesce on the visible timeline. */
 internal fun ChatViewModel.isChatRealtimeViewActive(): Boolean =
     isChatTabActive || overlayChatPanelVisible
+
+/** Overlay chat tab with live message feed — immediate stash→UI merge. */
+internal fun ChatViewModel.isOverlayChatRealtimeViewActive(): Boolean =
+    overlayChatPanelVisible && com.lastasylum.alliance.overlay.CombatOverlayService.isOverlayChatTabActive()
 internal const val CHAT_PROFILE_GATE_TTL_MS = 5 * 60_000L
 private const val PROFILE_GATE_TTL_MS = CHAT_PROFILE_GATE_TTL_MS
 
@@ -1727,6 +1731,15 @@ class ChatViewModel(
 
     fun stopChatVoiceInput() {
         chatVoiceRecognizer?.stopRecording()
+    }
+
+    fun tearDownOverlayFallbackUiSession() {
+        viewModelScope.launch {
+            awaitPendingMarkRead()
+            mergeSessionCacheForSelectedRoom()
+            snapshotSelectedRoomToMessageCache()
+        }
+        setOverlayChatPanelVisible(false)
     }
 
     override fun onCleared() {

@@ -27,6 +27,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -113,6 +114,26 @@ fun TeamForumListScreen(
     val forumRepository = remember { app.forumRepository }
     val forumPrefs = remember { app.teamForumPreferences }
     val lastReadByTopic = remember { mutableStateMapOf<String, String>() }
+    var readCursorRevision by remember(teamId) { mutableIntStateOf(0) }
+    remember(teamId, currentUserId) {
+        val uid = currentUserId.trim()
+        if (uid.isNotBlank()) {
+            ReadCursorSession.bind(
+                app.chatRoomPreferences,
+                forumPrefs,
+                app.userSettingsPreferences,
+                uid,
+            )
+        }
+        forumPrefs.loadAllLastReadMessageIds(teamId).forEach { (topicId, messageId) ->
+            if (messageId.isBlank()) return@forEach
+            val current = lastReadByTopic[topicId]
+            if (current == null || isObjectIdNewer(messageId, current)) {
+                lastReadByTopic[topicId] = messageId
+            }
+        }
+        readCursorRevision++
+    }
     var menuTopic by remember { mutableStateOf<TeamForumTopicDto?>(null) }
     var showCreate by remember { mutableStateOf(false) }
     var createTitle by remember { mutableStateOf("") }
@@ -174,6 +195,7 @@ fun TeamForumListScreen(
         forumPrefs.loadAllLastReadMessageIds(teamId).forEach { (topicId, messageId) ->
             mergeTopicReadCursor(topicId, messageId)
         }
+        readCursorRevision++
     }
 
     fun reload(force: Boolean = false) {
@@ -214,7 +236,7 @@ fun TeamForumListScreen(
         onDispose { onProvideMarkReadAction(FORUM_MARK_READ_LIST_KEY, null) }
     }
 
-    LaunchedEffect(teamId, sectionActive, currentUserId) {
+    LaunchedEffect(teamId, sectionActive, currentUserId, overlayUi) {
         if (!sectionActive) return@LaunchedEffect
         val uid = currentUserId.trim()
         if (uid.isEmpty() || inboxSyncedForSection) return@LaunchedEffect
@@ -224,16 +246,18 @@ fun TeamForumListScreen(
             app.userSettingsPreferences,
             uid,
         )
-        withContext(Dispatchers.IO) {
-            ReadCursorSession.syncAllInboxReadCursors(
-                usersRepository = app.usersRepository,
-                teamsRepository = app.teamsRepository,
-                chatRepository = app.chatRepository,
-                chatRoomPreferences = app.chatRoomPreferences,
-                teamForumPreferences = forumPrefs,
-                userSettingsPreferences = app.userSettingsPreferences,
-            )
-            refreshReadCursorsFromPrefs()
+        if (!overlayUi) {
+            withContext(Dispatchers.IO) {
+                ReadCursorSession.syncAllInboxReadCursors(
+                    usersRepository = app.usersRepository,
+                    teamsRepository = app.teamsRepository,
+                    chatRepository = app.chatRepository,
+                    chatRoomPreferences = app.chatRoomPreferences,
+                    teamForumPreferences = forumPrefs,
+                    userSettingsPreferences = app.userSettingsPreferences,
+                )
+                refreshReadCursorsFromPrefs()
+            }
         }
         inboxSyncedForSection = true
         reload(force = true)
@@ -275,7 +299,7 @@ fun TeamForumListScreen(
     val visibleUnreadRanks by remember(
         topicListState,
         filteredTopics,
-        lastReadByTopic.size,
+        readCursorRevision,
         listUiState.optimisticUnreadFloorByTopic,
     ) {
         derivedStateOf {
@@ -286,7 +310,7 @@ fun TeamForumListScreen(
             }
         }
     }
-    val visibleReadRanks by remember(topicListState, filteredTopics, lastReadByTopic.size) {
+    val visibleReadRanks by remember(topicListState, filteredTopics, readCursorRevision) {
         derivedStateOf {
             buildVisibleUnreadRankMap(
                 topicListState.layoutInfo.visibleItemsInfo.map { it.index }.sorted(),
@@ -295,12 +319,12 @@ fun TeamForumListScreen(
             }
         }
     }
-    val forumTopicUnreadTotal = remember(topics, lastReadByTopic.size, listUiState.optimisticUnreadFloorByTopic) {
+    val forumTopicUnreadTotal = remember(topics, readCursorRevision, listUiState.optimisticUnreadFloorByTopic) {
         topics.sumOf { effectiveTopicUnread(it).coerceAtLeast(0) }
     }
     val firstUnreadTopicIndex = remember(
         filteredTopics,
-        lastReadByTopic.size,
+        readCursorRevision,
         listUiState.optimisticUnreadFloorByTopic,
     ) {
         filteredTopics.indexOfLast { effectiveTopicUnread(it) > 0 }
@@ -395,22 +419,27 @@ fun TeamForumListScreen(
                                         key = { _, t -> t.id },
                                         contentType = { _, _ -> "forum_topic" },
                                     ) { index, t ->
-                                        val unread = effectiveTopicUnread(t)
+                                        val unreadRaw = effectiveTopicUnread(t)
+                                        val unread = if (inboxSyncedForSection) unreadRaw else 0
                                         val unreadRank = visibleUnreadRanks[index] ?: -1
                                         val readRank = visibleReadRanks[index] ?: -1
-                                        val animationTier = forumTopicAnimationTier(
-                                            unread = unread > 0,
-                                            isVisible = index in visibleIndices,
-                                            visibleUnreadRank = unreadRank,
-                                            visibleReadRank = if (unread > 0) -1 else readRank,
-                                            listSize = filteredTopics.size,
-                                            sectionActive = sectionActive,
-                                            overlayMode = overlayUi,
-                                        ).let { tier ->
-                                            if (unread > 0 && index in visibleIndices && tier == FeedAnimationTier.Off) {
-                                                FeedAnimationTier.Lite
-                                            } else {
-                                                tier
+                                        val animationTier = if (!inboxSyncedForSection || unread == 0) {
+                                            FeedAnimationTier.Off
+                                        } else {
+                                            forumTopicAnimationTier(
+                                                unread = unread > 0,
+                                                isVisible = index in visibleIndices,
+                                                visibleUnreadRank = unreadRank,
+                                                visibleReadRank = if (unread > 0) -1 else readRank,
+                                                listSize = filteredTopics.size,
+                                                sectionActive = sectionActive,
+                                                overlayMode = overlayUi,
+                                            ).let { tier ->
+                                                if (unread > 0 && index in visibleIndices && tier == FeedAnimationTier.Off) {
+                                                    FeedAnimationTier.Lite
+                                                } else {
+                                                    tier
+                                                }
                                             }
                                         }
                                         val timeIso = t.lastMessageAt ?: t.createdAt
@@ -466,12 +495,9 @@ fun TeamForumListScreen(
                                         onClick = {
                                             if (firstUnreadTopicIndex >= 0) {
                                                 scope.launch {
-                                                    val filteredIdx = filteredTopics.indexOfFirst {
-                                                        effectiveTopicUnread(it) > 0
-                                                    }
-                                                    if (filteredIdx >= 0) {
-                                                        topicListState.animateScrollToItem(filteredIdx)
-                                                    }
+                                                    topicListState.animateScrollToItem(
+                                                        firstUnreadTopicIndex,
+                                                    )
                                                 }
                                             }
                                         },

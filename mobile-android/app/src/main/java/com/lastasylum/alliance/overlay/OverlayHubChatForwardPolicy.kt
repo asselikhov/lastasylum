@@ -14,6 +14,6 @@ internal object OverlayHubChatForwardPolicy {
         if (rid.isEmpty()) return false
         val selected = selectedRoomId?.trim().orEmpty()
         val hub = hubRoomId.trim()
-        return rid == selected || (hub.isNotEmpty() && rid == hub)
+        return rid == selected || (hub.isNotEmpty() && rid == hub && selected == hub)
     }
 }

@@ -6,6 +6,8 @@ import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.data.teams.ForumSocketIngress
+import com.lastasylum.alliance.data.chat.ChatSocketIngress
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.teams.TeamForumReadCursorSync
 import com.lastasylum.alliance.data.teams.TeamNewsReadCursorSync
@@ -80,6 +82,9 @@ object ReadCursorSession {
         chatRoomPreferences.clear()
         teamForumPreferences.clear()
         userSettingsPreferences.clearNewsReadCursor()
+        TeamNewsReadCursorSync.cancelPendingJobs()
+        ForumSocketIngress.clear()
+        ChatSocketIngress.clear()
         ChatSessionCache.clear()
         OverlayGameStatusHudRefresh.invalidateNewsForumCache()
         JwtAccessTokenClaims.invalidateCache()

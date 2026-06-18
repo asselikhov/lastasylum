@@ -21,6 +21,16 @@ object TeamNewsReadCursorSync {
     @Volatile
     private var pendingSeenIso: String? = null
 
+    @Volatile
+    private var pendingTeamId: String? = null
+
+    fun cancelPendingJobs() {
+        markSeenJob?.cancel()
+        markSeenJob = null
+        pendingSeenIso = null
+        pendingTeamId = null
+    }
+
     suspend fun pullServerCursorIntoPrefs(
         teamsRepository: TeamsRepository,
         prefs: UserSettingsPreferences,
@@ -33,7 +43,7 @@ object TeamNewsReadCursorSync {
             ?.trim()
             .orEmpty()
         if (serverIso.isEmpty()) return
-        mergeSeenAtIntoPrefs(serverIso, prefs)
+        mergeSeenAtIntoPrefs(serverIso, prefs, tid)
     }
 
     suspend fun pushPrefsToServerIfNewer(
@@ -43,7 +53,7 @@ object TeamNewsReadCursorSync {
     ) {
         val tid = teamId.trim()
         if (tid.isEmpty()) return
-        val localIso = prefs.getLastSeenTeamNewsCreatedAt()?.trim().orEmpty()
+        val localIso = prefs.getLastSeenTeamNewsCreatedAt(tid)?.trim().orEmpty()
         if (localIso.isEmpty()) return
         val serverIso = teamsRepository.getTeamNewsReadCursor(tid).getOrNull()
             ?.lastSeenCreatedAt
@@ -66,9 +76,10 @@ object TeamNewsReadCursorSync {
     ) {
         markSeenJob?.cancel()
         pendingSeenIso = null
+        pendingTeamId = null
         val iso = createdAt?.trim().orEmpty()
         if (iso.isEmpty()) return
-        mergeSeenAtIntoPrefs(iso, prefs)
+        mergeSeenAtIntoPrefs(iso, prefs, teamId)
         val tid = teamId.trim()
         if (tid.isNotEmpty()) {
             teamsRepository.advanceTeamNewsReadCursor(tid, iso)
@@ -83,18 +94,21 @@ object TeamNewsReadCursorSync {
         teamId: String,
         createdAt: String?,
     ) {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
         val iso = createdAt?.trim().orEmpty()
         if (iso.isEmpty()) return
         val incoming = runCatching { Instant.parse(iso) }.getOrNull() ?: return
-        val prevIso = prefs.getLastSeenTeamNewsCreatedAt()
+        val prevIso = prefs.getLastSeenTeamNewsCreatedAt(tid)
         val prev = prevIso?.let { runCatching { Instant.parse(it) }.getOrNull() }
         if (prev != null && !incoming.isAfter(prev)) return
-        mergeSeenAtIntoPrefs(iso, prefs)
+        mergeSeenAtIntoPrefs(iso, prefs, tid)
         pendingSeenIso = iso
+        pendingTeamId = tid
         markSeenJob?.cancel()
         markSeenJob = scope.launch {
             delay(MARK_SEEN_DEBOUNCE_MS)
-            flushPendingNewsCursor(teamsRepository, prefs, teamId)
+            flushPendingNewsCursor(teamsRepository, prefs, tid)
         }
     }
 
@@ -105,20 +119,25 @@ object TeamNewsReadCursorSync {
     ) {
         markSeenJob?.cancel()
         markSeenJob = null
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
         val iso = pendingSeenIso?.trim()?.takeIf { it.isNotEmpty() }
-            ?: prefs.getLastSeenTeamNewsCreatedAt()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: prefs.getLastSeenTeamNewsCreatedAt(tid)?.trim()?.takeIf { it.isNotEmpty() }
             ?: return
         pendingSeenIso = null
-        pushPrefsToServerIfNewer(teamsRepository, prefs, teamId)
+        pendingTeamId = null
+        pushPrefsToServerIfNewer(teamsRepository, prefs, tid)
         CombatOverlayService.notifyOverlayTeamInboxChanged(news = true)
     }
 
-    private fun mergeSeenAtIntoPrefs(iso: String, prefs: UserSettingsPreferences) {
+    private fun mergeSeenAtIntoPrefs(iso: String, prefs: UserSettingsPreferences, teamId: String) {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
         val incoming = runCatching { Instant.parse(iso) }.getOrNull() ?: return
-        val prevIso = prefs.getLastSeenTeamNewsCreatedAt()
+        val prevIso = prefs.getLastSeenTeamNewsCreatedAt(tid)
         val prev = prevIso?.let { runCatching { Instant.parse(it) }.getOrNull() }
         if (prev == null || incoming.isAfter(prev)) {
-            prefs.setLastSeenTeamNewsCreatedAt(iso)
+            prefs.setLastSeenTeamNewsCreatedAt(tid, iso)
             OverlayGameStatusHudRefresh.invalidateNewsCache()
             CombatOverlayService.notifyOverlayTeamInboxChanged(news = true)
         }

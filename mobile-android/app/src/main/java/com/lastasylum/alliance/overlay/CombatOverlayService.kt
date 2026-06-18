@@ -154,6 +154,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import com.lastasylum.alliance.ui.OVERLAY_WARMUP_MAX_MS
@@ -373,6 +374,10 @@ class CombatOverlayService : Service() {
 
     @Volatile
     private var overlayForumFlushPendingRead: (suspend () -> Unit)? = null
+    private var overlayForumRehydrateAction: (() -> Unit)? = null
+    @Volatile
+    private var overlayNewsFlushPendingRead: (suspend () -> Unit)? = null
+    private var overlayNewsRehydrateAction: (() -> Unit)? = null
     private var currentOverlayHudPane: OverlayHudPane? = null
     /** 0 = chat, 1 = team tab in legacy overlay panel ([showOverlayChatTeamPanel] without HUD pane). */
     @Volatile
@@ -388,6 +393,10 @@ class CombatOverlayService : Service() {
     )
 
     private val overlayHudPanelHostState = MutableStateFlow(OverlayHudPanelHostState())
+    private val overlayPanelVisibleFlow = MutableStateFlow(false)
+    private val overlayChatVmBindFlow = MutableStateFlow(0)
+    private val panelCloseMutex = kotlinx.coroutines.sync.Mutex()
+    private var panelCloseJob: Job? = null
     /** When activity VM is gone (game-only FGS), overlay chat uses this until panel closes. */
     private var overlayFallbackChatViewModel: ChatViewModel? = null
     /** URIs from picker if result arrived while Compose owner was torn down. */
@@ -2025,12 +2034,11 @@ class CombatOverlayService : Service() {
     }
 
     private fun syncOverlayChatPanelVisibilityToViewModel(visible: Boolean) {
-        val shared = resolveChatViewModel()
-        shared?.setOverlayChatPanelVisible(visible)
-        val fallback = overlayFallbackChatViewModel
-        if (fallback != null && fallback !== shared) {
-            fallback.setOverlayChatPanelVisible(visible)
-        }
+        resolveChatViewModel()?.setOverlayChatPanelVisible(visible)
+    }
+
+    private fun notifyOverlayChatVmBindingChanged() {
+        overlayChatVmBindFlow.value = overlayChatVmBindFlow.value + 1
     }
 
     private fun refreshOverlayStatusHudData(force: Boolean = false) {
@@ -2371,10 +2379,11 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun refreshOverlayNewsBadgeOnly() {
-        if (!isInGameOverlayUiActive()) return
-        if (inboxBadgeCoordinator.shouldDeferNewsReconcile() ||
-            inboxBadgeCoordinator.isNewsOptimisticActive()
+    private fun refreshOverlayNewsBadgeOnly(force: Boolean = false) {
+        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
+        if (!force &&
+            (inboxBadgeCoordinator.shouldDeferNewsReconcile() ||
+                inboxBadgeCoordinator.isNewsOptimisticActive())
         ) {
             return
         }
@@ -2386,7 +2395,7 @@ class CombatOverlayService : Service() {
             val userId = profile.id.trim()
             val count = inboxBadgeCoordinator.fetchNewsUnread(this@CombatOverlayService, teamId, userId)
             mainHandler.post {
-                if (!isInGameOverlayUiActive()) return@post
+                if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return@post
                 inboxBadgeCoordinator.cacheAuthoritativeNews(teamId, count)
                 overlayHudBadgeBus.emit(
                     OverlayHudBadgeEvent.NewsUnread(count, useAuthoritative = true),
@@ -2947,11 +2956,30 @@ class CombatOverlayService : Service() {
         }
     }
 
+    /** Forum pane open: bump list refresh + badge from stash/inbox. */
+    private fun rehydrateOverlayForumFromStash() {
+        OverlayGameStatusHudRefresh.invalidateForumCache()
+        mainHandler.post {
+            overlayForumRehydrateAction?.invoke()
+            refreshOverlayForumBadgeOnly(force = true)
+        }
+    }
+
+    /** News pane open: bump list refresh + badge from stash/inbox. */
+    private fun rehydrateOverlayNewsFromStash() {
+        OverlayGameStatusHudRefresh.invalidateNewsCache()
+        mainHandler.post {
+            overlayNewsRehydrateAction?.invoke()
+            refreshOverlayNewsBadgeOnly(force = true)
+        }
+    }
+
     private fun forwardOverlaySocketMessageToViewModel(msg: ChatMessage) {
         OverlaySocketMessageStash.stash(msg)
         val vm = resolveChatViewModel()
         vm?.stashOverlayRealtimeMessage(msg)
         if (vm == null) return
+        if (!isOverlayChatContentActive()) return
         if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
         if (shouldDeferHubApplyToPrimaryListener(vm, msg)) return
         val selectedId = vm.state.value.selectedRoomId?.trim().orEmpty()
@@ -3268,6 +3296,7 @@ class CombatOverlayService : Service() {
     private fun markOverlayFullscreenPanelSessionPresented() {
         overlayChatTeamPanelVisible = true
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
+        syncOverlayChatPanelVisibilityToViewModel(true)
     }
 
     private fun syncOverlayHudsIfReady() {
@@ -3561,7 +3590,27 @@ class CombatOverlayService : Service() {
         if (overlayChatTeamPanelVisible) {
             val oldPane = currentOverlayHudPane
             if (oldPane != pane) {
+                val leavingChatContent = oldPane == OverlayHudPane.Chat ||
+                    (oldPane == null && overlayChatTeamTabIndex == 0)
                 flushOverlayHudPaneReadOnClose(oldPane, overlayChatTeamTabIndex)
+                if (leavingChatContent) {
+                    syncOverlayChatPanelVisibilityToViewModel(false)
+                    overlayChatTeamRoot?.let { hideOverlayIme(it) }
+                }
+                if (overlayChatTeamTabIndex != 0) {
+                    val chatVm = resolveChatViewModel()
+                    if (chatVm != null) {
+                        serviceScope.launch {
+                            withContext(Dispatchers.Main) {
+                                chatVm.flushOverlayChatViewportMarkRead()
+                                chatVm.awaitPendingMarkRead()
+                                syncOverlayChatPanelVisibilityToViewModel(false)
+                            }
+                        }
+                    } else {
+                        syncOverlayChatPanelVisibilityToViewModel(false)
+                    }
+                }
             }
             currentOverlayHudPane = pane
             overlayHudPanelHostState.update {
@@ -3569,6 +3618,13 @@ class CombatOverlayService : Service() {
             }
             if (pane == OverlayHudPane.Chat) {
                 rehydrateOverlayChatFeedFromStash()
+                syncOverlayChatPanelVisibilityToViewModel(true)
+            }
+            if (pane == OverlayHudPane.Forum) {
+                rehydrateOverlayForumFromStash()
+            }
+            if (pane == OverlayHudPane.News) {
+                rehydrateOverlayNewsFromStash()
             }
             return
         }
@@ -5840,7 +5896,7 @@ class CombatOverlayService : Service() {
             }
         overlayRoomUnreadListener = roomUnreadListener
         val listener: (ChatMessage) -> Unit = listener@{ msg ->
-            mainHandler.postAtFrontOfQueue { dispatchOverlayIncomingChatMessage(msg) }
+            mainHandler.post { dispatchOverlayIncomingChatMessage(msg) }
         }
         val deleteListener: (com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent) -> Unit =
             deleteListener@{ event ->
@@ -6148,16 +6204,15 @@ class CombatOverlayService : Service() {
         }
     }
     /** Flush in-panel read cursors and refresh HUD badges (no bulk mark-all). */
-    private fun flushOverlayHudPaneReadOnClose(
+    private suspend fun flushOverlayHudPaneReadOnCloseSuspend(
         closingPane: OverlayHudPane?,
         legacyChatTabIndex: Int,
+        forumFlushSnapshot: (suspend () -> Unit)?,
+        newsFlushSnapshot: (suspend () -> Unit)?,
+        chatVmSnapshot: ChatViewModel?,
     ) {
-        val forumFlush = if (closingPane == OverlayHudPane.Forum) {
-            overlayForumFlushPendingRead
-        } else {
-            null
-        }
-        serviceScope.launch(Dispatchers.IO) {
+        var forumFlushSucceeded = false
+        withContext(Dispatchers.IO) {
             runCatching {
                 when (closingPane) {
                     OverlayHudPane.Notifications -> {
@@ -6168,33 +6223,130 @@ class CombatOverlayService : Service() {
                     OverlayHudPane.Chat, null -> {
                         if (closingPane == OverlayHudPane.Chat || legacyChatTabIndex == 0) {
                             withContext(Dispatchers.Main) {
-                                resolveChatViewModel()?.flushOverlayChatViewportMarkRead()
-                                resolveChatViewModel()?.awaitPendingMarkRead()
+                                chatVmSnapshot?.flushOverlayChatViewportMarkRead()
+                                chatVmSnapshot?.awaitPendingMarkRead()
                             }
                         }
                     }
                     OverlayHudPane.News -> {
-                        val container = AppContainer.from(this@CombatOverlayService)
-                        val ctx = OverlayTeamContextCache.load(
-                            usersRepository = container.usersRepository,
-                            teamsRepository = container.teamsRepository,
-                            forceRefresh = false,
-                        ).getOrNull() ?: return@runCatching
-                        TeamNewsReadCursorSync.flushPendingNewsCursor(
-                            teamsRepository = container.teamsRepository,
-                            prefs = container.userSettingsPreferences,
-                            teamId = ctx.teamId,
-                        )
+                        if (newsFlushSnapshot != null) {
+                            newsFlushSnapshot.invoke()
+                        } else {
+                            val container = AppContainer.from(this@CombatOverlayService)
+                            val ctx = OverlayTeamContextCache.load(
+                                usersRepository = container.usersRepository,
+                                teamsRepository = container.teamsRepository,
+                                forceRefresh = false,
+                            ).getOrNull() ?: return@runCatching
+                            TeamNewsReadCursorSync.flushPendingNewsCursor(
+                                teamsRepository = container.teamsRepository,
+                                prefs = container.userSettingsPreferences,
+                                teamId = ctx.teamId,
+                            )
+                        }
                     }
-                    OverlayHudPane.Forum -> forumFlush?.invoke()
+                    OverlayHudPane.Forum -> {
+                        if (forumFlushSnapshot != null) {
+                            forumFlushSnapshot.invoke()
+                            forumFlushSucceeded = true
+                        }
+                    }
                     OverlayHudPane.Participants -> Unit
                 }
             }
-            if (closingPane == OverlayHudPane.Forum) {
-                overlayForumFlushPendingRead = null
+        }
+        withContext(Dispatchers.Main) {
+            refreshOverlayBadgesAfterPaneClose(
+                closingPane,
+                legacyChatTabIndex,
+                forumFlushSucceeded = forumFlushSucceeded,
+            )
+        }
+    }
+
+    private suspend fun runOverlayPanelClosePipeline(
+        closingPane: OverlayHudPane?,
+        legacyChatTabIndex: Int,
+        hadVisible: Boolean,
+    ) {
+        val chatVmSnapshot = withContext(Dispatchers.Main) { resolveChatViewModel() }
+        val forumFlushSnapshot = withContext(Dispatchers.Main) {
+            if (closingPane == OverlayHudPane.Forum) overlayForumFlushPendingRead else null
+        }
+        val newsFlushSnapshot = withContext(Dispatchers.Main) {
+            if (closingPane == OverlayHudPane.News) overlayNewsFlushPendingRead else null
+        }
+        if (hadVisible) {
+            flushOverlayHudPaneReadOnCloseSuspend(
+                closingPane,
+                legacyChatTabIndex,
+                forumFlushSnapshot,
+                newsFlushSnapshot,
+                chatVmSnapshot,
+            )
+        }
+        withContext(Dispatchers.Main) {
+            overlayForumFlushPendingRead = null
+            overlayNewsFlushPendingRead = null
+            syncOverlayChatPanelVisibilityToViewModel(false)
+            disposeOverlayFallbackChatViewModel()
+            overlayHudPanelHostState.value = OverlayHudPanelHostState()
+            notifyOverlayChatVmBindingChanged()
+        }
+        chatVmSnapshot?.let { vm ->
+            withContext(Dispatchers.Main) {
+                vm.syncReadStateFromPreferences()
+                vm.syncRoomsFromServer(reconfirmVisibleRoom = false)
             }
-            mainHandler.post {
-                refreshOverlayBadgesAfterPaneClose(closingPane, legacyChatTabIndex)
+        }
+        runCatching {
+            AppContainer.from(this@CombatOverlayService).chatRepository
+                .notifyOverlayChatPanelClosed()
+        }
+        withContext(Dispatchers.Main) {
+            val canonical = activityScopedChatViewModel ?: ChatViewModelRegistry.shared
+            canonical?.reconnectRealtimeIfNeeded()
+        }
+    }
+
+    private fun disposeOverlayFallbackChatViewModel() {
+        val fallback = overlayFallbackChatViewModel ?: return
+        overlayFallbackChatViewModel = null
+        fallback.tearDownOverlayFallbackUiSession()
+        notifyOverlayChatVmBindingChanged()
+    }
+
+    /** Pane switch flush (panel stays open). Full panel close uses [runOverlayPanelClosePipeline]. */
+    private fun flushOverlayHudPaneReadOnClose(
+        closingPane: OverlayHudPane?,
+        legacyChatTabIndex: Int,
+    ) {
+        val chatVmSnapshot = resolveChatViewModel()
+        val forumFlush = if (closingPane == OverlayHudPane.Forum) {
+            overlayForumFlushPendingRead
+        } else {
+            null
+        }
+        val newsFlush = if (closingPane == OverlayHudPane.News) {
+            overlayNewsFlushPendingRead
+        } else {
+            null
+        }
+        serviceScope.launch {
+            flushOverlayHudPaneReadOnCloseSuspend(
+                closingPane,
+                legacyChatTabIndex,
+                forumFlush,
+                newsFlush,
+                chatVmSnapshot,
+            )
+            withContext(Dispatchers.Main) {
+                if (closingPane == OverlayHudPane.Forum) {
+                    overlayForumFlushPendingRead = null
+                }
+                if (closingPane == OverlayHudPane.News) {
+                    overlayNewsFlushPendingRead = null
+                }
             }
         }
     }
@@ -6202,6 +6354,7 @@ class CombatOverlayService : Service() {
     private fun refreshOverlayBadgesAfterPaneClose(
         closingPane: OverlayHudPane?,
         legacyChatTabIndex: Int,
+        forumFlushSucceeded: Boolean = false,
     ) {
         when (closingPane) {
             OverlayHudPane.Chat -> clearHubUnreadOptimisticState()
@@ -6211,6 +6364,9 @@ class CombatOverlayService : Service() {
                 OverlayGameStatusHudRefresh.invalidateNewsCache()
             }
             OverlayHudPane.Forum -> {
+                if (forumFlushSucceeded) {
+                    inboxBadgeCoordinator.clearForumOptimistic()
+                }
                 OverlayGameStatusHudRefresh.invalidateForumCache()
             }
             OverlayHudPane.Notifications, OverlayHudPane.Participants -> Unit
@@ -6246,10 +6402,8 @@ class CombatOverlayService : Service() {
         val hadVisible = overlayChatTeamPanelVisible
         val closingPane = currentOverlayHudPane
         val legacyChatTabIndex = overlayChatTeamTabIndex
-        if (hadVisible) {
-            flushOverlayHudPaneReadOnClose(closingPane, legacyChatTabIndex)
-        }
         overlayChatTeamPanelVisible = false
+        overlayPanelVisibleFlow.value = false
         currentOverlayHudPane = null
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
         root?.let { hideOverlayIme(it) }
@@ -6257,7 +6411,6 @@ class CombatOverlayService : Service() {
             root.visibility = View.GONE
             mainHandler.post { stashFullscreenPanelBelowHudWindows() }
         }
-        syncOverlayChatPanelVisibilityToViewModel(false)
         OverlayChatInteractionHold.releaseGameForegroundSuppress()
         applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = false)
         cancelScheduledRebalanceOverlayFullscreenZOrder()
@@ -6276,12 +6429,17 @@ class CombatOverlayService : Service() {
         restoreOverlayHudChromeAfterPanel()
         pendingOverlayPickedImageUris = null
         deferredHideOverlayChatTeamPanel = false
-        finalizeOverlayChatSessionAfterClose()
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }
         lastStripRenderSignature = 0
         applyOverlayStripVisibility(rebalanceZOrder = false)
         refreshOverlayChatStripNow()
         mainHandler.removeCallbacks(overlayCloseHudBadgeRefreshRunnable)
+        panelCloseJob?.cancel()
+        panelCloseJob = serviceScope.launch {
+            panelCloseMutex.withLock {
+                runOverlayPanelClosePipeline(closingPane, legacyChatTabIndex, hadVisible)
+            }
+        }
     }
 
     /** Полное снятие окна панели (выход из игры / removeOverlayControl). */
@@ -6297,6 +6455,7 @@ class CombatOverlayService : Service() {
         overlayChatTeamPanelVisible = false
         currentOverlayHudPane = null
         overlayForumFlushPendingRead = null
+        overlayNewsFlushPendingRead = null
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }
         overlayChatTeamComposeOwner?.destroy()
@@ -6324,6 +6483,7 @@ class CombatOverlayService : Service() {
 
     private fun onOverlayChatTeamPanelPresented(needsChatPrime: Boolean) {
         val root = overlayChatTeamRoot ?: return
+        overlayPanelVisibleFlow.value = true
         markOverlayFullscreenPanelSessionPresented()
         syncOverlayChatPanelVisibilityToViewModel(true)
         if (needsChatPrime) {
@@ -6456,35 +6616,14 @@ class CombatOverlayService : Service() {
             overlayFallbackChatViewModel = vm
             vm.primeFromLaunchDisk()
             vm.primeOverlayChatFromCache(preferAllianceHubRoom = true)
+            notifyOverlayChatVmBindingChanged()
         }
     }
 
     private fun releaseOverlayFallbackWhenActivityBound(activityVm: ChatViewModel) {
         val fallback = overlayFallbackChatViewModel ?: return
         if (fallback === activityVm) return
-        overlayFallbackChatViewModel = null
-        fallback.setOverlayChatPanelVisible(false)
-    }
-
-    private fun finalizeOverlayChatSessionAfterClose() {
-        val vm = resolveChatViewModel()
-        val clearFallback = vm != null && vm === overlayFallbackChatViewModel
-        serviceScope.launch {
-            vm?.awaitPendingMarkRead()
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                vm?.syncReadStateFromPreferences()
-                vm?.syncRoomsFromServer(reconfirmVisibleRoom = false)
-                runCatching {
-                    AppContainer.from(this@CombatOverlayService).chatRepository
-                        .notifyOverlayChatPanelClosed()
-                }
-                if (clearFallback) {
-                    val canonical = activityScopedChatViewModel ?: ChatViewModelRegistry.shared
-                    canonical?.reconnectRealtimeIfNeeded()
-                    overlayFallbackChatViewModel = null
-                }
-            }
-        }
+        disposeOverlayFallbackChatViewModel()
     }
 
     private fun refreshOverlayChatSession() {
@@ -6714,6 +6853,10 @@ class CombatOverlayService : Service() {
         val compose = overlayChatTeamComposeView ?: ComposeView(this).also { view ->
             overlayChatTeamComposeView = view
             view.setContent {
+                val panelVisible by overlayPanelVisibleFlow.collectAsState()
+                if (!panelVisible) {
+                    return@setContent
+                }
                 val panelHost by overlayHudPanelHostState.collectAsState()
                 val overlayPane = panelHost.hudPane
                 val initialTab = panelHost.initialTabIndex
@@ -6925,8 +7068,15 @@ class CombatOverlayService : Service() {
                         }
                         LaunchedEffect(selectedTab) {
                             overlayChatTeamTabIndex = selectedTab
+                            if (selectedTab == 0 && overlayPane == null) {
+                                syncOverlayChatPanelVisibilityToViewModel(true)
+                                rehydrateOverlayChatFeedFromStash()
+                            } else if (selectedTab != 0 && overlayPane == null) {
+                                syncOverlayChatPanelVisibilityToViewModel(false)
+                            }
                         }
-                        var vm by remember(userId, userRole) {
+                        val vmBindTick by overlayChatVmBindFlow.collectAsState()
+                        var vm by remember(userId, userRole, vmBindTick) {
                             mutableStateOf(
                                 run {
                                     if (userId.isNotBlank()) {
@@ -7297,6 +7447,15 @@ class CombatOverlayService : Service() {
         hudPane: OverlayHudPane?,
     ) {
         onOverlayChatTeamPanelPresented(needsChatPrime = false)
+        if ((hudPane == null && overlayChatTeamTabIndex == 0) || hudPane == OverlayHudPane.Chat) {
+            rehydrateOverlayChatFeedFromStash()
+        }
+        if (hudPane == OverlayHudPane.Forum) {
+            rehydrateOverlayForumFromStash()
+        }
+        if (hudPane == OverlayHudPane.News) {
+            rehydrateOverlayNewsFromStash()
+        }
         val shouldPrime = needsChatPrime &&
             (hudPane == null || hudPane == OverlayHudPane.Chat) &&
             !overlayChatHubPrimed()
@@ -7510,6 +7669,7 @@ class CombatOverlayService : Service() {
             if (viewModel != null) {
                 runningInstance?.releaseOverlayFallbackWhenActivityBound(viewModel)
             }
+            runningInstance?.notifyOverlayChatVmBindingChanged()
         }
 
         /** Activity VM, then app registry, then overlay fallback when game runs without activity UI. */
@@ -7533,6 +7693,21 @@ class CombatOverlayService : Service() {
         /** Flush pending forum topic mark-read when overlay forum pane closes. */
         fun registerOverlayForumFlushPendingRead(action: (suspend () -> Unit)?) {
             runningInstance?.overlayForumFlushPendingRead = action
+        }
+
+        /** Trigger forum list/topic refresh when overlay forum pane opens. */
+        fun registerOverlayForumRehydrateAction(action: (() -> Unit)?) {
+            runningInstance?.overlayForumRehydrateAction = action
+        }
+
+        /** Flush pending news read cursor when overlay news pane closes. */
+        fun registerOverlayNewsFlushPendingRead(action: (suspend () -> Unit)?) {
+            runningInstance?.overlayNewsFlushPendingRead = action
+        }
+
+        /** Trigger news list refresh when overlay news pane opens. */
+        fun registerOverlayNewsRehydrateAction(action: (() -> Unit)?) {
+            runningInstance?.overlayNewsRehydrateAction = action
         }
 
         /** Reset hub mail chip optimistic floor after admin chat wipe. */

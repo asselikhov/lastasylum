@@ -10,13 +10,14 @@ object TeamInboxUnread {
     fun isNewsItemUnread(
         item: TeamNewsListItemDto,
         prefs: UserSettingsPreferences,
+        teamId: String,
         currentUserId: String,
     ): Boolean {
         if (currentUserId.isNotBlank() && item.authorUserId.trim() == currentUserId.trim()) {
             return false
         }
         val created = runCatching { Instant.parse(item.createdAt) }.getOrNull() ?: return false
-        val lastSeenIso = prefs.getLastSeenTeamNewsCreatedAt()
+        val lastSeenIso = prefs.getLastSeenTeamNewsCreatedAt(teamId)
         val lastSeen = lastSeenIso?.let { runCatching { Instant.parse(it) }.getOrNull() }
         return lastSeen == null || created.isAfter(lastSeen)
     }
@@ -24,8 +25,9 @@ object TeamInboxUnread {
     fun countUnreadNews(
         items: List<TeamNewsListItemDto>,
         prefs: UserSettingsPreferences,
+        teamId: String,
         currentUserId: String = "",
-    ): Int = items.count { isNewsItemUnread(it, prefs, currentUserId) }
+    ): Int = items.count { isNewsItemUnread(it, prefs, teamId, currentUserId) }
 
     /** Newest post first (same order as forum topic list / API `_id: -1`). */
     fun sortNewsFeedNewestFirst(items: List<TeamNewsListItemDto>): List<TeamNewsListItemDto> {

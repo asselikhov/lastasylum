@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.screens.teamnews
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -79,6 +80,10 @@ internal fun TeamNewsDetailRoute(
     var voteBusy by remember { mutableStateOf(false) }
     var deleteOpen by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    if (overlayUi) {
+        BackHandler { onBack() }
+    }
 
     LaunchedEffect(teamId, newsId) {
         loading = true

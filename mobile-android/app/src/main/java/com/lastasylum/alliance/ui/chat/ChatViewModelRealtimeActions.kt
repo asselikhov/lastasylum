@@ -68,11 +68,6 @@ private fun ChatViewModel.shouldBlockOwnOutgoingRealtimeUnlocked(message: ChatMe
 internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
         val mid = message._id?.trim().orEmpty()
         val rid = message.roomId.trim()
-        if (mid.isNotEmpty() && rid.isNotEmpty()) {
-            if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.claimForChatList(rid, mid)) {
-                return
-            }
-        }
         if (rid.isNotEmpty()) {
             vmRepository.ensureRoomJoined(rid)
         }
@@ -100,6 +95,11 @@ internal fun ChatViewModel.onIncomingMessageImpl(message: ChatMessage) {
             if (serverId.isNotEmpty() && messageIdIndex.containsKey(serverId)) return
         }
         if (!isIncomingMessageVisible(message)) return
+        if (mid.isNotEmpty() && rid.isNotEmpty()) {
+            if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.claimForChatList(rid, mid)) {
+                return
+            }
+        }
         if (!isOwn && mid.isNotEmpty()) {
             com.lastasylum.alliance.data.chat.OverlaySocketMessageStash.stash(message)
         }
@@ -471,6 +471,10 @@ internal fun ChatViewModel.scheduleRehydrateSelectedRoomFromStashImpl(roomId: St
         val rid = roomId.trim()
         if (rid.isEmpty() || vmState.value.selectedRoomId != rid) return
         stashRehydrateJob?.cancel()
+        if (isOverlayChatRealtimeViewActive()) {
+            rehydrateRoomMessagesFromCache(rid)
+            return
+        }
         if (isChatRealtimeViewActive()) {
             rehydrateRoomMessagesFromCache(rid)
             return

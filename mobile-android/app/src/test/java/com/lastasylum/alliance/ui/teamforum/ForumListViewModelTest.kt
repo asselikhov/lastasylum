@@ -36,6 +36,7 @@ import org.robolectric.annotation.Config
 class ForumListViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
     private lateinit var forumRepository: ForumRepository
+    private lateinit var forumPrefs: TeamForumPreferences
 
     @Before
     fun setUp() {
@@ -46,11 +47,12 @@ class ForumListViewModelTest {
             override suspend fun listForumTopics(teamId: String, view: String): List<TeamForumTopicDto> =
                 listOf(sampleTopic("t1", "General"))
         }
+        forumPrefs = TeamForumPreferences(context)
         forumRepository = ForumRepository(
             db = db,
             teamsRepository = TeamsRepository(teamsApi),
             launchDiskCache = LaunchDiskCache(context),
-            forumPrefs = TeamForumPreferences(context),
+            forumPrefs = forumPrefs,
             latencyTracker = DeliveryLatencyTracker(db, CoroutineScope(Dispatchers.Unconfined)),
         )
     }
@@ -63,7 +65,7 @@ class ForumListViewModelTest {
     @Test
     fun onSearchQueryChange_updatesState() = runTest {
         val app = ApplicationProvider.getApplicationContext<Application>()
-        val vm = ForumListViewModel(app, forumRepository, "user1")
+        val vm = ForumListViewModel(app, forumRepository, forumPrefs, "user1")
         vm.bindTeam("team1")
         vm.onSearchQueryChange("raid")
         assertEquals("raid", vm.state.value.searchQuery)
@@ -72,7 +74,7 @@ class ForumListViewModelTest {
     @Test
     fun reload_success_updatesTopics() = runBlocking {
         val app = ApplicationProvider.getApplicationContext<Application>()
-        val vm = ForumListViewModel(app, forumRepository, "user1")
+        val vm = ForumListViewModel(app, forumRepository, forumPrefs, "user1")
         vm.bindTeam("team1")
         vm.reload(force = true)
         withTimeout(5_000) {
@@ -87,7 +89,7 @@ class ForumListViewModelTest {
     @Test
     fun applyTopicReadLocal_zerosUnreadImmediately() = runBlocking {
         val app = ApplicationProvider.getApplicationContext<Application>()
-        val vm = ForumListViewModel(app, forumRepository, "user1")
+        val vm = ForumListViewModel(app, forumRepository, forumPrefs, "user1")
         vm.bindTeam("team1")
         vm.reload(force = true)
         withTimeout(5_000) {
@@ -102,7 +104,7 @@ class ForumListViewModelTest {
     @Test
     fun applyTopicActivity_bumpsUnreadImmediately() = runBlocking {
         val app = ApplicationProvider.getApplicationContext<Application>()
-        val vm = ForumListViewModel(app, forumRepository, "user1")
+        val vm = ForumListViewModel(app, forumRepository, forumPrefs, "user1")
         vm.bindTeam("team1")
         vm.reload(force = true)
         withTimeout(5_000) {
@@ -123,7 +125,7 @@ class ForumListViewModelTest {
     @Test
     fun applyTopicActivity_skipsOpenTopic() = runBlocking {
         val app = ApplicationProvider.getApplicationContext<Application>()
-        val vm = ForumListViewModel(app, forumRepository, "user1")
+        val vm = ForumListViewModel(app, forumRepository, forumPrefs, "user1")
         vm.bindTeam("team1")
         vm.reload(force = true)
         withTimeout(5_000) {
@@ -139,6 +141,28 @@ class ForumListViewModelTest {
             ),
         )
         assertEquals(0, vm.state.value.topics.first().unreadCount)
+    }
+
+    @Test
+    fun applyTopicActivity_skipsWhenLocalCursorAlreadyRead() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val vm = ForumListViewModel(app, forumRepository, forumPrefs, "user1")
+        vm.bindTeam("team1")
+        vm.reload(force = true)
+        withTimeout(5_000) {
+            while (vm.state.value.topics.isEmpty()) delay(10)
+        }
+        forumPrefs.setLastReadMessageId("team1", "t1", "507f1f77bcf86cd799439099")
+        vm.applyTopicActivity(
+            TeamForumTopicActivityEvent(
+                teamId = "team1",
+                topicId = "t1",
+                messageId = "507f1f77bcf86cd799439012",
+                senderUserId = "peer-2",
+            ),
+        )
+        assertEquals(0, vm.state.value.topics.first().unreadCount)
+        assertEquals(0, vm.state.value.optimisticUnreadFloorByTopic["t1"] ?: 0)
     }
 
     private fun sampleTopic(id: String, title: String) = TeamForumTopicDto(
