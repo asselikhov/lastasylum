@@ -38,12 +38,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val HudIconSize = 17.dp
+private val HudIconSize = 18.dp
 private val HudChipPaddingH = 7.dp
 private val HudChipPaddingV = 6.dp
 internal val HudRowSpacing = 8.dp
@@ -194,7 +195,7 @@ internal fun OverlayGameHudUpdateChip(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                painter = OverlayHudIcons.painter(OverlayHudIcons.appUpdate),
+                imageVector = OverlayHudIcons.appUpdate,
                 contentDescription = null,
                 tint = UpdateIconTint.copy(alpha = 0.88f + glow * 0.12f),
                 modifier = Modifier.size(HudIconSize),
@@ -231,11 +232,12 @@ internal fun OverlayGameHudChip(
     modifier: Modifier = Modifier,
     badgeCount: Int = 0,
     iconTint: Color? = null,
+    icon: ImageVector? = null,
     painter: Painter? = null,
     leadingContent: (@Composable () -> Unit)? = null,
 ) {
-    require(painter != null || leadingContent != null) {
-        "painter or leadingContent required"
+    require(icon != null || painter != null || leadingContent != null) {
+        "icon, painter, or leadingContent required"
     }
     val badge = badgeCount.coerceAtLeast(0)
     val shape = RoundedCornerShape(HudChipCorner)
@@ -257,6 +259,14 @@ internal fun OverlayGameHudChip(
         ) {
             when {
                 leadingContent != null -> leadingContent()
+                icon != null -> {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(HudIconSize),
+                    )
+                }
                 painter != null -> {
                     Icon(
                         painter = painter,

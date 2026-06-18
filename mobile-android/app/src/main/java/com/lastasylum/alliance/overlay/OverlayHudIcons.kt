@@ -1,30 +1,40 @@
 package com.lastasylum.alliance.overlay
 
-import androidx.annotation.DrawableRes
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.res.painterResource
-import com.lastasylum.alliance.R
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.GpsFixed
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.HeadsetMic
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.MicOff
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
- * Unified overlay HUD icon set — custom vectors with matching stroke weight and padding.
- * Tint via [OverlayGameHudChip] accent colors.
+ * Semantic map of overlay HUD icons — Material Symbols Outlined
+ * ([material-icons-extended](https://developer.android.com/reference/kotlin/androidx/compose/material/icons/package-summary)).
+ *
+ * Matches icons used elsewhere in the app (e.g. [com.lastasylum.alliance.ui.screens.TeamScreen],
+ * [com.lastasylum.alliance.ui.Navigation]) for visual consistency.
  */
 object OverlayHudIcons {
-    @DrawableRes val news: Int = R.drawable.ic_overlay_hud_news
-    @DrawableRes val forum: Int = R.drawable.ic_overlay_hud_forum
-    @DrawableRes val mail: Int = R.drawable.ic_overlay_hud_mail
-    @DrawableRes val team: Int = R.drawable.ic_overlay_hud_team
-    @DrawableRes val notifications: Int = R.drawable.ic_overlay_hud_notifications
-    @DrawableRes val voice: Int = R.drawable.ic_overlay_hud_voice
-    @DrawableRes val quickCommands: Int = R.drawable.ic_overlay_quick_commands
-    @DrawableRes val settings: Int = R.drawable.ic_overlay_hud_settings
-    @DrawableRes val volumeOn: Int = R.drawable.ic_overlay_volume_on
-    @DrawableRes val volumeOff: Int = R.drawable.ic_overlay_volume_off
-    @DrawableRes val micOn: Int = R.drawable.ic_overlay_mic_on
-    @DrawableRes val micOff: Int = R.drawable.ic_overlay_mic_off
-    @DrawableRes val appUpdate: Int = R.drawable.ic_overlay_hud_update
-
-    @Composable
-    fun painter(@DrawableRes id: Int): Painter = painterResource(id)
+    val news: ImageVector = Icons.AutoMirrored.Outlined.Article
+    val forum: ImageVector = Icons.Outlined.Forum
+    val mail: ImageVector = Icons.Outlined.ChatBubbleOutline
+    val team: ImageVector = Icons.Outlined.Groups
+    val notifications: ImageVector = Icons.Outlined.Notifications
+    val voice: ImageVector = Icons.Outlined.HeadsetMic
+    val quickCommands: ImageVector = Icons.Outlined.GpsFixed
+    val settings: ImageVector = Icons.Outlined.Tune
+    val volumeOn: ImageVector = Icons.AutoMirrored.Outlined.VolumeUp
+    val volumeOff: ImageVector = Icons.AutoMirrored.Outlined.VolumeOff
+    val micOn: ImageVector = Icons.Outlined.Mic
+    val micOff: ImageVector = Icons.Outlined.MicOff
+    val appUpdate: ImageVector = Icons.Outlined.SystemUpdate
 }

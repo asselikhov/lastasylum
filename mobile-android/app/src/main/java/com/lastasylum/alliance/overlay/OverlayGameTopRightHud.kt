@@ -73,9 +73,7 @@ fun OverlayGameTopRightHud(
             ) {
                 OverlayGameHudChipColumn(horizontalAlignment = Alignment.End) {
                     OverlayGameHudChip(
-                        painter = OverlayHudIcons.painter(
-                            if (state.soundOn) OverlayHudIcons.volumeOn else OverlayHudIcons.volumeOff,
-                        ),
+                        icon = if (state.soundOn) OverlayHudIcons.volumeOn else OverlayHudIcons.volumeOff,
                         accent = OverlayHudChipAccent.Sound,
                         iconTint = if (state.soundOn) HudVoiceActiveGreen else null,
                         contentDescription = stringResource(
@@ -88,9 +86,7 @@ fun OverlayGameTopRightHud(
                         onClick = onSoundClick,
                     )
                     OverlayGameHudChip(
-                        painter = OverlayHudIcons.painter(
-                            if (state.micOn) OverlayHudIcons.micOn else OverlayHudIcons.micOff,
-                        ),
+                        icon = if (state.micOn) OverlayHudIcons.micOn else OverlayHudIcons.micOff,
                         accent = OverlayHudChipAccent.Mic,
                         iconTint = if (state.micOn) HudVoiceActiveGreen else null,
                         contentDescription = stringResource(
@@ -103,7 +99,7 @@ fun OverlayGameTopRightHud(
                         onClick = onMicClick,
                     )
                     OverlayGameHudChip(
-                        painter = OverlayHudIcons.painter(OverlayHudIcons.settings),
+                        icon = OverlayHudIcons.settings,
                         accent = OverlayHudChipAccent.Settings,
                         iconTint = if (state.voiceSettingsVisible) {
                             OverlayHudChipAccent.Settings.icon
@@ -135,7 +131,7 @@ fun OverlayGameTopRightHud(
             OverlayGameHudBar(horizontalAlignment = Alignment.End) {
                 OverlayGameHudChipRow {
                     OverlayGameHudChip(
-                        painter = OverlayHudIcons.painter(OverlayHudIcons.team),
+                        icon = OverlayHudIcons.team,
                         accent = OverlayHudChipAccent.Online,
                         badgeCount = state.teamJoinRequestCount,
                         contentDescription = if (state.teamJoinRequestCount > 0) {
@@ -152,13 +148,13 @@ fun OverlayGameTopRightHud(
                         onClick = onOnlineClick,
                     )
                     OverlayGameHudChip(
-                        painter = OverlayHudIcons.painter(OverlayHudIcons.quickCommands),
+                        icon = OverlayHudIcons.quickCommands,
                         accent = OverlayHudChipAccent.Commands,
                         contentDescription = stringResource(R.string.overlay_cd_commands),
                         onClick = onQuickCommandsClick,
                     )
                     OverlayGameHudChip(
-                        painter = OverlayHudIcons.painter(OverlayHudIcons.notifications),
+                        icon = OverlayHudIcons.notifications,
                         accent = OverlayHudChipAccent.Notifications,
                         badgeCount = state.reactionLogUnreadCount,
                         contentDescription = if (state.reactionLogUnreadCount > 0) {
@@ -172,7 +168,7 @@ fun OverlayGameTopRightHud(
                         onClick = onNotificationsClick,
                     )
                     OverlayGameHudChip(
-                        painter = OverlayHudIcons.painter(OverlayHudIcons.voice),
+                        icon = OverlayHudIcons.voice,
                         accent = OverlayHudChipAccent.Voice,
                         iconTint = if (state.voiceExpanded || state.micOn || state.soundOn) {
                             OverlayHudChipAccent.Voice.icon

@@ -36,21 +36,21 @@ fun OverlayGameStatusHud(
     OverlayGameHudBar(modifier = modifier) {
         OverlayGameHudChipRow {
             OverlayGameHudChip(
-                painter = OverlayHudIcons.painter(OverlayHudIcons.news),
+                icon = OverlayHudIcons.news,
                 accent = OverlayHudChipAccent.News,
                 badgeCount = state.teamNewsUnread,
                 contentDescription = stringResource(R.string.overlay_hud_news_cd, state.teamNewsUnread),
                 onClick = onNewsClick,
             )
             OverlayGameHudChip(
-                painter = OverlayHudIcons.painter(OverlayHudIcons.forum),
+                icon = OverlayHudIcons.forum,
                 accent = OverlayHudChipAccent.Forum,
                 badgeCount = state.forumUnread,
                 contentDescription = stringResource(R.string.overlay_hud_forum_cd, state.forumUnread),
                 onClick = onForumClick,
             )
             OverlayGameHudChip(
-                painter = OverlayHudIcons.painter(OverlayHudIcons.mail),
+                icon = OverlayHudIcons.mail,
                 accent = OverlayHudChipAccent.Mail,
                 badgeCount = state.allianceChatUnread,
                 contentDescription = stringResource(

@@ -4,12 +4,15 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Crosshair / target scope -->
+    <!-- Tactical crosshair -->
     <path
         android:fillColor="#FFFFFFFF"
         android:fillType="evenOdd"
-        android:pathData="M12,2 A10,10 0 1,1 12,22 A10,10 0 1,1 12,2 M12,5.8 A6.2,6.2 0 1,0 12,18.2 A6.2,6.2 0 1,0 12,5.8 Z" />
+        android:pathData="M12,3.25c4.83,0 8.75,3.92 8.75,8.75s-3.92,8.75 -8.75,8.75S3.25,16.83 3.25,12 7.17,3.25 12,3.25z M12,6.75c-2.9,0 -5.25,2.35 -5.25,5.25s2.35,5.25 5.25,5.25 5.25,-2.35 5.25,-5.25 -2.35,-5.25 -5.25,-5.25z" />
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M11,4.5h2v3.2h-2z M11,16.3h2v3.2h-2z M4.5,11h3.2v2H4.5z M16.3,11h3.2v2h-3.2z M10.5,10.5h3v3h-3z" />
+        android:pathData="M11.15,5.15h1.7v3.35h-1.7z M11.15,15.5h1.7v3.35h-1.7z M5.15,11.15h3.35v1.7H5.15z M15.5,11.15h3.35v1.7h-3.35z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.35,10.35h3.3v3.3h-3.3z" />
 </vector>

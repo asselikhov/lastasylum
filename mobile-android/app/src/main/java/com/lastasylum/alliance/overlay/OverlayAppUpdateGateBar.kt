@@ -135,7 +135,7 @@ fun OverlayAppUpdateGateBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                painter = OverlayHudIcons.painter(OverlayHudIcons.appUpdate),
+                imageVector = OverlayHudIcons.appUpdate,
                 contentDescription = null,
                 tint = GateUpdateIconTint.copy(alpha = 0.88f + glow * 0.12f),
                 modifier = Modifier.size(GateBarIconSize),
