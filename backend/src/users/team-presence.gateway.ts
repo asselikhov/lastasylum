@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -9,7 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
-import { authenticateSocketConnection } from '../common/socket-auth.util';
+import { authenticateSocketConnectionOrDisconnect } from '../common/socket-auth.util';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
 import { TeamsService } from './teams.service';
@@ -48,6 +49,8 @@ type AuthSocket = Socket<
   },
 })
 export class TeamPresenceGateway {
+  private readonly logger = new Logger(TeamPresenceGateway.name);
+
   @WebSocketServer()
   server: Server;
 
@@ -58,7 +61,12 @@ export class TeamPresenceGateway {
   ) {}
 
   handleConnection(client: AuthSocket) {
-    authenticateSocketConnection(client, this.jwtService, this.configService);
+    authenticateSocketConnectionOrDisconnect(
+      client,
+      this.jwtService,
+      this.configService,
+      this.logger,
+    );
   }
 
   private teamRoomKey(teamId: string): string {

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -9,7 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Socket, Namespace } from 'socket.io';
-import { authenticateSocketConnection } from '../common/socket-auth.util';
+import { authenticateSocketConnectionOrDisconnect } from '../common/socket-auth.util';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
 import { filterPersonalChatFanoutUserIds } from '../chat/chat-realtime-broadcast.util';
@@ -47,6 +48,8 @@ type AuthSocket = Socket<
   },
 })
 export class TeamForumGateway {
+  private readonly logger = new Logger(TeamForumGateway.name);
+
   @WebSocketServer()
   server: Namespace;
 
@@ -58,11 +61,13 @@ export class TeamForumGateway {
   ) {}
 
   handleConnection(client: AuthSocket) {
-    const user = authenticateSocketConnection(
+    const user = authenticateSocketConnectionOrDisconnect(
       client,
       this.jwtService,
       this.configService,
+      this.logger,
     );
+    if (!user) return;
     void client.join(`user:${user.userId}`);
   }
 

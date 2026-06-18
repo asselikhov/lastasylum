@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Namespace, Socket } from 'socket.io';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
-import { authenticateSocketConnection } from '../common/socket-auth.util';
+import { authenticateSocketConnectionOrDisconnect } from '../common/socket-auth.util';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { userMayAccessChatRoom } from './chat-room-access';
 import { UsersService } from '../users/users.service';
@@ -166,11 +166,13 @@ export class ChatGateway {
   ) {}
 
   handleConnection(client: AuthSocket) {
-    const user = authenticateSocketConnection(
+    const user = authenticateSocketConnectionOrDisconnect(
       client,
       this.jwtService,
       this.configService,
+      this.logger,
     );
+    if (!user) return;
     /** Personal room for push-style overlay signals (reactions, etc.). */
     void client.join(`user:${user.userId}`);
     void this.emitAllUnreadSnapshotsOnConnect(user.userId);

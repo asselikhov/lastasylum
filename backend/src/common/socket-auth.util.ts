@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { WsException } from '@nestjs/websockets';
@@ -75,4 +76,37 @@ export function authenticateSocketConnection(
   const user = verifySocketToken(jwtService, configService, rawToken);
   attachSocketUser(client, user);
   return user;
+}
+
+function socketAuthFailureReason(err: unknown): string {
+  if (err instanceof WsException) {
+    const payload = err.getError();
+    if (typeof payload === 'string') return payload;
+    if (payload && typeof payload === 'object' && 'message' in payload) {
+      const msg = (payload as { message?: unknown }).message;
+      if (typeof msg === 'string') return msg;
+    }
+  }
+  if (err instanceof Error) return err.message;
+  return 'websocket_auth_failed';
+}
+
+/**
+ * Auth on socket connect — disconnects client on failure instead of throwing.
+ * Uncaught WsException in handleConnection crashes the Node process on Render.
+ */
+export function authenticateSocketConnectionOrDisconnect(
+  client: SocketWithUser,
+  jwtService: JwtService,
+  configService: ConfigService,
+  logger?: Logger,
+): SocketGatewayUser | null {
+  try {
+    return authenticateSocketConnection(client, jwtService, configService);
+  } catch (err) {
+    const reason = socketAuthFailureReason(err);
+    logger?.debug?.(`Rejecting socket id=${client.id}: ${reason}`);
+    void client.disconnect(true);
+    return null;
+  }
 }

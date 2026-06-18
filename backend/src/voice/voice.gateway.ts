@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -9,7 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Namespace, Socket } from 'socket.io';
-import { authenticateSocketConnection } from '../common/socket-auth.util';
+import { authenticateSocketConnectionOrDisconnect } from '../common/socket-auth.util';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { userMayAccessChatRoom } from '../chat/chat-room-access';
@@ -71,6 +72,8 @@ type VoicePeerState = {
   maxHttpBufferSize: 1e6,
 })
 export class VoiceGateway {
+  private readonly logger = new Logger(VoiceGateway.name);
+
   @WebSocketServer()
   server: Namespace;
 
@@ -89,7 +92,13 @@ export class VoiceGateway {
   ) {}
 
   handleConnection(client: AuthSocket) {
-    authenticateSocketConnection(client, this.jwtService, this.configService);
+    const user = authenticateSocketConnectionOrDisconnect(
+      client,
+      this.jwtService,
+      this.configService,
+      this.logger,
+    );
+    if (!user) return;
     client.data.micOn = false;
     client.data.soundOn = false;
   }

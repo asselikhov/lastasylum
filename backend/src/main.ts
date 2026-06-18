@@ -9,6 +9,18 @@ import { AppModule } from './app.module';
 const SLOW_REQUEST_MS = 2_000;
 const CHAT_SLOW_REQUEST_MS = 500;
 
+function installProcessErrorGuards(): void {
+  const logger = new Logger('Process');
+  process.on('uncaughtException', (err: Error) => {
+    logger.error(`uncaughtException: ${err.message}`, err.stack);
+  });
+  process.on('unhandledRejection', (reason: unknown) => {
+    const detail =
+      reason instanceof Error ? reason.stack ?? reason.message : String(reason);
+    logger.error(`unhandledRejection: ${detail}`);
+  });
+}
+
 function installSlowRequestLogger(app: INestApplication): void {
   const logger = new Logger('SlowRequest');
   const http = app.getHttpAdapter().getInstance();
@@ -35,6 +47,7 @@ function installSlowRequestLogger(app: INestApplication): void {
 }
 
 async function bootstrap() {
+  installProcessErrorGuards();
   // SCALE: Redis Socket.IO adapter when REDIS_URL is set (multi-replica deploy).
   const app = await NestFactory.create(AppModule);
   const redisUrl = process.env.REDIS_URL?.trim();
