@@ -17,7 +17,19 @@
 | REST skip | Suppressed refresh while socket disconnected | `socketConnected=false` forces refresh |
 | Overlay strip | No REST catch-up after reconnect | `catchUpOverlayRaidStripFromRest` on overlay chat subscribe |
 | Rehydrate | Chat pane switch missed session merge | `mergeSessionCacheForSelectedRoom` before rehydrate |
+| Reconnect rooms | Partial `room:join` after socket reconnect | One-shot `forceSubscribeAllRoomsOnce` on connect/foreground |
+| Fast path | Incoming batch latency on active chat tab | `ChatIncomingSync` uses `Main.immediate` for single-message batches |
+| Strip reconnect | Strip only caught up on overlay subscribe | `startOverlayChatConnectionCollector` on socket reconnect |
+| Eligible cache | Stale fanout after roster/membership change | `invalidateEligibleUsersCache` on team join/leave + admin membership |
 | Dead code | Unused `OverlayChatHistoryPanel`, `shouldOverlayAutoMarkReadSelectedRoom` | Removed |
+
+## Remaining risks (low)
+
+- Overlay chat panel intentionally omits mark-all-read and clear-history (main app only).
+- `mergeLoadedPageWithExisting(authoritativeEmpty=false)` still keeps local rows when REST returns empty (intentional offline UX).
+- Forum pending ids use separate `ForumListMutations` helpers — not unified with `isOptimisticOutgoingMessageId`.
+- Background outbox success does not always update visible chat VM (WorkManager path).
+- Optional: add `clearedAt` to `chat:history:cleared` socket payload for offline clients that missed the event.
 
 ## Fixed in prior pass
 
@@ -39,13 +51,6 @@
 | Badges | Hub optimistic floor mutated on IO | Clear floor only on main thread |
 | Notifications | Stale badge when HUD hidden during hold | Collector starts on HUD attach; refresh respects hold |
 | Overlay chat crash | Duplicate LazyColumn key `day:7 июня` when same date label appears twice | `chatTimelineDaySeparatorKey(index, label)` includes timeline index |
-
-## Remaining risks (low)
-
-- `mergeLoadedPageWithExisting(authoritativeEmpty=false)` still keeps local rows when REST returns empty (intentional offline UX).
-- Forum pending ids use separate `ForumListMutations` helpers — not unified with `isOptimisticOutgoingMessageId`.
-- Background outbox success does not always update visible chat VM (WorkManager path).
-- Optional: add `clearedAt` to `chat:history:cleared` socket payload for offline clients that missed the event.
 
 ## Smoke test checklist
 

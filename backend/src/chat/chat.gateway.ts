@@ -925,20 +925,6 @@ export class ChatGateway {
     );
   }
 
-  private userIdsInChatRoom(roomId: string): Set<string> {
-    const out = new Set<string>();
-    const adapterRoom = this.server?.adapter.rooms.get(`chat:${roomId}`);
-    if (!adapterRoom) return out;
-    for (const socketId of adapterRoom) {
-      const client = this.server.sockets.get(socketId) as
-        | AuthSocket
-        | undefined;
-      const userId = client?.data?.user?.userId?.trim();
-      if (userId) out.add(userId);
-    }
-    return out;
-  }
-
   private async getEligibleUserIdsCached(roomId: string): Promise<string[]> {
     const rid = roomId.trim();
     if (!rid) return [];

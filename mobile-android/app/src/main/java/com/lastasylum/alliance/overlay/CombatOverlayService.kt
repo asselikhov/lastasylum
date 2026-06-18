@@ -94,6 +94,7 @@ import com.lastasylum.alliance.data.teams.TeamNewsReadCursorSync
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.effectiveUnreadCount
+import com.lastasylum.alliance.data.chat.ChatConnectionState
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.OverlaySocketMessageStash
 import com.lastasylum.alliance.data.chat.ChatRoomDto
@@ -146,6 +147,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -349,6 +351,7 @@ class CombatOverlayService : Service() {
     private var overlayReactionListener: ((OverlayReactionEvent) -> Unit)? = null
     private var overlayReactionLogListener: ((com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto) -> Unit)? = null
     private var overlayReactionLogReactionListener: ((com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto) -> Unit)? = null
+    private var overlayChatConnectionJob: Job? = null
     /** Burst waits for overlay:reaction:log when reply snapshot is not on overlay:reaction yet. */
     private val pendingIncomingReactionBursts = LinkedHashMap<String, OverlayReactionEvent>()
     private val pendingIncomingReactionBurstTimers = mutableMapOf<String, Runnable>()
@@ -5873,7 +5876,28 @@ class CombatOverlayService : Service() {
             }
         }
         ensureOverlaySessionPresenceStarted()
+        startOverlayChatConnectionCollector()
         catchUpOverlayRaidStripFromRest()
+    }
+
+    private fun startOverlayChatConnectionCollector() {
+        overlayChatConnectionJob?.cancel()
+        overlayChatConnectionJob = serviceScope.launch {
+            val container = AppContainer.from(this@CombatOverlayService)
+            var wasConnected = container.chatRepository.isChatSocketConnected()
+            container.chatRepository.chatConnectionState().collect { state ->
+                val connected = state == ChatConnectionState.Connected
+                if (connected && !wasConnected) {
+                    mainHandler.post { catchUpOverlayRaidStripFromRest() }
+                }
+                wasConnected = connected
+            }
+        }
+    }
+
+    private fun stopOverlayChatConnectionCollector() {
+        overlayChatConnectionJob?.cancel()
+        overlayChatConnectionJob = null
     }
 
     private fun dispatchOverlayIncomingChatMessage(msg: ChatMessage) {
@@ -5949,6 +5973,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun endOverlayChatSubscription() {
+        stopOverlayChatConnectionCollector()
         mainHandler.removeCallbacks(stripZOrderLiftRunnable)
         stripZOrderLiftPosted = false
         stopOverlayVoice()

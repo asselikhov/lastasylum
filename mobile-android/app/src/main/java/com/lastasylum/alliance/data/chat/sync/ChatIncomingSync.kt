@@ -78,6 +78,8 @@ class ChatIncomingSync(
         fun transferOutgoingLazyColumnKey(pendingId: String, serverId: String)
 
         fun overlayChatPanelVisible(): Boolean
+        fun preferFastIncomingApply(): Boolean
+
         fun filterMessagesForRoom(messages: List<ChatMessage>, roomId: String): List<ChatMessage>
 
         /** @return sanitized messages written to UI, or null when commit was skipped. */
@@ -139,7 +141,14 @@ class ChatIncomingSync(
             }
             return
         }
-        scope.launch(Dispatchers.Default) {
+        val applyDispatcher = if (
+            scopedBatch.size == 1 && host.preferFastIncomingApply()
+        ) {
+            Dispatchers.Main.immediate
+        } else {
+            Dispatchers.Default
+        }
+        scope.launch(applyDispatcher) {
             incomingApplyMutex.withLock {
                 val indexSnapshot = synchronized(chatMutationLock) {
                     MessageIndexSnapshot(

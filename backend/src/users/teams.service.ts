@@ -8,6 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { ChatRoomsService } from '../chat/chat-rooms.service';
+import { ChatGateway } from '../chat/chat.gateway';
 import { playerTeamChatAllianceId } from '../chat/chat-alliance-scope';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -122,8 +123,14 @@ export class TeamsService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     @Inject(forwardRef(() => ChatRoomsService))
     private readonly chatRoomsService: ChatRoomsService,
+    @Inject(forwardRef(() => ChatGateway))
+    private readonly chatGateway: ChatGateway,
     private readonly gameIdentities: GameIdentitiesService,
   ) {}
+
+  private invalidateChatEligibleUsersCache(): void {
+    this.chatGateway.invalidateEligibleUsersCache();
+  }
 
   /** Display name for game-event push banner (FCM data). */
   async findTeamDisplayName(teamId: string): Promise<string | null> {
@@ -1237,6 +1244,7 @@ export class TeamsService {
     );
     reqDoc.status = TeamJoinRequestStatus.ACCEPTED;
     await reqDoc.save();
+    this.invalidateChatEligibleUsersCache();
     return { ok: true };
   }
 
@@ -1304,6 +1312,7 @@ export class TeamsService {
       tid,
       PlayerTeamMemberRole.R1,
     );
+    this.invalidateChatEligibleUsersCache();
     return { ok: true };
   }
 
@@ -1331,6 +1340,7 @@ export class TeamsService {
       )
       .exec();
     await this.gameIdentities.clearPlayerTeamForTeam(memberUserId, team._id);
+    this.invalidateChatEligibleUsersCache();
     return { ok: true };
   }
 

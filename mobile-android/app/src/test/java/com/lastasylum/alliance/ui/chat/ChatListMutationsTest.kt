@@ -404,6 +404,20 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun shouldSkipBackgroundMessageRefresh_falseWhenSocketDisconnected() {
+        val visible = listOf(msg("507f1f77bcf86cd799439013", "new"))
+        assertFalse(
+            shouldSkipBackgroundMessageRefresh(
+                visible = visible,
+                sessionCache = visible,
+                roomCache = visible,
+                pageSize = 1,
+                socketConnected = false,
+            ),
+        )
+    }
+
+    @Test
     fun shouldSkipBackgroundMessageRefresh_overlayUsesLongerReconcileInterval() {
         val visible = listOf(msg("507f1f77bcf86cd799439013", "new"))
         val now = 200_000L

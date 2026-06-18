@@ -306,6 +306,7 @@ class ChatViewModel(
     internal val lastBackgroundRefreshAtMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
     @Volatile
     internal var forceBackgroundRefreshAfterReconnect = false
+    private var forceSubscribeAllRoomsOnce = false
     internal var periodicReconcileJob: Job? = null
 
     internal fun trackRecentSocketMessageId(id: String?) {
@@ -393,6 +394,9 @@ class ChatViewModel(
             this@ChatViewModel.transferOutgoingLazyColumnKey(pendingId, serverId)
 
         override fun overlayChatPanelVisible(): Boolean = overlayChatPanelVisible
+
+        override fun preferFastIncomingApply(): Boolean =
+            isChatTabActive || overlayChatPanelVisible
 
         override fun filterMessagesForRoom(messages: List<ChatMessage>, roomId: String): List<ChatMessage> =
             this@ChatViewModel.filterMessagesForRoom(messages, roomId)
@@ -992,14 +996,21 @@ class ChatViewModel(
      * Socket `room:join` targets. When chat UI is inactive, rely on `rooms:unread` on `user:{id}`
      * (backend fanout) and only join raid/hub/selected plus rooms that still show a local badge.
      */
-    internal fun realtimeSubscriptionRoomIds(rooms: List<ChatRoomDto>): List<String> =
-        orderRealtimeSubscriptionRoomIds(
+    internal fun realtimeSubscriptionRoomIds(rooms: List<ChatRoomDto>): List<String> {
+        val subscribeAll = isChatTabActive ||
+            overlayChatPanelVisible ||
+            forceSubscribeAllRoomsOnce
+        if (forceSubscribeAllRoomsOnce) {
+            forceSubscribeAllRoomsOnce = false
+        }
+        return orderRealtimeSubscriptionRoomIds(
             rooms = rooms,
             selectedRoomId = _state.value.selectedRoomId,
             raidRoomId = chatRoomPreferences.getRaidRoomId(),
             hubRoomId = ChatRoomKindResolver.allianceHubRoom(rooms)?.id,
-            subscribeAllRooms = isChatTabActive || overlayChatPanelVisible,
+            subscribeAllRooms = subscribeAll,
         )
+    }
 
     fun refreshChat() {
         scheduleBootstrap(preferAllianceHubRoom = true, force = true)
@@ -1253,6 +1264,7 @@ class ChatViewModel(
         if (inForeground) {
             syncReadStateFromPreferences()
             applyLocallyRemovedFilterToLoadedCaches()
+            forceSubscribeAllRoomsOnce = true
             reconnectRealtimeIfNeeded()
             rehydrateSelectedRoomMessagesFromCache()
             val roomId = _state.value.selectedRoomId?.trim().orEmpty()
@@ -1416,6 +1428,7 @@ class ChatViewModel(
     /** Gap-fill after socket reconnect: merge stash + REST for active rooms. */
     internal fun onChatSocketConnected() {
         forceBackgroundRefreshAfterReconnect = true
+        forceSubscribeAllRoomsOnce = true
         rehydrateSelectedRoomMessagesFromCache()
         reconnectRealtimeIfNeeded()
         viewModelScope.launch {
