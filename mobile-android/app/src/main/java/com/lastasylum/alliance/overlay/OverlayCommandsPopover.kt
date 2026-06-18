@@ -32,9 +32,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.HorizontalScrollView
 import android.widget.Toast
-import androidx.annotation.DrawableRes
 import androidx.annotation.RawRes
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.graphics.drawable.DrawableCompat
 import com.airbnb.lottie.LottieAnimationView
 import com.lastasylum.alliance.R
@@ -600,7 +600,7 @@ class OverlayCommandsPopover(
     private data class CommandCategory(
         val titleRes: Int,
         val shortLabelRes: Int,
-        val iconRes: Int,
+        val icon: ImageVector,
         val accentColor: Int,
         val options: List<CommandOption>? = null,
         val hintRes: Int? = null,
@@ -650,16 +650,11 @@ class OverlayCommandsPopover(
             background = rippleOn(categoryIconBackground(selected, category.accentColor))
             layoutParams = LinearLayout.LayoutParams(touchSize, touchSize)
         }
-        val icon = ImageView(context).apply {
-            setImageDrawable(
-                AppCompatResources.getDrawable(context, category.iconRes)?.mutate()?.also { d ->
-                    DrawableCompat.setTint(
-                        d,
-                        if (selected) Color.WHITE else Color.parseColor("#C8D4E4"),
-                    )
-                },
+        val icon = OverlayMaterialIconHost(context, iconSize).apply {
+            setIcon(
+                category.icon,
+                if (selected) Color.WHITE else Color.parseColor("#C8D4E4"),
             )
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
         }
         iconHost.addView(
             icon,
@@ -739,7 +734,7 @@ class OverlayCommandsPopover(
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_attack,
                 shortLabelRes = R.string.overlay_cmd_tab_attack,
-                iconRes = R.drawable.ic_overlay_cmd_attack,
+                icon = OverlayQuickCommandIcons.attack,
                 accentColor = Color.parseColor("#FFE53935"),
                 options = listOf(
                     CommandOption(R.string.overlay_cmd_spinner_by_player, R.string.overlay_cmd_attack_player),
@@ -750,7 +745,7 @@ class OverlayCommandsPopover(
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_storm,
                 shortLabelRes = R.string.overlay_cmd_tab_storm,
-                iconRes = R.drawable.ic_overlay_cmd_storm,
+                icon = OverlayQuickCommandIcons.storm,
                 accentColor = Color.parseColor("#FFFF9800"),
                 options = listOf(
                     CommandOption(R.string.overlay_cmd_spinner_by_player, R.string.overlay_cmd_storm_player),
@@ -761,7 +756,7 @@ class OverlayCommandsPopover(
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_reinf,
                 shortLabelRes = R.string.overlay_cmd_tab_reinf,
-                iconRes = R.drawable.ic_overlay_cmd_reinf,
+                icon = OverlayQuickCommandIcons.reinforcement,
                 accentColor = Color.parseColor("#FF43A047"),
                 options = listOf(
                     CommandOption(R.string.overlay_cmd_spinner_reinf_to_player, R.string.overlay_cmd_reinf_player),
@@ -771,7 +766,7 @@ class OverlayCommandsPopover(
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_push,
                 shortLabelRes = R.string.overlay_cmd_tab_push,
-                iconRes = R.drawable.ic_overlay_send,
+                icon = OverlayQuickCommandIcons.push,
                 accentColor = Color.parseColor("#FF5C6BC0"),
                 hintRes = R.string.overlay_cmd_push_hint,
                 isPush = true,
@@ -779,7 +774,7 @@ class OverlayCommandsPopover(
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_reactions,
                 shortLabelRes = R.string.overlay_cmd_tab_reactions,
-                iconRes = R.drawable.ic_overlay_cmd_reaction,
+                icon = OverlayQuickCommandIcons.reactions,
                 accentColor = Color.parseColor("#FFE91E63"),
                 isReactions = true,
             ),
@@ -1332,14 +1327,10 @@ class OverlayCommandsPopover(
                 val cat = categories[index]
                 val iconHost = tab.getChildAt(0) as? FrameLayout
                 iconHost?.background = rippleOn(categoryIconBackground(sel, cat.accentColor))
-                val icon = iconHost?.getChildAt(0) as? ImageView
-                icon?.setImageDrawable(
-                    AppCompatResources.getDrawable(context, cat.iconRes)?.mutate()?.also { d ->
-                        DrawableCompat.setTint(
-                            d,
-                            if (sel) Color.WHITE else Color.parseColor("#C8D4E4"),
-                        )
-                    },
+                val icon = iconHost?.getChildAt(0) as? OverlayMaterialIconHost
+                icon?.setIcon(
+                    cat.icon,
+                    if (sel) Color.WHITE else Color.parseColor("#C8D4E4"),
                 )
                 val caption = tab.getChildAt(1) as? TextView
                 caption?.setTextColor(
