@@ -2,8 +2,8 @@ package com.lastasylum.alliance.ui.chat
 
 import com.lastasylum.alliance.data.isObjectIdNewer
 
-/** Forum topics: shorter gap window than general chat. */
-internal const val FORUM_GAP_RECONCILE_THRESHOLD_MS = 45_000L
+/** Forum topics: align gap window with general chat (apply-first, background reconcile). */
+internal const val FORUM_GAP_RECONCILE_THRESHOLD_MS = 120_000L
 
 /** Max ObjectId timestamp gap before we assume missed messages and force REST reconcile. */
 internal const val CHAT_GAP_RECONCILE_THRESHOLD_MS = 120_000L

@@ -59,6 +59,7 @@ import com.lastasylum.alliance.overlay.OverlayReactionLogJumpToUnreadFab
 import com.lastasylum.alliance.ui.components.CenteredScreenLoading
 import com.lastasylum.alliance.ui.components.PremiumEmptyState
 import com.lastasylum.alliance.ui.components.premium.PremiumGradientIconFab
+import com.lastasylum.alliance.ui.components.team.FeedAnimationTier
 import com.lastasylum.alliance.ui.components.team.ForumTopicCardTokens
 import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
 import com.lastasylum.alliance.ui.components.team.ForumTopicGhostIconButton
@@ -169,13 +170,17 @@ fun TeamForumListScreen(
     var reloadJob by remember(teamId) { mutableStateOf<Job?>(null) }
     var inboxSyncedForSection by remember(teamId) { mutableStateOf(false) }
 
+    fun refreshReadCursorsFromPrefs() {
+        forumPrefs.loadAllLastReadMessageIds(teamId).forEach { (topicId, messageId) ->
+            mergeTopicReadCursor(topicId, messageId)
+        }
+    }
+
     fun reload(force: Boolean = false) {
         reloadJob?.cancel()
         reloadJob = scope.launch {
             withContext(Dispatchers.IO) {
-                forumPrefs.loadAllLastReadMessageIds(teamId).forEach { (topicId, messageId) ->
-                    mergeTopicReadCursor(topicId, messageId)
-                }
+                refreshReadCursorsFromPrefs()
             }
             actionError = null
             if (currentUserId.isNotBlank()) {
@@ -228,12 +233,15 @@ fun TeamForumListScreen(
                 teamForumPreferences = forumPrefs,
                 userSettingsPreferences = app.userSettingsPreferences,
             )
+            refreshReadCursorsFromPrefs()
         }
         inboxSyncedForSection = true
+        reload(force = true)
     }
 
-    LaunchedEffect(teamId, refreshNonce, sectionActive) {
+    LaunchedEffect(teamId, refreshNonce, sectionActive, inboxSyncedForSection) {
         if (!sectionActive) return@LaunchedEffect
+        if (currentUserId.isNotBlank() && !inboxSyncedForSection) return@LaunchedEffect
         reload()
     }
 
@@ -290,8 +298,12 @@ fun TeamForumListScreen(
     val forumTopicUnreadTotal = remember(topics, lastReadByTopic.size, listUiState.optimisticUnreadFloorByTopic) {
         topics.sumOf { effectiveTopicUnread(it).coerceAtLeast(0) }
     }
-    val firstUnreadTopicIndex = remember(topics, lastReadByTopic.size, listUiState.optimisticUnreadFloorByTopic) {
-        topics.indexOfLast { effectiveTopicUnread(it) > 0 }
+    val firstUnreadTopicIndex = remember(
+        filteredTopics,
+        lastReadByTopic.size,
+        listUiState.optimisticUnreadFloorByTopic,
+    ) {
+        filteredTopics.indexOfLast { effectiveTopicUnread(it) > 0 }
     }
     val isFirstUnreadTopicVisible by remember(topicListState, firstUnreadTopicIndex) {
         derivedStateOf {
@@ -394,7 +406,13 @@ fun TeamForumListScreen(
                                             listSize = filteredTopics.size,
                                             sectionActive = sectionActive,
                                             overlayMode = overlayUi,
-                                        )
+                                        ).let { tier ->
+                                            if (unread > 0 && index in visibleIndices && tier == FeedAnimationTier.Off) {
+                                                FeedAnimationTier.Lite
+                                            } else {
+                                                tier
+                                            }
+                                        }
                                         val timeIso = t.lastMessageAt ?: t.createdAt
                                         ForumTopicFeedCard(
                                             topic = t,
@@ -402,7 +420,7 @@ fun TeamForumListScreen(
                                             messageMeta = formatForumTopicListTimeRu(timeIso),
                                             displayUnreadCount = unread,
                                             animationTier = animationTier,
-                                            emberBoost = if (unreadRank == 0) 1.45f else 1f,
+                                            emberBoost = if (unread > 0 && unreadRank in 0..2) 1.45f else 1f,
                                             onClick = { onOpenTopic(t) },
                                             menu = {
                                                 if (canManageTopics) {

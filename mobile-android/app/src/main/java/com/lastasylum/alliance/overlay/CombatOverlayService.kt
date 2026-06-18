@@ -7756,9 +7756,6 @@ class CombatOverlayService : Service() {
                         counts.effective,
                         counts.rawServer,
                     )
-                    if (counts.effective > 0) {
-                        service.inboxBadgeCoordinator.bumpForumOptimistic(counts.effective)
-                    }
                     service.overlayHudBadgeBus.emit(
                         OverlayHudBadgeEvent.ForumUnread(
                             effective = counts.effective,

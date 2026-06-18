@@ -34,7 +34,7 @@ class ChatRegressionChecklistTest {
 
     @Test
     fun forumGapReconcileThreshold_isFortyFiveSeconds() {
-        assertEquals(45_000L, FORUM_GAP_RECONCILE_THRESHOLD_MS)
+        assertEquals(120_000L, FORUM_GAP_RECONCILE_THRESHOLD_MS)
     }
 
     @Test

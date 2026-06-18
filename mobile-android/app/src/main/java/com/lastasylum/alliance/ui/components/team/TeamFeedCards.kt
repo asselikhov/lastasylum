@@ -13,11 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ModeEditOutline
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,48 +31,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
-import com.lastasylum.alliance.data.teams.TeamNewsPollOptionDto
-import com.lastasylum.alliance.data.teams.TeamNewsPollTallyDto
 import com.lastasylum.alliance.ui.components.premium.FeedCardHero
 import com.lastasylum.alliance.ui.components.premium.FeedCardMetaRow
 import com.lastasylum.alliance.ui.components.premium.FeedCardUnreadTonalBadge
 import com.lastasylum.alliance.ui.components.team.FeedAnimationTier
 import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
 import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
-
-@Composable
-fun PollMetaLine(
-    showPollLabel: Boolean,
-    totalVotes: Int,
-    modifier: Modifier = Modifier,
-) {
-    if (!showPollLabel) return
-    JournalPollBadge(
-        votesLabel = if (totalVotes > 0) {
-            stringResource(R.string.team_news_votes_count, totalVotes)
-        } else {
-            null
-        },
-        modifier = modifier,
-    )
-}
-
-@Composable
-fun PollPreviewCompact(
-    options: List<TeamNewsPollOptionDto>,
-    tallies: List<TeamNewsPollTallyDto>,
-    myVoteOptionId: String?,
-    modifier: Modifier = Modifier,
-    maxOptions: Int = 2,
-) {
-    JournalPollPreviewBlock(
-        options = options,
-        tallies = tallies,
-        myVoteOptionId = myVoteOptionId,
-        modifier = modifier,
-        maxOptions = maxOptions,
-    )
-}
 
 @Composable
 fun TeamPollQuestionHeader(
@@ -99,95 +59,6 @@ fun TeamPollQuestionHeader(
             text = question,
             style = PremiumJournalFeedTokens.headlineStyle,
         )
-    }
-}
-
-private fun leadingPollOptions(
-    options: List<TeamNewsPollOptionDto>,
-    tallies: List<TeamNewsPollTallyDto>,
-    max: Int,
-): List<TeamNewsPollOptionDto> {
-    if (options.size <= max) return options
-    return options
-        .sortedByDescending { opt -> tallies.find { it.optionId == opt.id }?.count ?: 0 }
-        .take(max)
-}
-
-@Composable
-fun TeamPollPreviewBlock(
-    question: String,
-    options: List<TeamNewsPollOptionDto>,
-    tallies: List<TeamNewsPollTallyDto>,
-    myVoteOptionId: String?,
-    modifier: Modifier = Modifier,
-    maxOptions: Int = Int.MAX_VALUE,
-    compact: Boolean = false,
-    showHeader: Boolean = true,
-) {
-    val totalVotes = tallies.sumOf { it.count }
-    val previewOptions = if (maxOptions < Int.MAX_VALUE) {
-        leadingPollOptions(options, tallies, maxOptions)
-    } else {
-        options
-    }
-    val remaining = (options.size - previewOptions.size).coerceAtLeast(0)
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .then(if (compact) Modifier.padding(top = 4.dp) else Modifier),
-        verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 14.dp),
-    ) {
-        if (compact) {
-            HorizontalDivider(
-                thickness = 1.dp,
-                color = Color.White.copy(alpha = 0.06f),
-            )
-        }
-        if (showHeader) {
-            JournalPollBadge(
-                votesLabel = if (totalVotes > 0) {
-                    stringResource(R.string.team_news_votes_count, totalVotes)
-                } else {
-                    null
-                },
-            )
-        }
-        Text(
-            text = question,
-            style = if (compact) {
-                PremiumJournalFeedTokens.titleStyle
-            } else {
-                PremiumJournalFeedTokens.headlineStyle
-            },
-            maxLines = if (compact) 3 else Int.MAX_VALUE,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            previewOptions.forEach { opt ->
-                val cnt = tallies.find { it.optionId == opt.id }?.count ?: 0
-                val share = if (totalVotes > 0) cnt.toFloat() / totalVotes else 0f
-                JournalPollOptionTile(
-                    text = opt.text,
-                    share = share,
-                    voteCount = cnt,
-                    selected = myVoteOptionId == opt.id,
-                    showVoteCount = !compact,
-                )
-            }
-            if (remaining > 0) {
-                Text(
-                    text = "+$remaining",
-                    style = PremiumJournalFeedTokens.metaStyle,
-                )
-            }
-        }
-        if (compact && totalVotes > 0) {
-            Text(
-                text = stringResource(R.string.team_news_votes_count, totalVotes),
-                style = PremiumJournalFeedTokens.metaStyle,
-            )
-        }
     }
 }
 
@@ -295,8 +166,6 @@ fun JournalVoteButton(
 fun TeamNewsFeedCard(
     item: TeamNewsListItemDto,
     onClick: () -> Unit,
-    onEdit: () -> Unit,
-    showEdit: Boolean,
     modifier: Modifier = Modifier,
     isUnread: Boolean = false,
 ) {
@@ -375,15 +244,13 @@ fun TeamNewsFeedCard(
                             )
                         }
                     }
-                    if (!hasHero) {
-                        JournalPollBadge(
-                            votesLabel = if (totalVotes > 0) {
-                                stringResource(R.string.team_news_votes_count, totalVotes)
-                            } else {
-                                null
-                            },
-                        )
-                    }
+                    JournalPollBadge(
+                        votesLabel = if (totalVotes > 0) {
+                            stringResource(R.string.team_news_votes_count, totalVotes)
+                        } else {
+                            null
+                        },
+                    )
                     JournalPollPreviewBlock(
                         options = pollOptions,
                         tallies = item.pollTallies,
@@ -423,7 +290,10 @@ fun TeamNewsFeedCard(
                     thickness = 1.dp,
                     color = Color.White.copy(alpha = 0.06f),
                 )
-                Row(
+                FeedCardMetaRow(
+                    username = item.authorUsername,
+                    avatarRelativeUrl = item.authorAvatarRelativeUrl,
+                    trailingMeta = formattedCreatedAt,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(
@@ -432,35 +302,7 @@ fun TeamNewsFeedCard(
                             top = 8.dp,
                             bottom = 8.dp,
                         ),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        if (showPollPreview && hasHero) {
-                            PollMetaLine(
-                                showPollLabel = true,
-                                totalVotes = totalVotes,
-                            )
-                        }
-                        FeedCardMetaRow(
-                            username = item.authorUsername,
-                            avatarRelativeUrl = item.authorAvatarRelativeUrl,
-                            trailingMeta = formattedCreatedAt,
-                        )
-                    }
-                    if (showEdit) {
-                        IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
-                            Icon(
-                                Icons.Outlined.ModeEditOutline,
-                                contentDescription = stringResource(R.string.team_news_edit),
-                                tint = PremiumJournalFeedTokens.metaColor,
-                            )
-                        }
-                    }
-                }
+                )
             }
         },
     )

@@ -100,6 +100,27 @@ class ForumListViewModelTest {
     }
 
     @Test
+    fun applyTopicActivity_bumpsUnreadImmediately() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val vm = ForumListViewModel(app, forumRepository, "user1")
+        vm.bindTeam("team1")
+        vm.reload(force = true)
+        withTimeout(5_000) {
+            while (vm.state.value.topics.isEmpty()) delay(10)
+        }
+        vm.applyTopicActivity(
+            TeamForumTopicActivityEvent(
+                teamId = "team1",
+                topicId = "t1",
+                messageId = "507f1f77bcf86cd799439012",
+                senderUserId = "peer-2",
+            ),
+        )
+        assertEquals(1, vm.state.value.topics.first().unreadCount)
+        assertEquals(1, vm.state.value.optimisticUnreadFloorByTopic["t1"])
+    }
+
+    @Test
     fun applyTopicActivity_skipsOpenTopic() = runBlocking {
         val app = ApplicationProvider.getApplicationContext<Application>()
         val vm = ForumListViewModel(app, forumRepository, "user1")
@@ -117,7 +138,6 @@ class ForumListViewModelTest {
                 senderUserId = "peer-2",
             ),
         )
-        delay(400)
         assertEquals(0, vm.state.value.topics.first().unreadCount)
     }
 

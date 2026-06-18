@@ -58,6 +58,7 @@ class ForumMarkReadCoalescer(
         getCurrentCursor: () -> String?,
         onOptimisticAdvance: (topicId: String, messageId: String) -> Unit,
         onNetworkMarkRead: suspend (topicId: String, messageId: String) -> Unit,
+        debounceMs: Long = FORUM_MARK_READ_DEBOUNCE_MS,
     ) {
         val tid = topicId.trim()
         val mid = messageId.trim()
@@ -85,7 +86,7 @@ class ForumMarkReadCoalescer(
 
         state.debounceJob?.cancel()
         state.debounceJob = scope.launch {
-            delay(FORUM_MARK_READ_DEBOUNCE_MS)
+            if (debounceMs > 0L) delay(debounceMs)
             flushTopic(tid, onNetworkMarkRead)
         }
     }

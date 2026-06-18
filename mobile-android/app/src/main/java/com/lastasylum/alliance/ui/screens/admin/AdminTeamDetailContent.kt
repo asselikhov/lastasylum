@@ -42,8 +42,10 @@ import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.ui.admin.AdminTeamDetailTab
 import com.lastasylum.alliance.ui.admin.AdminUiState
 import com.lastasylum.alliance.ui.admin.toAdminPlayerRow
+import com.lastasylum.alliance.ui.components.team.FeedAnimationTier
 import com.lastasylum.alliance.ui.components.team.ForumTopicCardTokens
 import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
+import com.lastasylum.alliance.ui.components.team.TeamNewsFeedCard
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.adminAppVersionLine
@@ -261,23 +263,14 @@ private fun AdminTeamNewsTab(state: AdminUiState) {
         empty = state.teamNews.isEmpty(),
         emptyText = stringResource(R.string.admin_team_news_empty),
         error = state.teamNewsError,
+        itemSpacing = ForumTopicCardTokens.listSpacing,
     ) {
         items(state.teamNews, key = { it.id }) { item ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                color = SquadRelaySurfaces.panelColor(0.38f),
-            ) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text(item.excerpt, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        "${item.authorUsername} · ${formatIsoDateShortRu(item.createdAt)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            TeamNewsFeedCard(
+                item = item,
+                onClick = {},
+                isUnread = false,
+            )
         }
     }
 }
@@ -303,6 +296,7 @@ private fun AdminTeamForumTab(
                 listIndex = index,
                 messageMeta = messageMeta,
                 displayUnreadCount = topic.unreadCount,
+                animationTier = if (topic.unreadCount > 0) FeedAnimationTier.Lite else FeedAnimationTier.Off,
                 onClick = { onTopicClick(topic) },
             )
         }

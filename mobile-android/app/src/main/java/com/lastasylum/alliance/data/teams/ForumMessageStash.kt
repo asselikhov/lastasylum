@@ -5,7 +5,7 @@ package com.lastasylum.alliance.data.teams
  * is on team inbox (not subscribed to a specific topic room).
  */
 object ForumMessageStash {
-    const val MAX_PER_TOPIC = 64
+    const val MAX_PER_TOPIC = 128
 
     private val lock = Any()
     private val byKey = mutableMapOf<String, MutableList<TeamForumMessageDto>>()

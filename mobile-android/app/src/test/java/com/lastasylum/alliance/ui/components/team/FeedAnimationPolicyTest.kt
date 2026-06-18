@@ -23,6 +23,21 @@ class FeedAnimationPolicyTest {
     }
 
     @Test
+    fun forumTopicAnimationTier_liteForRank5() {
+        assertEquals(
+            FeedAnimationTier.Lite,
+            forumTopicAnimationTier(
+                unread = true,
+                isVisible = true,
+                visibleUnreadRank = 5,
+                listSize = 10,
+                sectionActive = true,
+                overlayMode = false,
+            ),
+        )
+    }
+
+    @Test
     fun forumTopicAnimationTier_liteForRank3() {
         assertEquals(
             FeedAnimationTier.Lite,
@@ -77,11 +92,22 @@ class FeedAnimationPolicyTest {
             ),
         )
         assertEquals(
-            FeedAnimationTier.Off,
+            FeedAnimationTier.Lite,
             forumTopicAnimationTier(
                 unread = true,
                 isVisible = true,
                 visibleUnreadRank = 6,
+                listSize = 40,
+                sectionActive = true,
+                overlayMode = true,
+            ),
+        )
+        assertEquals(
+            FeedAnimationTier.Off,
+            forumTopicAnimationTier(
+                unread = true,
+                isVisible = true,
+                visibleUnreadRank = 9,
                 listSize = 40,
                 sectionActive = true,
                 overlayMode = true,

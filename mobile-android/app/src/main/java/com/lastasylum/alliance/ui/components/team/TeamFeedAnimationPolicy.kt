@@ -26,15 +26,16 @@ fun forumTopicAnimationTier(
 ): FeedAnimationTier {
     if (!sectionActive || !isVisible) return FeedAnimationTier.Off
     if (unread) {
-        if (overlayMode && listSize > 20 && visibleUnreadRank > 2) {
-            return if (visibleUnreadRank <= 5) FeedAnimationTier.Lite else FeedAnimationTier.Off
+        val overlayListCap = overlayMode && listSize > 30
+        if (overlayListCap && visibleUnreadRank > 8) {
+            return FeedAnimationTier.Off
         }
-        if (overlayMode && visibleUnreadRank > 1) {
-            return if (visibleUnreadRank <= 5) FeedAnimationTier.Lite else FeedAnimationTier.Off
+        if (overlayMode && listSize > 20 && visibleUnreadRank > 5) {
+            return FeedAnimationTier.Lite
         }
         return when {
             visibleUnreadRank <= 2 -> FeedAnimationTier.Full
-            visibleUnreadRank <= 5 -> FeedAnimationTier.Lite
+            visibleUnreadRank <= 8 -> FeedAnimationTier.Lite
             else -> FeedAnimationTier.Off
         }
     }

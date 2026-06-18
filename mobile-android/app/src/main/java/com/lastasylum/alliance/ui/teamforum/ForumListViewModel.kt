@@ -4,13 +4,14 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
+import com.lastasylum.alliance.data.shouldClearOptimisticUnreadFloor
+import com.lastasylum.alliance.data.teams.TeamInboxUnread.displayedForumTopicUnread
 import com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
 import com.lastasylum.alliance.data.teams.forum.ForumRepository
 import com.lastasylum.alliance.di.AppContainer
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,11 +65,24 @@ class ForumListViewModel(
             _state.update { it.copy(loading = true, error = null) }
             forumRepository.syncTopics(currentUserId, teamId, bypassCache = force)
                 .onSuccess { topics ->
-                    _state.update {
-                        it.copy(
+                    _state.update { st ->
+                        val floors = st.optimisticUnreadFloorByTopic.filter { (topicId, floor) ->
+                            val topic = topics.find { it.id == topicId } ?: return@filter false
+                            val displayed = displayedForumTopicUnread(
+                                topic = topic,
+                                localLastReadMessageId = null,
+                                optimisticFloor = floor,
+                            )
+                            !shouldClearOptimisticUnreadFloor(
+                                floor = floor,
+                                rawServerUnread = topic.unreadCount,
+                                displayedUnread = displayed,
+                            )
+                        }
+                        st.copy(
                             topics = topics,
                             loading = false,
-                            optimisticUnreadFloorByTopic = emptyMap(),
+                            optimisticUnreadFloorByTopic = floors,
                         )
                     }
                 }
@@ -95,7 +109,6 @@ class ForumListViewModel(
         }
         topicActivityJob?.cancel()
         topicActivityJob = viewModelScope.launch {
-            delay(300)
             _state.update { st ->
                 val idx = st.topics.indexOfFirst { it.id == event.topicId }
                 if (idx < 0) return@update st

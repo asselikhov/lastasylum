@@ -1,19 +1,14 @@
 package com.lastasylum.alliance.ui.screens.teamnews
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -21,7 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.ModeEditOutline
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,16 +28,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,14 +46,16 @@ import coil3.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.TeamNewsDetailDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollDetailDto
+import com.lastasylum.alliance.ui.components.premium.FeedCardHero
 import com.lastasylum.alliance.ui.components.team.JournalFeedVariant
 import com.lastasylum.alliance.ui.components.team.PremiumJournalFeedShell
 import com.lastasylum.alliance.ui.components.team.PremiumJournalFeedTokens
 import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
 import com.lastasylum.alliance.ui.util.sanitizePublicDisplayName
 
-private val detailHeroShape = RoundedCornerShape(20.dp)
 private val pageHorizontalPad = 16.dp
+private val galleryThumbShape = RoundedCornerShape(14.dp)
+private val galleryThumbSize = 72.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,6 +66,7 @@ internal fun TeamNewsDetailTopBar(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent,
@@ -73,7 +75,7 @@ internal fun TeamNewsDetailTopBar(
         title = {
             Text(
                 title,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -88,17 +90,44 @@ internal fun TeamNewsDetailTopBar(
         },
         actions = {
             if (canEdit) {
-                IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
+                IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(40.dp)) {
                     Icon(
-                        Icons.Outlined.ModeEditOutline,
+                        Icons.Default.MoreVert,
                         contentDescription = stringResource(R.string.team_news_edit),
                     )
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = stringResource(R.string.team_news_delete),
-                        tint = MaterialTheme.colorScheme.error,
+                DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.team_news_edit)) },
+                        onClick = {
+                            menuOpen = false
+                            onEdit()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.ModeEditOutline, contentDescription = null)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(R.string.team_news_delete),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = {
+                            menuOpen = false
+                            onDelete()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
                     )
                 }
             }
@@ -137,64 +166,26 @@ internal fun TeamNewsDetailScrollContent(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
-        heroRequest?.let { imgReq ->
+        if (heroRequest != null && hero != null) {
             item(key = "news_detail_hero") {
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(if (pollOnly) 200.dp else 220.dp)
-                        .padding(horizontal = pageHorizontalPad, vertical = 12.dp)
-                        .clip(detailHeroShape)
-                        .border(
-                            1.dp,
-                            Brush.linearGradient(
-                                listOf(
-                                    Color.White.copy(alpha = 0.22f),
-                                    com.lastasylum.alliance.ui.theme.premium.PremiumColors.accentCyan.copy(alpha = 0.18f),
-                                ),
-                            ),
-                            detailHeroShape,
-                        ),
+                        .padding(horizontal = pageHorizontalPad, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    AsyncImage(
-                        model = imgReq,
+                    FeedCardHero(
+                        imageRequest = heroRequest,
+                        title = detail.title,
                         contentDescription = detail.title,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                    Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = 0.65f),
-                                    ),
-                                ),
-                            ),
+                            .clip(RoundedCornerShape(20.dp)),
                     )
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = detail.title,
-                            style = PremiumJournalFeedTokens.titleStyle,
-                            color = PremiumJournalFeedTokens.metaOnHero,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = authorMetaLine,
-                            style = PremiumJournalFeedTokens.metaStyle,
-                            color = PremiumJournalFeedTokens.metaOnHero.copy(alpha = 0.88f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+                    Text(
+                        text = authorMetaLine,
+                        style = PremiumJournalFeedTokens.metaStyle,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
                 }
             }
         }
@@ -208,30 +199,30 @@ internal fun TeamNewsDetailScrollContent(
                         .fillMaxWidth()
                         .padding(horizontal = pageHorizontalPad, vertical = 8.dp),
                     content = {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        if (hero == null) {
-                            Text(
-                                detail.title,
-                                style = PremiumJournalFeedTokens.headlineStyle,
-                            )
-                            Text(
-                                authorMetaLine,
-                                style = PremiumJournalFeedTokens.metaStyle,
-                            )
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            if (hero == null) {
+                                Text(
+                                    detail.title,
+                                    style = PremiumJournalFeedTokens.headlineStyle,
+                                )
+                                Text(
+                                    authorMetaLine,
+                                    style = PremiumJournalFeedTokens.metaStyle,
+                                )
+                            }
+                            if (detail.body.trim().isNotEmpty()) {
+                                Text(
+                                    detail.body,
+                                    style = PremiumJournalFeedTokens.excerptStyle.copy(
+                                        fontSize = 16.sp,
+                                        lineHeight = 24.sp,
+                                    ),
+                                )
+                            }
                         }
-                        if (detail.body.trim().isNotEmpty()) {
-                            Text(
-                                detail.body,
-                                style = PremiumJournalFeedTokens.excerptStyle.copy(
-                                    fontSize = 16.sp,
-                                    lineHeight = 24.sp,
-                                ),
-                            )
-                        }
-                    }
                     },
                 )
             }
@@ -246,18 +237,10 @@ internal fun TeamNewsDetailScrollContent(
         }
 
         if (galleryPaths.isNotEmpty()) {
-            item(key = "news_detail_gallery_title") {
-                Text(
-                    stringResource(R.string.team_news_gallery_label),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = pageHorizontalPad, vertical = 8.dp),
-                )
-            }
             item(key = "news_detail_gallery_row") {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(horizontal = pageHorizontalPad),
+                    contentPadding = PaddingValues(horizontal = pageHorizontalPad, vertical = 8.dp),
                 ) {
                     items(galleryPaths, key = { it }) { rawPath ->
                         val galleryReq = remember(rawPath, context) {
@@ -268,13 +251,12 @@ internal fun TeamNewsDetailScrollContent(
                                 model = imgReq,
                                 contentDescription = stringResource(R.string.team_news_gallery_image_cd),
                                 modifier = Modifier
-                                    .width(152.dp)
-                                    .height(108.dp)
-                                    .clip(RoundedCornerShape(14.dp))
+                                    .size(galleryThumbSize)
+                                    .clip(galleryThumbShape)
                                     .border(
                                         1.dp,
                                         Color.White.copy(alpha = 0.08f),
-                                        RoundedCornerShape(14.dp),
+                                        galleryThumbShape,
                                     ),
                                 contentScale = ContentScale.Crop,
                             )

@@ -129,7 +129,7 @@ import com.lastasylum.alliance.ui.chat.saveChatImagesToGallery
 import com.lastasylum.alliance.ui.chat.scrollReverseChatCompensateExpand
 import com.lastasylum.alliance.ui.chat.scrollReverseChatRevealLatest
 import com.lastasylum.alliance.ui.chat.scrollTimelineItemToViewportCenter
-import com.lastasylum.alliance.ui.chat.shouldBlockOwnForumOutgoingRealtime
+import com.lastasylum.alliance.data.teams.ForumSocketIngress
 import com.lastasylum.alliance.ui.chat.FORUM_GAP_RECONCILE_THRESHOLD_MS
 import com.lastasylum.alliance.ui.chat.shouldTriggerGapReconcile
 import com.lastasylum.alliance.ui.chat.stabilizeComposerImageUris
@@ -137,6 +137,7 @@ import com.lastasylum.alliance.ui.chat.toDisplayChatMessage
 import com.lastasylum.alliance.ui.components.CenteredScreenLoading
 import com.lastasylum.alliance.ui.components.premium.PremiumGlassBar
 import com.lastasylum.alliance.ui.components.team.ForumTopicCardTokens
+import com.lastasylum.alliance.ui.teamforum.FORUM_MARK_READ_DEBOUNCE_MS
 import com.lastasylum.alliance.ui.teamforum.ForumListViewModel
 import com.lastasylum.alliance.ui.teamforum.ForumTopicViewModel
 import com.lastasylum.alliance.data.teams.forum.ForumOutboxEntry
@@ -152,6 +153,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -608,6 +610,7 @@ fun TeamForumTopicScreen(
     }
 
     fun scheduleMarkForumTopicRead(messageId: String) {
+        val markReadDebounceMs = if (sectionActive) 0L else FORUM_MARK_READ_DEBOUNCE_MS
         forumMarkReadCoalescer.schedule(
             topicId = topicId,
             messageId = messageId,
@@ -617,6 +620,7 @@ fun TeamForumTopicScreen(
                 forumRepository.markForumTopicRead(teamId, topicId, mid)
                     .onSuccess { notifyForumInboxAfterRead(mid) }
             },
+            debounceMs = markReadDebounceMs,
         )
     }
 
@@ -866,19 +870,6 @@ fun TeamForumTopicScreen(
     }
 
     fun mergeNew(msg: TeamForumMessageDto, source: String = "socket") {
-        if (source == "socket" &&
-            shouldBlockOwnForumOutgoingRealtime(
-                messages,
-                msg,
-                currentUserId,
-                inFlightForumClientMessageIds,
-            )
-        ) {
-            if (BuildConfig.DEBUG) {
-                Log.d("SR_Forum", "drop team=$teamId topic=$topicId id=${msg.id} reason=own_echo")
-            }
-            return
-        }
         if (source == "socket") {
             val visibleNewestId = messages.lastOrNull()?.id
             if (shouldTriggerGapReconcile(
@@ -891,8 +882,9 @@ fun TeamForumTopicScreen(
                 if (BuildConfig.DEBUG) {
                     Log.i("SR_Forum", "gapReconcile team=$teamId topic=$topicId trigger=socket_jump")
                 }
-                loadForumMessages(before = null, appendOlder = false, forceRefresh = true)
-                return
+                scope.launch {
+                    loadForumMessages(before = null, appendOlder = false, forceRefresh = true)
+                }
             }
         }
         forumRepository.invalidateForumMessagesCache(teamId, topicId)
@@ -1180,11 +1172,27 @@ fun TeamForumTopicScreen(
         if (typingHint == hint) typingHint = null
     }
 
+    LaunchedEffect(teamId, topicId, currentUserId, sectionActive) {
+        if (!sectionActive || currentUserId.isBlank()) return@LaunchedEffect
+        forumRepository.observeMessages(currentUserId, teamId, topicId).collect { rows ->
+            rows.forEach { row ->
+                val id = row.id.trim()
+                if (id.isNotEmpty() && id !in knownForumMessageIds) {
+                    mergeNew(row, source = "room")
+                }
+            }
+        }
+    }
+
     DisposableEffect(teamId, topicId, sectionActive) {
         if (!sectionActive) {
             onDispose { }
         } else {
-            val onNew: (TeamForumMessageDto) -> Unit = { mergeNew(it) }
+            val onNew: (TeamForumMessageDto) -> Unit = { msg ->
+                if (ForumSocketIngress.claimForTopicUi(msg.topicId, msg.id)) {
+                    mergeNew(msg)
+                }
+            }
             val onEdited: (TeamForumMessageDto) -> Unit = { applyEdited(it) }
             val onDeleted: (TeamForumMessageDeletedEvent) -> Unit = { applyDeleted(it) }
             val onTyping: (TeamForumTypingEvent) -> Unit = { ev ->

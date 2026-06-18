@@ -161,6 +161,7 @@ import android.app.Application
 import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
+import com.lastasylum.alliance.data.teams.ForumSocketIngress
 import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
 import com.lastasylum.alliance.data.teams.TeamForumTopicReadEvent
 import com.lastasylum.alliance.ui.chat.ForumPinCoordinator
@@ -336,7 +337,9 @@ fun TeamForumNavHost(
             val app = AppContainer.from(context.applicationContext)
             val onForumMessage: (TeamForumMessageDto) -> Unit = { message ->
                 val uid = currentUserId.trim()
-                if (uid.isNotEmpty()) {
+                if (uid.isNotEmpty() &&
+                    ForumSocketIngress.claimForPersistence(message.topicId, message.id)
+                ) {
                     scope.launch(Dispatchers.IO) {
                         app.forumRepository.onForumSocketMessage(
                             userId = uid,
