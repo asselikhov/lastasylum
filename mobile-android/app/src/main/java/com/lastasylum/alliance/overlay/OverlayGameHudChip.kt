@@ -22,8 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,19 +38,18 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val HudIconSize = 16.dp
-private val HudChipPaddingH = 6.dp
-private val HudChipPaddingV = 5.dp
+private val HudIconSize = 17.dp
+private val HudChipPaddingH = 7.dp
+private val HudChipPaddingV = 6.dp
 internal val HudRowSpacing = 8.dp
 /** Stable width for top-right HUD — matches voice settings panel so chips do not shift on expand. */
 internal val HudTopRightMinWidth = 280.dp
-private val HudChipCorner = 6.dp
+private val HudChipCorner = 8.dp
 private val HudChipBorderWidth = 1.dp
 internal val HudBadgeOverflowPaddingTop = 10.dp
 internal val HudBadgeOverflowPaddingEnd = 10.dp
@@ -197,7 +194,7 @@ internal fun OverlayGameHudUpdateChip(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Outlined.SystemUpdate,
+                painter = OverlayHudIcons.painter(OverlayHudIcons.appUpdate),
                 contentDescription = null,
                 tint = UpdateIconTint.copy(alpha = 0.88f + glow * 0.12f),
                 modifier = Modifier.size(HudIconSize),
@@ -234,12 +231,11 @@ internal fun OverlayGameHudChip(
     modifier: Modifier = Modifier,
     badgeCount: Int = 0,
     iconTint: Color? = null,
-    icon: ImageVector? = null,
     painter: Painter? = null,
     leadingContent: (@Composable () -> Unit)? = null,
 ) {
-    require(icon != null || painter != null || leadingContent != null) {
-        "icon, painter, or leadingContent required"
+    require(painter != null || leadingContent != null) {
+        "painter or leadingContent required"
     }
     val badge = badgeCount.coerceAtLeast(0)
     val shape = RoundedCornerShape(HudChipCorner)
@@ -261,14 +257,6 @@ internal fun OverlayGameHudChip(
         ) {
             when {
                 leadingContent != null -> leadingContent()
-                icon != null -> {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = tint,
-                        modifier = Modifier.size(HudIconSize),
-                    )
-                }
                 painter != null -> {
                     Icon(
                         painter = painter,

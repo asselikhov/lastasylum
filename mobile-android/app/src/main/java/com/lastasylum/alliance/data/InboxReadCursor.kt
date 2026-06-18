@@ -80,7 +80,7 @@ fun shouldClearOptimisticUnreadFloor(
     displayedUnread: Int,
     lastBumpAtMs: Long = 0L,
     nowMs: Long = System.currentTimeMillis(),
-    graceMs: Long = 4_000L,
+    graceMs: Long = 2_000L,
 ): Boolean {
     if (floor <= 0) return true
     val raw = rawServerUnread.coerceAtLeast(0)

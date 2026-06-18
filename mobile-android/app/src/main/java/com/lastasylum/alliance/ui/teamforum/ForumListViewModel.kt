@@ -4,7 +4,9 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
+import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.shouldClearOptimisticUnreadFloor
+import com.lastasylum.alliance.overlay.OverlayHubUnreadPolicy
 import com.lastasylum.alliance.data.teams.TeamInboxUnread.displayedForumTopicUnread
 import com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
@@ -85,6 +87,7 @@ class ForumListViewModel(
                                 floor = floor,
                                 rawServerUnread = topic.unreadCount,
                                 displayedUnread = displayed,
+                                graceMs = OverlayHubUnreadPolicy.RECONCILE_GRACE_MS,
                             )
                         }
                         val seededFloors = topics.mapNotNull { topic ->
@@ -189,9 +192,15 @@ class ForumListViewModel(
             val idx = st.topics.indexOfFirst { it.id == tpid }
             if (idx < 0) return@update st
             val row = st.topics[idx]
+            val prevLastRead = row.lastReadMessageId?.trim().orEmpty()
+            val mergedLastRead = if (prevLastRead.isNotEmpty() && !isObjectIdNewer(mid, prevLastRead)) {
+                prevLastRead
+            } else {
+                mid
+            }
             st.copy(
                 topics = st.topics.toMutableList().apply {
-                    this[idx] = row.copy(unreadCount = 0, lastReadMessageId = mid)
+                    this[idx] = row.copy(unreadCount = 0, lastReadMessageId = mergedLastRead)
                 },
                 optimisticUnreadFloorByTopic = st.optimisticUnreadFloorByTopic - tpid,
             )
@@ -207,7 +216,16 @@ class ForumListViewModel(
         val memoryById = current.topics.associateBy { it.id }
         return roomTopics.map { roomRow ->
             val memRow = memoryById[roomRow.id] ?: return@map roomRow
-            val mergedUnread = maxOf(roomRow.unreadCount, memRow.unreadCount)
+            val floor = current.optimisticUnreadFloorByTopic[roomRow.id] ?: 0
+            val mergedUnread = maxOf(roomRow.unreadCount, memRow.unreadCount, floor)
+            val memLastRead = memRow.lastReadMessageId?.trim().orEmpty()
+            val roomLastRead = roomRow.lastReadMessageId?.trim().orEmpty()
+            val mergedLastRead = when {
+                memLastRead.isEmpty() -> roomLastRead.takeIf { it.isNotEmpty() }
+                roomLastRead.isEmpty() -> memLastRead
+                isObjectIdNewer(memLastRead, roomLastRead) -> memLastRead
+                else -> roomLastRead
+            }
             val mergedMessageCount = maxOf(roomRow.messageCount, memRow.messageCount)
             val mergedLastMessageAt = when {
                 memRow.lastMessageAt.isNullOrBlank() -> roomRow.lastMessageAt
@@ -217,6 +235,7 @@ class ForumListViewModel(
             }
             roomRow.copy(
                 unreadCount = mergedUnread,
+                lastReadMessageId = mergedLastRead ?: roomRow.lastReadMessageId,
                 messageCount = mergedMessageCount,
                 lastMessageAt = mergedLastMessageAt,
                 lastMessageSenderUserId = memRow.lastMessageSenderUserId ?: roomRow.lastMessageSenderUserId,

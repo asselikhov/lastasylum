@@ -132,6 +132,28 @@ class ChatOverlaySync(
             }
             ?: host.loadRoomSnapshotFromStore(roomId)
         if (cached == null || cached.messages.isEmpty()) {
+            val sessionOnly = ChatSessionCache.getFreshMessages(roomId)
+                ?.let { sessionMessages ->
+                    val scrubbed = host.filterMessagesForRoom(
+                        host.messagesWithoutLocallyRemoved(sessionMessages),
+                        roomId,
+                    )
+                    scrubbed.takeIf { it.isNotEmpty() }
+                }
+            if (sessionOnly != null) {
+                val capped = capNewestFirst(sessionOnly, CHAT_PAGE_SIZE)
+                host.updateRoomMessageCache(
+                    roomId,
+                    ChatRoomMessageCache(
+                        messages = capped,
+                        hasMoreOlder = sessionOnly.size >= CHAT_PAGE_SIZE,
+                    ),
+                )
+                rehydrateSync.rehydrateRoomMessagesFromCache(roomId)
+                host.updateState { it.copy(isLoading = false, isRoomsLoading = false) }
+                host.refreshPinBarForSelectedRoom()
+                return
+            }
             val switchingRoom = snapshot.selectedRoomId != roomId ||
                 !host.messagesBelongToRoom(snapshot.messages, roomId)
             if (switchingRoom) {

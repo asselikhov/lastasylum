@@ -290,7 +290,7 @@ class OverlayInboxBadgeCoordinator {
 
     companion object {
         private const val MAX_BADGE = 999
-        const val RECONCILE_GRACE_MS = 4_000L
+        const val RECONCILE_GRACE_MS = OverlayHubUnreadPolicy.RECONCILE_GRACE_MS
         const val FORUM_OPTIMISTIC_BADGE_MS = 8_000L
         const val NEWS_OPTIMISTIC_BADGE_MS = 8_000L
         private const val CACHE_TTL_MS = 180_000L

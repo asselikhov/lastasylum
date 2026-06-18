@@ -9,7 +9,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-internal const val MARK_READ_NETWORK_DEBOUNCE_MS = 1_500L
+internal const val MARK_READ_NETWORK_DEBOUNCE_MS = 800L
+internal const val OVERLAY_MARK_READ_NETWORK_DEBOUNCE_MS = 400L
 internal const val MARK_READ_FORCE_SYNC_MIN_INTERVAL_MS = 10_000L
 
 /**
@@ -70,6 +71,7 @@ internal class ChatMarkReadCoalescer(
         getCurrentCursor: () -> String?,
         onOptimisticAdvance: (roomId: String, messageId: String) -> Unit,
         onNetworkMarkRead: suspend (roomId: String, messageId: String) -> Boolean,
+        debounceMs: Long = MARK_READ_NETWORK_DEBOUNCE_MS,
     ) {
         val rid = roomId.trim()
         val mid = messageId.trim()
@@ -111,7 +113,7 @@ internal class ChatMarkReadCoalescer(
 
         state.debounceJob?.cancel()
         state.debounceJob = scope.launch {
-            delay(MARK_READ_NETWORK_DEBOUNCE_MS)
+            delay(debounceMs)
             flushRoom(rid, onNetworkMarkRead)
         }
     }

@@ -7,15 +7,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.MicOff
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.RecordVoiceOver
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.automirrored.outlined.VolumeOff
-import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -25,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
@@ -83,11 +73,9 @@ fun OverlayGameTopRightHud(
             ) {
                 OverlayGameHudChipColumn(horizontalAlignment = Alignment.End) {
                     OverlayGameHudChip(
-                        icon = if (state.soundOn) {
-                            Icons.AutoMirrored.Outlined.VolumeUp
-                        } else {
-                            Icons.AutoMirrored.Outlined.VolumeOff
-                        },
+                        painter = OverlayHudIcons.painter(
+                            if (state.soundOn) OverlayHudIcons.volumeOn else OverlayHudIcons.volumeOff,
+                        ),
                         accent = OverlayHudChipAccent.Sound,
                         iconTint = if (state.soundOn) HudVoiceActiveGreen else null,
                         contentDescription = stringResource(
@@ -100,7 +88,9 @@ fun OverlayGameTopRightHud(
                         onClick = onSoundClick,
                     )
                     OverlayGameHudChip(
-                        icon = if (state.micOn) Icons.Outlined.Mic else Icons.Outlined.MicOff,
+                        painter = OverlayHudIcons.painter(
+                            if (state.micOn) OverlayHudIcons.micOn else OverlayHudIcons.micOff,
+                        ),
                         accent = OverlayHudChipAccent.Mic,
                         iconTint = if (state.micOn) HudVoiceActiveGreen else null,
                         contentDescription = stringResource(
@@ -113,7 +103,7 @@ fun OverlayGameTopRightHud(
                         onClick = onMicClick,
                     )
                     OverlayGameHudChip(
-                        icon = Icons.Outlined.Settings,
+                        painter = OverlayHudIcons.painter(OverlayHudIcons.settings),
                         accent = OverlayHudChipAccent.Settings,
                         iconTint = if (state.voiceSettingsVisible) {
                             OverlayHudChipAccent.Settings.icon
@@ -145,7 +135,7 @@ fun OverlayGameTopRightHud(
             OverlayGameHudBar(horizontalAlignment = Alignment.End) {
                 OverlayGameHudChipRow {
                     OverlayGameHudChip(
-                        icon = Icons.Outlined.Groups,
+                        painter = OverlayHudIcons.painter(OverlayHudIcons.team),
                         accent = OverlayHudChipAccent.Online,
                         badgeCount = state.teamJoinRequestCount,
                         contentDescription = if (state.teamJoinRequestCount > 0) {
@@ -162,13 +152,13 @@ fun OverlayGameTopRightHud(
                         onClick = onOnlineClick,
                     )
                     OverlayGameHudChip(
-                        painter = painterResource(R.drawable.ic_overlay_quick_commands),
+                        painter = OverlayHudIcons.painter(OverlayHudIcons.quickCommands),
                         accent = OverlayHudChipAccent.Commands,
                         contentDescription = stringResource(R.string.overlay_cd_commands),
                         onClick = onQuickCommandsClick,
                     )
                     OverlayGameHudChip(
-                        icon = Icons.Outlined.Notifications,
+                        painter = OverlayHudIcons.painter(OverlayHudIcons.notifications),
                         accent = OverlayHudChipAccent.Notifications,
                         badgeCount = state.reactionLogUnreadCount,
                         contentDescription = if (state.reactionLogUnreadCount > 0) {
@@ -182,7 +172,7 @@ fun OverlayGameTopRightHud(
                         onClick = onNotificationsClick,
                     )
                     OverlayGameHudChip(
-                        icon = Icons.Outlined.RecordVoiceOver,
+                        painter = OverlayHudIcons.painter(OverlayHudIcons.voice),
                         accent = OverlayHudChipAccent.Voice,
                         iconTint = if (state.voiceExpanded || state.micOn || state.soundOn) {
                             OverlayHudChipAccent.Voice.icon

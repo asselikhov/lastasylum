@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -137,7 +135,7 @@ fun OverlayAppUpdateGateBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = Icons.Outlined.SystemUpdate,
+                painter = OverlayHudIcons.painter(OverlayHudIcons.appUpdate),
                 contentDescription = null,
                 tint = GateUpdateIconTint.copy(alpha = 0.88f + glow * 0.12f),
                 modifier = Modifier.size(GateBarIconSize),

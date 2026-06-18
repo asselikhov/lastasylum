@@ -432,10 +432,12 @@ fun TeamForumListScreen(
                                         contentType = { _, _ -> "forum_topic" },
                                     ) { index, t ->
                                         val unreadRaw = effectiveTopicUnread(t)
-                                        val unread = if (inboxSyncedForSection) unreadRaw else 0
+                                        val unread = unreadRaw
                                         val unreadRank = visibleUnreadRanks[index] ?: -1
                                         val readRank = visibleReadRanks[index] ?: -1
-                                        val animationTier = if (!inboxSyncedForSection || unread == 0) {
+                                        val animationTier = if (!inboxSyncedForSection) {
+                                            FeedAnimationTier.Off
+                                        } else if (unread == 0) {
                                             FeedAnimationTier.Off
                                         } else {
                                             forumTopicAnimationTier(

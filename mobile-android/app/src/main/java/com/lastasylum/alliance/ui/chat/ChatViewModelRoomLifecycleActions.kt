@@ -1058,6 +1058,11 @@ internal suspend fun ChatViewModel.markRoomReadUpToImpl(
             getCurrentCursor = { deviceLastReadMessageId(roomId) },
             onOptimisticAdvance = { rid, mid -> applyOptimisticMarkReadLocal(rid, mid) },
             onNetworkMarkRead = { rid, mid -> performNetworkMarkRead(rid, mid) },
+            debounceMs = if (overlayChatPanelVisible) {
+                OVERLAY_MARK_READ_NETWORK_DEBOUNCE_MS
+            } else {
+                MARK_READ_NETWORK_DEBOUNCE_MS
+            },
         )
     }
 
@@ -1121,6 +1126,7 @@ internal fun ChatViewModel.onRoomUnreadFromServerImpl(event: ChatRoomUnreadEvent
             val floor = optimisticUnreadFloorByRoom[roomId] ?: 0
             val displayed = roomDto?.unreadCount ?: 0
             if (floor > 0 || displayed > serverUnread) {
+                recomputeRoomUnreadBadges()
                 return
             }
         }

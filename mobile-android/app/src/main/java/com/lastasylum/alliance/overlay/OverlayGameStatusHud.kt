@@ -1,9 +1,5 @@
 package com.lastasylum.alliance.overlay
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Article
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -40,21 +36,21 @@ fun OverlayGameStatusHud(
     OverlayGameHudBar(modifier = modifier) {
         OverlayGameHudChipRow {
             OverlayGameHudChip(
-                icon = Icons.AutoMirrored.Outlined.Article,
+                painter = OverlayHudIcons.painter(OverlayHudIcons.news),
                 accent = OverlayHudChipAccent.News,
                 badgeCount = state.teamNewsUnread,
                 contentDescription = stringResource(R.string.overlay_hud_news_cd, state.teamNewsUnread),
                 onClick = onNewsClick,
             )
             OverlayGameHudChip(
-                icon = Icons.Outlined.Forum,
+                painter = OverlayHudIcons.painter(OverlayHudIcons.forum),
                 accent = OverlayHudChipAccent.Forum,
                 badgeCount = state.forumUnread,
                 contentDescription = stringResource(R.string.overlay_hud_forum_cd, state.forumUnread),
                 onClick = onForumClick,
             )
             OverlayGameHudChip(
-                icon = Icons.Outlined.Email,
+                painter = OverlayHudIcons.painter(OverlayHudIcons.mail),
                 accent = OverlayHudChipAccent.Mail,
                 badgeCount = state.allianceChatUnread,
                 contentDescription = stringResource(

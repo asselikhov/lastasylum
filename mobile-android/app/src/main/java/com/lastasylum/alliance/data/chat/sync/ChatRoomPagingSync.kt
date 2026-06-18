@@ -37,6 +37,7 @@ class ChatRoomPagingSync(
         fun stateSnapshot(): ChatState
         fun selectedRoomId(): String?
         fun overlayChatPanelVisible(): Boolean
+        fun isChatTabActive(): Boolean
         fun isAllianceRaidRoom(roomId: String): Boolean
 
         fun messagesForRoomMerge(roomId: String): List<ChatMessage>
@@ -164,6 +165,7 @@ class ChatRoomPagingSync(
                     )
                     ChatSessionCache.updateMessages(roomId, merged)
                     if (!isSelectedRoom || host.selectedRoomId() != roomId) return@onSuccess
+                    if (!host.overlayChatPanelVisible() && !host.isChatTabActive()) return@onSuccess
                     val unchanged = withContext(Dispatchers.Default) {
                         chatMessagesListContentEqual(current, merged)
                     }

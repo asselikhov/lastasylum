@@ -67,6 +67,7 @@ internal class ChatViewModelSyncBundle(
         override fun stateSnapshot(): ChatState = vm.vmState.value
         override fun selectedRoomId(): String? = vm.vmState.value.selectedRoomId
         override fun overlayChatPanelVisible(): Boolean = vm.overlayChatPanelVisible
+        override fun isChatTabActive(): Boolean = vm.isChatTabActive
         override fun isAllianceRaidRoom(roomId: String): Boolean = vm.isAllianceRaidRoom(roomId)
         override fun messagesForRoomMerge(roomId: String) = vm.messagesForRoomMerge(roomId)
         override fun messagesWithoutLocallyRemoved(messages: List<ChatMessage>) =

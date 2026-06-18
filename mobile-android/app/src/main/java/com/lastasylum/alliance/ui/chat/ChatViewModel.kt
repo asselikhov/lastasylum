@@ -1340,7 +1340,9 @@ class ChatViewModel(
                 recomputeRoomUnreadBadges()
                 val roomId = _state.value.selectedRoomId
                 if (!roomId.isNullOrBlank()) {
-                    refreshMessagesInBackground(roomId, force = !repository.isChatSocketConnected())
+                    val forceRefresh = !repository.isChatSocketConnected() &&
+                        !shouldSkipBackgroundMessageRefreshForRoom(roomId)
+                    refreshMessagesInBackground(roomId, force = forceRefresh)
                 }
                 if (!overlayHubReadyForPanel()) {
                     scheduleBootstrap(preferAllianceHubRoom = true, force = false)
@@ -1350,6 +1352,9 @@ class ChatViewModel(
         }
         mergeSessionCacheForSelectedRoom()
         rehydrateSelectedRoomMessagesFromCache()
+        _state.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let { rid ->
+            syncBundle.roomPagingSync.cancelBackgroundRefresh(rid)
+        }
         flushOverlayChatViewportMarkRead()
         lastOverlayVisibleMessageIds = emptyList()
         snapshotSelectedRoomToMessageCache()

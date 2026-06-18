@@ -402,6 +402,9 @@ internal fun ChatViewModel.mergeSessionCacheForSelectedRoomImpl() {
             currentUserId = currentUserId,
         )
         if (merged.isEmpty()) return
+        session.forEach { message ->
+            message._id?.trim()?.takeIf { it.isNotEmpty() }?.let { trackRecentSocketMessageId(it) }
+        }
         roomMessageCache[rid] = ChatRoomMessageCache(
             messages = capMessagesForMemory(merged),
             hasMoreOlder = roomMessageCache[rid]?.hasMoreOlder ?: true,

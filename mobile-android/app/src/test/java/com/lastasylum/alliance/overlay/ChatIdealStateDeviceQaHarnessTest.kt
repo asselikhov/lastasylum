@@ -49,13 +49,14 @@ class ChatIdealStateDeviceQaHarnessTest {
     fun harness_devicePassSteps() {
         val steps = listOf(
             "Device A leader + Device B member in same raid room",
+            "Overlay Chat: 20 messages close reopen with zero missing rows",
+            "Hub/forum/news chips: peer post instant bump read clear no flash",
+            "Forum topics: read clears list overlay Team pill without flip-flop",
             "Send 10 raid quick commands from overlay strip without duplicates",
             "Toggle airplane mode 30s on B then verify forum/topic gap fill",
-            "Open overlay chat tab switch Team→Chat rehydrates stash instantly",
             "Close overlay panel verify hub/forum/news badges after 2s grace",
             "Kill app mid forum send reopen verify outbox resume",
-            "Filter logcat SR_Latency and SR_OverlayDiag for p95 chain",
         )
-        assertEquals(7, steps.size)
+        assertEquals(8, steps.size)
     }
 }

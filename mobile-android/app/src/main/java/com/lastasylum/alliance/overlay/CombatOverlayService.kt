@@ -2351,38 +2351,24 @@ class CombatOverlayService : Service() {
                 mainHandler.post {
                     overlayInboxPartialRefreshJob = null
                     if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return@post
-                    var next = overlayHudBadgeBus.current()
+                    val prev = overlayHudBadgeBus.current()
+                    var hubMerged = prev.allianceChatUnread
+                    var newsMerged = prev.teamNewsUnread
+                    var forumMerged = prev.forumUnread
                     if (hubCounts != null) {
-                        val merged = mergeAllianceHubHudDisplayed(hubCounts.first, hubCounts.second, next)
-                        overlayHudBadgeBus.emit(OverlayHudBadgeEvent.HubUnread(merged))
-                        next = next.copy(allianceChatUnread = merged)
+                        hubMerged = mergeAllianceHubHudDisplayed(hubCounts.first, hubCounts.second, prev)
                     }
                     if (newsCount != null) {
-                        overlayHudBadgeBus.emit(
-                            OverlayHudBadgeEvent.NewsUnread(
-                                newsCount,
-                                useAuthoritative = true,
-                            ),
-                        )
                         if (teamId.isNotEmpty()) {
                             inboxBadgeCoordinator.cacheAuthoritativeNews(teamId, newsCount)
                         }
-                        next = next.copy(
-                            teamNewsUnread = inboxBadgeCoordinator.mergeHudNews(
-                                authoritative = newsCount,
-                                prevDisplayed = next.teamNewsUnread,
-                                useAuthoritative = true,
-                            ),
+                        newsMerged = inboxBadgeCoordinator.mergeHudNews(
+                            authoritative = newsCount,
+                            prevDisplayed = prev.teamNewsUnread,
+                            useAuthoritative = true,
                         )
                     }
                     if (forumCounts != null) {
-                        overlayHudBadgeBus.emit(
-                            OverlayHudBadgeEvent.ForumUnread(
-                                effective = forumCounts.effective,
-                                rawServer = forumCounts.rawServer,
-                                useAuthoritative = true,
-                            ),
-                        )
                         if (teamId.isNotEmpty()) {
                             inboxBadgeCoordinator.cacheAuthoritativeForum(
                                 teamId,
@@ -2390,7 +2376,20 @@ class CombatOverlayService : Service() {
                                 forumCounts.rawServer,
                             )
                         }
+                        forumMerged = inboxBadgeCoordinator.mergeHudForum(
+                            authoritative = forumCounts.effective,
+                            prevDisplayed = prev.forumUnread,
+                            useAuthoritative = true,
+                            rawAuthoritative = forumCounts.rawServer,
+                        )
                     }
+                    overlayHudBadgeBus.emit(
+                        OverlayHudBadgeEvent.FullRefreshResult(
+                            allianceChatUnread = hubMerged,
+                            teamNewsUnread = newsMerged,
+                            forumUnread = forumMerged,
+                        ),
+                    )
                     if (includeReactionLog) {
                         refreshOverlayReactionLogUnreadBadge()
                     }
@@ -2621,8 +2620,11 @@ class CombatOverlayService : Service() {
             patchHubUnreadInSessionCacheAfterLocalRead()
             return
         }
-        val seedFloor = maxOf(vmOptimisticFloor, clamped, hubUnreadOptimisticFloor)
-        if (seedFloor > hubUnreadOptimisticFloor) {
+        val seedFloor = maxOf(vmOptimisticFloor, clamped)
+        if (vmOptimisticFloor > 0) {
+            hubUnreadOptimisticFloor = vmOptimisticFloor
+            hubUnreadLastBumpAtMs = System.currentTimeMillis()
+        } else if (seedFloor > hubUnreadOptimisticFloor) {
             hubUnreadOptimisticFloor = seedFloor
             hubUnreadLastBumpAtMs = System.currentTimeMillis()
         }
@@ -6486,6 +6488,10 @@ class CombatOverlayService : Service() {
         val hadVisible = overlayChatTeamPanelVisible
         val closingPane = currentOverlayHudPane
         val legacyChatTabIndex = overlayChatTeamTabIndex
+        if (hadVisible) {
+            overlayChatTeamTabIndex = OVERLAY_CHAT_TAB_CLOSED
+            syncOverlayChatPanelVisibilityToViewModel(false)
+        }
         overlayChatTeamPanelVisible = false
         overlayPanelVisibleFlow.value = false
         currentOverlayHudPane = null
@@ -7162,12 +7168,7 @@ class CombatOverlayService : Service() {
                         }
                         LaunchedEffect(selectedTab) {
                             overlayChatTeamTabIndex = selectedTab
-                            val chatTabActive = selectedTab == 0 &&
-                                (overlayPane == null || overlayPane == OverlayHudPane.Chat)
-                            if (chatTabActive) {
-                                syncOverlayChatPanelVisibilityToViewModel(true)
-                                rehydrateOverlayChatFeedFromStash()
-                            } else if (selectedTab != 0 && overlayPane == null) {
+                            if (selectedTab != 0 && overlayPane == null) {
                                 syncOverlayChatPanelVisibilityToViewModel(false)
                             }
                         }
@@ -7548,10 +7549,10 @@ class CombatOverlayService : Service() {
         needsChatPrime: Boolean,
         hudPane: OverlayHudPane?,
     ) {
-        onOverlayChatTeamPanelPresented(needsChatPrime = false)
         if ((hudPane == null && overlayChatTeamTabIndex == 0) || hudPane == OverlayHudPane.Chat) {
             rehydrateOverlayChatFeedFromStash()
         }
+        onOverlayChatTeamPanelPresented(needsChatPrime = false)
         if (hudPane == OverlayHudPane.Forum) {
             rehydrateOverlayForumFromStash()
         }
@@ -8113,6 +8114,8 @@ class CombatOverlayService : Service() {
         /** После отправки в «Рейд» / координат — не снимать HUD на ложном «не в игре». */
         private const val OVERLAY_UI_HOLD_AFTER_RAID_SEND_MS = 3_500L
         private const val OVERLAY_UI_HOLD_PANEL_TRANSITION_MS = 2_500L
+        /** Sentinel: legacy team panel closed — [isOverlayChatContentActive] must be false. */
+        private const val OVERLAY_CHAT_TAB_CLOSED = -1
         /** Gate ticks without in-game probe before POST away (~4–10 s). */
         private const val OVERLAY_INGAME_AWAY_MISS_STREAK = 3
         private const val OVERLAY_HISTORY_LOAD = 40

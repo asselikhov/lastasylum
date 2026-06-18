@@ -11,6 +11,10 @@ import org.junit.Test
  * Device scenarios from [com.lastasylum.alliance.ui.chat.ChatRegressionChecklistTest] still require in-game pass.
  */
 class ChatIdealStateManualQaTest {
+    fun unreadChecklist_chatUnreadGraceTwoSeconds() {
+        assertEquals(2_000L, com.lastasylum.alliance.data.chat.sync.CHAT_UNREAD_RECONCILE_GRACE_MS)
+    }
+
     @Test
     fun unreadChecklist_hubGraceTwoSeconds() {
         assertEquals(2_000L, OverlayHubUnreadPolicy.RECONCILE_GRACE_MS)

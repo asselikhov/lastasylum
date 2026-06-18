@@ -164,11 +164,13 @@ class TeamViewModel(
                 localRead,
                 optimisticFloorByTopic,
             )
+            val aggregateFloor = optimisticFloorByTopic.values.sum().coerceAtLeast(0)
             _data.update { state ->
                 val merged = TeamInboxBadgeDeriver.mergeForDisplay(
                     effectiveUnread = counts.effective,
                     previouslyDisplayed = state.sectionBadges.forumUnread,
                     rawServerUnread = counts.rawServer,
+                    optimisticFloor = aggregateFloor,
                 )
                 state.copy(sectionBadges = state.sectionBadges.copy(forumUnread = merged))
             }
@@ -271,7 +273,7 @@ class TeamViewModel(
 
     private companion object {
         const val PERF_TAG = "PerfDiag"
-        const val BADGE_REFRESH_MIN_INTERVAL_MS = 2_500L
+        const val BADGE_REFRESH_MIN_INTERVAL_MS = 800L
         const val PROFILE_RELOAD_TTL_MS = 30_000L
     }
 }
