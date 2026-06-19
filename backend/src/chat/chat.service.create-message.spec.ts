@@ -121,4 +121,24 @@ describe('ChatService.createMessage idempotency', () => {
     expect(result.message._id).toBe(existingId.toString());
     expect(result.created).toBe(false);
   });
+
+  it('returns existing message when create races on duplicate clientMessageId', async () => {
+    const existingId = new Types.ObjectId();
+    findOneLean
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: existingId, text: 'hello' });
+    create.mockRejectedValue(
+      Object.assign(new Error('duplicate key'), { code: 11000 }),
+    );
+    const result = await chatService.createMessage({
+      text: 'hello',
+      roomId: new Types.ObjectId().toString(),
+      author: { userId: 'u1', role: 'MEMBER' },
+      clientMessageId: 'client-uuid-race',
+    });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(findOneLean).toHaveBeenCalledTimes(2);
+    expect(result.message._id).toBe(existingId.toString());
+    expect(result.created).toBe(false);
+  });
 });

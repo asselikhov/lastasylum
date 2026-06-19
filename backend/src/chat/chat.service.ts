@@ -85,6 +85,14 @@ type MessageLean = {
   updatedAt?: Date | null;
 };
 
+function isMongoDuplicateKeyError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: number }).code === 11000
+  );
+}
+
 export type ChatMessageReplyPreview = {
   _id: string;
   senderId: string;
@@ -1045,6 +1053,25 @@ export class ChatService {
     );
   }
 
+  private async findExistingMessageByClientId(
+    senderId: string,
+    clientMessageId: string,
+  ): Promise<ChatCreateMessageResult | null> {
+    const existing = await this.messageModel
+      .findOne({
+        senderId,
+        clientMessageId,
+        deletedAt: null,
+      })
+      .lean<MessageLean | null>()
+      .exec();
+    if (!existing) return null;
+    return {
+      message: await this.viewMessageForUser(existing, senderId),
+      created: false,
+    };
+  }
+
   async createMessage(input: {
     text?: string;
     author: MessageAuthor;
@@ -1096,20 +1123,11 @@ export class ChatService {
 
     const clientMessageId = input.clientMessageId?.trim().slice(0, 64) || null;
     if (clientMessageId) {
-      const existing = await this.messageModel
-        .findOne({
-          senderId: input.author.userId,
-          clientMessageId,
-          deletedAt: null,
-        })
-        .lean<MessageLean | null>()
-        .exec();
-      if (existing) {
-        return {
-          message: await this.viewMessageForUser(existing, input.author.userId),
-          created: false,
-        };
-      }
+      const existingResult = await this.findExistingMessageByClientId(
+        input.author.userId,
+        clientMessageId,
+      );
+      if (existingResult) return existingResult;
     }
 
     const squadRoleMap = await this.teamsService.resolveSquadRolesByUserIds([
@@ -1118,34 +1136,45 @@ export class ChatService {
     const senderSquadRole =
       squadRoleMap.get(input.author.userId) ?? PlayerTeamMemberRole.R1;
 
-    const created = await this.messageModel.create({
-      allianceId,
-      roomId: roomObjectId,
-      text: trimmedText,
-      attachments: input.attachments ?? [],
-      senderId: input.author.userId,
-      senderUsername: this.gameIdentities.resolveSenderUsername(authorUser),
-      senderRole: senderSquadRole,
-      senderTeamTag: authorUser.teamTag ?? null,
-      senderServerNumber:
-        this.gameIdentities.resolveSenderServerNumber(authorUser),
-      replyToMessageId: replyTarget?._id ?? null,
-      deletedAt: null,
-      deletedByUserId: null,
-      editedAt: null,
-      reactions: [],
-      clientMessageId,
-    });
-    return {
-      message: await this.viewCreatedMessage(
-        created.toObject<MessageLean>(),
-        authorUser,
-        senderSquadRole,
-        input.author.userId,
-        replyTarget,
-      ),
-      created: true,
-    };
+    try {
+      const created = await this.messageModel.create({
+        allianceId,
+        roomId: roomObjectId,
+        text: trimmedText,
+        attachments: input.attachments ?? [],
+        senderId: input.author.userId,
+        senderUsername: this.gameIdentities.resolveSenderUsername(authorUser),
+        senderRole: senderSquadRole,
+        senderTeamTag: authorUser.teamTag ?? null,
+        senderServerNumber:
+          this.gameIdentities.resolveSenderServerNumber(authorUser),
+        replyToMessageId: replyTarget?._id ?? null,
+        deletedAt: null,
+        deletedByUserId: null,
+        editedAt: null,
+        reactions: [],
+        clientMessageId,
+      });
+      return {
+        message: await this.viewCreatedMessage(
+          created.toObject<MessageLean>(),
+          authorUser,
+          senderSquadRole,
+          input.author.userId,
+          replyTarget,
+        ),
+        created: true,
+      };
+    } catch (error) {
+      if (clientMessageId && isMongoDuplicateKeyError(error)) {
+        const existingResult = await this.findExistingMessageByClientId(
+          input.author.userId,
+          clientMessageId,
+        );
+        if (existingResult) return existingResult;
+      }
+      throw error;
+    }
   }
 
   /** Clients poll on reconnect to wipe local cache after admin history delete. */
