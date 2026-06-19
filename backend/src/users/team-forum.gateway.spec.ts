@@ -98,3 +98,48 @@ describe('TeamForumGateway personal fanout dedup', () => {
     expect(personalTargets).not.toContain('user:sender1');
   });
 });
+
+describe('TeamForumGateway topic:unread and news:activity', () => {
+  it('emits topic:unread to personal user room', () => {
+    const emit = jest.fn();
+    const gateway = new TeamForumGateway({} as any, {} as any, {} as any, {} as any);
+    gateway.server = {
+      to: jest.fn().mockReturnValue({ emit }),
+    } as any;
+
+    gateway.emitTopicUnreadToUser('user1', 'team1', 'topic1', {
+      unreadCount: 2,
+      lastReadMessageId: 'msg1',
+    });
+
+    expect(gateway.server.to).toHaveBeenCalledWith('user:user1');
+    expect(emit).toHaveBeenCalledWith('topic:unread', {
+      teamId: 'team1',
+      topicId: 'topic1',
+      unreadCount: 2,
+      lastReadMessageId: 'msg1',
+    });
+  });
+
+  it('broadcastNewsActivity emits to team inbox room', () => {
+    const emit = jest.fn();
+    const gateway = new TeamForumGateway({} as any, {} as any, {} as any, {} as any);
+    gateway.server = {
+      to: jest.fn().mockReturnValue({ emit }),
+    } as any;
+
+    gateway.broadcastNewsActivity('team1', {
+      newsId: 'news1',
+      createdAt: '2026-01-01T00:00:00Z',
+      authorUserId: 'author1',
+    });
+
+    expect(gateway.server.to).toHaveBeenCalledWith('forum-team:team1');
+    expect(emit).toHaveBeenCalledWith('news:activity', {
+      teamId: 'team1',
+      newsId: 'news1',
+      createdAt: '2026-01-01T00:00:00Z',
+      authorUserId: 'author1',
+    });
+  });
+});

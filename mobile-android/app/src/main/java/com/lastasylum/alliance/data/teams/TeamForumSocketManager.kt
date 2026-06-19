@@ -69,6 +69,10 @@ class TeamForumSocketManager {
         CopyOnWriteArrayList<(TeamForumTopicPinChangedEvent) -> Unit>()
     private val topicReadListeners =
         CopyOnWriteArrayList<(TeamForumTopicReadEvent) -> Unit>()
+    private val topicUnreadListeners =
+        CopyOnWriteArrayList<(TeamForumTopicUnreadEvent) -> Unit>()
+    private val newsActivityListeners =
+        CopyOnWriteArrayList<(TeamNewsActivityEvent) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var reconnectAttempt = 0
     private var intentionalDisconnect = false
@@ -166,6 +170,26 @@ class TeamForumSocketManager {
         topicReadListeners.remove(listener)
     }
 
+    fun addTopicUnreadListener(listener: (TeamForumTopicUnreadEvent) -> Unit) {
+        if (!topicUnreadListeners.contains(listener)) {
+            topicUnreadListeners.add(listener)
+        }
+    }
+
+    fun removeTopicUnreadListener(listener: (TeamForumTopicUnreadEvent) -> Unit) {
+        topicUnreadListeners.remove(listener)
+    }
+
+    fun addNewsActivityListener(listener: (TeamNewsActivityEvent) -> Unit) {
+        if (!newsActivityListeners.contains(listener)) {
+            newsActivityListeners.add(listener)
+        }
+    }
+
+    fun removeNewsActivityListener(listener: (TeamNewsActivityEvent) -> Unit) {
+        newsActivityListeners.remove(listener)
+    }
+
     fun clearListeners() {
         messageListeners.clear()
         messageEditedListeners.clear()
@@ -175,6 +199,8 @@ class TeamForumSocketManager {
         topicActivityListeners.clear()
         topicPinChangedListeners.clear()
         topicReadListeners.clear()
+        topicUnreadListeners.clear()
+        newsActivityListeners.clear()
     }
 
     /** Team-wide inbox (overlay HUD / topic list) without subscribing to a single topic room. */
@@ -381,7 +407,38 @@ class TeamForumSocketManager {
                     )
                     if (ev.teamId != teamId || ev.topicId.isBlank()) return@on
                     dispatchMain {
+                        com.lastasylum.alliance.ui.teamforum.ForumListViewModelRegistry
+                            .dispatchTopicActivity(ev)
                         topicActivityListeners.forEach { l -> runCatching { l(ev) } }
+                    }
+                }
+                on("topic:unread") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val ev = TeamForumTopicUnreadEvent(
+                        teamId = payload.optString("teamId"),
+                        topicId = payload.optString("topicId"),
+                        unreadCount = payload.optInt("unreadCount", 0).coerceAtLeast(0),
+                        lastReadMessageId = payload.optString("lastReadMessageId")
+                            .takeIf { it.isNotBlank() },
+                    )
+                    if (ev.teamId != teamId || ev.topicId.isBlank()) return@on
+                    dispatchMain {
+                        com.lastasylum.alliance.ui.teamforum.ForumListViewModelRegistry
+                            .dispatchTopicUnread(ev)
+                        topicUnreadListeners.forEach { l -> runCatching { l(ev) } }
+                    }
+                }
+                on("news:activity") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val ev = TeamNewsActivityEvent(
+                        teamId = payload.optString("teamId"),
+                        newsId = payload.optString("newsId"),
+                        createdAt = payload.optString("createdAt"),
+                        authorUserId = payload.optString("authorUserId"),
+                    )
+                    if (ev.teamId != teamId || ev.newsId.isBlank()) return@on
+                    dispatchMain {
+                        newsActivityListeners.forEach { l -> runCatching { l(ev) } }
                     }
                 }
                 on("message:new") { args ->

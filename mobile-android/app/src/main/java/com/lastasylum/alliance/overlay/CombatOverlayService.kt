@@ -88,6 +88,8 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent
+import com.lastasylum.alliance.data.teams.TeamForumTopicUnreadEvent
+import com.lastasylum.alliance.data.teams.TeamNewsActivityEvent
 import com.lastasylum.alliance.data.teams.TeamInboxBadgeDeriver
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.teams.TeamNewsReadCursorSync
@@ -348,6 +350,8 @@ class CombatOverlayService : Service() {
     private var overlayMessageDeletedListener: ((com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent) -> Unit)? = null
     private var overlayChatHistoryClearedListener: (() -> Unit)? = null
     private var overlayForumTopicActivityListener: ((TeamForumTopicActivityEvent) -> Unit)? = null
+    private var overlayForumTopicUnreadListener: ((TeamForumTopicUnreadEvent) -> Unit)? = null
+    private var overlayNewsActivityListener: ((TeamNewsActivityEvent) -> Unit)? = null
     private var overlayReadListener: ((com.lastasylum.alliance.data.chat.ChatRoomReadEvent) -> Unit)? = null
     private var overlayRoomUnreadListener: ((com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) -> Unit)? = null
     private var overlayTypingListener: ((com.lastasylum.alliance.data.chat.ChatTypingEvent) -> Unit)? = null
@@ -4732,6 +4736,31 @@ class CombatOverlayService : Service() {
         }
         overlayForumTopicActivityListener = listener
         container.teamForumSocket.addTopicActivityListener(listener)
+        val unreadListener: (TeamForumTopicUnreadEvent) -> Unit = { _ ->
+            mainHandler.post {
+                if (!shouldRetainOverlayRaidRealtime()) return@post
+                inboxBadgeCoordinator.invalidateForumBadgeCachesFully()
+                if (isInGameOverlayUiActive() || isOverlayUiHoldActive()) {
+                    scheduleDebouncedForumHudRefresh()
+                }
+            }
+        }
+        overlayForumTopicUnreadListener = unreadListener
+        container.teamForumSocket.addTopicUnreadListener(unreadListener)
+        val newsListener: (TeamNewsActivityEvent) -> Unit = listener@{ event ->
+            if (selfId.isNotBlank() && event.authorUserId.trim() == selfId) return@listener
+            mainHandler.post {
+                if (!shouldRetainOverlayRaidRealtime()) return@post
+                if (overlayChatTeamPanelVisible &&
+                    currentOverlayHudPane == OverlayHudPane.News
+                ) {
+                    return@post
+                }
+                bumpNewsUnreadLocally()
+            }
+        }
+        overlayNewsActivityListener = newsListener
+        container.teamForumSocket.addNewsActivityListener(newsListener)
         serviceScope.launch(Dispatchers.IO) {
             val teamId = container.usersRepository.resolveMyProfilePreferCache()
                 ?.playerTeamId
@@ -4756,6 +4785,18 @@ class CombatOverlayService : Service() {
             }
         }
         overlayForumTopicActivityListener = null
+        overlayForumTopicUnreadListener?.let { listener ->
+            runCatching {
+                AppContainer.from(this).teamForumSocket.removeTopicUnreadListener(listener)
+            }
+        }
+        overlayForumTopicUnreadListener = null
+        overlayNewsActivityListener?.let { listener ->
+            runCatching {
+                AppContainer.from(this).teamForumSocket.removeNewsActivityListener(listener)
+            }
+        }
+        overlayNewsActivityListener = null
     }
 
     /** Маршрутизация raid/hub в ленту, пока слушатель оверлея активен или игрок в матче. */

@@ -569,7 +569,6 @@ private fun ChatScreenMessagesHost(
         }
     }
     val showJumpToUnreadFab by remember(
-        overlayUi,
         onJumpToFirstUnread,
         selectedRoomUnread,
         isNearLatest,
@@ -580,8 +579,7 @@ private fun ChatScreenMessagesHost(
         listPane.selectedRoomId,
     ) {
         derivedStateOf {
-            overlayUi &&
-                onJumpToFirstUnread != null &&
+            onJumpToFirstUnread != null &&
                 selectedRoomUnread > 0 &&
                 isNearLatest &&
                 !isFirstUnreadVisible &&
@@ -594,8 +592,7 @@ private fun ChatScreenMessagesHost(
     val markOverlayVisibleReadRef = rememberUpdatedState(onMarkOverlayVisibleRead)
     val timelineRef = rememberUpdatedState(listDerived.timeline)
     val messagesRef = rememberUpdatedState(messages)
-    LaunchedEffect(listState, overlayUi, listPane.selectedRoomId) {
-        if (!overlayUi) return@LaunchedEffect
+    LaunchedEffect(listState, listPane.selectedRoomId) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
             .collect { indices ->
                 val markRead = markOverlayVisibleReadRef.value ?: return@collect
@@ -605,9 +602,8 @@ private fun ChatScreenMessagesHost(
                 if (ids.isNotEmpty()) markRead(ids)
             }
     }
-    DisposableEffect(overlayUi, listPane.selectedRoomId) {
+    DisposableEffect(listPane.selectedRoomId) {
         onDispose {
-            if (!overlayUi) return@onDispose
             val markRead = markOverlayVisibleReadRef.value ?: return@onDispose
             val indices = listState.layoutInfo.visibleItemsInfo.map { it.index }
             val ids = indices.flatMap { index ->

@@ -488,6 +488,8 @@ fun AppNavigation(
                     onClearEditMessage = chatViewModel::cancelEditMessage,
                     onToggleReaction = chatViewModel::toggleReaction,
                     onScrollToLatest = chatViewModel::scrollToLatestMessages,
+                    onJumpToFirstUnread = chatViewModel::jumpToFirstUnreadInSelectedRoom,
+                    onMarkOverlayVisibleRead = chatViewModel::markOverlayVisibleMessagesAsRead,
                     onJumpToQuotedMessage = chatViewModel::jumpToQuotedMessage,
                     onConsumeScrollToMessage = chatViewModel::consumeScrollToMessage,
                     onClearHighlightMessage = chatViewModel::clearHighlightMessage,

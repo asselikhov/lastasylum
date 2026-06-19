@@ -724,6 +724,30 @@ export class TeamForumService {
     return { topicId, messageId: lastReadMessageId };
   }
 
+  async getTopicUnreadSnapshotForUser(
+    teamId: string,
+    topicId: string,
+    userId: string,
+  ): Promise<{ unreadCount: number; lastReadMessageId: string | null }> {
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    if (
+      !Types.ObjectId.isValid(teamId) ||
+      !Types.ObjectId.isValid(topicId)
+    ) {
+      throw new BadRequestException('Invalid id');
+    }
+    const topOid = new Types.ObjectId(topicId);
+    const state = await this.topicReadStateModel
+      .findOne({ topicId: topOid, userId })
+      .select('lastReadMessageId unreadCount')
+      .lean()
+      .exec();
+    return {
+      unreadCount: Math.max(0, Number(state?.unreadCount ?? 0)),
+      lastReadMessageId: state?.lastReadMessageId?.trim() || null,
+    };
+  }
+
   async getPeerReadUptoMessageId(
     teamId: string,
     topicId: string,

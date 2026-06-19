@@ -61,7 +61,13 @@ internal fun ChatViewModel.markOverlayVisibleMessagesAsReadImpl(
         forceFlushOnClose: Boolean = false,
     ) {
         lastOverlayVisibleMessageIds = messageIds
-        if (!forceFlushOnClose && !overlayChatPanelVisible) return
+        if (!forceFlushOnClose) {
+            when {
+                overlayChatPanelVisible -> Unit
+                shouldAutoMarkReadSelectedRoom() -> Unit
+                else -> return
+            }
+        }
         val roomId = vmState.value.selectedRoomId?.trim().orEmpty()
         if (roomId.isEmpty()) return
         val room = vmState.value.rooms.find { it.id == roomId } ?: return

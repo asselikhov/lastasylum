@@ -347,6 +347,16 @@ fun TeamForumNavHost(
             val onTopicPin: (TeamForumTopicPinChangedEvent) -> Unit = { event ->
                 topicPinPatch = event
             }
+            val onNewsActivity: (com.lastasylum.alliance.data.teams.TeamNewsActivityEvent) -> Unit =
+                { event ->
+                    if (event.authorUserId.trim() != currentUserId.trim()) {
+                        listRefreshNonce++
+                        com.lastasylum.alliance.overlay.CombatOverlayService
+                            .notifyOverlayTeamNewsActivity()
+                    }
+                }
+            val onTopicUnread: (com.lastasylum.alliance.data.teams.TeamForumTopicUnreadEvent) -> Unit =
+                { listRefreshNonce++ }
             val app = AppContainer.from(context.applicationContext)
             val onForumMessage: (TeamForumMessageDto) -> Unit = { message ->
                 val uid = currentUserId.trim()
@@ -366,6 +376,8 @@ fun TeamForumNavHost(
             forumSocket.addMessageListener(onForumMessage)
             forumSocket.addTopicActivityListener(onTopicActivity)
             forumSocket.addTopicPinChangedListener(onTopicPin)
+            forumSocket.addNewsActivityListener(onNewsActivity)
+            forumSocket.addTopicUnreadListener(onTopicUnread)
             forumSocket.connectTeamInbox(
                 com.lastasylum.alliance.BuildConfig.API_BASE_URL,
                 teamId,
@@ -374,6 +386,8 @@ fun TeamForumNavHost(
                 forumSocket.removeMessageListener(onForumMessage)
                 forumSocket.removeTopicActivityListener(onTopicActivity)
                 forumSocket.removeTopicPinChangedListener(onTopicPin)
+                forumSocket.removeNewsActivityListener(onNewsActivity)
+                forumSocket.removeTopicUnreadListener(onTopicUnread)
             }
         }
     }

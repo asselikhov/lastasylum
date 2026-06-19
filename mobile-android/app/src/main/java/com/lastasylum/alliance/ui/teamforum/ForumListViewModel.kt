@@ -50,7 +50,9 @@ class ForumListViewModel(
 
     fun bindTeam(teamId: String) {
         val tid = teamId.trim()
-        if (tid.isEmpty() || _state.value.teamId == tid) return
+        if (tid.isEmpty()) return
+        ForumListViewModelRegistry.register(tid, this)
+        if (_state.value.teamId == tid) return
         _state.value = ForumListUiState(teamId = tid, loading = true)
         viewModelScope.launch {
             forumRepository.observeTopics(currentUserId, tid).collect { roomTopics ->
@@ -211,6 +213,48 @@ class ForumListViewModel(
                 optimisticUnreadFloorByTopic = st.optimisticUnreadFloorByTopic - tpid,
             )
         }
+    }
+
+    fun applyTopicUnreadSnapshot(
+        topicId: String,
+        unreadCount: Int,
+        lastReadMessageId: String?,
+    ) {
+        val tpid = topicId.trim()
+        if (tpid.isEmpty()) return
+        val unread = unreadCount.coerceAtLeast(0)
+        val serverLastRead = lastReadMessageId?.trim().orEmpty()
+        _state.update { st ->
+            val idx = st.topics.indexOfFirst { it.id == tpid }
+            if (idx < 0) return@update st
+            val row = st.topics[idx]
+            val prevLastRead = row.lastReadMessageId?.trim().orEmpty()
+            val mergedLastRead = when {
+                serverLastRead.isEmpty() -> row.lastReadMessageId
+                prevLastRead.isEmpty() -> serverLastRead
+                isObjectIdNewer(serverLastRead, prevLastRead) -> serverLastRead
+                else -> prevLastRead
+            }
+            val nextFloors = if (unread <= 0) {
+                st.optimisticUnreadFloorByTopic - tpid
+            } else {
+                st.optimisticUnreadFloorByTopic
+            }
+            st.copy(
+                topics = st.topics.toMutableList().apply {
+                    this[idx] = row.copy(
+                        unreadCount = unread,
+                        lastReadMessageId = mergedLastRead,
+                    )
+                },
+                optimisticUnreadFloorByTopic = nextFloors,
+            )
+        }
+    }
+
+    override fun onCleared() {
+        ForumListViewModelRegistry.unregister(_state.value.teamId, this)
+        super.onCleared()
     }
 
     /** Preserve in-memory socket bumps when Room emits stale topic rows. */

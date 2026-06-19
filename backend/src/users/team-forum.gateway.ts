@@ -355,4 +355,72 @@ export class TeamForumGateway {
       messageId,
     });
   }
+
+  /** Personal fanout: forum topic unread snapshot (parity with chat `rooms:unread`). */
+  emitTopicUnreadToUser(
+    userId: string,
+    teamId: string,
+    topicId: string,
+    snapshot: { unreadCount: number; lastReadMessageId: string | null },
+  ): void {
+    const uid = userId.trim();
+    const tid = teamId.trim();
+    const topId = topicId.trim();
+    if (!uid || !tid || !topId) return;
+    this.server?.to(`user:${uid}`).emit('topic:unread', {
+      teamId: tid,
+      topicId: topId,
+      unreadCount: Math.max(0, Number(snapshot.unreadCount ?? 0)),
+      lastReadMessageId: snapshot.lastReadMessageId ?? null,
+    });
+  }
+
+  async notifyTopicUnreadAfterNewMessage(
+    teamId: string,
+    topicId: string,
+    senderUserId: string,
+  ): Promise<void> {
+    const tid = teamId.trim();
+    const topId = topicId.trim();
+    const sender = senderUserId.trim();
+    if (!tid || !topId) return;
+    const memberIds = await this.teams.listSquadMemberUserIds(tid);
+    for (const userId of memberIds) {
+      if (userId.trim() === sender) continue;
+      const snapshot = await this.forumService.getTopicUnreadSnapshotForUser(
+        tid,
+        topId,
+        userId,
+      );
+      this.emitTopicUnreadToUser(userId, tid, topId, snapshot);
+    }
+  }
+
+  async notifyTopicUnreadAfterMarkRead(
+    teamId: string,
+    topicId: string,
+    userId: string,
+    messageId: string,
+  ): Promise<void> {
+    const mid = messageId.trim();
+    if (!mid) return;
+    this.emitTopicUnreadToUser(userId, teamId, topicId, {
+      unreadCount: 0,
+      lastReadMessageId: mid,
+    });
+  }
+
+  broadcastNewsActivity(
+    teamId: string,
+    payload: { newsId: string; createdAt: string; authorUserId: string },
+  ): void {
+    const tid = teamId.trim();
+    if (!tid || !payload.newsId?.trim()) return;
+    this.server?.to(this.teamInboxRoomKey(tid)).emit('news:activity', {
+      teamId: tid,
+      newsId: payload.newsId.trim(),
+      createdAt: payload.createdAt,
+      authorUserId: payload.authorUserId.trim(),
+    });
+  }
 }

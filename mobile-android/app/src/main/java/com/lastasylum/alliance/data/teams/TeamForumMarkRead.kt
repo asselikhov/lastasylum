@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.data.teams
 
 import com.lastasylum.alliance.data.teams.forum.ForumRepository
+import com.lastasylum.alliance.ui.teamforum.ForumListViewModelRegistry
 import com.lastasylum.alliance.overlay.OverlayInboxBadgeCoordinator
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -180,6 +181,7 @@ object TeamForumMarkRead {
         if (tid.isEmpty() || tpid.isEmpty() || mid.isEmpty()) return
         forumRepository.patchTopicReadLocally(userId, tid, tpid, mid, topicFallback)
         inboxBadgeCoordinator?.onForumMarkedReadLocally()
+        ForumListViewModelRegistry.dispatchTopicReadLocal(tid, tpid, mid)
         onInboxChanged()
         com.lastasylum.alliance.overlay.CombatOverlayService.refreshOverlayForumBadgeFromApp()
     }

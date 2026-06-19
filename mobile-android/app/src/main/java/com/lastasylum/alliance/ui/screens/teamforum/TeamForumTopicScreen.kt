@@ -1059,15 +1059,13 @@ fun TeamForumTopicScreen(
         }
     }
     val showJumpToUnreadMessages by remember(
-        overlayUi,
         topicUnreadEstimate,
         firstUnreadLazyIndex,
         isFirstUnreadVisible,
         isNearBottom,
     ) {
         derivedStateOf {
-            overlayUi &&
-                topicUnreadEstimate > 0 &&
+            topicUnreadEstimate > 0 &&
                 firstUnreadLazyIndex >= 0 &&
                 isNearBottom &&
                 !isFirstUnreadVisible
@@ -1577,17 +1575,15 @@ fun TeamForumTopicScreen(
                         )
                         .zIndex(5f),
                 )
-                if (overlayUi) {
-                    OverlayReactionLogJumpToUnreadFab(
-                        visible = showJumpToUnreadMessages,
-                        unreadCount = topicUnreadEstimate,
-                        onClick = { jumpToFirstUnreadInTopic() },
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 8.dp)
-                            .zIndex(6f),
-                    )
-                }
+                OverlayReactionLogJumpToUnreadFab(
+                    visible = showJumpToUnreadMessages,
+                    unreadCount = topicUnreadEstimate,
+                    onClick = { jumpToFirstUnreadInTopic() },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
+                        .zIndex(6f),
+                )
                 ChatTypingIndicator(
                     typingPeers = forumTypingPeers,
                     modifier = Modifier

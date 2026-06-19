@@ -302,12 +302,18 @@ export class TeamsController {
 
   @Post(':teamId/news')
   @Roles(AllianceRole.MEMBER)
-  createNews(
+  async createNews(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
     @Body() dto: CreateTeamNewsDto,
   ) {
-    return this.teamNews.create(teamId, req.user.userId, dto);
+    const created = await this.teamNews.create(teamId, req.user.userId, dto);
+    this.teamForumGateway.broadcastNewsActivity(teamId, {
+      newsId: created.id,
+      createdAt: created.createdAt,
+      authorUserId: created.authorUserId,
+    });
+    return created;
   }
 
   @Get(':teamId/news/:newsId')
@@ -493,6 +499,12 @@ export class TeamsController {
       req.user.userId,
       result.messageId,
     );
+    void this.teamForumGateway.notifyTopicUnreadAfterMarkRead(
+      teamId,
+      topicId,
+      req.user.userId,
+      result.messageId,
+    );
     return result;
   }
 
@@ -538,6 +550,11 @@ export class TeamsController {
       message,
       req.user.userId,
     );
+    void this.teamForumGateway.notifyTopicUnreadAfterNewMessage(
+      teamId,
+      topicId,
+      req.user.userId,
+    );
     return message;
   }
 
@@ -559,6 +576,11 @@ export class TeamsController {
       teamId,
       topicId,
       message,
+      req.user.userId,
+    );
+    void this.teamForumGateway.notifyTopicUnreadAfterNewMessage(
+      teamId,
+      topicId,
       req.user.userId,
     );
     return message;

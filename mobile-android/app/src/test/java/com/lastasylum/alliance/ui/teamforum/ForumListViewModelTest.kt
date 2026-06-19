@@ -144,6 +144,32 @@ class ForumListViewModelTest {
     }
 
     @Test
+    fun applyTopicUnreadSnapshot_clearsOptimisticFloorWhenZero() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val vm = ForumListViewModel(app, forumRepository, forumPrefs, "user1")
+        vm.bindTeam("team1")
+        vm.reload(force = true)
+        withTimeout(5_000) {
+            while (vm.state.value.topics.isEmpty()) delay(10)
+        }
+        vm.applyTopicActivity(
+            TeamForumTopicActivityEvent(
+                teamId = "team1",
+                topicId = "t1",
+                messageId = "507f1f77bcf86cd799439012",
+                senderUserId = "peer-2",
+            ),
+        )
+        vm.applyTopicUnreadSnapshot(
+            topicId = "t1",
+            unreadCount = 0,
+            lastReadMessageId = "507f1f77bcf86cd799439099",
+        )
+        assertEquals(0, vm.state.value.topics.first().unreadCount)
+        assertEquals(0, vm.state.value.optimisticUnreadFloorByTopic.size)
+    }
+
+    @Test
     fun mergeTopicsFromRoom_preservesInMemorySocketBumps() {
         val app = ApplicationProvider.getApplicationContext<Application>()
         val vm = ForumListViewModel(app, forumRepository, forumPrefs, "user1")
@@ -152,6 +178,7 @@ class ForumListViewModelTest {
             topics = listOf(
                 sampleTopic("t1", "General").copy(unreadCount = 2, messageCount = 5),
             ),
+            optimisticUnreadFloorByTopic = mapOf("t1" to 2),
         )
         val room = listOf(sampleTopic("t1", "General").copy(unreadCount = 0, messageCount = 4))
         val merged = vm.mergeTopicsFromRoom(room, memory)
