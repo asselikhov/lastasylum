@@ -395,6 +395,7 @@ private fun ChatScreenMessagesHost(
     onClearHighlightMessage: () -> Unit,
     onConsumeTransientNotice: () -> Unit,
     onMessageListScrollInProgress: (Boolean) -> Unit = {},
+    onMessageListAtBottom: (Boolean) -> Unit = {},
     messageListKey: (ChatMessage) -> String,
     onRequestClearRoomHistory: (() -> Unit)? = null,
     clearRoomHistoryEnabled: Boolean = true,
@@ -423,6 +424,7 @@ private fun ChatScreenMessagesHost(
             .distinctUntilChanged()
             .collect { onScrollProgressRef.value(it) }
     }
+    val onMessageListAtBottomRef = rememberUpdatedState(onMessageListAtBottom)
     val messages = listPane.messages
     val selectedRoomId = listPane.selectedRoomId
     val selectedRoom = remember(selectedRoomId, chromePane.rooms) {
@@ -501,9 +503,11 @@ private fun ChatScreenMessagesHost(
     LaunchedEffect(listPane.selectedRoomId) {
         newMessagesWhileScrolledUp = 0
         lastCountedNewestKey = listPane.newestMessageKey
+        onMessageListAtBottomRef.value(false)
     }
 
     LaunchedEffect(isNearLatest) {
+        onMessageListAtBottomRef.value(isNearLatest)
         if (isNearLatest) {
             newMessagesWhileScrolledUp = 0
             lastCountedNewestKey = listPane.newestMessageKey
@@ -1064,6 +1068,7 @@ fun ChatScreen(
     onClearHighlightMessage: () -> Unit = {},
     onConsumeTransientNotice: () -> Unit = {},
     onMessageListScrollInProgress: (Boolean) -> Unit = {},
+    onMessageListAtBottom: (Boolean) -> Unit = {},
     messageListKey: (ChatMessage) -> String = { msg ->
         msg._id?.trim()?.takeIf { it.isNotEmpty() } ?: chatMessageKey(msg)
     },
@@ -1190,6 +1195,7 @@ fun ChatScreen(
                 onClearHighlightMessage = onClearHighlightMessage,
                 onConsumeTransientNotice = onConsumeTransientNotice,
                 onMessageListScrollInProgress = onMessageListScrollInProgress,
+                onMessageListAtBottom = onMessageListAtBottom,
                 messageListKey = messageListKey,
                 onRequestClearRoomHistory = if (!overlayUi) {
                     { showClearRoomHistoryConfirm = true }
@@ -1592,6 +1598,7 @@ fun ChatScreen(
     onClearHighlightMessage: () -> Unit = {},
     onConsumeTransientNotice: () -> Unit = {},
     onMessageListScrollInProgress: (Boolean) -> Unit = {},
+    onMessageListAtBottom: (Boolean) -> Unit = {},
     messageListKey: (ChatMessage) -> String = { msg ->
         msg._id?.trim()?.takeIf { it.isNotEmpty() } ?: chatMessageKey(msg)
     },
@@ -1648,6 +1655,7 @@ fun ChatScreen(
     onClearHighlightMessage = onClearHighlightMessage,
     onConsumeTransientNotice = onConsumeTransientNotice,
     onMessageListScrollInProgress = onMessageListScrollInProgress,
+    onMessageListAtBottom = onMessageListAtBottom,
     messageListKey = messageListKey,
     compactOverlayMode = compactOverlayMode,
     onClearRoomHistory = onClearRoomHistory,

@@ -46,6 +46,12 @@ internal fun isMainAppRoomActivelyViewed(
     return isChatTabActive
 }
 
+/** Batch/incoming auto mark-read only when the user is at the bottom of the thread (Telegram). */
+internal fun shouldAutoMarkReadIncomingAtBottom(
+    isRoomActivelyViewed: Boolean,
+    messageListAtBottom: Boolean,
+): Boolean = isRoomActivelyViewed && messageListAtBottom
+
 /** Whether overlay panel counts as actively viewing the selected room for mark-read. */
 internal fun isOverlayRoomActivelyViewed(
     overlayChatTabActive: Boolean,

@@ -10,7 +10,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 internal const val MARK_READ_NETWORK_DEBOUNCE_MS = 800L
-internal const val OVERLAY_MARK_READ_NETWORK_DEBOUNCE_MS = 400L
 internal const val MARK_READ_FORCE_SYNC_MIN_INTERVAL_MS = 10_000L
 
 /**

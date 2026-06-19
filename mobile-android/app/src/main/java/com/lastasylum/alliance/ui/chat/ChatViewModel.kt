@@ -262,6 +262,9 @@ class ChatViewModel(
     internal var overlayChatPanelVisible = false
     @Volatile
     internal var lastOverlayVisibleMessageIds: List<String> = emptyList()
+    /** True when the message list is scrolled to the newest messages (reverse-chat bottom). */
+    @Volatile
+    internal var messageListAtBottom = true
     internal val bootstrapMutex = Mutex()
     internal var bootstrapJob: Job? = null
     internal var openRoomJob: Job? = null
@@ -1355,6 +1358,7 @@ class ChatViewModel(
         _state.value.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let { rid ->
             syncBundle.roomPagingSync.cancelBackgroundRefresh(rid)
         }
+        // Safety net: flush last viewport watermark and await coalescer before badge refresh.
         flushOverlayChatViewportMarkRead()
         lastOverlayVisibleMessageIds = emptyList()
         snapshotSelectedRoomToMessageCache()
@@ -1517,6 +1521,10 @@ class ChatViewModel(
         if (flush != null) {
             publishMessagesDerivedNow(flush)
         }
+    }
+
+    fun setMessageListAtBottom(atBottom: Boolean) {
+        messageListAtBottom = atBottom
     }
 
 

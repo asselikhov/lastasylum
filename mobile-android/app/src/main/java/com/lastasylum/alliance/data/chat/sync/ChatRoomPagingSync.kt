@@ -243,14 +243,6 @@ class ChatRoomPagingSync(
         }
         host.applyLoadedPageToUi(roomId, capped, hasMoreOlder)
         host.publishMessagesDerived(capped)
-        if (host.shouldAutoMarkReadSelectedRoom()) {
-            capped.firstOrNull()?._id?.let { newestId ->
-                val cursor = host.resolvedLastReadForRoom(roomId)?.trim().orEmpty()
-                if (cursor.isEmpty() || isObjectIdNewer(newestId, cursor)) {
-                    scope.launch { host.markRoomReadUpTo(roomId, newestId) }
-                }
-            }
-        }
         host.schedulePersistChatSnapshot()
     }
 

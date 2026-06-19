@@ -43,9 +43,15 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 internal fun ChatViewModel.shouldAutoMarkReadSelectedRoomImpl(): Boolean {
         val roomId = vmState.value.selectedRoomId ?: return false
-        // Overlay HUD: read cursor advances when the panel closes, not while browsing.
-        if (overlayChatPanelVisible) return false
         return isRoomActivelyViewed(roomId)
+    }
+
+internal fun ChatViewModel.shouldAutoMarkReadIncomingAtBottomImpl(): Boolean {
+        val roomId = vmState.value.selectedRoomId ?: return false
+        return shouldAutoMarkReadIncomingAtBottom(
+            isRoomActivelyViewed = isRoomActivelyViewed(roomId),
+            messageListAtBottom = messageListAtBottom,
+        )
     }
 
 internal fun ChatViewModel.flushOverlayChatViewportMarkReadImpl() {
@@ -61,15 +67,9 @@ internal fun ChatViewModel.markOverlayVisibleMessagesAsReadImpl(
         forceFlushOnClose: Boolean = false,
     ) {
         lastOverlayVisibleMessageIds = messageIds
-        if (!forceFlushOnClose) {
-            when {
-                overlayChatPanelVisible -> Unit
-                shouldAutoMarkReadSelectedRoom() -> Unit
-                else -> return
-            }
-        }
         val roomId = vmState.value.selectedRoomId?.trim().orEmpty()
         if (roomId.isEmpty()) return
+        if (!forceFlushOnClose && !isRoomActivelyViewed(roomId)) return
         val room = vmState.value.rooms.find { it.id == roomId } ?: return
         val lastRead = resolvedLastReadMessageId(room)?.trim().orEmpty()
         val markId = computeOverlayViewportReadWatermark(
@@ -129,7 +129,7 @@ internal fun ChatViewModel.scheduleMarkReadForVisibleIncomingImpl(message: ChatM
         val roomId = vmState.value.selectedRoomId?.trim().orEmpty()
         val messageId = message._id?.trim().orEmpty()
         if (roomId.isEmpty() || !isValidMarkReadMessageId(messageId)) return
-        if (!shouldAutoMarkReadSelectedRoom()) return
+        if (!shouldAutoMarkReadIncomingAtBottomImpl()) return
         if (message.senderId.trim() == currentUserId.trim()) return
         vmScope.launch {
             markRoomReadUpTo(roomId, messageId)
@@ -142,7 +142,7 @@ internal fun ChatViewModel.scheduleMarkReadAfterIncomingBatchImpl(
         cappedMessages: List<ChatMessage>,
     ) {
         val rid = roomId?.trim().orEmpty()
-        if (rid.isEmpty() || !shouldAutoMarkReadSelectedRoom()) return
+        if (rid.isEmpty() || !shouldAutoMarkReadIncomingAtBottomImpl()) return
         val markId = scopedBatch
             .mapNotNull { it._id?.trim() }
             .filter(::isValidMarkReadMessageId)
@@ -1064,11 +1064,7 @@ internal suspend fun ChatViewModel.markRoomReadUpToImpl(
             getCurrentCursor = { deviceLastReadMessageId(roomId) },
             onOptimisticAdvance = { rid, mid -> applyOptimisticMarkReadLocal(rid, mid) },
             onNetworkMarkRead = { rid, mid -> performNetworkMarkRead(rid, mid) },
-            debounceMs = if (overlayChatPanelVisible) {
-                OVERLAY_MARK_READ_NETWORK_DEBOUNCE_MS
-            } else {
-                MARK_READ_NETWORK_DEBOUNCE_MS
-            },
+            debounceMs = MARK_READ_NETWORK_DEBOUNCE_MS,
         )
     }
 
@@ -1100,9 +1096,11 @@ internal fun ChatViewModel.onRoomUnreadFromServerImpl(event: ChatRoomUnreadEvent
         if (roomId.isBlank()) return
         if (roomId == vmState.value.selectedRoomId && isRoomActivelyViewed(roomId)) {
             clearUnreadWhileActivelyViewing(roomId)
-            vmState.value.messages.firstOrNull()?._id?.let { newestId ->
-                if (isValidMarkReadMessageId(newestId)) {
-                    vmScope.launch { markRoomReadUpTo(roomId, newestId) }
+            if (shouldAutoMarkReadIncomingAtBottomImpl()) {
+                vmState.value.messages.firstOrNull()?._id?.let { newestId ->
+                    if (isValidMarkReadMessageId(newestId)) {
+                        vmScope.launch { markRoomReadUpTo(roomId, newestId) }
+                    }
                 }
             }
             return

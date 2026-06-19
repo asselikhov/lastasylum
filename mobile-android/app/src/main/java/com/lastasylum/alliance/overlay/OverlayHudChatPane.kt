@@ -33,6 +33,7 @@ internal fun OverlayHudChatPane(
         otherReadUptoMessageId = otherReadUptoMessageId,
         compactOverlayMode = false,
         onMessageListScrollInProgress = vm::setMessageListScrollInProgress,
+        onMessageListAtBottom = vm::setMessageListAtBottom,
         onSelectRoom = vm::selectRoom,
         onClearError = vm::clearError,
         onLoadOlder = vm::loadOlderMessages,

@@ -186,11 +186,6 @@ class ChatRoomOpenSync(
                     hasMoreOlder = cached.hasMoreOlder,
                     messagesAlreadyInState = messagesAlreadyInState,
                 )
-                if (host.shouldAutoMarkReadSelectedRoom()) {
-                    host.stateSnapshot().messages.firstOrNull()?._id?.let { newestId ->
-                        host.markRoomReadUpTo(rid, newestId)
-                    }
-                }
                 pagingSync.refreshMessagesInBackground(rid, force = true)
                 host.schedulePersistChatSnapshot()
                 return

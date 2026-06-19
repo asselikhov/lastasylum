@@ -495,6 +495,7 @@ fun AppNavigation(
                     onClearHighlightMessage = chatViewModel::clearHighlightMessage,
                     onConsumeTransientNotice = chatViewModel::consumeTransientNotice,
                     onMessageListScrollInProgress = chatViewModel::setMessageListScrollInProgress,
+                    onMessageListAtBottom = chatViewModel::setMessageListAtBottom,
                     messageListKey = chatViewModel::messageListCompositionKey,
                     onClearRoomHistory = chatViewModel::clearHistoryForSelectedRoom,
                     onMarkAllRoomsRead = chatViewModel::markAllRoomsReadUpToLatest,
