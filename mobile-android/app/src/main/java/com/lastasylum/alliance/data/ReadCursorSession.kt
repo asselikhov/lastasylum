@@ -66,8 +66,22 @@ object ReadCursorSession {
         withContext(Dispatchers.IO) {
             syncTeamNewsReadCursor(usersRepository, teamsRepository, userSettingsPreferences)
             val teamId = usersRepository.resolveMyProfilePreferCache()?.playerTeamId?.trim().orEmpty()
+            val userId = usersRepository.resolveMyProfilePreferCache()?.id?.trim().orEmpty()
             if (teamId.isNotEmpty()) {
                 TeamForumReadCursorSync.sync(teamsRepository, teamForumPreferences, teamId)
+                val newsAfter = userSettingsPreferences.getLastSeenTeamNewsCreatedAt(teamId)
+                teamsRepository.getTeamInboxBadges(teamId, newsAfter)
+                    .getOrNull()
+                    ?.newsUnread
+                    ?.let { apiNews ->
+                        InboxUnreadReconciler.repairNewsStaleUnread(
+                            teamsRepository = teamsRepository,
+                            userSettingsPreferences = userSettingsPreferences,
+                            teamId = teamId,
+                            currentUserId = userId,
+                            apiNewsUnread = apiNews,
+                        )
+                    }
             }
             InboxUnreadReconciler.repairChatStaleUnread(chatRepository, chatRoomPreferences)
             OverlayGameStatusHudRefresh.invalidateNewsForumCache()

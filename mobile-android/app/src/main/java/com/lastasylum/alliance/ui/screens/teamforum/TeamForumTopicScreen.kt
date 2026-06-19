@@ -85,6 +85,9 @@ import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.overlay.OverlayReactionLogJumpToUnreadFab
+import com.lastasylum.alliance.ui.chat.ChatSendFailure
+import com.lastasylum.alliance.ui.chat.ChatSendFailureBanner
+import com.lastasylum.alliance.ui.chat.ChatTypingIndicator
 import com.lastasylum.alliance.ui.chat.ACTIVE_FORUM_RECONCILE_INTERVAL_MS
 import com.lastasylum.alliance.ui.chat.OVERLAY_ACTIVE_FORUM_RECONCILE_INTERVAL_MS
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
@@ -123,7 +126,6 @@ import com.lastasylum.alliance.ui.chat.ensureForumPinnedMessageLoaded
 import com.lastasylum.alliance.ui.chat.jumpToForumPinnedMessage
 import com.lastasylum.alliance.ui.chat.mergeForumMessagesPage
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
-import com.lastasylum.alliance.ui.chat.queryDisplayName
 import com.lastasylum.alliance.ui.chat.removePendingForumOutgoing
 import com.lastasylum.alliance.ui.chat.replaceMatchingPendingForumOutgoing
 import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
@@ -264,16 +266,15 @@ fun TeamForumTopicScreen(
     var draft by remember { mutableStateOf("") }
     var pickedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var attachmentPreviewStartIndex by remember { mutableStateOf<Int?>(null) }
-    var pendingApkFileId by remember { mutableStateOf<String?>(null) }
-    var pendingApkLabel by remember { mutableStateOf<String?>(null) }
     var uploadingImage by remember { mutableStateOf(false) }
-    var uploadingFile by remember { mutableStateOf(false) }
     var downloadingForumFileUrl by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
     val forumSendMutex = remember { Mutex() }
     val forumLoadMutex = remember { Mutex() }
     var forumLoadJob by remember { mutableStateOf<Job?>(null) }
-    var typingHint by remember { mutableStateOf<String?>(null) }
+    var confirmDeleteForumMessageId by remember { mutableStateOf<String?>(null) }
+    var forumTypingPeers by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var forumSendFailure by remember { mutableStateOf<ChatSendFailure?>(null) }
     var knownForumMessageIds by remember(teamId, topicId) { mutableStateOf(setOf<String>()) }
     var inFlightForumClientMessageIds by remember { mutableStateOf(setOf<String>()) }
     var lastForumBackgroundSyncAtMs by remember(teamId, topicId) { mutableLongStateOf(0L) }
@@ -318,6 +319,7 @@ fun TeamForumTopicScreen(
     var lastReadCursor by remember { mutableStateOf<String?>(null) }
     var otherReadUptoMessageId by remember { mutableStateOf<String?>(null) }
     val otherReadUptoByTopic = remember { mutableMapOf<String, String>() }
+    var forumPeerReadPollJob by remember(teamId, topicId) { mutableStateOf<Job?>(null) }
 
     var editingForumMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var replyToMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
@@ -358,8 +360,6 @@ fun TeamForumTopicScreen(
     fun clearPendingAttachment() {
         pickedImageUris = emptyList()
         attachmentPreviewStartIndex = null
-        pendingApkFileId = null
-        pendingApkLabel = null
     }
 
     fun publishCoordinatorPinSnapshot() {
@@ -615,6 +615,30 @@ fun TeamForumTopicScreen(
         }
     }
 
+    fun scheduleForumPeerReadCursorPoll(sentMessageId: String) {
+        val sentId = sentMessageId.trim()
+        if (sentId.isEmpty() || isForumPendingId(sentId)) return
+        forumPeerReadPollJob?.cancel()
+        val baseline = otherReadUptoByTopic[topicId]
+        forumPeerReadPollJob = scope.launch {
+            delay(FORUM_PEER_READ_CURSOR_POLL_DELAY_MS)
+            val current = otherReadUptoByTopic[topicId]
+            if (current != null && isObjectIdNewer(current, baseline)) return@launch
+            if (current != null && isObjectIdNewer(current, sentId)) return@launch
+            forumRepository.getForumPeerReadCursor(teamId, topicId)
+                .onSuccess { peerUpto ->
+                    val published = ForumPeerReadCursorLogic.hydratePeerRead(
+                        otherReadUptoByTopic = otherReadUptoByTopic,
+                        topicId = topicId,
+                        peerUptoMessageId = peerUpto,
+                    )
+                    if (published != null) {
+                        otherReadUptoMessageId = published
+                    }
+                }
+        }
+    }
+
     fun scheduleMarkForumTopicRead(messageId: String) {
         val markReadDebounceMs = if (sectionActive) 0L else FORUM_MARK_READ_DEBOUNCE_MS
         forumMarkReadCoalescer.schedule(
@@ -671,29 +695,13 @@ fun TeamForumTopicScreen(
     }
 
     fun markVisibleForumMessages(lazyIndices: List<Int>) {
-        if (!overlayUi) return
-        val self = currentUserId.trim()
-        val lastRead = lastReadCursor?.trim().orEmpty()
-        var watermark: String? = null
-        for (lazyIdx in lazyIndices) {
-            val timelineIndex = listDerived.timeline.lastIndex - lazyIdx
-            val entry = listDerived.timeline.getOrNull(timelineIndex) ?: continue
-            val id = when (entry) {
-                is ForumTimelineEntry.Message -> entry.messageId
-                else -> continue
-            }
-            if (id.isBlank()) continue
-            if (self.isNotBlank()) {
-                val sender = stableMessages.find { it.id == id }?.senderUserId?.trim()
-                if (sender == self) continue
-            }
-            if (lastRead.isNotEmpty() && !isObjectIdNewer(id, lastRead)) continue
-            watermark = when (val prev = watermark) {
-                null -> id
-                else -> if (isObjectIdNewer(id, prev)) id else prev
-            }
-        }
-        val markId = watermark ?: return
+        val markId = ForumVisibleMarkReadLogic.readWatermarkFromVisibleLazyIndices(
+            lazyIndices = lazyIndices,
+            timeline = listDerived.timeline,
+            currentUserId = currentUserId,
+            lastReadCursor = lastReadCursor,
+            senderUserIdForMessageId = { id -> stableMessages.find { it.id == id }?.senderUserId },
+        ) ?: return
         scheduleMarkForumTopicRead(markId)
     }
 
@@ -713,36 +721,6 @@ fun TeamForumTopicScreen(
         if (deleted) return false
         return msg.senderUserId == currentUserId || canModerateMessages
     }
-
-    fun uploadPickedApk(uri: Uri, displayName: String) {
-        scope.launch {
-            uploadingFile = true
-            error = null
-            pendingApkLabel = displayName.trim().ifBlank { "update.apk" }
-            pickedImageUris = emptyList()
-            attachmentPreviewStartIndex = null
-            val result = uploadForumApkFromUri(context, res, forumRepository, teamId, uri, displayName)
-            uploadingFile = false
-            result.onSuccess { (fileId, label) ->
-                pendingApkFileId = fileId
-                pendingApkLabel = label
-            }
-            result.onFailure { e ->
-                pendingApkFileId = null
-                pendingApkLabel = null
-                error = e.toUserMessageRu(res)
-            }
-        }
-    }
-
-    val pickApkLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-        onResult = { uri ->
-            if (uri != null) {
-                uploadPickedApk(uri, queryDisplayName(context, uri))
-            }
-        },
-    )
 
     suspend fun loadOlderForumPage(): Boolean {
         if (!hasMoreOlder || loadingOlder) return false
@@ -998,17 +976,6 @@ fun TeamForumTopicScreen(
             }
     }
 
-    LaunchedEffect(stableMessages.lastOrNull()?.id, isNearBottom) {
-        if (!overlayUi && stableMessages.isNotEmpty() && isNearBottom) {
-            val newest = stableMessages.lastOrNull() ?: return@LaunchedEffect
-            if (newest.senderUserId.trim() == currentUserId.trim()) {
-                newest.id.trim().takeIf { it.isNotEmpty() && !isForumPendingId(it) }?.let { mergeReadCursor(it) }
-            } else {
-                markTopicReadToLatest()
-            }
-        }
-    }
-
     LaunchedEffect(teamId, topicId, sectionActive) {
         if (!sectionActive) return@LaunchedEffect
         forumLoadMutex.withLock {
@@ -1107,15 +1074,15 @@ fun TeamForumTopicScreen(
         }
     }
     val markVisibleForumRef = rememberUpdatedState(::markVisibleForumMessages)
-    LaunchedEffect(listState, overlayUi, teamId, topicId) {
-        if (!overlayUi) return@LaunchedEffect
+    LaunchedEffect(listState, sectionActive, teamId, topicId) {
+        if (!sectionActive) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
             .collect { indices ->
                 markVisibleForumRef.value(indices)
             }
     }
-    LaunchedEffect(overlayUi, teamId, topicId) {
-        if (!overlayUi) {
+    LaunchedEffect(overlayUi, sectionActive, teamId, topicId) {
+        if (!overlayUi || !sectionActive) {
             onRegisterOverlayFlush(null)
             return@LaunchedEffect
         }
@@ -1123,11 +1090,13 @@ fun TeamForumTopicScreen(
             forumMarkReadCoalescer.flushAndAwait(topicId)
         }
     }
-    DisposableEffect(overlayUi, teamId, topicId) {
+    DisposableEffect(sectionActive, teamId, topicId) {
         onDispose {
-            if (!overlayUi) return@onDispose
+            if (!sectionActive) return@onDispose
             scope.launch { forumMarkReadCoalescer.flushAndAwait(topicId) }
-            onRegisterOverlayFlush(null)
+            if (overlayUi) {
+                onRegisterOverlayFlush(null)
+            }
         }
     }
 
@@ -1209,10 +1178,10 @@ fun TeamForumTopicScreen(
         }
     }
 
-    LaunchedEffect(typingHint) {
-        val hint = typingHint ?: return@LaunchedEffect
+    LaunchedEffect(forumTypingPeers) {
+        if (forumTypingPeers.isEmpty()) return@LaunchedEffect
         delay(4000)
-        if (typingHint == hint) typingHint = null
+        forumTypingPeers = emptyMap()
     }
 
     LaunchedEffect(teamId, topicId, currentUserId, sectionActive) {
@@ -1240,7 +1209,10 @@ fun TeamForumTopicScreen(
             val onDeleted: (TeamForumMessageDeletedEvent) -> Unit = { applyDeleted(it) }
             val onTyping: (TeamForumTypingEvent) -> Unit = { ev ->
                 if (ev.userId != currentUserId) {
-                    typingHint = context.getString(R.string.team_forum_typing, ev.username)
+                    val name = ev.username.trim()
+                    if (name.isNotEmpty()) {
+                        forumTypingPeers = forumTypingPeers + (ev.userId to name)
+                    }
                 }
             }
             val onPin: (TeamForumTopicPinChangedEvent) -> Unit = { applyTopicPin(it) }
@@ -1280,11 +1252,7 @@ fun TeamForumTopicScreen(
                     BuildConfig.API_BASE_URL,
                     teamId,
                 ) { tokenStore.getAccessToken() }
-                if (overlayUi) {
-                    scope.launch { forumMarkReadCoalescer.flushAndAwait(topicId) }
-                } else {
-                    markTopicReadToLatest(forceSync = true)
-                }
+                scope.launch { forumMarkReadCoalescer.flushAndAwait(topicId) }
                 forumSocket.removeMessageListener(onNew)
                 forumSocket.removeMessageEditedListener(onEdited)
                 forumSocket.removeMessageDeletedListener(onDeleted)
@@ -1308,20 +1276,14 @@ fun TeamForumTopicScreen(
     ) {
     Column(Modifier.fillMaxSize()) {
         error?.let { err ->
-            Text(
-                err,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-            )
-        }
-        typingHint?.let { hint ->
-            Text(
-                hint,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
-            )
+            if (forumSendFailure?.errorMessage != err) {
+                Text(
+                    err,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                )
+            }
         }
         pinNotice?.let { notice ->
             Text(
@@ -1626,6 +1588,13 @@ fun TeamForumTopicScreen(
                             .zIndex(6f),
                     )
                 }
+                ChatTypingIndicator(
+                    typingPeers = forumTypingPeers,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 12.dp, bottom = 12.dp)
+                        .zIndex(3f),
+                )
                 ChatScrollToLatestFab(
                     visible = showScrollToLatestFab,
                     newMessageCount = newMessagesWhileScrolledUp,
@@ -1651,14 +1620,27 @@ fun TeamForumTopicScreen(
             editingForumMessage?.toDisplayChatMessage(teamId, topicId)
         }
         ChatComposerBar {
+        forumSendFailure?.let { failure ->
+            ChatSendFailureBanner(
+                failure = failure,
+                onDismiss = { forumSendFailure = null },
+                onRetry = {
+                    draft = failure.messageText
+                    replyToMessage = failure.replyToMessageId?.let { replyId ->
+                        stableMessages.find { it.id == replyId }
+                    }
+                    forumSendFailure = null
+                },
+            )
+        }
         ChatComposer(
             draft = draft,
             pickedImageUris = pickedImageUris,
             replyToMessage = forumReplyChat,
             editingMessage = forumEditingChat,
             isSending = sending,
-            sendEnabled = !sending && !uploadingImage && !uploadingFile,
-            readOnly = uploadingImage || uploadingFile,
+            sendEnabled = !sending && !uploadingImage,
+            readOnly = uploadingImage,
             enabledStickerPackKeys = enabledStickerPackKeys,
             onDraftChange = {
                 draft = it
@@ -1693,14 +1675,14 @@ fun TeamForumTopicScreen(
                         }
                         val trimmed = draft.trim()
                         val urisToUpload = pickedImageUris.toList()
-                        val apkFileId = pendingApkFileId
-                        if (trimmed.isEmpty() && urisToUpload.isEmpty() && apkFileId == null) {
+                        if (trimmed.isEmpty() && urisToUpload.isEmpty()) {
                             return@withLock
                         }
-                        if (uploadingImage || uploadingFile || sending) return@withLock
+                        if (uploadingImage || sending) return@withLock
                         sending = true
                         val clientMessageId = UUID.randomUUID().toString()
                         val replyId = replyToMessage?.id
+                        val savedReply = replyToMessage
                         val nowIso = Instant.now().toString()
                         val optimistic = buildOptimisticForumMessage(
                             teamId = teamId,
@@ -1736,7 +1718,13 @@ fun TeamForumTopicScreen(
                                         inFlightForumClientMessageIds =
                                             inFlightForumClientMessageIds - clientMessageId
                                         bumpMessagesGeneration()
-                                        error = e.toUserMessageRu(res)
+                                        draft = trimmed
+                                        replyToMessage = savedReply
+                                        forumSendFailure = ChatSendFailure(
+                                            messageText = trimmed,
+                                            replyToMessageId = replyId,
+                                            errorMessage = e.toUserMessageRu(res),
+                                        )
                                         return@launch
                                     }
                                 uploadingImage = false
@@ -1750,7 +1738,7 @@ fun TeamForumTopicScreen(
                                 text = trimmed,
                                 replyToMessageId = replyId,
                                 imageFileIds = imageFileIds,
-                                fileFileId = apkFileId,
+                                fileFileId = null,
                                 state = "pending",
                                 attempts = 0,
                                 createdAtMs = System.currentTimeMillis(),
@@ -1765,12 +1753,12 @@ fun TeamForumTopicScreen(
                                 replyToMessageId = replyId,
                                 imageFileId = null,
                                 imageFileIds = imageFileIds,
-                                fileFileId = apkFileId,
                                 clientMessageId = clientMessageId,
                             )
                                 .onSuccess {
                                     topicViewModel.markOutboxSent(clientMessageId)
                                     mergeNew(it, source = "http")
+                                    scheduleForumPeerReadCursorPoll(it.id)
                                 }
                                 .onFailure { e ->
                                     topicViewModel.markOutboxFailed(
@@ -1782,7 +1770,13 @@ fun TeamForumTopicScreen(
                                     inFlightForumClientMessageIds =
                                         inFlightForumClientMessageIds - clientMessageId
                                     bumpMessagesGeneration()
-                                    error = e.toUserMessageRu(res)
+                                    draft = trimmed
+                                    replyToMessage = savedReply
+                                    forumSendFailure = ChatSendFailure(
+                                        messageText = trimmed,
+                                        replyToMessageId = replyId,
+                                        errorMessage = e.toUserMessageRu(res),
+                                    )
                                 }
                         }
                     }
@@ -1841,6 +1835,7 @@ fun TeamForumTopicScreen(
                                 .onSuccess {
                                     topicViewModel.markOutboxSent(clientMessageId)
                                     mergeNew(it, source = "http")
+                                    scheduleForumPeerReadCursorPoll(it.id)
                                 }
                                 .onFailure { e ->
                                     topicViewModel.markOutboxFailed(
@@ -1852,7 +1847,11 @@ fun TeamForumTopicScreen(
                                     inFlightForumClientMessageIds =
                                         inFlightForumClientMessageIds - clientMessageId
                                     bumpMessagesGeneration()
-                                    error = e.toUserMessageRu(res)
+                                    forumSendFailure = ChatSendFailure(
+                                        messageText = payload,
+                                        replyToMessageId = replyId,
+                                        errorMessage = e.toUserMessageRu(res),
+                                    )
                                 }
                         }
                     }
@@ -1879,11 +1878,7 @@ fun TeamForumTopicScreen(
                 draft = ""
             },
             onOpenAttachmentPreview = { idx -> attachmentPreviewStartIndex = idx },
-            pendingApkLabel = pendingApkLabel,
-            onClearPendingApk = { clearPendingAttachment() },
             onPickApk = null,
-            hasReadyFileAttachment = !pendingApkFileId.isNullOrBlank(),
-            isUploadingFile = uploadingFile,
         )
         }
     }
@@ -1971,6 +1966,7 @@ fun TeamForumTopicScreen(
                         msg.imageRelativeUrls.isNotEmpty() ||
                         !msg.imageRelativeUrl.isNullOrBlank()
                     )
+            val menuCanDelete = canDeleteForumMessage(msg)
             val menuScope: @Composable () -> Unit = {
                 Box(Modifier.fillMaxSize().zIndex(6f)) {
                     MessageContextMenuScrim(onDismiss = dismissMessageActions)
@@ -1981,6 +1977,8 @@ fun TeamForumTopicScreen(
                         isPinned = isTopicPinnedMessage,
                         pinActionsEnabled = !pinCoordinator.pinInFlight,
                         mayEdit = menuMayEdit,
+                        canForward = msg.deletedAt.isNullOrBlank(),
+                        canDelete = menuCanDelete,
                         hasImages = menuHasImages,
                         hasMapCoordinate = menuHasMapCoordinate,
                         onDismiss = dismissMessageActions,
@@ -2049,6 +2047,18 @@ fun TeamForumTopicScreen(
                                 com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, msg.text)
                                 dismissMessageActions()
                             },
+                            onForward = {
+                                scope.launch {
+                                    forumRepository.forwardForumMessage(teamId, topicId, msg.id)
+                                        .onSuccess { forwarded ->
+                                            mergeNew(forwarded, source = "http")
+                                        }
+                                        .onFailure { e -> error = e.toUserMessageRu(res) }
+                                }
+                            },
+                            onDelete = {
+                                confirmDeleteForumMessageId = msg.id
+                            },
                         ),
                     )
                 }
@@ -2060,6 +2070,41 @@ fun TeamForumTopicScreen(
             } else {
                 menuScope()
             }
+        }
+    }
+
+    confirmDeleteForumMessageId?.let { deleteId ->
+        OverlayModalScope(preparedByCaller = true) {
+            OverlayAwareAlertDialog(
+                onDismissRequest = { confirmDeleteForumMessageId = null },
+                title = { Text(stringResource(R.string.chat_delete_title)) },
+                text = { Text(stringResource(R.string.chat_delete_body)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                forumRepository.deleteForumMessage(teamId, topicId, deleteId)
+                                    .onSuccess {
+                                        removeMessage(deleteId)
+                                        pinCoordinator.clearPinIfMessageDeleted(deleteId, stableMessages)
+                                    }
+                                    .onFailure { e -> error = e.toUserMessageRu(res) }
+                                confirmDeleteForumMessageId = null
+                            }
+                        },
+                    ) {
+                        Text(
+                            stringResource(R.string.chat_delete_confirm),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmDeleteForumMessageId = null }) {
+                        Text(stringResource(R.string.chat_delete_cancel))
+                    }
+                },
+            )
         }
     }
 
@@ -2177,42 +2222,6 @@ private suspend fun uploadSingleForumImageFromUri(
             return@withContext Result.failure(err)
         }
         Result.success(uploaded.fileId to uploaded.url)
-    } finally {
-        runCatching { tmp.delete() }
-    }
-}
-
-private suspend fun uploadForumApkFromUri(
-    context: android.content.Context,
-    res: android.content.res.Resources,
-    forumRepository: ForumRepository,
-    teamId: String,
-    uri: Uri,
-    displayName: String,
-): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
-    val cr = context.contentResolver
-    val safeName = displayName.trim().let { n ->
-        if (n.endsWith(".apk", ignoreCase = true)) n else "$n.apk"
-    }
-    val tmp = File.createTempFile("forum_apk_${UUID.randomUUID()}", ".apk", context.cacheDir)
-    try {
-        val input = openUriInputStream(cr, uri)
-            ?: return@withContext Result.failure(
-                IllegalStateException(res.getString(R.string.chat_attachment_read_failed)),
-            )
-        input.use { inp -> tmp.outputStream().use { out -> inp.copyTo(out) } }
-        if (tmp.length() == 0L) {
-            return@withContext Result.failure(
-                IllegalStateException(res.getString(R.string.chat_attachment_prepare_failed)),
-            )
-        }
-        val uploaded = forumRepository.uploadForumFileFromFile(
-            teamId = teamId,
-            file = tmp,
-            fileName = safeName,
-            mimeType = "application/vnd.android.package-archive",
-        ).getOrElse { return@withContext Result.failure(it) }
-        Result.success(uploaded.fileId to safeName)
     } finally {
         runCatching { tmp.delete() }
     }

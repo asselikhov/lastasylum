@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Forward
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Place
@@ -45,6 +47,8 @@ data class MessageContextMenuActions(
     val onPin: (() -> Unit)? = null,
     val onUnpin: (() -> Unit)? = null,
     val onEdit: (() -> Unit)? = null,
+    val onForward: (() -> Unit)? = null,
+    val onDelete: (() -> Unit)? = null,
     val onReact: (String) -> Unit,
     val onViewImages: (() -> Unit)? = null,
     val onSaveToGallery: (() -> Unit)? = null,
@@ -59,6 +63,8 @@ fun MessageContextMenuPopup(
     isPinned: Boolean,
     pinActionsEnabled: Boolean,
     mayEdit: Boolean,
+    canForward: Boolean = false,
+    canDelete: Boolean = false,
     hasImages: Boolean,
     hasMapCoordinate: Boolean,
     onDismiss: () -> Unit,
@@ -108,6 +114,18 @@ fun MessageContextMenuPopup(
                                 labelColor = ContextMenuLabelColor,
                                 onClick = {
                                     actions.onCopy()
+                                    onDismiss()
+                                },
+                            )
+                        }
+                        if (canForward) {
+                            MessageSheetActionRow(
+                                icon = Icons.AutoMirrored.Outlined.Forward,
+                                label = stringResource(R.string.chat_action_forward),
+                                iconTint = ContextMenuIconTint,
+                                labelColor = ContextMenuLabelColor,
+                                onClick = {
+                                    actions.onForward?.invoke()
                                     onDismiss()
                                 },
                             )
@@ -180,6 +198,18 @@ fun MessageContextMenuPopup(
                                 labelColor = ContextMenuLabelColor,
                                 onClick = {
                                     actions.onGoToMap?.invoke()
+                                    onDismiss()
+                                },
+                            )
+                        }
+                        if (canDelete) {
+                            MessageSheetActionRow(
+                                icon = Icons.Outlined.DeleteOutline,
+                                label = stringResource(R.string.chat_action_delete),
+                                iconTint = Color(0xFFE57373),
+                                labelColor = Color(0xFFE57373),
+                                onClick = {
+                                    actions.onDelete?.invoke()
                                     onDismiss()
                                 },
                             )

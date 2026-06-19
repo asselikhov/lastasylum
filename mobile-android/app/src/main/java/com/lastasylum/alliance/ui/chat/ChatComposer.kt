@@ -635,6 +635,7 @@ internal fun ChatComposer(
                     ComposerPasteChipRow(
                         state = pasteState,
                         canHandleBack = canHandleBack,
+                        contentStartPadding = if (hasStickerPacks) 48.dp else 8.dp,
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -832,7 +833,12 @@ internal fun ChatComposer(
                                         onSendDraft()
                                     },
                                     enabled = sendButtonEnabled || isSending,
-                                    modifier = Modifier.size(44.dp),
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .composerLongPressPaste(
+                                            enabled = !composerLocked,
+                                            onLongPress = pasteState.onLongPress,
+                                        ),
                                 ) {
                                     if (isSending) {
                                         CircularProgressIndicator(

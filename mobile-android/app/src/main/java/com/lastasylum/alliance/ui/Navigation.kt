@@ -473,6 +473,7 @@ fun AppNavigation(
                     onOpenMessageActions = chatViewModel::openMessageActions,
                     onDismissMessageActions = chatViewModel::dismissMessageActions,
                     onRequestDeleteMessage = chatViewModel::requestDeleteMessage,
+                    onForwardMessage = chatViewModel::forwardMessage,
                     onDismissDeleteMessage = chatViewModel::dismissDeleteMessage,
                     onConfirmDeleteMessage = chatViewModel::confirmDeleteMessage,
                     onBeginMessageSelection = chatViewModel::beginMessageSelection,

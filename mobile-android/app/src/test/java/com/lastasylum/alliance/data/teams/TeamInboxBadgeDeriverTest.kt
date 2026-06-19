@@ -51,6 +51,18 @@ class TeamInboxBadgeDeriverTest {
     }
 
     @Test
+    fun resolveNewsUnread_matchesForumMergePolicy() {
+        assertEquals(
+            0,
+            TeamInboxBadgeDeriver.resolveNewsUnread(clientUnread = 0, apiUnread = 3),
+        )
+        assertEquals(
+            5,
+            TeamInboxBadgeDeriver.resolveNewsUnread(clientUnread = 2, apiUnread = 5),
+        )
+    }
+
+    @Test
     fun mergeForDisplay_usesEffectiveWhenPositive() {
         assertEquals(
             4,

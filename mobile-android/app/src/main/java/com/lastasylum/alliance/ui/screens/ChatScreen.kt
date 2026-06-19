@@ -180,6 +180,13 @@ import com.lastasylum.alliance.data.chat.isChatImage
 import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
+import com.lastasylum.alliance.ui.chat.ChatSendFailureBanner
+import com.lastasylum.alliance.ui.chat.downloadAndInstallChatApk
+import com.lastasylum.alliance.ui.chat.PinnedMessageBubbleHeader
+import com.lastasylum.alliance.ui.chat.pinnedBubbleBackground
+import com.lastasylum.alliance.ui.chat.pinnedBubbleBorder
+import com.lastasylum.alliance.ui.chat.pinnedMessageAccentBar
+import com.lastasylum.alliance.ui.chat.pinnedMessageClusterTopExtra
 import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.ChatListPaneState
 import com.lastasylum.alliance.ui.chat.ChatChromePaneState
@@ -401,6 +408,8 @@ private fun ChatScreenMessagesHost(
     onUnpinOnePinned: (String) -> Unit = {},
     onDismissPinBar: () -> Unit = {},
     onRestorePinBar: () -> Unit = {},
+    downloadingChatFileUrl: String? = null,
+    onDownloadChatFile: (ChatMessage) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -869,6 +878,8 @@ private fun ChatScreenMessagesHost(
                     onToggleMessageSelection = onToggleMessageSelection,
                     messageListKey = messageListKey,
                     pinnedMessageIds = pinnedMessageIds,
+                    downloadingFileUrl = downloadingChatFileUrl,
+                    onFileDownload = onDownloadChatFile,
                 )
                 ChatTypingIndicator(
                     typingPeers = typingPeers,
@@ -941,44 +952,11 @@ private fun ChatScreenComposerSection(
     } != false
     ChatComposerBar {
         composerPane.sendFailure?.let { failure ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
-                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = SquadRelayDimens.contentPaddingHorizontal,
-                            vertical = SquadRelayDimens.itemGap,
-                        ),
-                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-                ) {
-                    Text(
-                        text = stringResource(R.string.chat_send_failed_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    Text(
-                        text = failure.errorMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TextButton(onClick = onDismissSendFailure) {
-                            Text(stringResource(R.string.chat_send_failed_dismiss))
-                        }
-                        TextButton(onClick = onRetrySendFailure) {
-                            Text(stringResource(R.string.chat_send_failed_retry))
-                        }
-                    }
-                }
-            }
+            ChatSendFailureBanner(
+                failure = failure,
+                onDismiss = onDismissSendFailure,
+                onRetry = onRetrySendFailure,
+            )
         }
 
         if (globalComposerLocked) {
@@ -1068,6 +1046,7 @@ fun ChatScreen(
     onOpenMessageActions: (String) -> Unit,
     onDismissMessageActions: () -> Unit,
     onRequestDeleteMessage: (String) -> Unit,
+    onForwardMessage: (String) -> Unit,
     onDismissDeleteMessage: () -> Unit,
     onConfirmDeleteMessage: () -> Unit,
     onBeginMessageSelection: (String) -> Unit,
@@ -1132,6 +1111,7 @@ fun ChatScreen(
         findChatMessage(listPane.messages, chromePane.confirmDeleteMessageId)
     }
     val inSelectionMode = listPane.selectedMessageIds.isNotEmpty()
+    var downloadingChatFileUrl by remember { mutableStateOf<String?>(null) }
 
     var remoteChatImagePreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     var attachmentPreviewStartIndex by remember { mutableStateOf<Int?>(null) }
@@ -1236,6 +1216,25 @@ fun ChatScreen(
                 onUnpinOnePinned = onUnpinOnePinned,
                 onDismissPinBar = onDismissPinBar,
                 onRestorePinBar = onRestorePinBar,
+                downloadingChatFileUrl = downloadingChatFileUrl,
+                onDownloadChatFile = { message ->
+                    val att = message.attachments.firstOrNull { att ->
+                        att.url.isNotBlank() && !att.isChatImage()
+                    } ?: return@ChatScreenMessagesHost
+                    if (downloadingChatFileUrl != null) return@ChatScreenMessagesHost
+                    downloadingChatFileUrl = att.url.trim()
+                    scope.launch {
+                        downloadAndInstallChatApk(context, att)
+                            .onFailure { e ->
+                                Toast.makeText(
+                                    context.applicationContext,
+                                    e.message ?: context.getString(R.string.chat_apk_download_failed),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        downloadingChatFileUrl = null
+                    }
+                },
             )
             ChatScreenComposerSection(
                 composerPane = composerPane,
@@ -1302,6 +1301,8 @@ fun ChatScreen(
                             message.deletedAt == null &&
                             menuCanModerate &&
                             message.text.isNotBlank(),
+                        canForward = message._id != null && message.deletedAt == null,
+                        canDelete = menuCanModerate && message.deletedAt == null,
                         hasImages = menuHasImages,
                         hasMapCoordinate = menuHasMapCoordinate,
                         onDismiss = dismissMessageActions,
@@ -1371,6 +1372,12 @@ fun ChatScreen(
                             onGoToMap = {
                                 com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, message.text)
                                 dismissMessageActions()
+                            },
+                            onForward = {
+                                message._id?.let(onForwardMessage)
+                            },
+                            onDelete = {
+                                message._id?.let(onRequestDeleteMessage)
                             },
                         ),
                     )
@@ -1569,6 +1576,7 @@ fun ChatScreen(
     onOpenMessageActions: (String) -> Unit,
     onDismissMessageActions: () -> Unit,
     onRequestDeleteMessage: (String) -> Unit,
+    onForwardMessage: (String) -> Unit,
     onDismissDeleteMessage: () -> Unit,
     onConfirmDeleteMessage: () -> Unit,
     onBeginMessageSelection: (String) -> Unit,
@@ -1624,6 +1632,7 @@ fun ChatScreen(
     onOpenMessageActions = onOpenMessageActions,
     onDismissMessageActions = onDismissMessageActions,
     onRequestDeleteMessage = onRequestDeleteMessage,
+    onForwardMessage = onForwardMessage,
     onDismissDeleteMessage = onDismissDeleteMessage,
     onConfirmDeleteMessage = onConfirmDeleteMessage,
     onBeginMessageSelection = onBeginMessageSelection,
@@ -1794,6 +1803,8 @@ private fun ChatMessagesLazyList(
     onToggleMessageSelection: (String) -> Unit,
     messageListKey: (ChatMessage) -> String,
     pinnedMessageIds: Set<String> = emptySet(),
+    downloadingFileUrl: String? = null,
+    onFileDownload: (ChatMessage) -> Unit = {},
 ) {
     val overlayUi = LocalOverlayUiMode.current
     val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
@@ -2005,6 +2016,8 @@ private fun ChatMessagesLazyList(
                                 onToggleSelection = onToggleSelectionRef.value,
                                 onSwipeReply = onReplyRef.value,
                                 onJumpToQuotedMessage = onJumpRef.value,
+                                onFileDownload = onFileDownload,
+                                downloadingFileUrl = downloadingFileUrl,
                             )
                         }
                         is ChatTimelineEntry.ChatAlbumItem -> {
@@ -2200,6 +2213,8 @@ private fun ChatBubbleInnerColumn(
     inMessageList: Boolean = false,
     overlayUi: Boolean = false,
     onImageGridTap: ((Int) -> Unit)? = null,
+    showPinnedHeader: Boolean = false,
+    pinnedAccentColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     val openRemoteChatImagePreview = LocalOpenRemoteChatImagePreview.current
     val bubblePadH = ChatMessengerStyle.bubbleHorizontalPadding(stickerStem)
@@ -2224,6 +2239,9 @@ private fun ChatBubbleInnerColumn(
             .then(swipeModifier),
         verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
     ) {
+        if (showPinnedHeader) {
+            PinnedMessageBubbleHeader(accentColor = pinnedAccentColor)
+        }
         message.forwardedFrom?.let { fwd ->
             val sender = chatSenderDisplayWithTag(fwd.senderTeamTag, fwd.senderUsername, fwd.senderServerNumber)
             Text(
@@ -2885,10 +2903,15 @@ internal fun ChatMessageBubble(
     val senderAccent = roleAccentColor(message.senderRole)
     val scheme = MaterialTheme.colorScheme
     val highlightTint = scheme.primary.copy(alpha = 0.35f)
-    val bubbleBg = ChatMessengerStyle.bubbleBackground(isMine, selectionHighlight, highlightTint)
+    val baseBubbleBg = ChatMessengerStyle.bubbleBackground(isMine, selectionHighlight, highlightTint)
+    val bubbleBg = if (showPinnedMarker) {
+        pinnedBubbleBackground(baseBubbleBg, scheme.primary)
+    } else {
+        baseBubbleBg
+    }
     val onBubble = ChatMessengerStyle.bubbleContentColor(isMine)
     val timeMuted = ChatMessengerStyle.timeMutedColor(isMine)
-    val bubbleBorder = BorderStroke(
+    val defaultBubbleBorder = BorderStroke(
         1.dp,
         ChatMessengerStyle.bubbleBorderColor(
             isMine = isMine,
@@ -2896,15 +2919,20 @@ internal fun ChatMessageBubble(
             highlightBorder = scheme.primary.copy(alpha = 0.55f),
         ),
     )
+    val bubbleBorder = if (showPinnedMarker) {
+        pinnedBubbleBorder(defaultBubbleBorder, scheme.primary, selectionHighlight)
+    } else {
+        defaultBubbleBorder
+    }
     val pinMarkerModifier = if (showPinnedMarker) {
-        Modifier.drawBehind {
-            drawRect(
-                color = scheme.primary.copy(alpha = 0.85f),
-                size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height),
-            )
-        }
+        Modifier.pinnedMessageAccentBar(scheme.primary)
     } else {
         Modifier
+    }
+    val effectiveClusterTopSpacing = if (showPinnedMarker) {
+        clusterTopSpacing + pinnedMessageClusterTopExtra()
+    } else {
+        clusterTopSpacing
     }
     val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
     val displayName = message.senderUsername.trim().ifBlank { senderLine }
@@ -3023,7 +3051,7 @@ internal fun ChatMessageBubble(
     ) {
         ChatMessageBubbleRow(
             isMine = isMine,
-            clusterTopSpacing = clusterTopSpacing,
+            clusterTopSpacing = effectiveClusterTopSpacing,
             inSelectionMode = inSelectionMode,
             canDelete = canDelete,
             bubbleWidthFraction = ChatMessengerStyle.bubbleWidthFraction,
@@ -3268,6 +3296,8 @@ internal fun ChatMessageBubble(
                             inMessageList = inMessageList,
                             overlayUi = overlayUi,
                             onImageGridTap = imageGridTap,
+                            showPinnedHeader = showPinnedMarker,
+                            pinnedAccentColor = scheme.primary,
                         )
                     }
                     if (onReactionChip != null) {

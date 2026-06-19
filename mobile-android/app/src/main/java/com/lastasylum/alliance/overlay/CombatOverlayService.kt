@@ -2916,6 +2916,8 @@ class CombatOverlayService : Service() {
             .teamForumPreferences
             .getLastReadMessageId(teamId, topicId)
         if (!isObjectIdNewer(messageId, localLast)) return false
+        val activeTopic = AppContainer.from(this).teamForumSocket.activeSubscribedTopicId()?.trim().orEmpty()
+        if (activeTopic.isNotEmpty() && activeTopic == topicId) return false
         if (overlayChatTeamPanelVisible && currentOverlayHudPane == OverlayHudPane.Forum) {
             return false
         }

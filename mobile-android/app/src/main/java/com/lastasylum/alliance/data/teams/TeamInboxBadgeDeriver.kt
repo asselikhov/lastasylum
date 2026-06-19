@@ -28,6 +28,12 @@ object TeamInboxBadgeDeriver {
         }
     }
 
+    /** Same merge policy as forum: local cursor at zero suppresses stale API unread. */
+    fun resolveNewsUnread(
+        clientUnread: Int?,
+        apiUnread: Int?,
+    ): Int = resolveForumUnread(clientUnread, apiUnread)
+
     fun computeForumRawUnread(topics: List<TeamForumTopicDto>): Int =
         topics.sumOf { it.unreadCount.coerceAtLeast(0) }
 

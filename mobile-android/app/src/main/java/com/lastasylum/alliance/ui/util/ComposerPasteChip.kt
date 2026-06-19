@@ -3,6 +3,12 @@ package com.lastasylum.alliance.ui.util
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,8 +26,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
+
+private val PasteChipFadeAnim = tween<Float>(durationMillis = 180)
+private val PasteChipSlideAnim = tween<IntOffset>(durationMillis = 180)
 
 @Composable
 fun rememberComposerPasteState(
@@ -69,32 +80,44 @@ fun ComposerPasteChipRow(
     state: ComposerPasteState,
     canHandleBack: Boolean,
     modifier: Modifier = Modifier,
+    contentStartPadding: androidx.compose.ui.unit.Dp = 48.dp,
 ) {
     if (canHandleBack) {
         BackHandler(enabled = state.showMenu) {
             state.onDismissMenu()
         }
     }
-    AnimatedVisibility(visible = state.showMenu) {
+    AnimatedVisibility(
+        visible = state.showMenu,
+        enter = slideInVertically(
+            animationSpec = PasteChipSlideAnim,
+            initialOffsetY = { it / 2 },
+        ) + fadeIn(PasteChipFadeAnim),
+        exit = slideOutVertically(
+            animationSpec = PasteChipSlideAnim,
+            targetOffsetY = { it / 2 },
+        ) + fadeOut(PasteChipFadeAnim),
+    ) {
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(bottom = 6.dp),
-            contentAlignment = Alignment.Center,
+                .padding(start = contentStartPadding, bottom = 6.dp, end = 8.dp),
+            contentAlignment = Alignment.CenterStart,
         ) {
             Surface(
                 onClick = state.onPaste,
                 enabled = state.hasClipboard,
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.inverseSurface,
-                shadowElevation = 4.dp,
+                shape = RoundedCornerShape(12.dp),
+                color = SquadRelaySurfaces.panelColor(0.94f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)),
+                shadowElevation = 6.dp,
                 tonalElevation = 0.dp,
             ) {
                 Text(
                     text = stringResource(R.string.chat_composer_paste_label),
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.inverseOnSurface.copy(
+                    color = MaterialTheme.colorScheme.onSurface.copy(
                         alpha = if (state.hasClipboard) 1f else 0.45f,
                     ),
                 )

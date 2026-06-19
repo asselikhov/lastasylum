@@ -50,6 +50,7 @@ internal fun OverlayHudChatPane(
             OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
         },
         onRequestDeleteMessage = vm::requestDeleteMessage,
+        onForwardMessage = vm::forwardMessage,
         onDismissDeleteMessage = vm::dismissDeleteMessage,
         onConfirmDeleteMessage = vm::confirmDeleteMessage,
         onBeginMessageSelection = vm::beginMessageSelection,

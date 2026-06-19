@@ -3,25 +3,14 @@ package com.lastasylum.alliance.data
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
+import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.teams.TeamsRepository
 
 /** Reinstall-safe repair for stale server unread counts and forum/chat read cursors. */
 object InboxUnreadReconciler {
-    fun hydrateForumPrefsFromTopics(
-        forumPrefs: TeamForumPreferences,
-        teamId: String,
-        topics: List<TeamForumTopicDto>,
-    ) {
-        val tid = teamId.trim()
-        if (tid.isEmpty()) return
-        topics.forEach { topic ->
-            val serverLast = topic.lastReadMessageId?.trim()?.takeIf { it.isNotBlank() } ?: return@forEach
-            mergeForumReadCursor(forumPrefs, tid, topic.id, serverLast)
-        }
-    }
-
     suspend fun repairForumStaleUnread(
         teamsRepository: TeamsRepository,
         forumPrefs: TeamForumPreferences,
@@ -49,6 +38,34 @@ object InboxUnreadReconciler {
                 }
             }
         }
+    }
+
+    /** When local news cursor proves read but server badge is still stale, re-POST cursor. */
+    suspend fun repairNewsStaleUnread(
+        teamsRepository: TeamsRepository,
+        userSettingsPreferences: UserSettingsPreferences,
+        teamId: String,
+        currentUserId: String,
+        apiNewsUnread: Int,
+    ) {
+        if (apiNewsUnread <= 0) return
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
+        val localIso = userSettingsPreferences.getLastSeenTeamNewsCreatedAt(tid)?.trim().orEmpty()
+        if (localIso.isEmpty()) return
+        val clientUnread = teamsRepository.listTeamNews(tid, cursor = null, limit = 40)
+            .getOrNull()
+            ?.items
+            ?.let { items ->
+                TeamInboxUnread.countUnreadNews(
+                    items = items,
+                    prefs = userSettingsPreferences,
+                    teamId = tid,
+                    currentUserId = currentUserId,
+                )
+            } ?: return
+        if (clientUnread > 0) return
+        teamsRepository.advanceTeamNewsReadCursor(tid, localIso)
     }
 
     suspend fun repairChatStaleUnread(

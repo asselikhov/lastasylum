@@ -122,12 +122,14 @@ class OverlayInboxBadgeCoordinator {
         val newsAfter = prefs.getLastSeenTeamNewsCreatedAt(teamId)
         val badges = container.teamsRepository.getTeamInboxBadges(teamId, newsAfter).getOrNull()
         val fromApi = badges?.newsUnread?.coerceAtLeast(0)
-        if (fromApi != null) return@withContext fromApi
-        container.teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
+        val clientUnread = container.teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
             .getOrNull()
             ?.items
             ?.let { TeamInboxUnread.countUnreadNews(it, prefs, teamId, currentUserId) }
-            ?: 0
+        return@withContext TeamInboxBadgeDeriver.resolveNewsUnread(
+            clientUnread = clientUnread,
+            apiUnread = fromApi,
+        )
     }
 
     suspend fun fetchForumUnread(

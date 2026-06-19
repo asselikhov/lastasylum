@@ -202,6 +202,9 @@ class TeamViewModel(
                         cachedTopics?.let { Result.success(it) }
                             ?: teamsRepository.listForumTopics(teamId)
                     }
+                    val newsItemsDeferred = async {
+                        teamsRepository.listTeamNews(teamId, cursor = null, limit = 40).getOrNull()?.items
+                    }
                     badgesDeferred.await()
                         .onSuccess { badges ->
                             val topics = topicsDeferred.await().getOrNull()
@@ -213,9 +216,21 @@ class TeamViewModel(
                                 apiUnread = badges.forumUnread,
                             )
                             val forumRaw = forumCounts?.rawServer ?: badges.forumUnread.coerceAtLeast(0)
+                            val profileId = _data.value.profile?.id?.trim().orEmpty()
+                            val clientNewsUnread = newsItemsDeferred.await()?.let { items ->
+                                TeamInboxUnread.countUnreadNews(
+                                    items = items,
+                                    prefs = userSettingsPreferences,
+                                    teamId = teamId,
+                                    currentUserId = profileId,
+                                )
+                            }
+                            val resolvedNewsUnread = TeamInboxBadgeDeriver.resolveNewsUnread(
+                                clientUnread = clientNewsUnread,
+                                apiUnread = badges.newsUnread,
+                            )
                             val prevNewsUnread = _data.value.sectionBadges.newsUnread
-                            val nextNewsUnread = badges.newsUnread.coerceAtLeast(0)
-                            if (nextNewsUnread > prevNewsUnread) {
+                            if (resolvedNewsUnread > prevNewsUnread) {
                                 CombatOverlayService.notifyOverlayTeamNewsActivity()
                             }
                             _data.update { state ->
@@ -224,9 +239,14 @@ class TeamViewModel(
                                     previouslyDisplayed = state.sectionBadges.forumUnread,
                                     rawServerUnread = forumRaw,
                                 )
+                                val mergedNews = TeamInboxBadgeDeriver.mergeForDisplay(
+                                    effectiveUnread = resolvedNewsUnread,
+                                    previouslyDisplayed = state.sectionBadges.newsUnread,
+                                    rawServerUnread = badges.newsUnread.coerceAtLeast(0),
+                                )
                                 state.copy(
                                     sectionBadges = TeamSectionBadges(
-                                        newsUnread = nextNewsUnread,
+                                        newsUnread = mergedNews,
                                         forumUnread = mergedForum,
                                     ),
                                 )

@@ -72,10 +72,25 @@ internal suspend fun LazyListState.scrollReverseChatRevealLatest(
     }
 }
 
-/** Keep bubble top fixed when long text expands in a reverse-layout chat list. */
+/**
+ * Scroll delta when a message bubble grows in a reverse-layout chat list.
+ * Positive [heightDeltaPx] = bubble grew taller. We do not counter-scroll at the latest
+ * edge (natural downward expansion). When reading history, a negative delta keeps the
+ * bubble top visually anchored so new lines appear below the preview.
+ */
+internal fun reverseChatExpandScrollDelta(
+    heightDeltaPx: Int,
+    atChatBottom: Boolean,
+): Float {
+    if (heightDeltaPx <= 0) return 0f
+    if (atChatBottom) return 0f
+    return -heightDeltaPx.toFloat()
+}
+
+/** Apply expand compensation for reverse-layout chat lists. */
 internal suspend fun LazyListState.scrollReverseChatCompensateExpand(heightDeltaPx: Int) {
-    if (heightDeltaPx <= 0) return
-    scrollBy(heightDeltaPx.toFloat())
+    val delta = reverseChatExpandScrollDelta(heightDeltaPx, isAtReverseChatBottom())
+    if (delta != 0f) scrollBy(delta)
 }
 
 private const val SCROLL_TO_ITEM_VISIBLE_TIMEOUT_MS = 3_000L
