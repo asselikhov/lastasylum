@@ -12,7 +12,7 @@ internal object OverlayHudLayout {
     const val WINDOW_X_DP = 10
     const val WINDOW_Y_DP = 2
     const val CHAT_STRIP_BELOW_HUD_GAP_DP = 8
-    const val HUD_CHIP_ESTIMATE_HEIGHT_DP = 28
+    const val HUD_CHIP_ESTIMATE_HEIGHT_DP = 26
 
     fun chatStripTopOffsetDp(): Int =
         WINDOW_Y_DP + HUD_CHIP_ESTIMATE_HEIGHT_DP + CHAT_STRIP_BELOW_HUD_GAP_DP

@@ -1,6 +1,13 @@
 package com.lastasylum.alliance.ui.chat
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -40,6 +47,12 @@ import coil3.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
+import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
+
+enum class PinnedBarVariant {
+    Default,
+    Forum,
+}
 
 @Composable
 fun pinnedPreviewLabel(
@@ -73,10 +86,15 @@ fun PinnedMessageBar(
     thumbnailUrl: String? = null,
     pinnedMetaLine: String? = null,
     onLongPress: (() -> Unit)? = null,
+    variant: PinnedBarVariant = PinnedBarVariant.Default,
 ) {
     AnimatedContent(
         targetState = preview.id,
         modifier = modifier,
+        transitionSpec = {
+            fadeIn(tween(180)) + slideInVertically(tween(200)) { it / 4 } togetherWith
+                fadeOut(tween(120)) + slideOutVertically(tween(140)) { -it / 6 }
+        },
         label = "pinnedBarPreview",
     ) { _ ->
         PinnedMessageBarContent(
@@ -90,6 +108,7 @@ fun PinnedMessageBar(
             thumbnailUrl = thumbnailUrl,
             pinnedMetaLine = pinnedMetaLine,
             onLongPress = onLongPress,
+            variant = variant,
         )
     }
 }
@@ -107,6 +126,7 @@ private fun PinnedMessageBarContent(
     thumbnailUrl: String?,
     pinnedMetaLine: String?,
     onLongPress: (() -> Unit)?,
+    variant: PinnedBarVariant,
 ) {
     val senderLine = chatSenderDisplayWithTag(
         preview.senderTeamTag,
@@ -114,12 +134,26 @@ private fun PinnedMessageBarContent(
         preview.senderServerNumber,
     )
     val bodyLine = pinnedPreviewLabel(preview, messageDeleted, messageUnavailable)
-    Column(modifier = Modifier.fillMaxWidth()) {
+    val forumStyle = variant == PinnedBarVariant.Forum
+    val shape = RoundedCornerShape(if (forumStyle) 12.dp else 0.dp)
+    val verticalPad = if (forumStyle) 7.dp else 8.dp
+    val thumbSize = if (forumStyle) 36.dp else 32.dp
+  Column(modifier = Modifier.fillMaxWidth()) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 1.dp,
-            shadowElevation = 0.dp,
+            shape = shape,
+            color = if (forumStyle) {
+                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+            tonalElevation = if (forumStyle) 2.dp else 1.dp,
+            shadowElevation = if (forumStyle) 4.dp else 0.dp,
+            border = if (forumStyle) {
+                BorderStroke(1.dp, PremiumSurfaces.borderColor(0.16f))
+            } else {
+                null
+            },
         ) {
             Row(
                 modifier = Modifier
@@ -133,14 +167,20 @@ private fun PinnedMessageBarContent(
             ) {
                 Box(
                     modifier = Modifier
-                        .width(3.dp)
+                        .width(if (forumStyle) 4.dp else 3.dp)
                         .fillMaxHeight()
-                        .background(MaterialTheme.colorScheme.primary),
+                        .background(
+                            if (forumStyle) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                        ),
                 )
                 Row(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 12.dp, vertical = verticalPad),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -149,15 +189,15 @@ private fun PinnedMessageBarContent(
                             model = thumbnailUrl,
                             contentDescription = null,
                             modifier = Modifier
-                                .size(32.dp)
-                                .clip(RoundedCornerShape(6.dp)),
+                                .size(thumbSize)
+                                .clip(RoundedCornerShape(if (forumStyle) 8.dp else 6.dp)),
                             contentScale = ContentScale.Crop,
                         )
                     }
                     Icon(
                         imageVector = Icons.Outlined.PushPin,
                         contentDescription = stringResource(R.string.chat_pinned_bar_cd),
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(if (forumStyle) 18.dp else 20.dp),
                         tint = MaterialTheme.colorScheme.primary,
                     )
                     Column(modifier = Modifier.weight(1f)) {
@@ -171,7 +211,11 @@ private fun PinnedMessageBarContent(
                                     style = MaterialTheme.typography.labelMedium.copy(
                                         fontWeight = FontWeight.SemiBold,
                                     ),
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = if (forumStyle) {
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f)
+                                    } else {
+                                        MaterialTheme.colorScheme.primary
+                                    },
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false),
@@ -194,7 +238,7 @@ private fun PinnedMessageBarContent(
                             text = bodyLine,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
+                            maxLines = if (forumStyle) 1 else 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                         if (!pinnedMetaLine.isNullOrBlank()) {
@@ -222,6 +266,8 @@ private fun PinnedMessageBarContent(
                 }
             }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+        if (!forumStyle) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+        }
     }
 }

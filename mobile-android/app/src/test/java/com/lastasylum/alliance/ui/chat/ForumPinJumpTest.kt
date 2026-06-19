@@ -44,6 +44,22 @@ class ForumPinJumpTest {
         assertFalse(found)
     }
 
+    @Test
+    fun ensureForumPinnedMessageLoaded_fetchesOlderPagesUntilFound() = runBlocking {
+        var pages = listOf("msg-c", "msg-b")
+        val found = ensureForumPinnedMessageLoaded(
+            messageId = "msg-a",
+            messageIdsOldestFirst = { pages },
+            hasMoreOlder = { pages.size < 3 },
+            isLoadingOlder = { false },
+            loadOlder = {
+                pages = listOf("msg-a") + pages
+                true
+            },
+        )
+        assertTrue(found)
+    }
+
     private fun assertEquals(expected: Int, actual: Int?) {
         org.junit.Assert.assertEquals(expected, actual)
     }

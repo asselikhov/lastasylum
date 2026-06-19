@@ -104,6 +104,7 @@ import com.lastasylum.alliance.ui.chat.MessageContextMenuActions
 import com.lastasylum.alliance.ui.chat.MessageContextMenuPopup
 import com.lastasylum.alliance.ui.chat.MessageContextMenuScrim
 import com.lastasylum.alliance.ui.chat.MessengerImagesPreviewHost
+import com.lastasylum.alliance.ui.chat.PinnedBarVariant
 import com.lastasylum.alliance.ui.chat.PinnedMessageBar
 import com.lastasylum.alliance.ui.chat.PinnedMessagesCompactChip
 import com.lastasylum.alliance.ui.chat.PinnedMessagesSheet
@@ -118,6 +119,7 @@ import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
 import com.lastasylum.alliance.ui.chat.isForumPendingId
 import com.lastasylum.alliance.ui.chat.isForumPinnedPreviewLikelyDeleted
 import com.lastasylum.alliance.ui.chat.isForumPinnedPreviewUnavailable
+import com.lastasylum.alliance.ui.chat.ensureForumPinnedMessageLoaded
 import com.lastasylum.alliance.ui.chat.jumpToForumPinnedMessage
 import com.lastasylum.alliance.ui.chat.mergeForumMessagesPage
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
@@ -642,15 +644,29 @@ fun TeamForumTopicScreen(
     BackHandler { leaveTopic() }
 
     fun markTopicReadToLatest(forceSync: Boolean = false) {
-        val newestId = stableMessages.lastOrNull()?.id ?: return
-        val prev = lastReadCursor
-        if (!forceSync && prev != null && !isObjectIdNewer(newestId, prev)) return
         scope.launch {
-            forumRepository.markForumTopicRead(teamId, topicId, newestId)
-                .onSuccess {
-                    mergeReadCursor(newestId)
-                    notifyForumInboxAfterRead(newestId)
-                }
+            val newestFromList = stableMessages.lastOrNull()?.id?.trim().orEmpty()
+            if (newestFromList.isNotEmpty()) {
+                val prev = lastReadCursor
+                if (!forceSync && prev != null && !isObjectIdNewer(newestFromList, prev)) return@launch
+                forumRepository.markForumTopicRead(teamId, topicId, newestFromList)
+                    .onSuccess {
+                        mergeReadCursor(newestFromList)
+                        notifyForumInboxAfterRead(newestFromList)
+                    }
+                return@launch
+            }
+            val mid = TeamForumMarkRead.markTopicReadToLatest(
+                forumRepository = forumRepository,
+                userId = currentUserId,
+                forumPrefs = forumPrefs,
+                teamId = teamId,
+                topicId = topicId,
+            )
+            if (mid.isNotEmpty()) {
+                mergeReadCursor(mid)
+                notifyForumInboxAfterRead(mid)
+            }
         }
     }
 
@@ -684,19 +700,7 @@ fun TeamForumTopicScreen(
     val markReadTopicKey = forumMarkReadTopicKey(topicId)
     LaunchedEffect(teamId, topicId, stableMessages.lastOrNull()?.id) {
         onProvideMarkReadAction(markReadTopicKey) {
-            scope.launch {
-                val newestId = stableMessages.lastOrNull()?.id
-                if (!newestId.isNullOrBlank()) {
-                    markTopicReadToLatest(forceSync = true)
-                } else {
-                    TeamForumMarkRead.markTopicReadToLatest(
-                        teamsRepository = forumRepository.teams(),
-                        forumPrefs = forumPrefs,
-                        teamId = teamId,
-                        topicId = topicId,
-                    )
-                }
-            }
+            markTopicReadToLatest(forceSync = true)
         }
     }
     DisposableEffect(markReadTopicKey) {
@@ -762,6 +766,19 @@ fun TeamForumTopicScreen(
         } finally {
             loadingOlder = false
         }
+    }
+
+    LaunchedEffect(pinCoordinator.pinnedMessageId, stableMessages.size, hasMoreOlder) {
+        val pinId = pinCoordinator.pinnedMessageId?.trim().orEmpty()
+        if (pinId.isEmpty()) return@LaunchedEffect
+        if (stableMessages.any { it.id.trim() == pinId }) return@LaunchedEffect
+        ensureForumPinnedMessageLoaded(
+            messageId = pinId,
+            messageIdsOldestFirst = { stableMessages.map { it.id } },
+            hasMoreOlder = { hasMoreOlder },
+            isLoadingOlder = { loadingOlder },
+            loadOlder = { loadOlderForumPage() },
+        )
     }
 
     fun jumpToFirstUnreadInTopic() {
@@ -1355,6 +1372,7 @@ fun TeamForumTopicScreen(
             PinnedMessageBar(
                 preview = preview,
                 canUnpin = canModerateMessages,
+                variant = PinnedBarVariant.Forum,
                 onTap = {
                     scope.launch {
                         val targetId = preview.id.trim().ifEmpty {
@@ -1379,12 +1397,7 @@ fun TeamForumTopicScreen(
                         if (!jumped) {
                             pinNotice = res.getString(R.string.chat_jump_quote_not_found)
                         } else {
-                            delay(900)
-                            if (highlightMessageId == targetId) highlightMessageId = null
-                            if (pinCoordinator.pinHistoryCount > 1) {
-                                pinCoordinator.advancePinBarIndex(stableMessages)
-                                bumpPinUi()
-                            }
+                            highlightMessageId = null
                         }
                     }
                 },
@@ -1403,7 +1416,10 @@ fun TeamForumTopicScreen(
                 thumbnailUrl = preview.resolvedThumbnailUrl(),
                 pinnedMetaLine = pinnedMetaLine,
                 onLongPress = { showForumPinnedSheet = true },
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                modifier = Modifier.padding(
+                    horizontal = 12.dp,
+                    vertical = if (overlayUi) 3.dp else 4.dp,
+                ),
             )
             }
         }
@@ -1865,14 +1881,7 @@ fun TeamForumTopicScreen(
             onOpenAttachmentPreview = { idx -> attachmentPreviewStartIndex = idx },
             pendingApkLabel = pendingApkLabel,
             onClearPendingApk = { clearPendingAttachment() },
-            onPickApk = if (canModerateMessages) {
-                {
-                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                    pickApkLauncher.launch("application/*")
-                }
-            } else {
-                null
-            },
+            onPickApk = null,
             hasReadyFileAttachment = !pendingApkFileId.isNullOrBlank(),
             isUploadingFile = uploadingFile,
         )

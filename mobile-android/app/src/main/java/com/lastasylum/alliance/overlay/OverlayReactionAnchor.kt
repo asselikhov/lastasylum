@@ -36,7 +36,7 @@ internal data class OverlayReactionStageWindowPlacement(
 
 internal object OverlayReactionAnchorLayout {
     const val GAP_BELOW_ANCHOR_DP = 12
-    const val FALLBACK_HUD_CHIP_HEIGHT_DP = 48
+    const val FALLBACK_HUD_CHIP_HEIGHT_DP = 44
 
     fun anchorFromView(
         view: View,

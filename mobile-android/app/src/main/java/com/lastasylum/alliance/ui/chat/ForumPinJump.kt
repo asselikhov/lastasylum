@@ -30,6 +30,38 @@ private suspend fun waitForLoadingOlderToFinish(
 }
 
 /**
+ * Load older forum pages until [messageId] is present (no scroll).
+ * Returns true when the message exists in the loaded window.
+ */
+suspend fun ensureForumPinnedMessageLoaded(
+    messageId: String,
+    messageIdsOldestFirst: () -> List<String>,
+    hasMoreOlder: () -> Boolean,
+    isLoadingOlder: () -> Boolean,
+    loadOlder: suspend () -> Boolean,
+): Boolean {
+    val id = messageId.trim()
+    if (id.isEmpty()) return false
+    if (messageIdsOldestFirst().any { it.trim() == id }) return true
+    if (!hasMoreOlder()) return false
+    var attempts = 0
+    while (attempts < PIN_JUMP_MAX_LOAD_ATTEMPTS) {
+        if (messageIdsOldestFirst().any { it.trim() == id }) return true
+        if (!hasMoreOlder()) break
+        if (isLoadingOlder()) {
+            waitForLoadingOlderToFinish(isLoadingOlder)
+            attempts++
+            continue
+        }
+        val loaded = loadOlder()
+        waitForLoadingOlderToFinish(isLoadingOlder)
+        if (!loaded && !messageIdsOldestFirst().any { it.trim() == id }) break
+        attempts++
+    }
+    return messageIdsOldestFirst().any { it.trim() == id }
+}
+
+/**
  * Scroll to a pinned forum message, loading older pages when needed.
  * Returns true when the message was found and scroll initiated.
  */
@@ -47,31 +79,30 @@ suspend fun jumpToForumPinnedMessage(
     val id = messageId.trim()
     if (id.isEmpty()) return false
 
-    suspend fun tryJump(): Boolean {
+    suspend fun tryScroll(): Boolean {
         val idx = timelineIndexForMessageId(id)
         if (idx < 0) return false
         scrollToTimelineIndex(idx)
         onHighlight(id)
-        delay(highlightMs)
         return true
     }
 
-    if (tryJump()) return true
+    suspend fun finishHighlight(): Boolean {
+        if (!tryScroll()) return false
+        if (highlightMs > 0L) delay(highlightMs)
+        return true
+    }
+
+    if (finishHighlight()) return true
     if (!hasMoreOlder()) return false
 
-    var attempts = 0
-    while (attempts < PIN_JUMP_MAX_LOAD_ATTEMPTS) {
-        if (tryJump()) return true
-        if (!hasMoreOlder()) break
-        if (isLoadingOlder()) {
-            waitForLoadingOlderToFinish(isLoadingOlder)
-            attempts++
-            continue
-        }
-        val loaded = loadOlder()
-        waitForLoadingOlderToFinish(isLoadingOlder)
-        if (!loaded && !messageIdsOldestFirst().any { it.trim() == id }) break
-        attempts++
-    }
-    return tryJump()
+    val loaded = ensureForumPinnedMessageLoaded(
+        messageId = id,
+        messageIdsOldestFirst = messageIdsOldestFirst,
+        hasMoreOlder = hasMoreOlder,
+        isLoadingOlder = isLoadingOlder,
+        loadOlder = loadOlder,
+    )
+    if (!loaded) return false
+    return finishHighlight()
 }

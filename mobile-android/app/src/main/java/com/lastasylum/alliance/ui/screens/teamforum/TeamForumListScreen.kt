@@ -39,7 +39,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lastasylum.alliance.R
@@ -57,7 +56,6 @@ import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayModalScope
-import com.lastasylum.alliance.overlay.OverlayReactionLogJumpToUnreadFab
 import com.lastasylum.alliance.ui.components.CenteredScreenLoading
 import com.lastasylum.alliance.ui.components.PremiumEmptyState
 import com.lastasylum.alliance.ui.components.premium.PremiumGradientIconFab
@@ -227,10 +225,33 @@ fun TeamForumListScreen(
     LaunchedEffect(teamId) {
         onProvideMarkReadAction(FORUM_MARK_READ_LIST_KEY) {
             scope.launch {
-                TeamForumMarkRead.markAllTopicsRead(forumRepository, currentUserId, forumPrefs, teamId)
+                val snapshot = listViewModel.state.value
+                val floors = snapshot.optimisticUnreadFloorByTopic
+                val result = TeamForumMarkRead.markAllTopicsRead(
+                    forumRepository = forumRepository,
+                    userId = currentUserId,
+                    forumPrefs = forumPrefs,
+                    teamId = teamId,
+                    optimisticFloorByTopic = floors,
+                )
+                listViewModel.clearOptimisticUnreadFloors()
+                result.markedTopics.forEach { (topicId, messageId) ->
+                    listViewModel.applyTopicReadLocal(topicId, messageId)
+                    mergeTopicReadCursor(topicId, messageId)
+                }
+                TeamForumMarkRead.afterAllTopicsMarkedRead(
+                    forumRepository = forumRepository,
+                    userId = currentUserId,
+                    forumPrefs = forumPrefs,
+                    teamId = teamId,
+                    markedTopics = result.markedTopics,
+                    topicFallbackById = snapshot.topics.associateBy { it.id },
+                    onInboxChanged = onInboxChanged,
+                    inboxBadgeCoordinator = app.inboxBadgeCoordinator,
+                )
                 refreshReadCursorsFromPrefs()
                 onInboxChanged()
-                reload()
+                reload(force = true)
             }
         }
     }
@@ -329,35 +350,6 @@ fun TeamForumListScreen(
             ) { idx ->
                 idx in filteredTopics.indices && effectiveTopicUnread(filteredTopics[idx]) == 0
             }
-        }
-    }
-    val forumTopicUnreadTotal = remember(topics, readCursorRevision, listUiState.optimisticUnreadFloorByTopic) {
-        topics.sumOf { effectiveTopicUnread(it).coerceAtLeast(0) }
-    }
-    val firstUnreadTopicIndex = remember(
-        filteredTopics,
-        readCursorRevision,
-        listUiState.optimisticUnreadFloorByTopic,
-    ) {
-        filteredTopics.indexOfLast { effectiveTopicUnread(it) > 0 }
-    }
-    val isFirstUnreadTopicVisible by remember(topicListState, firstUnreadTopicIndex) {
-        derivedStateOf {
-            if (firstUnreadTopicIndex < 0) return@derivedStateOf true
-            topicListState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadTopicIndex }
-        }
-    }
-    val showJumpToUnreadTopics by remember(
-        overlayUi,
-        forumTopicUnreadTotal,
-        firstUnreadTopicIndex,
-        isFirstUnreadTopicVisible,
-    ) {
-        derivedStateOf {
-            overlayUi &&
-                forumTopicUnreadTotal > 0 &&
-                firstUnreadTopicIndex >= 0 &&
-                !isFirstUnreadTopicVisible
         }
     }
 
@@ -502,25 +494,6 @@ fun TeamForumListScreen(
                                             },
                                         )
                                     }
-                                }
-                                if (overlayUi) {
-                                    OverlayReactionLogJumpToUnreadFab(
-                                        visible = showJumpToUnreadTopics,
-                                        unreadCount = forumTopicUnreadTotal,
-                                        onClick = {
-                                            if (firstUnreadTopicIndex >= 0) {
-                                                scope.launch {
-                                                    topicListState.animateScrollToItem(
-                                                        firstUnreadTopicIndex,
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .align(Alignment.TopCenter)
-                                            .padding(top = 8.dp)
-                                            .zIndex(6f),
-                                    )
                                 }
                             }
                         }

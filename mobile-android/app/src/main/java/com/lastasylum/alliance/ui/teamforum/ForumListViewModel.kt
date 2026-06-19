@@ -65,6 +65,10 @@ class ForumListViewModel(
         reload(force = false)
     }
 
+    fun clearOptimisticUnreadFloors() {
+        _state.update { it.copy(optimisticUnreadFloorByTopic = emptyMap()) }
+    }
+
     fun reload(force: Boolean = false) {
         val teamId = _state.value.teamId.trim()
         if (teamId.isEmpty()) return
@@ -97,7 +101,9 @@ class ForumListViewModel(
                                 localLastReadMessageId = localLast,
                                 optimisticFloor = 0,
                             )
-                            if (topic.unreadCount > 0 && displayed == 0) {
+                            // Do not re-seed floor when local cursor already suppresses unread
+                            // (e.g. after mark-all while server unreadCount is still stale).
+                            if (topic.unreadCount > 0 && displayed == 0 && localLast.isNullOrBlank()) {
                                 topic.id to topic.unreadCount.coerceAtMost(999)
                             } else {
                                 null
@@ -213,11 +219,26 @@ class ForumListViewModel(
         current: ForumListUiState,
     ): List<TeamForumTopicDto> {
         if (current.topics.isEmpty()) return roomTopics
+        val teamId = current.teamId.trim()
         val memoryById = current.topics.associateBy { it.id }
         return roomTopics.map { roomRow ->
             val memRow = memoryById[roomRow.id] ?: return@map roomRow
             val floor = current.optimisticUnreadFloorByTopic[roomRow.id] ?: 0
-            val mergedUnread = maxOf(roomRow.unreadCount, memRow.unreadCount, floor)
+            val localLast = if (teamId.isNotEmpty()) {
+                teamForumPreferences.getLastReadMessageId(teamId, roomRow.id)
+            } else {
+                null
+            }
+            val displayedAfterLocal = displayedForumTopicUnread(
+                topic = roomRow,
+                localLastReadMessageId = localLast,
+                optimisticFloor = floor,
+            )
+            val mergedUnread = when {
+                displayedAfterLocal == 0 && floor == 0 -> 0
+                memRow.unreadCount == 0 && floor == 0 -> 0
+                else -> maxOf(roomRow.unreadCount, memRow.unreadCount, floor)
+            }
             val memLastRead = memRow.lastReadMessageId?.trim().orEmpty()
             val roomLastRead = roomRow.lastReadMessageId?.trim().orEmpty()
             val mergedLastRead = when {

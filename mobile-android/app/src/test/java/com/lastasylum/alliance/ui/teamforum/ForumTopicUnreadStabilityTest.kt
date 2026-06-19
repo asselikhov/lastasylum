@@ -24,13 +24,14 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class ForumTopicUnreadStabilityTest {
     private lateinit var vm: ForumListViewModel
+    private lateinit var forumPrefs: TeamForumPreferences
 
     @Before
     fun setUp() {
         val context: Context = ApplicationProvider.getApplicationContext()
         val db = SquadRelayDatabase.createInMemory(context)
         val teamsApi = object : TeamsApiUnusedStub() {}
-        val forumPrefs = TeamForumPreferences(context)
+        forumPrefs = TeamForumPreferences(context)
         val forumRepository = ForumRepository(
             db = db,
             teamsRepository = TeamsRepository(teamsApi),
@@ -85,5 +86,23 @@ class ForumTopicUnreadStabilityTest {
     @Test
     fun reconcileGrace_isTwoSeconds() {
         assertEquals(2_000L, OverlayHubUnreadPolicy.RECONCILE_GRACE_MS)
+    }
+
+    @Test
+    fun mergeTopicsFromRoom_zerosStaleServerUnreadWhenLocalReadAhead() {
+        val localRead = "507f1f77bcf86cd799439099"
+        forumPrefs.setLastReadMessageId("team1", "t1", localRead)
+        val current = ForumListUiState(
+            teamId = "team1",
+            topics = listOf(topic("t1", unread = 0, lastRead = localRead)),
+        )
+        val merged = vm.mergeTopicsFromRoom(listOf(topic("t1", unread = 5)), current)
+        assertEquals(0, merged.first().unreadCount)
+    }
+
+    @Test
+    fun clearOptimisticUnreadFloors_resetsMap() {
+        vm.clearOptimisticUnreadFloors()
+        assertEquals(0, vm.state.value.optimisticUnreadFloorByTopic.size)
     }
 }
