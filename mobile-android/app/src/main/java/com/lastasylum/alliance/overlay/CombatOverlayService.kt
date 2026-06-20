@@ -551,7 +551,15 @@ class CombatOverlayService : Service() {
         if (hadSuspendedWindows && mgr != null) {
             for (snap in overlayTouchPassthroughSnaps) {
                 snap.params.flags = snap.prevFlags
-                snap.view.visibility = snap.prevVisibility
+                val restoreVisibility =
+                    if (snap.view === overlayChatTeamRoot &&
+                        !shouldRestoreOverlayChatTeamPanelWindow()
+                    ) {
+                        View.GONE
+                    } else {
+                        snap.prevVisibility
+                    }
+                snap.view.visibility = restoreVisibility
                 snap.view.alpha = snap.prevAlpha
                 if (snap.view.isAttachedToWindow) {
                     runCatching { mgr.updateViewLayout(snap.view, snap.params) }
@@ -3162,9 +3170,7 @@ class CombatOverlayService : Service() {
      */
     private fun shouldDeferHubApplyToPrimaryListener(vm: ChatViewModel, msg: ChatMessage): Boolean {
         if (overlayChatTeamPanelVisible && isOverlayChatContentActive()) {
-            val selectedId = vm.state.value.selectedRoomId?.trim().orEmpty()
-            val msgRoomId = msg.roomId.trim()
-            if (selectedId.isNotEmpty() && selectedId == msgRoomId) return false
+            return false
         }
         if (!activityChatViewModelHandlesUnread()) return false
         val primary = activityScopedChatViewModel ?: ChatViewModelRegistry.shared ?: return false
@@ -3326,6 +3332,7 @@ class CombatOverlayService : Service() {
     private fun clearOverlayStripForOffline() {
         stripSessionNeedsRestart = true
         stripBuffer.clear()
+        OverlayStripDismissTracker.clear()
         lastStripRenderSignature = 0
         chatStripPreviewFlow.value = emptyList()
     }
@@ -3340,6 +3347,7 @@ class CombatOverlayService : Service() {
     /** Пустой буфер + новая видимая сессия: только трафик после входа в игру. */
     private fun beginOverlayStripGameSession() {
         stripBuffer.clear()
+        OverlayStripDismissTracker.clear()
         stripBuffer.resetVisibleSession()
         lastStripRenderSignature = 0
         chatStripPreviewFlow.value = emptyList()
@@ -3393,9 +3401,12 @@ class CombatOverlayService : Service() {
 
     /** Fullscreen chat/HUD pane covers corner overlay buttons — keep in sync with hide/show order. */
     private fun isOverlayFullscreenPanelObscuringHud(): Boolean =
-        overlayChatTeamPanelVisible ||
-            OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
-            overlayChatTeamRoot?.visibility == View.VISIBLE
+        OverlayFullscreenPanelObscuringPolicy.isObscuring(
+            servicePanelVisible = overlayChatTeamPanelVisible,
+            holdPanelVisible = OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible,
+            panelRootVisible = overlayChatTeamRoot?.visibility == View.VISIBLE,
+            hasActiveHudPane = currentOverlayHudPane != null,
+        )
 
     private fun hideOverlayHudChromeForFullscreenPanel() {
         applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = true)
@@ -4577,6 +4588,7 @@ class CombatOverlayService : Service() {
             mainHandler.post { dismissStripMessage(msg) }
             return
         }
+        OverlayStripDismissTracker.markDismissed(msg)
         val serverId = msg._id?.trim().orEmpty()
         if (
             serverId.isNotEmpty() &&
@@ -4733,6 +4745,7 @@ class CombatOverlayService : Service() {
     private fun stripPreviewForUi(): List<ChatMessage> {
         val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
         return stripBuffer.visibleForPreview()
+            .filter { !OverlayStripDismissTracker.isDismissed(it) }
             .filter { OverlayStripRecipientPolicy.shouldShowIncomingStripCard(it, selfId) }
     }
 
@@ -5678,6 +5691,7 @@ class CombatOverlayService : Service() {
         msg: ChatMessage,
         refreshNow: Boolean,
     ) {
+        if (OverlayStripDismissTracker.isDismissed(msg)) return
         stripBuffer.upsert(msg)
         stripBuffer.touchReceivedNow(msg)
         stripLiveRevision++
@@ -5706,6 +5720,7 @@ class CombatOverlayService : Service() {
                     if (isBeforeOverlayIngameSession(msg)) continue
                     if (isStaleOverlayStripMessage(msg)) continue
                     val normalized = normalizeStripRaidMessage(msg, raidId)
+                    if (OverlayStripDismissTracker.isDismissed(normalized)) continue
                     if (!shouldIngestInboundRaidStrip(normalized)) continue
                     ingestOverlayRaidMessage(
                         normalized,
@@ -5734,6 +5749,9 @@ class CombatOverlayService : Service() {
         }
         val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
         val normalized = normalizeStripRaidMessage(msg, raidId)
+        if (OverlayStripDismissTracker.isDismissed(normalized)) {
+            return
+        }
         val stripCorrelationId = normalized._id?.trim().orEmpty()
         if (inbound && stripCorrelationId.isNotEmpty()) {
             deliveryLatencyTracker.startSpan(LatencySpanType.OverlayStripIngest, stripCorrelationId)
@@ -6403,6 +6421,7 @@ class CombatOverlayService : Service() {
             container.chatRepository.chatConnectionState().collect { state ->
                 val connected = state == ChatConnectionState.Connected
                 if (connected && !wasConnected) {
+                    resetOverlaySocketReconnectBackoff()
                     mainHandler.post { catchUpOverlayRaidStripFromRest() }
                 }
                 wasConnected = connected
@@ -6456,16 +6475,19 @@ class CombatOverlayService : Service() {
                 )
                 revealStripForInboundRaidIfNeeded()
                 ensureOverlayMessageStripIfNeeded()
-            } else if (BuildConfig.DEBUG) {
-                Log.d(
-                    OVERLAY_DIAG_TAG,
-                    "stripDrop reason=not_eligible id=${normalized._id} self=$isSelf " +
-                        "listener=${overlayMessageListener != null} " +
-                        "stripEnabled=${isOverlayChatStripEnabled()} " +
-                        "ingamePresence=$overlayIngamePresenceActive " +
-                        "stripEligible=${isOverlayRaidStripEligible()} " +
-                        "inGameUi=${isInGameOverlayUiActive()}",
-                )
+            } else {
+                if (BuildConfig.DEBUG) {
+                    Log.d(
+                        OVERLAY_DIAG_TAG,
+                        "stripDrop reason=not_eligible id=${normalized._id} self=$isSelf " +
+                            "listener=${overlayMessageListener != null} " +
+                            "stripEnabled=${isOverlayChatStripEnabled()} " +
+                            "ingamePresence=$overlayIngamePresenceActive " +
+                            "stripEligible=${isOverlayRaidStripEligible()} " +
+                            "inGameUi=${isInGameOverlayUiActive()}",
+                    )
+                }
+                catchUpOverlayRaidStripFromRest()
             }
             if (!activityChatViewModelHandlesUnread()) {
                 resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
@@ -6857,6 +6879,12 @@ class CombatOverlayService : Service() {
         ensureOverlayStatusHudWindow()
         ensureOverlayTopRightHudWindow()
         restoreOverlayHudChromeAfterPanel()
+        mainHandler.post {
+            if (!overlayChatTeamPanelVisible && currentOverlayHudPane == null) {
+                overlayChatTeamRoot?.visibility = View.GONE
+                restoreOverlayHudChromeAfterPanel()
+            }
+        }
         pendingOverlayPickedImageUris = null
         deferredHideOverlayChatTeamPanel = false
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }

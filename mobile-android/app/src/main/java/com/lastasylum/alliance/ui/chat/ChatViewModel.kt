@@ -38,6 +38,7 @@ import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.data.teams.TeamMembershipNotifier
 import com.lastasylum.alliance.data.chat.store.ChatRoomStoreBindings
 import com.lastasylum.alliance.data.chat.store.MessageStore
+import com.lastasylum.alliance.data.chat.sync.CHAT_ACTIVE_ROOM_REALTIME_RECONCILE_INTERVAL_MS
 import com.lastasylum.alliance.data.chat.sync.CHAT_ACTIVE_ROOM_RECONCILE_INTERVAL_MS
 import com.lastasylum.alliance.data.chat.sync.CHAT_BACKGROUND_MESSAGE_REFRESH_DEFER_MS
 import com.lastasylum.alliance.data.chat.sync.CHAT_INCOMING_SOCKET_DEBOUNCE_SINGLE_MS
@@ -630,7 +631,12 @@ class ChatViewModel(
         }
         viewModelScope.launch {
             while (isActive) {
-                delay(CHAT_ACTIVE_ROOM_RECONCILE_INTERVAL_MS)
+                val reconcileMs = if (isChatRealtimeViewActive()) {
+                    CHAT_ACTIVE_ROOM_REALTIME_RECONCILE_INTERVAL_MS
+                } else {
+                    CHAT_ACTIVE_ROOM_RECONCILE_INTERVAL_MS
+                }
+                delay(reconcileMs)
                 if (!appInForeground) continue
                 val roomId = _state.value.selectedRoomId?.trim().orEmpty()
                 if (roomId.isEmpty()) continue

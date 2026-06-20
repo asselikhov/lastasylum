@@ -23,7 +23,6 @@ internal fun teamNewsEditorScrollIndex(
     var index = 0
     if (hasErrorBanner) index++
     if (isCreate) index++
-    if (editorMode == JournalEditorMode.PollOnly) index++
     when (editorMode) {
         JournalEditorMode.News -> {
             when (field) {
@@ -44,8 +43,8 @@ internal fun teamNewsEditorScrollIndex(
     }
     if (!showPollSection) return -1
     return when (field) {
-        TeamNewsEditorScrollField.PollQuestion -> index + 1
-        TeamNewsEditorScrollField.PollOptions -> index + 2
+        TeamNewsEditorScrollField.PollQuestion -> index
+        TeamNewsEditorScrollField.PollOptions -> index + 1
         TeamNewsEditorScrollField.Title,
         TeamNewsEditorScrollField.Body,
         -> -1

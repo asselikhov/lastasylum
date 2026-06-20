@@ -57,11 +57,9 @@ import com.lastasylum.alliance.ui.components.team.journal.JournalEditorTokens
 import com.lastasylum.alliance.ui.components.team.journal.JournalImageAttachment
 import com.lastasylum.alliance.ui.components.team.journal.JournalImageAttachmentGrid
 import com.lastasylum.alliance.ui.components.team.journal.JournalModeChips
-import com.lastasylum.alliance.ui.components.team.journal.JournalPollOnlyHint
 import com.lastasylum.alliance.ui.components.team.journal.JournalPollOptionEditor
 import com.lastasylum.alliance.ui.components.team.journal.JournalPrimaryButton
 import com.lastasylum.alliance.ui.components.team.journal.journalEditorBottomBarInsets
-import com.lastasylum.alliance.ui.components.team.journal.JournalSectionDivider
 import com.lastasylum.alliance.ui.components.team.journal.JournalSectionHeader
 import com.lastasylum.alliance.ui.components.team.journal.JournalTextField
 import com.lastasylum.alliance.ui.screens.teamnews.resolvedTeamNewsImageUrl
@@ -474,16 +472,8 @@ internal fun TeamNewsEditorScreen(
                     )
                 }
             }
-            if (editorMode == JournalEditorMode.PollOnly) {
-                item(key = "poll_hint") {
-                    JournalPollOnlyHint(
-                        text = stringResource(R.string.team_news_poll_only_hint),
-                    )
-                }
-            }
             if (editorMode == JournalEditorMode.News) {
                 item(key = "title_section") {
-                    JournalSectionHeader(stringResource(R.string.team_news_title_hint))
                     JournalTextField(
                         value = title,
                         onValueChange = {
@@ -505,7 +495,6 @@ internal fun TeamNewsEditorScreen(
                     )
                 }
                 item(key = "body_section") {
-                    JournalSectionHeader(stringResource(R.string.team_news_body_hint))
                     JournalTextField(
                         value = body,
                         onValueChange = {
@@ -540,12 +529,6 @@ internal fun TeamNewsEditorScreen(
                 }
             }
             if (showPollSection) {
-                item(key = "poll_divider") {
-                    if (editorMode == JournalEditorMode.PollOnly) {
-                        JournalSectionDivider()
-                    }
-                    JournalSectionHeader(stringResource(R.string.team_news_poll_section))
-                }
                 item(key = "poll_question") {
                     JournalTextField(
                         value = pollQuestion,

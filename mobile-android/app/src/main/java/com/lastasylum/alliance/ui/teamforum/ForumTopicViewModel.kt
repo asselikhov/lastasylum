@@ -10,6 +10,7 @@ import com.lastasylum.alliance.di.AppContainer
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -27,6 +28,8 @@ class ForumTopicViewModel(app: Application) : AndroidViewModel(app) {
 
     private var registeredTeamId: String? = null
     private var registeredTopicId: String? = null
+    private var outboxResumeJob: Job? = null
+    private var outboxConfirmedCollectJob: Job? = null
 
     fun bindTopicRegistry(teamId: String, topicId: String) {
         val tid = teamId.trim()
@@ -81,7 +84,9 @@ class ForumTopicViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         val uid = userId.trim()
         if (uid.isEmpty()) return
-        viewModelScope.launch {
+        outboxResumeJob?.cancel()
+        outboxConfirmedCollectJob?.cancel()
+        outboxResumeJob = viewModelScope.launch {
             forumOutbox.resumePendingSync(uid) { entry ->
                 forumRepository.postForumMessageWithRetries(
                     userId = uid,
@@ -96,12 +101,16 @@ class ForumTopicViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
-        viewModelScope.launch {
+        outboxConfirmedCollectJob = viewModelScope.launch {
             outboxConfirmed.collect { onConfirmed(it) }
         }
     }
 
     override fun onCleared() {
+        outboxResumeJob?.cancel()
+        outboxConfirmedCollectJob?.cancel()
+        outboxResumeJob = null
+        outboxConfirmedCollectJob = null
         registeredTeamId?.let { teamId ->
             registeredTopicId?.let { topicId ->
                 ForumTopicViewModelRegistry.unregister(teamId, topicId, this)

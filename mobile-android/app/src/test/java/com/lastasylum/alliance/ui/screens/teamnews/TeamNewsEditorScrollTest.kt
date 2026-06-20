@@ -22,7 +22,7 @@ class TeamNewsEditorScrollTest {
     @Test
     fun pollOnly_questionFieldIndex() {
         assertEquals(
-            3,
+            1,
             teamNewsEditorScrollIndex(
                 field = TeamNewsEditorScrollField.PollQuestion,
                 hasErrorBanner = false,

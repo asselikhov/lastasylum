@@ -6,6 +6,8 @@ internal const val CHAT_INCOMING_SOCKET_DEBOUNCE_MS = 24L
 internal const val CHAT_INCOMING_SOCKET_DEBOUNCE_SINGLE_MS = 0L
 internal const val CHAT_INCOMING_SOCKET_DEBOUNCE_BURST_MS = 8L
 internal const val CHAT_ACTIVE_ROOM_RECONCILE_INTERVAL_MS = 12_000L
+/** Faster REST tail when chat/overlay panel is actively showing messages. */
+internal const val CHAT_ACTIVE_ROOM_REALTIME_RECONCILE_INTERVAL_MS = 4_000L
 internal const val CHAT_BACKGROUND_MESSAGE_REFRESH_DEFER_MS = 0L
 internal const val CHAT_UNREAD_SYNC_DEBOUNCE_MS = 200L
 /** Keep socket-bumped unread until listRooms catches up or grace expires. */
