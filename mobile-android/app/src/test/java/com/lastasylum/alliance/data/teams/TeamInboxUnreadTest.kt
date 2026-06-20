@@ -72,6 +72,20 @@ class TeamInboxUnreadTest {
     }
 
     @Test
+    fun sortNewsFeedNewestFirst_dedupesDuplicateIdsAfterAppend() {
+        val duplicateId = "507f1f77bcf86cd799439099"
+        val items = listOf(
+            newsItem(id = duplicateId, authorUserId = "other", createdAt = "2026-01-01T00:00:00Z", title = "older"),
+            newsItem(id = duplicateId, authorUserId = "other", createdAt = "2026-06-01T00:00:00Z", title = "newer"),
+            newsItem(id = "other-id", authorUserId = "other", createdAt = "2026-05-01T00:00:00Z", title = "mid"),
+        )
+        val sorted = TeamInboxUnread.sortNewsFeedNewestFirst(items)
+        assertEquals(2, sorted.size)
+        assertEquals(duplicateId, sorted.first().id)
+        assertEquals("newer", sorted.first().title)
+    }
+
+    @Test
     fun coordinator_mergeNews_doesNotDropForumFloor() {
         val coordinator = OverlayInboxBadgeCoordinator()
         coordinator.bumpForumOptimistic(3)
@@ -88,12 +102,17 @@ class TeamInboxUnreadTest {
         return UserSettingsPreferences(ctx).also { it.bindUser("test-user") }
     }
 
-    private fun newsItem(authorUserId: String, createdAt: String) = TeamNewsListItemDto(
-        id = "n1",
+    private fun newsItem(
+        authorUserId: String,
+        createdAt: String,
+        id: String = "n1",
+        title: String = "t",
+    ) = TeamNewsListItemDto(
+        id = id,
         teamId = "t1",
         authorUserId = authorUserId,
         authorUsername = "u",
-        title = "t",
+        title = title,
         excerpt = "",
         createdAt = createdAt,
         updatedAt = createdAt,
