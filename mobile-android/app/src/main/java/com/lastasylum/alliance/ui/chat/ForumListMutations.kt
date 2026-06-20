@@ -32,6 +32,42 @@ internal fun capForumMessagesTrimNewestOnly(
     }
 }
 
+/**
+ * Socket echo + REST confirm can briefly leave two rows with the same server id — crashes LazyColumn.
+ * Keeps first row per id (oldest-first order) and merges fields from duplicates.
+ */
+internal fun dedupeForumMessagesOldestFirst(messages: MutableList<TeamForumMessageDto>): Boolean {
+    if (messages.size <= 1) return false
+    val seen = mutableSetOf<String>()
+    val out = mutableListOf<TeamForumMessageDto>()
+    var changed = false
+    for (m in messages) {
+        val id = m.id.trim()
+        if (id.isEmpty()) {
+            out.add(m)
+            continue
+        }
+        if (id in seen) {
+            changed = true
+            val idx = out.indexOfLast { it.id.trim() == id }
+            if (idx >= 0) {
+                val prev = out[idx]
+                out[idx] = when {
+                    isForumPendingId(prev.id) && !isForumPendingId(m.id) -> m.mergePreservingForumMedia(prev)
+                    else -> prev.mergePreservingForumMedia(m)
+                }
+            }
+            continue
+        }
+        seen.add(id)
+        out.add(m)
+    }
+    if (!changed && out.size == messages.size) return false
+    messages.clear()
+    messages.addAll(out)
+    return true
+}
+
 /** Union-merge REST page with in-memory rows (socket-only ids preserved). */
 internal fun mergeForumMessagesPage(
     existing: List<TeamForumMessageDto>,

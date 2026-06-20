@@ -44,6 +44,18 @@ class ForumListMutationsTest {
     }
 
     @Test
+    fun dedupeForumMessagesOldestFirst_removesDuplicateServerIds() {
+        val duplicateId = "507f1f77bcf86cd799439099"
+        val messages = mutableListOf(
+            msg(duplicateId, "first"),
+            msg(duplicateId, "second"),
+        )
+        assertTrue(dedupeForumMessagesOldestFirst(messages))
+        assertEquals(1, messages.size)
+        assertEquals("second", messages.single().text)
+    }
+
+    @Test
     fun replaceMatchingPendingForumOutgoing_replacesByClientMessageId() {
         val clientId = "uuid-123"
         val messages = mutableListOf(

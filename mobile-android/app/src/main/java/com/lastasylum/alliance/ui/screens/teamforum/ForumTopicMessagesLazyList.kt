@@ -38,7 +38,10 @@ import com.lastasylum.alliance.ui.chat.ForumMessagesListDerived
 import com.lastasylum.alliance.ui.chat.ForumTimelineEntry
 import com.lastasylum.alliance.ui.chat.LocalChatHighlightMessageId
 import com.lastasylum.alliance.ui.chat.buildForumMessagesListDerived
+import com.lastasylum.alliance.ui.chat.duplicateForumLazyKeysInTimeline
+import com.lastasylum.alliance.ui.chat.duplicateForumMessageIdsIn
 import com.lastasylum.alliance.ui.chat.forumLazyIndexToTimelineIndex
+import com.lastasylum.alliance.ui.chat.forumTimelineMessageItemKey
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 
 /**
@@ -96,6 +99,8 @@ internal fun ForumTopicMessagesLazyList(
 ) {
     val timeline = listDerived.timeline
     val highlightId = highlightMessageId?.trim()?.takeIf { it.isNotEmpty() }
+    val duplicateMessageIds = remember(messages) { duplicateForumMessageIdsIn(messages) }
+    val duplicateLazyKeys = remember(timeline) { duplicateForumLazyKeysInTimeline(timeline) }
 
     CompositionLocalProvider(
         LocalChatHighlightMessageId provides highlightId,
@@ -123,7 +128,13 @@ internal fun ForumTopicMessagesLazyList(
                         forumLazyIndexToTimelineIndex(lazyIdx, timeline.lastIndex) ?: lazyIdx
                     when (val e = timeline[timelineIdx]) {
                         is ForumTimelineEntry.DaySeparator -> "day:$timelineIdx:${e.label}"
-                        is ForumTimelineEntry.Message -> "msg:${e.messageId}"
+                        is ForumTimelineEntry.Message -> forumTimelineMessageItemKey(
+                            timelineIndex = timelineIdx,
+                            messageIndex = e.messageIndex,
+                            messageId = e.messageId,
+                            duplicateIds = duplicateMessageIds,
+                            duplicateLazyKeys = duplicateLazyKeys,
+                        )
                     }
                 },
                 contentType = { lazyIdx ->

@@ -3,6 +3,7 @@ package com.lastasylum.alliance.ui.chat
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ForumMessagesListDeriverTest {
@@ -34,6 +35,22 @@ class ForumMessagesListDeriverTest {
         val messages = List(3) { i -> msg("id$i", "u", "2024-01-01T${10 + i}:00:00Z") }
         val derived = buildForumMessagesListDerived(messages)
         assertEquals(0, derived.bottomLazyIndex())
+    }
+
+    @Test
+    fun forumTimelineMessageItemKey_uniqueWhenDuplicateIdsInList() {
+        val duplicateId = "507f1f77bcf86cd799439099"
+        val messages = listOf(
+            msg(duplicateId, "u1", "2024-01-01T10:00:00Z"),
+            msg(duplicateId, "u1", "2024-01-02T10:00:00Z"),
+        )
+        val duplicateIds = duplicateForumMessageIdsIn(messages)
+        assertEquals(setOf(duplicateId), duplicateIds)
+        val key0 = forumTimelineMessageItemKey(1, 0, duplicateId, duplicateIds, emptySet())
+        val key1 = forumTimelineMessageItemKey(3, 1, duplicateId, duplicateIds, emptySet())
+        assertNotNull(key0)
+        assertNotNull(key1)
+        assertTrue(key0 != key1)
     }
 
     private fun msg(id: String, sender: String, createdAt: String) = TeamForumMessageDto(

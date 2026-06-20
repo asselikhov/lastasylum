@@ -118,6 +118,7 @@ import com.lastasylum.alliance.ui.chat.PinnedMessagesSheet
 import com.lastasylum.alliance.ui.chat.TopicPinSnapshot
 import com.lastasylum.alliance.ui.chat.buildOptimisticForumMessage
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
+import com.lastasylum.alliance.ui.chat.dedupeForumMessagesOldestFirst
 import com.lastasylum.alliance.ui.chat.capForumMessagesTrimNewestOnly
 import com.lastasylum.alliance.ui.chat.forumLazyIndexForMessageId
 import com.lastasylum.alliance.ui.chat.forumPinPreviewDisplayState
@@ -839,6 +840,7 @@ fun TeamForumTopicScreen(
                         messages.clear()
                         messages.addAll(merged)
                     }
+                    dedupeForumMessagesOldestFirst(messages)
                     trimForumMessagesInMemory()
                     hasMoreOlder = diskSnapshot.hasMoreOlder
                     loading = true
@@ -863,6 +865,7 @@ fun TeamForumTopicScreen(
                         )
                         messages.clear()
                         messages.addAll(merged)
+                        dedupeForumMessagesOldestFirst(messages)
                         capForumMessagesOldestFirst(messages)
                         bumpMessagesGeneration()
                         knownForumMessageIds = messages.map { it.id.trim() }.filter { it.isNotEmpty() }.toSet()
@@ -923,6 +926,9 @@ fun TeamForumTopicScreen(
                 messages.add(msg)
                 trimForumMessagesInMemory()
             }
+        }
+        if (dedupeForumMessagesOldestFirst(messages)) {
+            trimForumMessagesInMemory()
         }
         bumpMessagesGeneration()
         val msgId = msg.id.trim()

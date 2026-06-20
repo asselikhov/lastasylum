@@ -30,6 +30,51 @@ data class ForumMessagesListDerived(
     fun bottomLazyIndex(): Int? = if (timeline.isEmpty()) null else 0
 }
 
+fun duplicateForumMessageIdsIn(messages: List<TeamForumMessageDto>): Set<String> {
+    if (messages.size <= 1) return emptySet()
+    val counts = HashMap<String, Int>()
+    for (msg in messages) {
+        val id = msg.id.trim()
+        if (id.isEmpty()) continue
+        counts[id] = (counts[id] ?: 0) + 1
+    }
+    return counts.filterValues { it > 1 }.keys
+}
+
+fun forumTimelineMessageItemKey(
+    timelineIndex: Int,
+    messageIndex: Int,
+    messageId: String,
+    duplicateIds: Set<String> = emptySet(),
+    duplicateLazyKeys: Set<String> = emptySet(),
+): String {
+    val base = "msg:$messageId"
+    val id = messageId.trim()
+    val needsIndex = (id.isNotEmpty() && id in duplicateIds) || base in duplicateLazyKeys
+    return if (needsIndex) {
+        "t:$timelineIndex:m:$messageIndex:$base"
+    } else {
+        base
+    }
+}
+
+/** LazyColumn keys that appear more than once in [timeline] (socket/REST race). */
+fun duplicateForumLazyKeysInTimeline(timeline: List<ForumTimelineEntry>): Set<String> {
+    if (timeline.size <= 1) return emptySet()
+    val seen = HashSet<String>()
+    val dupes = HashSet<String>()
+    timeline.forEachIndexed { idx, entry ->
+        val key = when (entry) {
+            is ForumTimelineEntry.DaySeparator -> "day:$idx:${entry.label.trim()}"
+            is ForumTimelineEntry.Message -> "msg:${entry.messageId}"
+        }
+        if (!seen.add(key)) {
+            dupes.add(key)
+        }
+    }
+    return dupes
+}
+
 fun buildForumMessagesListDerived(
     messages: List<TeamForumMessageDto>,
 ): ForumMessagesListDerived {
