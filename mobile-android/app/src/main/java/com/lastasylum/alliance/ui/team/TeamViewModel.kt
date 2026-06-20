@@ -228,6 +228,23 @@ class TeamViewModel(
                                 clientUnread = clientNewsUnread,
                                 apiUnread = badges.newsUnread,
                             )
+                            if (resolvedNewsUnread == 0 && badges.newsUnread > 0 && profileId.isNotBlank()) {
+                                InboxUnreadReconciler.repairNewsStaleUnread(
+                                    teamsRepository = teamsRepository,
+                                    userSettingsPreferences = userSettingsPreferences,
+                                    teamId = teamId,
+                                    currentUserId = profileId,
+                                    apiNewsUnread = badges.newsUnread,
+                                )
+                            }
+                            if (forumUnread == 0 && forumRaw > 0 && topics != null) {
+                                InboxUnreadReconciler.repairForumStaleUnread(
+                                    teamsRepository = teamsRepository,
+                                    forumPrefs = teamForumPreferences,
+                                    teamId = teamId,
+                                    topics = topics,
+                                )
+                            }
                             val prevNewsUnread = _data.value.sectionBadges.newsUnread
                             if (resolvedNewsUnread > prevNewsUnread) {
                                 CombatOverlayService.notifyOverlayTeamNewsActivity()

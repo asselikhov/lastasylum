@@ -7,6 +7,9 @@ import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.data.teams.forum.ForumOutboxEntry
 import com.lastasylum.alliance.data.teams.forum.ForumOutboxResumeScheduler
 import com.lastasylum.alliance.di.AppContainer
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -18,6 +21,40 @@ class ForumTopicViewModel(app: Application) : AndroidViewModel(app) {
     val forumOutbox get() = container.forumOutbox
 
     val markReadCoalescer = ForumMarkReadCoalescer(viewModelScope)
+
+    private val _outboxConfirmed = MutableSharedFlow<TeamForumMessageDto>(extraBufferCapacity = 8)
+    val outboxConfirmed: SharedFlow<TeamForumMessageDto> = _outboxConfirmed.asSharedFlow()
+
+    private var registeredTeamId: String? = null
+    private var registeredTopicId: String? = null
+
+    fun bindTopicRegistry(teamId: String, topicId: String) {
+        val tid = teamId.trim()
+        val tpid = topicId.trim()
+        if (tid.isEmpty() || tpid.isEmpty()) return
+        registeredTeamId?.let { prevTeam ->
+            registeredTopicId?.let { prevTopic ->
+                ForumTopicViewModelRegistry.unregister(prevTeam, prevTopic, this)
+            }
+        }
+        registeredTeamId = tid
+        registeredTopicId = tpid
+        ForumTopicViewModelRegistry.register(tid, tpid, this)
+    }
+
+    fun onBackgroundOutboxConfirmed(
+        clientMessageId: String,
+        pendingMessageId: String,
+        sent: TeamForumMessageDto,
+    ) {
+        viewModelScope.launch {
+            _outboxConfirmed.emit(sent.withClientMessageId(clientMessageId))
+        }
+    }
+
+    private fun TeamForumMessageDto.withClientMessageId(clientMessageId: String): TeamForumMessageDto =
+        if (this.clientMessageId?.trim() == clientMessageId.trim()) this
+        else copy(clientMessageId = clientMessageId)
 
     suspend fun persistOutbox(entry: ForumOutboxEntry) {
         forumOutbox.persist(entry)
@@ -56,13 +93,22 @@ class ForumTopicViewModel(app: Application) : AndroidViewModel(app) {
                     imageFileIds = entry.imageFileIds,
                     fileFileId = entry.fileFileId,
                     clientMessageId = entry.clientMessageId,
-                ).onSuccess { onConfirmed(it) }
-                    .map { Unit }
+                )
             }
+        }
+        viewModelScope.launch {
+            outboxConfirmed.collect { onConfirmed(it) }
         }
     }
 
     override fun onCleared() {
+        registeredTeamId?.let { teamId ->
+            registeredTopicId?.let { topicId ->
+                ForumTopicViewModelRegistry.unregister(teamId, topicId, this)
+            }
+        }
+        registeredTeamId = null
+        registeredTopicId = null
         markReadCoalescer.clear()
         super.onCleared()
     }

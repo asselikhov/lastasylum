@@ -7,6 +7,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -72,5 +73,79 @@ class ForumOutboxTest {
         assertNotNull(row)
         assertEquals("failed", row!!.state)
         assertEquals(1, row.attempts)
+    }
+
+    @Test
+    fun resumePendingSync_successMarksSent() = runBlocking {
+        val entry = ForumOutboxEntry(
+            clientMessageId = "client-3",
+            userId = "user-1",
+            teamId = "team-1",
+            topicId = "topic-1",
+            pendingMessageId = "pending-3",
+            text = "from worker",
+            replyToMessageId = null,
+            imageFileIds = null,
+            fileFileId = null,
+            state = "pending",
+            attempts = 0,
+            createdAtMs = 1L,
+            lastError = null,
+        )
+        outbox.persist(entry)
+        outbox.resumePendingSync("user-1") {
+            Result.success(
+                com.lastasylum.alliance.data.teams.TeamForumMessageDto(
+                    id = "msg-3",
+                    topicId = entry.topicId,
+                    teamId = entry.teamId,
+                    senderUserId = "user-1",
+                    senderUsername = "me",
+                    text = entry.text,
+                    createdAt = "2026-01-01T00:00:00Z",
+                    updatedAt = "2026-01-01T00:00:00Z",
+                ),
+            )
+        }
+        assertNull(db.forumOutboxDao().getByClientId("client-3"))
+    }
+
+    @Test
+    fun recoverStuckSending_allowsRetry() = runBlocking {
+        db.forumOutboxDao().upsert(
+            com.lastasylum.alliance.data.chat.store.ForumOutboxEntity(
+                clientMessageId = "client-stuck",
+                userId = "user-1",
+                teamId = "team-1",
+                topicId = "topic-1",
+                pendingMessageId = "pending-stuck",
+                text = "stuck",
+                replyToMessageId = null,
+                imageFileIdsJson = null,
+                fileFileId = null,
+                state = "sending",
+                attempts = 1,
+                createdAtMs = 1L,
+                lastError = null,
+            ),
+        )
+        var sent = false
+        outbox.resumePendingSync("user-1") {
+            sent = true
+            Result.success(
+                com.lastasylum.alliance.data.teams.TeamForumMessageDto(
+                    id = "msg-stuck",
+                    topicId = "topic-1",
+                    teamId = "team-1",
+                    senderUserId = "user-1",
+                    senderUsername = "me",
+                    text = "stuck",
+                    createdAt = "2026-01-01T00:00:00Z",
+                    updatedAt = "2026-01-01T00:00:00Z",
+                ),
+            )
+        }
+        assertTrue(sent)
+        assertNull(db.forumOutboxDao().getByClientId("client-stuck"))
     }
 }

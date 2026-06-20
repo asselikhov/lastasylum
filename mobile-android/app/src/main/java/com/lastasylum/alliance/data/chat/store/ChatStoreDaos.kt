@@ -160,7 +160,15 @@ interface ForumReadCursorDao {
 
 @Dao
 interface ForumOutboxDao {
-    @Query("SELECT * FROM forum_outbox WHERE userId = :userId AND state IN ('pending','sending','failed') ORDER BY createdAtMs ASC")
+    @Query(
+        """
+        UPDATE forum_outbox SET state = 'failed', lastError = 'send_timeout', attempts = attempts + 1
+        WHERE userId = :userId AND state = 'sending'
+        """,
+    )
+    suspend fun recoverStuckSendingToFailed(userId: String): Int
+
+    @Query("SELECT * FROM forum_outbox WHERE userId = :userId AND state IN ('pending','failed') ORDER BY createdAtMs ASC")
     suspend fun getResumable(userId: String): List<ForumOutboxEntity>
 
     @Query("SELECT * FROM forum_outbox WHERE clientMessageId = :clientMessageId LIMIT 1")

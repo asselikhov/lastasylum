@@ -82,6 +82,10 @@ import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
+import com.lastasylum.alliance.data.teams.ForumMessageStash
+import com.lastasylum.alliance.data.teams.ForumSocketIngress
+import com.lastasylum.alliance.data.teams.TeamForumMessageDto
+import com.lastasylum.alliance.data.teams.TeamForumSocketState
 import com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent
 import com.lastasylum.alliance.data.teams.TeamForumTopicUnreadEvent
 import com.lastasylum.alliance.data.teams.TeamNewsActivityEvent
@@ -151,7 +155,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import com.lastasylum.alliance.ui.OVERLAY_WARMUP_MAX_MS
-import com.lastasylum.alliance.push.FcmTokenManager
+import com.lastasylum.alliance.data.teams.forum.ForumOutboxResumeScheduler
+import com.lastasylum.alliance.push.PushTokenRegistrationCoordinator
 import com.lastasylum.alliance.push.GameEventPushStripSuppressor
 import com.lastasylum.alliance.update.downloadAndInstallAppUpdate
 import com.lastasylum.alliance.update.checkAppUpdate
@@ -342,6 +347,7 @@ class CombatOverlayService : Service() {
     private var overlayChatHistoryClearedListener: (() -> Unit)? = null
     private var overlayForumTopicActivityListener: ((TeamForumTopicActivityEvent) -> Unit)? = null
     private var overlayForumTopicUnreadListener: ((TeamForumTopicUnreadEvent) -> Unit)? = null
+    private var overlayForumMessageListener: ((TeamForumMessageDto) -> Unit)? = null
     private var overlayNewsActivityListener: ((TeamNewsActivityEvent) -> Unit)? = null
     private var overlayReadListener: ((com.lastasylum.alliance.data.chat.ChatRoomReadEvent) -> Unit)? = null
     private var overlayRoomUnreadListener: ((com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) -> Unit)? = null
@@ -350,6 +356,7 @@ class CombatOverlayService : Service() {
     private var overlayReactionLogListener: ((com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto) -> Unit)? = null
     private var overlayReactionLogReactionListener: ((com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto) -> Unit)? = null
     private var overlayChatConnectionJob: Job? = null
+    private var overlayForumConnectionJob: Job? = null
     /** Burst waits for overlay:reaction:log when reply snapshot is not on overlay:reaction yet. */
     private val pendingIncomingReactionBursts = LinkedHashMap<String, OverlayReactionEvent>()
     private val pendingIncomingReactionBurstTimers = mutableMapOf<String, Runnable>()
@@ -1290,7 +1297,7 @@ class CombatOverlayService : Service() {
             for (delayMs in bootstrapDelaysMs) {
                 if (!isActive) return@launch
                 if (delayMs > 0) delay(delayMs)
-                if (FcmTokenManager.registerWithBackend(this@CombatOverlayService).isSuccess) {
+                if (PushTokenRegistrationCoordinator.registerWithBackend(this@CombatOverlayService).isSuccess) {
                     registered = true
                     OverlayRuntimeDiagnostics.recordFcmTokenRegistered()
                     break
@@ -1303,7 +1310,7 @@ class CombatOverlayService : Service() {
             while (isActive) {
                 delay(intervalMs)
                 runCatching {
-                    FcmTokenManager.registerWithBackend(this@CombatOverlayService)
+                    PushTokenRegistrationCoordinator.registerWithBackend(this@CombatOverlayService)
                 }
             }
         }
@@ -4208,6 +4215,8 @@ class CombatOverlayService : Service() {
             scheduleOverlayChatWarmup()
             stripSessionNeedsRestart = false
             scheduleOverlayAppUpdateCheck(force = true)
+            resetOverlaySocketReconnectBackoff()
+            serviceScope.launch { ensureOverlayRaidRoomReadyForSend() }
         } else if (shouldShow && stripSessionNeedsRestart) {
             ensureOverlayStripVisibleSession()
             resetOverlayVoiceForGameEntry()
@@ -4876,6 +4885,32 @@ class CombatOverlayService : Service() {
         }
         overlayNewsActivityListener = newsListener
         container.teamForumSocket.addNewsActivityListener(newsListener)
+        if (overlayForumMessageListener == null) {
+            val persistListener: (TeamForumMessageDto) -> Unit = listener@{ message ->
+                if (selfId.isNotBlank() && message.senderUserId.trim() == selfId) return@listener
+                if (!ForumSocketIngress.claimForPersistence(message.topicId, message.id)) return@listener
+                serviceScope.launch(Dispatchers.IO) {
+                    val uid = jwtSubFromAccessToken()?.trim().orEmpty()
+                    if (uid.isEmpty()) return@launch
+                    val tid = container.usersRepository.resolveMyProfilePreferCache()
+                        ?.playerTeamId
+                        ?.trim()
+                        .orEmpty()
+                    if (tid.isEmpty()) return@launch
+                    runCatching {
+                        container.forumRepository.onForumSocketMessage(
+                            userId = uid,
+                            teamId = tid,
+                            topicId = message.topicId,
+                            message = message,
+                        )
+                    }
+                }
+            }
+            overlayForumMessageListener = persistListener
+            container.teamForumSocket.addMessageListener(persistListener)
+        }
+        startOverlayForumConnectionCollector()
         serviceScope.launch(Dispatchers.IO) {
             val teamId = container.usersRepository.resolveMyProfilePreferCache()
                 ?.playerTeamId
@@ -4912,6 +4947,81 @@ class CombatOverlayService : Service() {
             }
         }
         overlayNewsActivityListener = null
+        overlayForumMessageListener?.let { listener ->
+            runCatching {
+                AppContainer.from(this).teamForumSocket.removeMessageListener(listener)
+            }
+        }
+        overlayForumMessageListener = null
+        stopOverlayForumConnectionCollector()
+    }
+
+    private fun startOverlayForumConnectionCollector() {
+        if (overlayForumConnectionJob != null) return
+        overlayForumConnectionJob = serviceScope.launch {
+            val container = AppContainer.from(this@CombatOverlayService)
+            var wasConnected =
+                container.teamForumSocket.connectionState.value == TeamForumSocketState.Connected
+            var hadConnectedBefore = wasConnected
+            container.teamForumSocket.connectionState.collect { state ->
+                val connected = state == TeamForumSocketState.Connected
+                if (connected && !wasConnected && hadConnectedBefore) {
+                    onOverlayForumSocketReconnected()
+                }
+                if (connected) {
+                    hadConnectedBefore = true
+                }
+                wasConnected = connected
+            }
+        }
+    }
+
+    private fun stopOverlayForumConnectionCollector() {
+        overlayForumConnectionJob?.cancel()
+        overlayForumConnectionJob = null
+    }
+
+    private fun onOverlayForumSocketReconnected() {
+        resetOverlaySocketReconnectBackoff()
+        serviceScope.launch(Dispatchers.IO) {
+            val container = AppContainer.from(this@CombatOverlayService)
+            val uid = jwtSubFromAccessToken()?.trim().orEmpty()
+            if (uid.isEmpty()) return@launch
+            val teamId = container.usersRepository.resolveMyProfilePreferCache()
+                ?.playerTeamId
+                ?.trim()
+                .orEmpty()
+            if (teamId.isEmpty()) return@launch
+            ForumOutboxResumeScheduler.schedule(this@CombatOverlayService, uid)
+            container.forumRepository.syncTopics(uid, teamId, bypassCache = true)
+            persistOverlayForumStashToRoom(uid, teamId, container)
+            mainHandler.post { overlayForumRehydrateAction?.invoke() }
+        }
+    }
+
+    private suspend fun persistOverlayForumStashToRoom(
+        userId: String,
+        teamId: String,
+        container: AppContainer,
+    ) {
+        ForumMessageStash.drainAllForTeam(teamId).forEach { (topicId, messages) ->
+            messages.forEach { message ->
+                runCatching {
+                    container.forumRepository.onForumSocketMessage(
+                        userId = userId,
+                        teamId = teamId,
+                        topicId = topicId,
+                        message = message,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun resetOverlaySocketReconnectBackoff() {
+        val container = AppContainer.from(this)
+        container.chatRepository.reconnectImmediatelyWithFreshToken()
+        container.teamForumSocket.reconnectImmediatelyWithFreshToken()
     }
 
     /** Маршрутизация raid/hub в ленту, пока слушатель оверлея активен или игрок в матче. */
@@ -5643,6 +5753,9 @@ class CombatOverlayService : Service() {
                         "stripDrop reason=not_eligible id=${normalized._id} inbound=$inbound",
                     )
                 }
+                if (inbound) {
+                    catchUpOverlayRaidStripFromRest()
+                }
                 return
             }
             if (
@@ -5744,6 +5857,9 @@ class CombatOverlayService : Service() {
                 )
             } else {
                 OverlayStripPendingIngest.enqueue(normalized)
+                if (inbound) {
+                    catchUpOverlayRaidStripFromRest()
+                }
             }
             return
         }

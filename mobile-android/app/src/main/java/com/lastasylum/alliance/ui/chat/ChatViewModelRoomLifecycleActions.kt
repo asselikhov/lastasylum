@@ -381,6 +381,7 @@ internal fun ChatViewModel.ensureAllianceHubRoomSelectedImpl() {
 internal fun ChatViewModel.onChatTabPausedImpl() {
         isChatTabActive = false
         snapshotSelectedRoomToMessageCache()
+        vmScope.launch { markReadCoalescer.flushAndAwait() }
     }
 
     /** Returning to the Chat tab: refresh badges; read cursor only when room is visible. */

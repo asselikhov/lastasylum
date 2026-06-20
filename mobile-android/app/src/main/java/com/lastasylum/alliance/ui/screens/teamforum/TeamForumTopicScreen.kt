@@ -81,6 +81,7 @@ import com.lastasylum.alliance.data.telemetry.LatencySpanType
 import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
 import com.lastasylum.alliance.data.teams.TeamForumTopicReadEvent
 import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
+import com.lastasylum.alliance.data.teams.forum.ForumOutboxResumeScheduler
 import com.lastasylum.alliance.data.teams.forum.ForumRepository
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
@@ -652,6 +653,7 @@ fun TeamForumTopicScreen(
             onNetworkMarkRead = { _, mid ->
                 forumRepository.markForumTopicRead(teamId, topicId, mid)
                     .onSuccess { notifyForumInboxAfterRead(mid) }
+                    .isSuccess
             },
             debounceMs = markReadDebounceMs,
         )
@@ -951,6 +953,10 @@ fun TeamForumTopicScreen(
         }
     }
 
+    LaunchedEffect(teamId, topicId) {
+        topicViewModel.bindTopicRegistry(teamId, topicId)
+    }
+
     LaunchedEffect(currentUserId, teamId, topicId) {
         topicViewModel.resumePendingOutbox(currentUserId) { confirmed ->
             mergeNew(confirmed, source = "outbox")
@@ -998,6 +1004,10 @@ fun TeamForumTopicScreen(
                     forceForumRefreshAfterReconnect = true
                     forumRepository.invalidateForumMessagesCache(teamId, topicId)
                     loadForumMessages(before = null, appendOlder = false, forceRefresh = true)
+                    val uid = currentUserId.trim()
+                    if (uid.isNotEmpty()) {
+                        ForumOutboxResumeScheduler.schedule(context, uid)
+                    }
                     forumRepository.getForumPeerReadCursor(teamId, topicId)
                         .onSuccess { peerUpto ->
                             val published = ForumPeerReadCursorLogic.hydratePeerRead(

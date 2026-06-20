@@ -298,6 +298,8 @@ class ChatRepository(
 
     fun onAccessTokenRefreshed() = realtime.onAccessTokenRefreshed()
 
+    fun reconnectImmediatelyWithFreshToken() = realtime.reconnectImmediatelyWithFreshToken()
+
     fun configureReconnectSessionRefresh(refresh: suspend () -> Unit) =
         realtime.configureReconnectSessionRefresh(refresh)
 

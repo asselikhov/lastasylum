@@ -49,4 +49,22 @@ object ForumMessageStash {
             return byKey.remove(k)?.toList().orEmpty()
         }
     }
+
+    /** Drain all stashed topics for a team (overlay reconnect catch-up). */
+    fun drainAllForTeam(teamId: String): Map<String, List<TeamForumMessageDto>> {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return emptyMap()
+        val prefix = "$tid|"
+        synchronized(lock) {
+            val keys = byKey.keys.filter { it.startsWith(prefix) }.toList()
+            if (keys.isEmpty()) return emptyMap()
+            val out = linkedMapOf<String, List<TeamForumMessageDto>>()
+            for (k in keys) {
+                val topicId = k.removePrefix(prefix)
+                if (topicId.isEmpty()) continue
+                byKey.remove(k)?.toList()?.takeIf { it.isNotEmpty() }?.let { out[topicId] = it }
+            }
+            return out
+        }
+    }
 }

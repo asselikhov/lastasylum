@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.push
 
+import com.lastasylum.alliance.data.telemetry.LatencySpanType
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.util.chatSenderDisplayLine
 import com.lastasylum.alliance.gameevents.GameEventCatalog
@@ -82,6 +83,11 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
         if (CombatOverlayService.inGameOverlayUiActive.value) {
             return
         }
+        val correlationId = message.messageId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: message.data["messageId"]?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "fcm-${System.nanoTime()}"
+        val tracker = AppContainer.from(app).deliveryLatencyTracker
+        val spanId = tracker.startSpan(LatencySpanType.FcmReceiveToNotify, correlationId)
         message.data["messageId"]?.trim()?.takeIf { it.isNotEmpty() }?.let {
             GameEventPushStripSuppressor.ackPushDelivered(it)
         }
@@ -117,6 +123,7 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
                 senderNickname = nickname,
                 senderLargeIcon = placeholderIcon,
             )
+            tracker.endSpan(spanId, "notify_first")
         }
         val largeIcon = PushNotificationSenderAvatar.loadLargeIcon(
             context = app,

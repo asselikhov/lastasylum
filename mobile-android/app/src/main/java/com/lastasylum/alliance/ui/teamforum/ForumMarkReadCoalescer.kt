@@ -26,7 +26,7 @@ class ForumMarkReadCoalescer(
     )
 
     private val topics = ConcurrentHashMap<String, TopicState>()
-    private var networkHandler: (suspend (topicId: String, messageId: String) -> Unit)? = null
+    private var networkHandler: (suspend (topicId: String, messageId: String) -> Boolean)? = null
 
     fun clear() {
         topics.values.forEach { state ->
@@ -52,12 +52,20 @@ class ForumMarkReadCoalescer(
         }
     }
 
+    fun hasPending(topicId: String? = null): Boolean {
+        val tid = topicId?.trim().orEmpty()
+        if (tid.isEmpty()) {
+            return topics.values.any { it.pendingMessageId?.isNotBlank() == true }
+        }
+        return topics[tid]?.pendingMessageId?.isNotBlank() == true
+    }
+
     fun schedule(
         topicId: String,
         messageId: String,
         getCurrentCursor: () -> String?,
         onOptimisticAdvance: (topicId: String, messageId: String) -> Unit,
-        onNetworkMarkRead: suspend (topicId: String, messageId: String) -> Unit,
+        onNetworkMarkRead: suspend (topicId: String, messageId: String) -> Boolean,
         debounceMs: Long = FORUM_MARK_READ_DEBOUNCE_MS,
     ) {
         val tid = topicId.trim()
@@ -93,7 +101,7 @@ class ForumMarkReadCoalescer(
 
     private suspend fun flushTopic(
         topicId: String,
-        onNetworkMarkRead: suspend (topicId: String, messageId: String) -> Unit,
+        onNetworkMarkRead: suspend (topicId: String, messageId: String) -> Boolean,
     ) {
         val state = topics[topicId] ?: return
         state.flushMutex.withLock {
@@ -105,8 +113,12 @@ class ForumMarkReadCoalescer(
                 return
             }
             state.pendingMessageId = null
-            onNetworkMarkRead(topicId, messageId)
-            state.lastPostedMessageId = messageId
+            val postedOk = onNetworkMarkRead(topicId, messageId)
+            if (postedOk) {
+                state.lastPostedMessageId = messageId
+            } else {
+                state.pendingMessageId = messageId
+            }
         }
     }
 }

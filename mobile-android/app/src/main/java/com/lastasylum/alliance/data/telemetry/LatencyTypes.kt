@@ -12,6 +12,8 @@ enum class LatencySpanType(val wire: String) {
     OverlayRaidQuickCommandSend("overlay_raid_quick_send"),
     /** Peer message socket delivery → visible in active chat list. */
     ChatPeerMessageVisible("chat_peer_message_visible"),
+    /** FCM data message received → first notification shown. */
+    FcmReceiveToNotify("fcm_receive_to_notify"),
 }
 
 data class LatencySnapshot(

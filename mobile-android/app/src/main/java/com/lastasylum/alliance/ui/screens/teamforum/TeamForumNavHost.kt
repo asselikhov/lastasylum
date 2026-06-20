@@ -47,7 +47,6 @@ import com.lastasylum.alliance.ui.chat.removePendingForumOutgoing
 import com.lastasylum.alliance.ui.chat.replaceMatchingPendingForumOutgoing
 import com.lastasylum.alliance.ui.chat.shouldBlockOwnForumOutgoingRealtime
 import com.lastasylum.alliance.ui.chat.shouldTriggerGapReconcile
-import com.lastasylum.alliance.data.teams.ForumMessageStash
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthCap
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
@@ -161,7 +160,10 @@ import android.app.Application
 import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
+import com.lastasylum.alliance.data.teams.ForumMessageStash
 import com.lastasylum.alliance.data.teams.ForumSocketIngress
+import com.lastasylum.alliance.data.teams.TeamForumSocketState
+import com.lastasylum.alliance.data.teams.forum.ForumOutboxResumeScheduler
 import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
 import com.lastasylum.alliance.data.teams.TeamForumTopicReadEvent
 import com.lastasylum.alliance.ui.chat.ForumPinCoordinator
@@ -294,14 +296,53 @@ fun TeamForumNavHost(
             return@LaunchedEffect
         }
         val route = navBackStackEntry?.destination?.route
-        val onTopic = route != null && route.startsWith("forum_topic/")
+        val inForum = route == ForumRoutes.LIST ||
+            (route != null && route.startsWith("forum_topic/"))
         com.lastasylum.alliance.overlay.CombatOverlayService.registerOverlayForumFlushPendingRead(
-            if (onTopic) {
-                { overlayTopicFlush?.invoke() }
+            if (inForum) {
+                suspend {
+                    overlayTopicFlush?.invoke()
+                    com.lastasylum.alliance.ui.teamforum.ForumTopicViewModelRegistry
+                        .flushAllPendingMarkRead()
+                }
             } else {
                 null
             },
         )
+    }
+    LaunchedEffect(teamId, sectionActive, currentUserId) {
+        if (!sectionActive) return@LaunchedEffect
+        val uid = currentUserId.trim()
+        if (uid.isEmpty()) return@LaunchedEffect
+        var wasConnected = forumSocket.connectionState.value == TeamForumSocketState.Connected
+        var hadConnectedBefore = wasConnected
+        forumSocket.connectionState.collect { state ->
+            val connected = state == TeamForumSocketState.Connected
+            if (connected && !wasConnected && hadConnectedBefore) {
+                val app = AppContainer.from(context.applicationContext)
+                scope.launch(Dispatchers.IO) {
+                    ForumOutboxResumeScheduler.schedule(context, uid)
+                    app.forumRepository.syncTopics(uid, teamId, bypassCache = true)
+                    ForumMessageStash.drainAllForTeam(teamId).forEach { (topicId, messages) ->
+                        messages.forEach { message ->
+                            runCatching {
+                                app.forumRepository.onForumSocketMessage(
+                                    userId = uid,
+                                    teamId = teamId,
+                                    topicId = topicId,
+                                    message = message,
+                                )
+                            }
+                        }
+                    }
+                }
+                listRefreshNonce++
+            }
+            if (connected) {
+                hadConnectedBefore = true
+            }
+            wasConnected = connected
+        }
     }
     LaunchedEffect(teamId, currentUserId) {
         val app = AppContainer.from(context.applicationContext)

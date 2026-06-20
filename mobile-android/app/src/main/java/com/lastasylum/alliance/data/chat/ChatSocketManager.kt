@@ -294,6 +294,14 @@ class ChatSocketManager(
         openSocket(base, token, rooms)
     }
 
+    /** Foreground / overlay resume: drop backoff and reconnect immediately. */
+    fun reconnectImmediatelyWithFreshToken() {
+        intentionalDisconnect = false
+        cancelReconnect()
+        reconnectAttempt = 0
+        reconnectWithFreshToken()
+    }
+
     fun addOutgoingMessageAckListener(listener: (clientMessageId: String, message: ChatMessage) -> Unit) {
         outgoingMessageAckListeners.add(listener)
     }

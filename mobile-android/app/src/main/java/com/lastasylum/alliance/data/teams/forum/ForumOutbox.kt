@@ -2,6 +2,7 @@ package com.lastasylum.alliance.data.teams.forum
 
 import com.lastasylum.alliance.data.chat.store.ForumOutboxEntity
 import com.lastasylum.alliance.data.chat.store.SquadRelayDatabase
+import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -49,17 +50,34 @@ class ForumOutbox(
         )
     }
 
+    suspend fun sendOutboxEntry(
+        entry: ForumOutboxEntry,
+        sendBlock: suspend (ForumOutboxEntry) -> Result<TeamForumMessageDto>,
+    ): Result<TeamForumMessageDto> {
+        val result = sendBlock(entry)
+        result.onSuccess { sent ->
+            markSent(entry.clientMessageId)
+            ForumOutboxUiBridge.onSendSuccess(entry, sent)
+        }.onFailure { err ->
+            markFailed(entry.clientMessageId, err.message ?: "send_failed")
+        }
+        return result
+    }
+
     suspend fun resumePendingSync(
         userId: String,
-        sendBlock: suspend (ForumOutboxEntry) -> Result<Unit>,
+        sendBlock: suspend (ForumOutboxEntry) -> Result<TeamForumMessageDto>,
     ) = resumeMutex.withLock {
-        val pending = withContext(Dispatchers.IO) { dao.getResumable(userId.trim()) }
+        val uid = userId.trim()
+        if (uid.isEmpty()) return@withLock
+        withContext(Dispatchers.IO) { dao.recoverStuckSendingToFailed(uid) }
+        val pending = withContext(Dispatchers.IO) { dao.getResumable(uid) }
         pending.forEach { row ->
             val entry = row.toEntry()
-            if (withContext(Dispatchers.IO) { dao.tryMarkSending(entry.clientMessageId) } <= 0) return@forEach
-            sendBlock(entry).onFailure { err ->
-                markFailed(entry.clientMessageId, err.message ?: "send_failed")
+            if (withContext(Dispatchers.IO) { dao.tryMarkSending(entry.clientMessageId) } <= 0) {
+                return@forEach
             }
+            sendOutboxEntry(entry, sendBlock)
         }
     }
 

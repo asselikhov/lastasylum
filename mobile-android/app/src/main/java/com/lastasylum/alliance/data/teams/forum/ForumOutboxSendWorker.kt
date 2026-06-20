@@ -29,7 +29,7 @@ class ForumOutboxSendWorker(
                 imageFileIds = entry.imageFileIds,
                 fileFileId = entry.fileFileId,
                 clientMessageId = entry.clientMessageId,
-            ).map { Unit }
+            )
         }
         return Result.success()
     }

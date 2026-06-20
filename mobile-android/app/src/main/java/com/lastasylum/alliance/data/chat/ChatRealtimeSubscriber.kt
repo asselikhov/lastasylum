@@ -284,6 +284,10 @@ class ChatRealtimeSubscriber(
         socketManager.reconnectWithFreshToken()
     }
 
+    fun reconnectImmediatelyWithFreshToken() {
+        socketManager.reconnectImmediatelyWithFreshToken()
+    }
+
     fun disconnectRealtime() {
         realtimeUiListener?.let { socketManager.removeMessageListener(it) }
         realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }

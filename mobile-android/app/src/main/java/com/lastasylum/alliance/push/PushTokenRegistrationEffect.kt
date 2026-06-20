@@ -61,7 +61,7 @@ fun PushTokenRegistrationEffect(enabled: Boolean) {
         val delays = listOf(0L, 1_000L, 2_000L, 4_000L, 8_000L, 15_000L, 30_000L, 60_000L)
         for (waitMs in delays) {
             if (waitMs > 0) delay(waitMs)
-            if (FcmTokenManager.registerWithBackend(context).isSuccess) return@LaunchedEffect
+            if (PushTokenRegistrationCoordinator.registerWithBackend(context).isSuccess) return@LaunchedEffect
         }
     }
 }

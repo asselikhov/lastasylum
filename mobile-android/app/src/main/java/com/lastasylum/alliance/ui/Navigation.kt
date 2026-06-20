@@ -71,7 +71,7 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.di.ChatViewModelRegistry
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayMainAppPresencePolicy
-import com.lastasylum.alliance.push.FcmTokenManager
+import com.lastasylum.alliance.push.PushTokenRegistrationCoordinator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -158,7 +158,18 @@ fun AppNavigation(
                     if (userId.isNotBlank()) {
                         CombatOverlayService.ensureRuntimeIfUserEnabled(appContext)
                         activity.lifecycleScope.launch(Dispatchers.IO) {
-                            runCatching { FcmTokenManager.registerWithBackend(appContext) }
+                            runCatching { PushTokenRegistrationCoordinator.registerWithBackend(appContext) }
+                            if (CombatOverlayService.inGameOverlayUiActive.value ||
+                                (
+                                    CombatOverlayService.isServiceInstanceActive &&
+                                        UserSettingsPreferences(appContext).isOverlayPanelEnabled()
+                                    )
+                            ) {
+                                runCatching {
+                                    app.chatRepository.reconnectImmediatelyWithFreshToken()
+                                    app.teamForumSocket.reconnectImmediatelyWithFreshToken()
+                                }
+                            }
                             delay(OverlayMainAppPresencePolicy.AWAY_PING_DEFER_MS)
                             val skipAway = OverlayMainAppPresencePolicy.shouldSkipAwayPing(
                                 inGameOverlayUiActive = CombatOverlayService.inGameOverlayUiActive.value,

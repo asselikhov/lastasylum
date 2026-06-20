@@ -23,13 +23,30 @@
 | Eligible cache | Stale fanout after roster/membership change | `invalidateEligibleUsersCache` on team join/leave + admin membership |
 | Dead code | Unused `OverlayChatHistoryPanel`, `shouldOverlayAutoMarkReadSelectedRoom` | Removed |
 
+## Fixed in deep remaining audit (2026-06-20)
+
+| Area | Issue | Fix |
+|------|-------|-----|
+| Forum outbox P0 | Success never called `markSent` — rows stuck in `sending` | `ForumOutbox.sendOutboxEntry` + `ForumOutboxUiBridge` + stuck-sending recovery |
+| Forum mark-read | Network failure silently advanced watermark | `ForumMarkReadCoalescer` parity with chat (Boolean + re-queue) |
+| Forum persist | `message:new` → Room only when forum panel open | Service-level persist listener in `CombatOverlayService` |
+| Strip fallback | Inbound ingest drop with no REST catch-up | `catchUpOverlayRaidStripFromRest` on drop / retry exhaustion |
+| Raid prefetch Q1 | Cold FGS first quick command delayed | `ensureOverlayRaidRoomReadyForSend` at FGS start + game entry |
+| Reconnect C3 | Long backoff after airplane mode | `reconnectImmediatelyWithFreshToken` on game entry / app ON_START |
+| Forum reconnect | No list/bg catch-up or outbox resume | NavHost + overlay collectors: `syncTopics`, stash drain, `ForumOutboxResumeScheduler` |
+| Forum panel R5 | List route skipped mark-read flush on close | Flush registered for all forum routes + `ForumTopicViewModelRegistry.flushAllPendingMarkRead` |
+| Team badges | Stale server badge on Team tab | `InboxUnreadReconciler` in `TeamViewModel.refreshSectionBadges` |
+| Chat tab pause | Debounced mark-read lost on quick tab switch | `markReadCoalescer.flushAndAwait()` in `onChatTabPausedImpl` |
+| FCM registration | Parallel callers, scattered backoff | `PushTokenRegistrationCoordinator` (mutex + dedupe) |
+| Telemetry | No FCM receive→notify span | `LatencySpanType.FcmReceiveToNotify` in `SquadRelayFirebaseMessagingService` |
+
 ## Remaining risks (low)
 
 - Overlay chat panel intentionally omits mark-all-read and clear-history (main app only).
 - `mergeLoadedPageWithExisting(authoritativeEmpty=false)` still keeps local rows when REST returns empty (intentional offline UX).
 - Forum pending ids use separate `ForumListMutations` helpers — not unified with `isOptimisticOutgoingMessageId`.
-- Background outbox success does not always update visible chat VM (WorkManager path).
 - Optional: add `clearedAt` to `chat:history:cleared` socket payload for offline clients that missed the event.
+- Two-device QA pass for full 18+8 scenario matrix remains manual (top 5 automated in `DeepRemainingAuditRegressionTest`).
 
 ## Fixed in prior pass
 

@@ -305,6 +305,14 @@ class TeamForumSocketManager {
         openSocket(base, token, tid, subscribedTopicId)
     }
 
+    /** Foreground / overlay resume: drop backoff and reconnect immediately. */
+    fun reconnectImmediatelyWithFreshToken() {
+        intentionalDisconnect = false
+        cancelReconnect()
+        reconnectAttempt = 0
+        reconnectWithFreshToken()
+    }
+
     fun emitTyping() {
         val tid = subscribedTeamId ?: return
         val top = subscribedTopicId ?: return
