@@ -260,6 +260,7 @@ fun FeedCardHero(
     contentDescription: String,
     modifier: Modifier = Modifier,
     topOverlay: @Composable (() -> Unit)? = null,
+    bottomEndOverlay: @Composable (() -> Unit)? = null,
 ) {
     val topShape = RoundedCornerShape(
         topStart = FeedCardDesignTokens.compactCornerRadius,
@@ -309,6 +310,15 @@ fun FeedCardHero(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        bottomEndOverlay?.let { overlay ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp),
+            ) {
+                overlay()
+            }
         }
     }
 }

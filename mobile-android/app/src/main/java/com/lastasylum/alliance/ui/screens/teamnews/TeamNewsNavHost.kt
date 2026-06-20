@@ -20,6 +20,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
 import com.lastasylum.alliance.data.teams.TeamNewsReadCursorSync
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.di.AppContainer
@@ -30,6 +31,7 @@ import com.lastasylum.alliance.overlay.OverlayPollVotersSheetHost
 private object TeamNewsRoutes {
     const val LIST = "news_list"
     const val CREATE = "news_create"
+    const val PREVIEW = "news_preview"
     fun detail(id: String) = "news_detail/$id"
     fun edit(id: String) = "news_edit/$id"
 }
@@ -54,6 +56,11 @@ fun TeamNewsNavHost(
     val nav = rememberNavController()
     var listRefreshNonce by remember { mutableIntStateOf(0) }
     var markReadHandlers by remember { mutableStateOf<Map<String, () -> Unit>>(emptyMap()) }
+    val authorUsername = remember {
+        JwtAccessTokenClaims.username(app.tokenStore.getAccessToken())
+            ?: JwtAccessTokenClaims.email(app.tokenStore.getAccessToken())
+            ?: "Вы"
+    }
     val registerMarkReadAction: (String, (() -> Unit)?) -> Unit = { key, action ->
         markReadHandlers = if (action == null) {
             markReadHandlers - key
@@ -157,9 +164,15 @@ fun TeamNewsNavHost(
                     teamId = teamId,
                     newsId = null,
                     teamsRepository = teamsRepository,
-                    onBack = { nav.popBackStack() },
-                    onDone = { nav.popBackStack() },
-                    onNewsInboxChanged = onNewsInboxChanged,
+                    initialDraft = TeamNewsEditorDraftHolder.draft,
+                    onBack = {
+                        TeamNewsEditorDraftHolder.draft = null
+                        nav.popBackStack()
+                    },
+                    onContinueToPreview = { draft ->
+                        TeamNewsEditorDraftHolder.draft = draft
+                        nav.navigate(TeamNewsRoutes.PREVIEW)
+                    },
                 )
             }
             composable(
@@ -175,8 +188,44 @@ fun TeamNewsNavHost(
                     teamId = teamId,
                     newsId = id,
                     teamsRepository = teamsRepository,
-                    onBack = { nav.popBackStack() },
-                    onDone = { nav.popBackStack() },
+                    initialDraft = TeamNewsEditorDraftHolder.draft,
+                    onBack = {
+                        TeamNewsEditorDraftHolder.draft = null
+                        nav.popBackStack()
+                    },
+                    onContinueToPreview = { draft ->
+                        TeamNewsEditorDraftHolder.draft = draft
+                        nav.navigate(TeamNewsRoutes.PREVIEW)
+                    },
+                )
+            }
+            composable(TeamNewsRoutes.PREVIEW) {
+                val draft = TeamNewsEditorDraftHolder.draft
+                if (draft == null) {
+                    LaunchedEffect(Unit) { nav.popBackStack() }
+                    return@composable
+                }
+                val editingExisting = draft.isEdit && !draft.newsId.isNullOrBlank()
+                val editingNewsId = draft.newsId
+                TeamNewsPublishPreviewScreen(
+                    teamId = teamId,
+                    draft = draft,
+                    authorUserId = currentUserId,
+                    authorUsername = authorUsername,
+                    teamsRepository = teamsRepository,
+                    onBackToEdit = { nav.popBackStack() },
+                    onPublished = { publishedId ->
+                        listRefreshNonce++
+                        nav.navigate(TeamNewsRoutes.detail(publishedId)) {
+                            if (editingExisting && editingNewsId != null) {
+                                popUpTo(TeamNewsRoutes.detail(editingNewsId)) { inclusive = true }
+                            } else {
+                                popUpTo(TeamNewsRoutes.LIST) { inclusive = false }
+                            }
+                            launchSingleTop = true
+                        }
+                    },
+                    onNewsInboxChanged = onNewsInboxChanged,
                 )
             }
         }

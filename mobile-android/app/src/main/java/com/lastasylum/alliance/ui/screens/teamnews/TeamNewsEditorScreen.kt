@@ -5,21 +5,27 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -27,6 +33,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,20 +41,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
-import com.lastasylum.alliance.di.AppContainer
-import com.lastasylum.alliance.data.teams.TeamNewsReadCursorSync
-import com.lastasylum.alliance.data.teams.CreateTeamNewsBody
-import com.lastasylum.alliance.data.teams.TeamNewsPollCreateBody
 import com.lastasylum.alliance.data.teams.TeamsRepository
-import com.lastasylum.alliance.data.teams.UpdateTeamNewsBody
-import com.lastasylum.alliance.overlay.CombatOverlayService
+import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
+import com.lastasylum.alliance.ui.chat.MessengerImagesPreviewHost
 import com.lastasylum.alliance.ui.components.team.journal.JournalEditorMode
 import com.lastasylum.alliance.ui.components.team.journal.JournalEditorTokens
 import com.lastasylum.alliance.ui.components.team.journal.JournalImageAttachment
@@ -55,14 +61,12 @@ import com.lastasylum.alliance.ui.components.team.journal.JournalImageAttachment
 import com.lastasylum.alliance.ui.components.team.journal.JournalModeChips
 import com.lastasylum.alliance.ui.components.team.journal.JournalPollOptionEditor
 import com.lastasylum.alliance.ui.components.team.journal.JournalPrimaryButton
+import com.lastasylum.alliance.ui.components.team.journal.JournalSectionDivider
+import com.lastasylum.alliance.ui.components.team.journal.JournalSectionHeader
 import com.lastasylum.alliance.ui.components.team.journal.JournalTextField
+import com.lastasylum.alliance.ui.screens.teamnews.resolvedTeamNewsImageUrl
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.launch
-
-private data class EditorAttachment(
-    val fileId: String,
-    val previewPath: String?,
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,38 +74,118 @@ internal fun TeamNewsEditorScreen(
     teamId: String,
     newsId: String?,
     teamsRepository: TeamsRepository,
+    initialDraft: TeamNewsEditorDraft? = null,
     onBack: () -> Unit,
-    onDone: () -> Unit,
-    onNewsInboxChanged: () -> Unit = {},
+    onContinueToPreview: (TeamNewsEditorDraft) -> Unit,
 ) {
     val context = LocalContext.current
     val res = context.resources
     val app = remember(context) { AppContainer.from(context.applicationContext) }
     val overlayUi = LocalOverlayUiMode.current
     val scope = rememberCoroutineScope()
-    var editorMode by remember { mutableStateOf(JournalEditorMode.News) }
-    var title by remember { mutableStateOf("") }
-    var body by remember { mutableStateOf("") }
-    val attachments = remember { mutableStateListOf<EditorAttachment>() }
-    var includePoll by remember { mutableStateOf(false) }
-    var pollQuestion by remember { mutableStateOf("") }
-    val pollOptions = remember { mutableStateListOf("", "") }
-    val pollOptionIds = remember { mutableStateListOf<String?>(null, null) }
-    var loading by remember { mutableStateOf(newsId != null) }
-    var saving by remember { mutableStateOf(false) }
+    var editorMode by remember { mutableStateOf(initialDraft?.mode ?: JournalEditorMode.News) }
+    var title by remember { mutableStateOf(initialDraft?.title.orEmpty()) }
+    var body by remember { mutableStateOf(initialDraft?.body.orEmpty()) }
+    val attachments = remember {
+        mutableStateListOf<EditorAttachment>().apply {
+            initialDraft?.attachments?.let { addAll(it) }
+        }
+    }
+    var includePoll by remember { mutableStateOf(initialDraft?.includePoll ?: false) }
+    var pollQuestion by remember { mutableStateOf(initialDraft?.pollQuestion.orEmpty()) }
+    val pollOptions = remember {
+        mutableStateListOf<String>().apply {
+            if (initialDraft != null) {
+                addAll(initialDraft.pollOptions)
+            } else {
+                add("")
+                add("")
+            }
+        }
+    }
+    val pollOptionIds = remember {
+        mutableStateListOf<String?>().apply {
+            if (initialDraft != null) {
+                addAll(initialDraft.pollOptionIds)
+            } else {
+                add(null)
+                add(null)
+            }
+        }
+    }
+    var loading by remember { mutableStateOf(newsId != null && initialDraft == null) }
     var err by remember { mutableStateOf<String?>(null) }
     var titleError by remember { mutableStateOf(false) }
     var bodyError by remember { mutableStateOf(false) }
     var pollError by remember { mutableStateOf(false) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
+    var imagePreviewStart by remember { mutableIntStateOf(-1) }
 
-    if (overlayUi) {
-        BackHandler(enabled = !saving) { onBack() }
+    val bringIntoView = remember { BringIntoViewRequester() }
+    val titleFocus = remember { FocusRequester() }
+    val bodyFocus = remember { FocusRequester() }
+    val pollQuestionFocus = remember { FocusRequester() }
+    val pollOptionFocuses = remember { mutableStateListOf<FocusRequester>() }
+    LaunchedEffect(pollOptions.size) {
+        while (pollOptionFocuses.size < pollOptions.size) {
+            pollOptionFocuses.add(FocusRequester())
+        }
+        while (pollOptionFocuses.size > pollOptions.size) {
+            pollOptionFocuses.removeAt(pollOptionFocuses.lastIndex)
+        }
+    }
+    var focusedScrollNonce by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(focusedScrollNonce) {
+        if (focusedScrollNonce > 0) {
+            bringIntoView.bringIntoView()
+        }
     }
 
+    val fillRequired = stringResource(R.string.team_news_fill_required)
+    val pollInvalid = stringResource(R.string.team_news_poll_invalid)
+    val maxImagesMsg = stringResource(R.string.team_news_max_images, MAX_TEAM_NEWS_IMAGES)
+
+    var baselineDraft by remember { mutableStateOf(initialDraft) }
+
+    fun currentDraft() = buildTeamNewsEditorDraft(
+        mode = editorMode,
+        title = title,
+        body = body,
+        attachments = attachments.toList(),
+        includePoll = includePoll,
+        pollQuestion = pollQuestion,
+        pollOptions = pollOptions.toList(),
+        pollOptionIds = pollOptionIds.toList(),
+        newsId = newsId,
+    )
+
+    fun requestBack() {
+        if (loading) return
+        val baseline = baselineDraft ?: buildTeamNewsEditorDraft(
+            mode = if (newsId == null) JournalEditorMode.News else editorMode,
+            title = "",
+            body = "",
+            attachments = emptyList(),
+            includePoll = false,
+            pollQuestion = "",
+            pollOptions = listOf("", ""),
+            pollOptionIds = listOf(null, null),
+            newsId = newsId,
+        )
+        if (currentDraft() != baseline) {
+            showDiscardDialog = true
+        } else {
+            onBack()
+        }
+    }
+
+    BackHandler(enabled = !loading) { requestBack() }
+
     LaunchedEffect(teamId, newsId) {
-        val nid = newsId ?: return@LaunchedEffect
+        if (initialDraft != null || newsId == null) return@LaunchedEffect
         loading = true
-        teamsRepository.getTeamNews(teamId, nid)
+        teamsRepository.getTeamNews(teamId, newsId)
             .onSuccess { d ->
                 title = d.title
                 body = d.body
@@ -129,6 +213,17 @@ internal fun TeamNewsEditorScreen(
                         editorMode = JournalEditorMode.PollOnly
                     }
                 }
+                baselineDraft = buildTeamNewsEditorDraft(
+                    mode = editorMode,
+                    title = title,
+                    body = body,
+                    attachments = attachments.toList(),
+                    includePoll = includePoll,
+                    pollQuestion = pollQuestion,
+                    pollOptions = pollOptions.toList(),
+                    pollOptionIds = pollOptionIds.toList(),
+                    newsId = newsId,
+                )
                 loading = false
             }
             .onFailure { e ->
@@ -141,28 +236,44 @@ internal fun TeamNewsEditorScreen(
         ActivityResultContracts.GetContent(),
     ) { uri ->
         uri ?: return@rememberLauncherForActivityResult
+        if (attachments.count { !it.fileId.isNullOrBlank() } >= MAX_TEAM_NEWS_IMAGES) {
+            err = maxImagesMsg
+            return@rememberLauncherForActivityResult
+        }
         if (overlayUi) {
             OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
         }
+        val placeholderIndex = attachments.size
+        attachments.add(EditorAttachment(fileId = null, previewPath = uri.toString(), uploading = true))
         scope.launch {
             val cr = context.contentResolver
             val mime = cr.getType(uri) ?: "image/jpeg"
             val bytes = cr.openInputStream(uri)?.use { it.readBytes() }
                 ?: run {
+                    attachments.removeAt(placeholderIndex.coerceAtMost(attachments.lastIndex))
                     err = res.getString(R.string.chat_attachment_read_failed)
                     return@launch
                 }
             val name = "upload_${System.currentTimeMillis()}.jpg"
             teamsRepository.uploadTeamNewsImage(teamId, bytes, name, mime)
                 .onSuccess { uploaded ->
-                    attachments.add(
-                        EditorAttachment(
+                    if (placeholderIndex < attachments.size) {
+                        attachments[placeholderIndex] = EditorAttachment(
                             fileId = uploaded.fileId,
                             previewPath = uploaded.url,
-                        ),
-                    )
+                            uploading = false,
+                        )
+                    }
                 }
-                .onFailure { e -> err = e.toUserMessageRu(res) }
+                .onFailure { e ->
+                    if (placeholderIndex < attachments.size) {
+                        attachments[placeholderIndex] = attachments[placeholderIndex].copy(
+                            uploading = false,
+                            uploadFailed = true,
+                        )
+                    }
+                    err = e.toUserMessageRu(res)
+                }
         }
     }
 
@@ -177,9 +288,49 @@ internal fun TeamNewsEditorScreen(
         attachments.map { att ->
             JournalImageAttachment(
                 fileId = att.fileId,
-                previewRequest = teamNewsAuthedImageRequest(context, att.previewPath),
+                previewRequest = when {
+                    att.uploading && att.previewPath?.startsWith("content:") == true -> {
+                        coil3.request.ImageRequest.Builder(context).data(att.previewPath).build()
+                    }
+                    else -> teamNewsAuthedImageRequest(context, att.previewPath)
+                },
+                uploading = att.uploading,
+                uploadFailed = att.uploadFailed,
             )
         }
+    }
+
+    val previewUrls = remember(attachments) {
+        attachments.mapNotNull { resolvedTeamNewsImageUrl(it.previewPath) }
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text(stringResource(R.string.team_news_discard_draft)) },
+            text = { Text(stringResource(R.string.team_news_discard_draft_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardDialog = false
+                    onBack()
+                }) {
+                    Text(stringResource(R.string.team_news_discard_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text(stringResource(R.string.chat_clear_room_cancel))
+                }
+            },
+        )
+    }
+
+    if (imagePreviewStart >= 0 && previewUrls.isNotEmpty()) {
+        MessengerImagesPreviewHost(
+            urls = previewUrls,
+            startIndex = imagePreviewStart.coerceIn(0, previewUrls.lastIndex),
+            onDismiss = { imagePreviewStart = -1 },
+        )
     }
 
     Scaffold(
@@ -197,7 +348,7 @@ internal fun TeamNewsEditorScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack, enabled = !saving) {
+                    IconButton(onClick = { requestBack() }) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.team_news_cd_back),
@@ -206,6 +357,47 @@ internal fun TeamNewsEditorScreen(
                 },
             )
         },
+        bottomBar = {
+            Surface(color = Color.Transparent) {
+                JournalPrimaryButton(
+                    label = stringResource(R.string.team_news_continue),
+                    onClick = {
+                        val validation = validateTeamNewsEditorDraft(
+                            mode = editorMode,
+                            title = title,
+                            body = body,
+                            includePoll = includePoll,
+                            pollQuestion = pollQuestion,
+                            pollOptions = pollOptions.toList(),
+                            attachments = attachments.toList(),
+                            fillRequiredMessageRes = R.string.team_news_fill_required,
+                            pollInvalidMessageRes = R.string.team_news_poll_invalid,
+                            maxImagesMessageRes = R.string.team_news_max_images,
+                        )
+                        titleError = TeamNewsEditorFieldError.Title in validation.fieldErrors
+                        bodyError = TeamNewsEditorFieldError.Body in validation.fieldErrors
+                        pollError = TeamNewsEditorFieldError.Poll in validation.fieldErrors
+                        if (!validation.isValid) {
+                            err = validation.messageRes?.let { res.getString(it) }
+                                ?: if (attachments.any { it.uploading }) {
+                                    res.getString(R.string.team_news_saving)
+                                } else {
+                                    null
+                                }
+                            return@JournalPrimaryButton
+                        }
+                        err = null
+                        onContinueToPreview(currentDraft())
+                    },
+                    enabled = !loading,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .imePadding()
+                        .padding(horizontal = JournalEditorTokens.screenHorizontalPad, vertical = 12.dp),
+                )
+            }
+        },
     ) { pad ->
         if (loading) {
             Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
@@ -213,23 +405,25 @@ internal fun TeamNewsEditorScreen(
             }
             return@Scaffold
         }
-        Column(
-            Modifier
+        LazyColumn(
+            modifier = Modifier
                 .padding(pad)
                 .fillMaxSize()
-                .then(if (!overlayUi) Modifier.imePadding() else Modifier),
+                .bringIntoViewRequester(bringIntoView)
+                .imePadding(),
+            contentPadding = PaddingValues(
+                horizontal = JournalEditorTokens.screenHorizontalPad,
+                vertical = 8.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(JournalEditorTokens.sectionGap),
         ) {
-            Column(
-                Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(JournalEditorTokens.sectionGap),
-            ) {
-                err?.let { msg ->
+            err?.let { msg ->
+                item(key = "err") {
                     Text(msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
-                if (newsId == null) {
+            }
+            if (newsId == null) {
+                item(key = "mode_chips") {
                     JournalModeChips(
                         selected = editorMode,
                         onSelect = { mode ->
@@ -242,14 +436,19 @@ internal fun TeamNewsEditorScreen(
                         pollLabel = stringResource(R.string.team_news_editor_mode_poll),
                     )
                 }
-                if (editorMode == JournalEditorMode.PollOnly) {
+            }
+            if (editorMode == JournalEditorMode.PollOnly) {
+                item(key = "poll_hint") {
                     Text(
                         text = stringResource(R.string.team_news_poll_only_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (editorMode == JournalEditorMode.News) {
+            }
+            if (editorMode == JournalEditorMode.News) {
+                item(key = "title_section") {
+                    JournalSectionHeader(stringResource(R.string.team_news_title_hint))
                     JournalTextField(
                         value = title,
                         onValueChange = {
@@ -259,8 +458,20 @@ internal fun TeamNewsEditorScreen(
                         label = stringResource(R.string.team_news_title_hint),
                         singleLine = true,
                         isError = titleError,
+                        errorMessage = if (titleError) fillRequired else null,
                         hint = "${title.length}/200",
+                        focusRequester = titleFocus,
+                        bringIntoViewRequester = bringIntoView,
+                        onFocused = { focusedScrollNonce++ },
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Next,
+                        ),
+                        keyboardActions = KeyboardActions(onNext = { bodyFocus.requestFocus() }),
                     )
+                }
+                item(key = "body_section") {
+                    JournalSectionHeader(stringResource(R.string.team_news_body_hint))
                     JournalTextField(
                         value = body,
                         onValueChange = {
@@ -270,14 +481,31 @@ internal fun TeamNewsEditorScreen(
                         label = stringResource(R.string.team_news_body_hint),
                         minLines = 6,
                         isError = bodyError,
+                        errorMessage = if (bodyError) fillRequired else null,
+                        focusRequester = bodyFocus,
+                        bringIntoViewRequester = bringIntoView,
+                        onFocused = { focusedScrollNonce++ },
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Default,
+                        ),
                     )
+                }
+                item(key = "images_section") {
+                    JournalSectionHeader(stringResource(R.string.team_news_images_section))
                     JournalImageAttachmentGrid(
                         attachments = journalAttachments,
                         onAdd = { launchImagePicker() },
                         onRemove = { index -> attachments.removeAt(index) },
                         addLabel = stringResource(R.string.team_news_pick_image),
-                        enabled = !saving,
+                        enabled = !attachments.any { it.uploading },
+                        maxImages = MAX_TEAM_NEWS_IMAGES,
+                        onPreview = { index ->
+                            if (index < previewUrls.size) imagePreviewStart = index
+                        },
                     )
+                }
+                item(key = "poll_toggle") {
                     if (includePoll) {
                         TextButton(onClick = { includePoll = false }) {
                             Text(stringResource(R.string.team_news_remove_poll))
@@ -288,7 +516,15 @@ internal fun TeamNewsEditorScreen(
                         }
                     }
                 }
-                if (editorMode == JournalEditorMode.PollOnly || includePoll) {
+            }
+            if (editorMode == JournalEditorMode.PollOnly || includePoll) {
+                item(key = "poll_divider") {
+                    if (editorMode == JournalEditorMode.News) {
+                        JournalSectionDivider()
+                    }
+                    JournalSectionHeader(stringResource(R.string.team_news_poll_section))
+                }
+                item(key = "poll_question") {
                     JournalTextField(
                         value = pollQuestion,
                         onValueChange = {
@@ -299,7 +535,20 @@ internal fun TeamNewsEditorScreen(
                         singleLine = false,
                         minLines = 2,
                         isError = pollError,
+                        errorMessage = if (pollError) pollInvalid else null,
+                        focusRequester = pollQuestionFocus,
+                        bringIntoViewRequester = bringIntoView,
+                        onFocused = { focusedScrollNonce++ },
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Next,
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { pollOptionFocuses.firstOrNull()?.requestFocus() },
+                        ),
                     )
+                }
+                item(key = "poll_options") {
                     val pollOptionLabels = pollOptions.indices.map { i ->
                         stringResource(R.string.team_news_poll_option_hint, i + 1)
                     }
@@ -314,7 +563,9 @@ internal fun TeamNewsEditorScreen(
                             pollOptions.removeAt(index)
                             pollOptionIds.removeAt(index)
                         },
-                        enabled = !saving,
+                        bringIntoViewRequester = bringIntoView,
+                        onOptionFocused = { focusedScrollNonce++ },
+                        focusRequesters = pollOptionFocuses,
                     )
                     if (pollOptions.size < 8) {
                         TextButton(
@@ -322,117 +573,15 @@ internal fun TeamNewsEditorScreen(
                                 pollOptions.add("")
                                 pollOptionIds.add(null)
                             },
-                            enabled = !saving,
                         ) {
                             Text(stringResource(R.string.team_news_add_option))
                         }
                     }
                 }
             }
-            JournalPrimaryButton(
-                label = stringResource(R.string.team_news_save),
-                onClick = {
-                    val pollOnly = editorMode == JournalEditorMode.PollOnly
-                    val wantsPoll = pollOnly || includePoll
-                    titleError = false
-                    bodyError = false
-                    pollError = false
-                    if (wantsPoll) {
-                        val filled = pollOptions.count { o -> o.isNotBlank() }
-                        if (pollQuestion.isBlank() || filled < 2) {
-                            pollError = true
-                            err = res.getString(R.string.team_news_poll_invalid)
-                            return@JournalPrimaryButton
-                        }
-                    }
-                    if (!pollOnly && title.isBlank()) {
-                        titleError = true
-                        err = res.getString(R.string.team_news_fill_required)
-                        return@JournalPrimaryButton
-                    }
-                    if (!pollOnly && body.isBlank()) {
-                        bodyError = true
-                        err = res.getString(R.string.team_news_fill_required)
-                        return@JournalPrimaryButton
-                    }
-                    err = null
-                    saving = true
-                    scope.launch {
-                        val pollBody =
-                            if (wantsPoll) {
-                                val optionPairs = pollOptions.indices.mapNotNull { i ->
-                                    val text = pollOptions[i].trim()
-                                    if (text.isEmpty()) null else text to pollOptionIds.getOrNull(i)
-                                }
-                                TeamNewsPollCreateBody(
-                                    question = pollQuestion.trim(),
-                                    optionTexts = optionPairs.map { it.first },
-                                    optionIds = if (newsId != null) {
-                                        optionPairs.map { (_, id) -> id.orEmpty() }
-                                    } else {
-                                        null
-                                    },
-                                )
-                            } else {
-                                null
-                            }
-                        val publishTitle =
-                            if (pollOnly) null else title.trim().takeIf { it.isNotEmpty() }
-                        val publishBody =
-                            if (pollOnly) null else body.trim().takeIf { it.isNotEmpty() }
-                        val publishImages = if (pollOnly) emptyList() else attachments.map { it.fileId }
-                        if (newsId == null) {
-                            teamsRepository.createTeamNews(
-                                teamId,
-                                CreateTeamNewsBody(
-                                    title = publishTitle,
-                                    body = publishBody,
-                                    imageFileIds = publishImages,
-                                    poll = pollBody,
-                                ),
-                            )
-                                .onSuccess { created ->
-                                    TeamNewsReadCursorSync.markNewsSeen(
-                                        app.teamsRepository,
-                                        app.userSettingsPreferences,
-                                        teamId,
-                                        created.createdAt,
-                                    )
-                                    onNewsInboxChanged()
-                                    CombatOverlayService.notifyOverlayTeamNewsActivity()
-                                    saving = false
-                                    onDone()
-                                }
-                                .onFailure { e ->
-                                    err = e.toUserMessageRu(res)
-                                    saving = false
-                                }
-                        } else {
-                            teamsRepository.updateTeamNews(
-                                teamId,
-                                newsId,
-                                UpdateTeamNewsBody(
-                                    title = if (pollOnly) null else title.trim().ifBlank { null },
-                                    body = if (pollOnly) null else body.trim(),
-                                    imageFileIds = if (pollOnly) emptyList() else attachments.map { it.fileId },
-                                    poll = if (wantsPoll) pollBody else null,
-                                    clearPoll = if (!wantsPoll) true else null,
-                                ),
-                            )
-                                .onSuccess { saving = false; onDone() }
-                                .onFailure { e ->
-                                    err = e.toUserMessageRu(res)
-                                    saving = false
-                                }
-                        }
-                    }
-                },
-                enabled = !saving,
-                loading = saving,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
-            )
+            item(key = "bottom_spacer") {
+                Box(Modifier.padding(bottom = 8.dp))
+            }
         }
     }
 }

@@ -40,6 +40,7 @@ export type TeamNewsListRow = {
   pollQuestion: string | null;
   pollOptions: Array<{ id: string; text: string }> | null;
   firstImageRelativeUrl: string | null;
+  imageCount: number;
   pollTallies: Array<{ optionId: string; count: number }>;
   myVoteOptionId: string | null;
 };
@@ -285,6 +286,7 @@ export class TeamNewsService {
       pollOptions:
         poll?.options.map((o) => ({ id: o.id, text: o.text })) ?? null,
       firstImageRelativeUrl: first,
+      imageCount: doc.imageAttachments.length,
       pollTallies: tallies,
       myVoteOptionId,
     };

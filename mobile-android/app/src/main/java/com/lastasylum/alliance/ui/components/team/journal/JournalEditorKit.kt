@@ -35,10 +35,23 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,13 +70,14 @@ import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 
 @Immutable
 object JournalEditorTokens {
-    val fieldShape = RoundedCornerShape(14.dp)
-    val chipShape = RoundedCornerShape(14.dp)
-    val buttonShape = RoundedCornerShape(14.dp)
-    val thumbShape = RoundedCornerShape(12.dp)
-    val fieldPaddingH = 14.dp
-    val fieldPaddingV = 12.dp
-    val sectionGap = 12.dp
+    val fieldShape = RoundedCornerShape(16.dp)
+    val chipShape = RoundedCornerShape(16.dp)
+    val buttonShape = RoundedCornerShape(16.dp)
+    val thumbShape = RoundedCornerShape(14.dp)
+    val fieldPaddingH = 16.dp
+    val fieldPaddingV = 14.dp
+    val sectionGap = 16.dp
+    val screenHorizontalPad = 16.dp
     val thumbSize = 88.dp
     val fieldMinHeightMulti = 160.dp
 
@@ -100,6 +114,30 @@ enum class JournalEditorMode {
 }
 
 @Composable
+fun JournalSectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = title,
+        style = JournalEditorTokens.labelStyle.copy(
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+        ),
+        modifier = modifier.padding(bottom = 4.dp),
+    )
+}
+
+@Composable
+fun JournalSectionDivider(modifier: Modifier = Modifier) {
+    HorizontalDivider(
+        modifier = modifier.padding(vertical = 4.dp),
+        thickness = 1.dp,
+        color = Color.White.copy(alpha = 0.08f),
+    )
+}
+
+@Composable
 fun JournalTextField(
     value: String,
     onValueChange: (String) -> Unit,
@@ -109,8 +147,14 @@ fun JournalTextField(
     minLines: Int = 1,
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
     isError: Boolean = false,
+    errorMessage: String? = null,
     hint: String? = null,
     enabled: Boolean = true,
+    focusRequester: FocusRequester? = null,
+    bringIntoViewRequester: BringIntoViewRequester? = null,
+    onFocused: () -> Unit = {},
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
     val shape = JournalEditorTokens.fieldShape
     val borderColor = if (isError) JournalEditorTokens.fieldBorderError else JournalEditorTokens.fieldBorderDefault
@@ -143,6 +187,8 @@ fun JournalTextField(
             maxLines = maxLines,
             textStyle = JournalEditorTokens.fieldTextStyle,
             cursorBrush = SolidColor(PremiumColors.accentCyan),
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
             modifier = Modifier
                 .fillMaxWidth()
                 .then(
@@ -153,6 +199,17 @@ fun JournalTextField(
                             .heightIn(min = JournalEditorTokens.fieldMinHeightMulti)
                     },
                 )
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+                .then(
+                    if (bringIntoViewRequester != null) {
+                        Modifier.bringIntoViewRequester(bringIntoViewRequester)
+                    } else {
+                        Modifier
+                    },
+                )
+                .onFocusChanged { state ->
+                    if (state.isFocused) onFocused()
+                }
                 .clip(shape)
                 .background(JournalEditorTokens.fieldBackground)
                 .border(1.dp, borderColor, shape)
@@ -161,6 +218,26 @@ fun JournalTextField(
                     vertical = JournalEditorTokens.fieldPaddingV,
                 ),
         )
+        if (isError && !errorMessage.isNullOrBlank()) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Outlined.ErrorOutline,
+                    contentDescription = null,
+                    tint = JournalEditorTokens.fieldBorderError,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    text = errorMessage,
+                    style = JournalEditorTokens.labelStyle.copy(
+                        color = JournalEditorTokens.fieldBorderError,
+                        fontSize = 12.sp,
+                    ),
+                )
+            }
+        }
     }
 }
 
@@ -276,8 +353,10 @@ private fun JournalModeChip(
 }
 
 data class JournalImageAttachment(
-    val fileId: String,
+    val fileId: String?,
     val previewRequest: ImageRequest?,
+    val uploading: Boolean = false,
+    val uploadFailed: Boolean = false,
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -289,60 +368,59 @@ fun JournalImageAttachmentGrid(
     addLabel: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    maxImages: Int = 10,
+    onPreview: ((Int) -> Unit)? = null,
 ) {
-    FlowRow(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        attachments.forEachIndexed { index, attachment ->
-            Box(
-                modifier = Modifier
-                    .size(JournalEditorTokens.thumbSize)
-                    .clip(JournalEditorTokens.thumbShape)
-                    .background(JournalEditorTokens.fieldBackground)
-                    .border(1.dp, JournalEditorTokens.fieldBorderDefault, JournalEditorTokens.thumbShape),
-            ) {
-                attachment.previewRequest?.let { req ->
-                    AsyncImage(
-                        model = req,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
-                IconButton(
-                    onClick = { onRemove(index) },
+    val readyCount = attachments.count { !it.uploading && !it.fileId.isNullOrBlank() }
+    val canAdd = enabled && readyCount < maxImages && !attachments.any { it.uploading }
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        when {
+            attachments.size == 1 && !attachments[0].uploading -> {
+                EditorImageTile(
+                    attachment = attachments[0],
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(28.dp)
-                        .padding(2.dp),
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f),
+                    onRemove = { onRemove(0) },
+                    onPreview = onPreview?.let { { it(0) } },
+                    enabled = enabled,
+                )
+            }
+            attachments.isEmpty() -> Unit
+            else -> {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier
-                            .size(18.dp)
-                            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(9.dp))
-                            .padding(2.dp),
-                    )
+                    attachments.forEachIndexed { index, attachment ->
+                        EditorImageTile(
+                            attachment = attachment,
+                            modifier = Modifier.size(
+                                if (attachments.size >= 5) 100.dp else JournalEditorTokens.thumbSize,
+                            ),
+                            onRemove = { onRemove(index) },
+                            onPreview = onPreview?.let { { it(index) } },
+                            enabled = enabled,
+                        )
+                    }
                 }
             }
         }
-        if (enabled) {
+        if (canAdd) {
             Box(
                 modifier = Modifier
-                    .size(JournalEditorTokens.thumbSize)
+                    .fillMaxWidth()
+                    .height(52.dp)
                     .clip(JournalEditorTokens.thumbShape)
                     .background(JournalEditorTokens.fieldBackground)
                     .border(1.dp, JournalEditorTokens.fieldBorderDefault, JournalEditorTokens.thumbShape)
                     .clickable(onClick = onAdd),
                 contentAlignment = Alignment.Center,
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
                         Icons.Default.Add,
@@ -351,10 +429,83 @@ fun JournalImageAttachmentGrid(
                     )
                     Text(
                         text = addLabel,
-                        style = JournalEditorTokens.labelStyle.copy(fontSize = 11.sp),
+                        style = JournalEditorTokens.labelStyle,
                         color = JournalEditorTokens.hintColor,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditorImageTile(
+    attachment: JournalImageAttachment,
+    modifier: Modifier,
+    onRemove: () -> Unit,
+    onPreview: (() -> Unit)?,
+    enabled: Boolean,
+) {
+    Box(
+        modifier = modifier
+            .clip(JournalEditorTokens.thumbShape)
+            .background(JournalEditorTokens.fieldBackground)
+            .border(
+                1.dp,
+                if (attachment.uploadFailed) {
+                    JournalEditorTokens.fieldBorderError
+                } else {
+                    JournalEditorTokens.fieldBorderDefault
+                },
+                JournalEditorTokens.thumbShape,
+            )
+            .then(
+                if (onPreview != null && !attachment.uploading && attachment.previewRequest != null) {
+                    Modifier.clickable(onClick = onPreview)
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
+        attachment.previewRequest?.let { req ->
+            AsyncImage(
+                model = req,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        }
+        if (attachment.uploading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(28.dp),
+                    strokeWidth = 2.dp,
+                    color = Color.White,
+                )
+            }
+        }
+        if (enabled && !attachment.uploading) {
+            IconButton(
+                onClick = onRemove,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(28.dp)
+                    .padding(2.dp),
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(9.dp))
+                        .padding(2.dp),
+                )
             }
         }
     }
@@ -369,6 +520,9 @@ fun JournalPollOptionEditor(
     modifier: Modifier = Modifier,
     minOptions: Int = 2,
     enabled: Boolean = true,
+    bringIntoViewRequester: BringIntoViewRequester? = null,
+    onOptionFocused: (Int) -> Unit = {},
+    focusRequesters: List<FocusRequester>? = null,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -380,6 +534,7 @@ fun JournalPollOptionEditor(
                 verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                val isLast = index == options.lastIndex
                 JournalTextField(
                     value = value,
                     onValueChange = { onOptionChange(index, it) },
@@ -387,6 +542,18 @@ fun JournalPollOptionEditor(
                     singleLine = true,
                     enabled = enabled,
                     modifier = Modifier.weight(1f),
+                    focusRequester = focusRequesters?.getOrNull(index),
+                    bringIntoViewRequester = bringIntoViewRequester,
+                    onFocused = { onOptionFocused(index) },
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = if (isLast) ImeAction.Done else ImeAction.Next,
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = {
+                            focusRequesters?.getOrNull(index + 1)?.requestFocus()
+                        },
+                    ),
                 )
                 if (options.size > minOptions) {
                     IconButton(

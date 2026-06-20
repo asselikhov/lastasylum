@@ -171,6 +171,7 @@ fun TeamNewsFeedCard(
 ) {
     val formattedCreatedAt = remember(item.createdAt) { formatTeamFeedDateRu(item.createdAt) }
     val hasHero = !item.firstImageRelativeUrl.isNullOrBlank()
+    val extraImages = (item.imageCount - 1).coerceAtLeast(0)
     val pollQuestion = item.pollQuestion?.trim().orEmpty()
     val pollOptions = item.pollOptions.orEmpty()
     val showPollPreview = item.hasPoll && pollQuestion.isNotEmpty() && pollOptions.size >= 2
@@ -210,6 +211,13 @@ fun TeamNewsFeedCard(
                     contentDescription = item.title,
                     topOverlay = {
                         if (isUnread) FeedCardUnreadTonalBadge(label = unreadBadge)
+                    },
+                    bottomEndOverlay = if (extraImages > 0) {
+                        {
+                            TeamNewsFeedGalleryMoreBadge(extraCount = extraImages)
+                        }
+                    } else {
+                        null
                     },
                 )
                 HorizontalDivider(
@@ -306,4 +314,26 @@ fun TeamNewsFeedCard(
             }
         },
     )
+}
+
+@Composable
+private fun TeamNewsFeedGalleryMoreBadge(
+    extraCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    if (extraCount <= 0) return
+    val label = stringResource(R.string.team_news_gallery_more, extraCount)
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.Black.copy(alpha = 0.62f))
+            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White,
+        )
+    }
 }

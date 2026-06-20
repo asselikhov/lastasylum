@@ -108,6 +108,7 @@ data class TeamNewsListItemDto(
     val pollQuestion: String? = null,
     val pollOptions: List<TeamNewsPollOptionDto>? = null,
     val firstImageRelativeUrl: String?,
+    val imageCount: Int = 0,
     val pollTallies: List<TeamNewsPollTallyDto> = emptyList(),
     val myVoteOptionId: String? = null,
 )
