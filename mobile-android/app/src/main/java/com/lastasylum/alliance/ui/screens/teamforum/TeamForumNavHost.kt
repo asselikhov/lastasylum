@@ -191,7 +191,6 @@ import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
 import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
 import com.lastasylum.alliance.ui.util.forumMessageHasMenuCopyAction
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
-import com.lastasylum.alliance.overlay.OverlayReactionLogJumpToUnreadFab
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
@@ -355,8 +354,6 @@ fun TeamForumNavHost(
                             .notifyOverlayTeamNewsActivity()
                     }
                 }
-            val onTopicUnread: (com.lastasylum.alliance.data.teams.TeamForumTopicUnreadEvent) -> Unit =
-                { listRefreshNonce++ }
             val app = AppContainer.from(context.applicationContext)
             val onForumMessage: (TeamForumMessageDto) -> Unit = { message ->
                 val uid = currentUserId.trim()
@@ -377,7 +374,6 @@ fun TeamForumNavHost(
             forumSocket.addTopicActivityListener(onTopicActivity)
             forumSocket.addTopicPinChangedListener(onTopicPin)
             forumSocket.addNewsActivityListener(onNewsActivity)
-            forumSocket.addTopicUnreadListener(onTopicUnread)
             forumSocket.connectTeamInbox(
                 com.lastasylum.alliance.BuildConfig.API_BASE_URL,
                 teamId,
@@ -387,7 +383,6 @@ fun TeamForumNavHost(
                 forumSocket.removeTopicActivityListener(onTopicActivity)
                 forumSocket.removeTopicPinChangedListener(onTopicPin)
                 forumSocket.removeNewsActivityListener(onNewsActivity)
-                forumSocket.removeTopicUnreadListener(onTopicUnread)
             }
         }
     }

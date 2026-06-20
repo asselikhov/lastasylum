@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -58,7 +59,6 @@ import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.ui.components.CenteredScreenLoading
 import com.lastasylum.alliance.ui.components.PremiumEmptyState
-import com.lastasylum.alliance.ui.components.premium.PremiumGradientIconFab
 import com.lastasylum.alliance.ui.components.team.FeedAnimationTier
 import com.lastasylum.alliance.ui.components.team.ForumTopicCardTokens
 import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
@@ -500,13 +500,15 @@ fun TeamForumListScreen(
                     }
                 }
             }
-            if (canManageTopics && !overlayUi) {
-                PremiumGradientIconFab(
+            if (canManageTopics) {
+                FloatingActionButton(
                     onClick = {
                         OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                         createTitle = ""
                         showCreate = true
                     },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(16.dp),
@@ -514,7 +516,6 @@ fun TeamForumListScreen(
                     Icon(
                         Icons.Filled.Add,
                         contentDescription = stringResource(R.string.team_forum_new_topic_cd),
-                        tint = MaterialTheme.colorScheme.onPrimary,
                     )
                 }
             }

@@ -74,4 +74,47 @@ class TeamInboxBadgeDeriverTest {
             ),
         )
     }
+
+    @Test
+    fun syncForumBadgeFromTopics_shouldNotDoubleApplyAggregateOptimisticFloor() {
+        val topic = TeamForumTopicDto(
+            id = "t1",
+            teamId = "team1",
+            title = "General",
+            createdByUserId = "u1",
+            messageCount = 5,
+            unreadCount = 1,
+            lastReadMessageId = null,
+            createdAt = "2024-01-01T00:00:00Z",
+            updatedAt = "2024-01-01T00:00:00Z",
+        )
+        val floors = mapOf("t1" to 1)
+        val counts = TeamInboxBadgeDeriver.computeForumUnreadCounts(
+            topics = listOf(topic),
+            localReadByTopic = emptyMap(),
+            optimisticFloorByTopic = floors,
+        )
+        val correctTabBadge = TeamInboxBadgeDeriver.mergeForDisplay(
+            effectiveUnread = counts.effective,
+            previouslyDisplayed = 0,
+            rawServerUnread = counts.rawServer,
+            optimisticFloor = 0,
+        )
+        val inflatedTabBadge = TeamInboxBadgeDeriver.mergeForDisplay(
+            effectiveUnread = counts.effective,
+            previouslyDisplayed = 0,
+            rawServerUnread = counts.rawServer,
+            optimisticFloor = floors.values.sum(),
+        )
+        assertEquals(counts.effective, correctTabBadge)
+        assertEquals(correctTabBadge, inflatedTabBadge)
+    }
+
+    @Test
+    fun overlaySeed_resolveForumUnread_prefersClientZeroOverStaleCache() {
+        assertEquals(
+            0,
+            TeamInboxBadgeDeriver.resolveForumUnread(clientUnread = 0, apiUnread = 5),
+        )
+    }
 }

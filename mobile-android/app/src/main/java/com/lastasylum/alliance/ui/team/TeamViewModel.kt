@@ -164,13 +164,12 @@ class TeamViewModel(
                 localRead,
                 optimisticFloorByTopic,
             )
-            val aggregateFloor = optimisticFloorByTopic.values.sum().coerceAtLeast(0)
             _data.update { state ->
                 val merged = TeamInboxBadgeDeriver.mergeForDisplay(
                     effectiveUnread = counts.effective,
                     previouslyDisplayed = state.sectionBadges.forumUnread,
                     rawServerUnread = counts.rawServer,
-                    optimisticFloor = aggregateFloor,
+                    optimisticFloor = 0,
                 )
                 state.copy(sectionBadges = state.sectionBadges.copy(forumUnread = merged))
             }

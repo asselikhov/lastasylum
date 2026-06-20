@@ -2589,9 +2589,9 @@ class CombatOverlayService : Service() {
             mainHandler.post {
                 if (!isInGameOverlayUiActive() || hudRefreshInFlight) return@post
                 val prev = overlayHudBadgeBus.current()
-                val forumEffective = maxOf(
-                    cachedForum ?: instant?.forumUnread ?: 0,
-                    forumFromTopics ?: 0,
+                val forumEffective = TeamInboxBadgeDeriver.resolveForumUnread(
+                    clientUnread = forumFromTopics,
+                    apiUnread = cachedForum ?: instant?.forumUnread,
                 )
                 val forumSeed = TeamInboxBadgeDeriver.mergeForDisplay(
                     effectiveUnread = forumEffective,
@@ -7114,7 +7114,7 @@ class CombatOverlayService : Service() {
                                         OverlayHudPane.Forum -> {
                                             OverlayHudPanelHeader(
                                                 title = stringResource(R.string.team_tab_forum),
-                                                subtitle = overlayPanelUnreadSubtitle(statusHud.forumUnread),
+                                                subtitle = null,
                                                 onClose = { hideOverlayChatTeamPanel() },
                                                 onMarkAllRead = {
                                                     OverlayChatInteractionHold
