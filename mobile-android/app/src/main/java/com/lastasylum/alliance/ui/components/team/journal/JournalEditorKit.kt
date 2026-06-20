@@ -138,6 +138,52 @@ fun JournalSectionDivider(modifier: Modifier = Modifier) {
 }
 
 @Composable
+fun JournalPollOnlyHint(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    val shape = JournalEditorTokens.chipShape
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(
+                Brush.horizontalGradient(
+                    listOf(
+                        Color(0xFF38BDF8).copy(alpha = 0.14f),
+                        Color(0xFF818CF8).copy(alpha = 0.10f),
+                    ),
+                ),
+            )
+            .border(
+                1.dp,
+                Brush.horizontalGradient(
+                    listOf(
+                        Color(0xFF38BDF8).copy(alpha = 0.28f),
+                        Color(0xFF818CF8).copy(alpha = 0.20f),
+                    ),
+                ),
+                shape,
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Poll,
+            contentDescription = null,
+            tint = Color(0xFF38BDF8),
+            modifier = Modifier.size(20.dp),
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = PremiumJournalFeedTokens.titleColor.copy(alpha = 0.92f),
+        )
+    }
+}
+
+@Composable
 fun JournalTextField(
     value: String,
     onValueChange: (String) -> Unit,
@@ -292,8 +338,8 @@ private fun JournalModeChip(
                     Modifier.background(
                         Brush.horizontalGradient(
                             listOf(
-                                Color(0xFF38BDF8).copy(alpha = 0.30f),
-                                Color(0xFF818CF8).copy(alpha = 0.26f),
+                                Color(0xFF38BDF8).copy(alpha = 0.42f),
+                                Color(0xFF818CF8).copy(alpha = 0.36f),
                             ),
                         ),
                     )
@@ -313,8 +359,8 @@ private fun JournalModeChip(
                 if (selected) {
                     Brush.horizontalGradient(
                         listOf(
-                            Color(0xFF38BDF8).copy(alpha = 0.55f),
-                            Color(0xFF818CF8).copy(alpha = 0.45f),
+                            Color(0xFF38BDF8).copy(alpha = 0.75f),
+                            Color(0xFF818CF8).copy(alpha = 0.62f),
                         ),
                     )
                 } else {
@@ -586,6 +632,7 @@ fun JournalPrimaryButton(
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clip(shape)
             .background(
                 if (enabled) {

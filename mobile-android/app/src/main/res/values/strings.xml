@@ -224,6 +224,7 @@
     <string name="settings_section_overlay">Оверлей</string>
     <string name="settings_section_notifications">Уведомления</string>
     <string name="settings_game_events_summary">%1$d из %2$d включено</string>
+    <string name="settings_game_events_dialog_close">Закрыть</string>
     <string name="overlay_title">Оверлей</string>
     <string name="overlay_activity_filter_label">Activity фильтр (опционально)</string>
     <string name="overlay_activity_filter_hint">Через запятую: части имени Activity. Оставьте пустым на старых телефонах и клонах игры — иначе кнопки могут не появиться.</string>

@@ -1035,9 +1035,11 @@ class CombatOverlayService : Service() {
                 Intent.ACTION_SCREEN_OFF -> {
                     GameForegroundGate.invalidateForegroundHintCache()
                     overlayInGameProbeActive = false
-                    gateUiHideStreak = GATE_HIDE_UI_HYSTERESIS_TICKS
                     gateSoftHideStartedAtMs = 0L
-                    overlayUiHoldUntilMs = 0L
+                    // Keep overlayUiHoldUntilMs so editor/IME survives screen lock → screen on.
+                    if (isInGameOverlayUiActive() || isOverlayUiHoldActive()) {
+                        extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
+                    }
                 }
                 else -> return
             }
@@ -1337,14 +1339,26 @@ class CombatOverlayService : Service() {
         inGameProbe: Boolean = overlayInGameProbeActive,
     ): Boolean {
         if (!inGameProbe) {
-            val inInGameGrace = lastOverlayInGameAtMs > 0L &&
-                System.currentTimeMillis() - lastOverlayInGameAtMs < OVERLAY_INGAME_GRACE_MS
-            if (inInGameGrace && lastAppliedGateShouldShow == true && !forceHideNow) {
+            if (probeShow) {
                 gateUiHideStreak = 0
                 return true
             }
-            gateUiHideStreak = GATE_HIDE_UI_HYSTERESIS_TICKS
-            return probeShow
+            if (forceHideNow) {
+                gateUiHideStreak = GATE_HIDE_UI_HYSTERESIS_TICKS
+                return false
+            }
+            val inInGameGrace = lastOverlayInGameAtMs > 0L &&
+                System.currentTimeMillis() - lastOverlayInGameAtMs < OVERLAY_INGAME_GRACE_MS
+            if (inInGameGrace && lastAppliedGateShouldShow == true) {
+                gateUiHideStreak = 0
+                return true
+            }
+            gateUiHideStreak++
+            return if (gateUiHideStreak >= GATE_HIDE_UI_HYSTERESIS_TICKS) {
+                false
+            } else {
+                lastAppliedGateShouldShow == true
+            }
         }
         if (probeShow) {
             gateUiHideStreak = 0
@@ -3758,13 +3772,21 @@ class CombatOverlayService : Service() {
         showOverlayChatTeamPanel(hudPane = pane)
     }
 
-    /** После закрытия: HUD уже VISIBLE — только снять NOT_TOUCHABLE и вернуть ленту (без remove/add HUD). */
+    /** После закрытия: снять NOT_TOUCHABLE, вернуть ленту и явно восстановить HUD если был soft-hide. */
     private fun restoreOverlayHudChromeAfterPanel() {
-        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
         if (isOverlayFullscreenPanelObscuringHud()) return
+        if (!OverlayHudChromeRestorePolicy.shouldRestoreInGameWindowVisibility(
+                inGameActive = isInGameOverlayUiActive(),
+                holdActive = isOverlayUiHoldActive(),
+                fullscreenPanelObscuring = false,
+            )
+        ) {
+            return
+        }
         applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = false)
         applyOverlayAppUpdateGateChrome()
         applyOverlayStripVisibility(rebalanceZOrder = false)
+        restoreOverlayInGameWindowVisibility()
     }
 
     /** Панель GONE, но окно могло остаться выше HUD в Z-order — один remove/add без мигания угловых кнопок. */

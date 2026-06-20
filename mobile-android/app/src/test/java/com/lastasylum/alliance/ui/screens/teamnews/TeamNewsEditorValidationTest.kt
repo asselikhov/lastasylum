@@ -41,7 +41,25 @@ class TeamNewsEditorValidationTest {
     }
 
     @Test
-    fun newsWithPoll_validWhenComplete() {
+    fun newsWithIncludePollOnCreate_ignoresPollFields() {
+        val result = validateTeamNewsEditorDraft(
+            mode = JournalEditorMode.News,
+            title = "Title",
+            body = "Body",
+            includePoll = true,
+            pollQuestion = "",
+            pollOptions = listOf("", ""),
+            attachments = emptyList(),
+            fillRequiredMessageRes = 1,
+            pollInvalidMessageRes = 2,
+            isEdit = false,
+        )
+        assertTrue(result.isValid)
+        assertFalse(TeamNewsEditorFieldError.Poll in result.fieldErrors)
+    }
+
+    @Test
+    fun newsWithPollOnEdit_validWhenComplete() {
         val result = validateTeamNewsEditorDraft(
             mode = JournalEditorMode.News,
             title = "Title",
@@ -52,6 +70,7 @@ class TeamNewsEditorValidationTest {
             attachments = emptyList(),
             fillRequiredMessageRes = 1,
             pollInvalidMessageRes = 2,
+            isEdit = true,
         )
         assertTrue(result.isValid)
     }

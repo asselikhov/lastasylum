@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -46,10 +48,6 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.GameForegroundGate
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.collectAsState
-import androidx.core.content.ContextCompat
-import com.lastasylum.alliance.overlay.OverlayGateDiagnostics
 import com.lastasylum.alliance.overlay.OverlayGamePackageSuggestions
 import com.lastasylum.alliance.overlay.OverlayPermissions
 import com.lastasylum.alliance.ui.components.SettingsNavigationRow
@@ -73,22 +71,18 @@ fun OverlayControlScreen() {
     var detectedGamePackages by remember {
         mutableStateOf<List<OverlayGamePackageSuggestions.DetectedGamePackage>>(emptyList())
     }
-    var showGameEventsSheet by remember { mutableStateOf(false) }
+    var showGameEventsDialog by remember { mutableStateOf(false) }
     var enabledGameEventsCount by remember {
         mutableIntStateOf(countEnabledGameEventPushes(prefs))
     }
-    var diagnosticsLines by remember { mutableStateOf<List<String>>(emptyList()) }
-    val serviceRunning by CombatOverlayService.serviceRunning.collectAsState()
-    val inGameHud by CombatOverlayService.inGameOverlayUiActive.collectAsState()
     val undetectedGamePackages = remember(detectedGamePackages) {
         detectedGamePackages.filter { !it.alreadyInFilter }
     }
-
-    fun refreshDiagnostics() {
-        diagnosticsLines = OverlayGateDiagnostics.summaryLines(
-            OverlayGateDiagnostics.capture(appContext, prefs),
-        )
-    }
+    val postNotifDenied = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) != android.content.pm.PackageManager.PERMISSION_GRANTED
 
     fun refreshGameEventsSummary() {
         enabledGameEventsCount = countEnabledGameEventPushes(prefs)
@@ -111,11 +105,6 @@ fun OverlayControlScreen() {
             prefs.applyGameEventPushEnabledFromServer(profile.gameEventPushEnabled)
             refreshGameEventsSummary()
         }
-        refreshDiagnostics()
-    }
-
-    LaunchedEffect(serviceRunning, inGameHud, overlayEnabled) {
-        refreshDiagnostics()
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -125,7 +114,6 @@ fun OverlayControlScreen() {
                 overlayEnabled = prefs.isOverlayPanelEnabled()
                 refreshOverlayRuntime()
                 refreshGameEventsSummary()
-                refreshDiagnostics()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -149,11 +137,11 @@ fun OverlayControlScreen() {
         )
     }
 
-    if (showGameEventsSheet) {
-        GameEventPushSettingsSheet(
+    if (showGameEventsDialog) {
+        GameEventPushSettingsDialog(
             prefs = prefs,
             onDismiss = {
-                showGameEventsSheet = false
+                showGameEventsDialog = false
                 refreshGameEventsSummary()
             },
             onEnabledCountChanged = ::refreshGameEventsSummary,
@@ -323,14 +311,9 @@ fun OverlayControlScreen() {
         }
 
         item {
-            val postNotifDenied = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS,
-                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-            if (postNotifDenied) {
-                SettingsSectionLabel(stringResource(R.string.settings_section_notifications))
-                SettingsPanelCard {
+            SettingsSectionLabel(stringResource(R.string.settings_section_notifications))
+            SettingsPanelCard {
+                if (postNotifDenied) {
                     Column(
                         modifier = Modifier.padding(
                             horizontal = SquadRelayDimens.listRowHorizontalPadding,
@@ -355,36 +338,6 @@ fun OverlayControlScreen() {
                         }
                     }
                 }
-            }
-        }
-
-        item {
-            SettingsSectionLabel(stringResource(R.string.overlay_diagnostics_section))
-            SettingsPanelCard {
-                Column(
-                    modifier = Modifier.padding(
-                        horizontal = SquadRelayDimens.listRowHorizontalPadding,
-                        vertical = SquadRelayDimens.listRowVerticalPadding,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    diagnosticsLines.forEach { line ->
-                        Text(
-                            text = line,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    TextButton(onClick = { refreshDiagnostics() }) {
-                        Text(stringResource(R.string.overlay_diagnostics_refresh))
-                    }
-                }
-            }
-        }
-
-        item {
-            SettingsSectionLabel(stringResource(R.string.settings_section_notifications))
-            SettingsPanelCard {
                 SettingsNavigationRow(
                     title = stringResource(R.string.settings_game_events_push_section),
                     subtitle = stringResource(
@@ -392,7 +345,7 @@ fun OverlayControlScreen() {
                         enabledGameEventsCount,
                         totalGameEvents,
                     ),
-                    onClick = { showGameEventsSheet = true },
+                    onClick = { showGameEventsDialog = true },
                     trailing = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,

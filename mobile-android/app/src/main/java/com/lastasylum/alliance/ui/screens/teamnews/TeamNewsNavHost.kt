@@ -205,8 +205,7 @@ fun TeamNewsNavHost(
                     LaunchedEffect(Unit) { nav.popBackStack() }
                     return@composable
                 }
-                val editingExisting = draft.isEdit && !draft.newsId.isNullOrBlank()
-                val editingNewsId = draft.newsId
+                val editNewsId = draft.newsId.takeIf { id -> draft.isEdit && !id.isNullOrBlank() }
                 TeamNewsPublishPreviewScreen(
                     teamId = teamId,
                     draft = draft,
@@ -217,8 +216,8 @@ fun TeamNewsNavHost(
                     onPublished = { publishedId ->
                         listRefreshNonce++
                         nav.navigate(TeamNewsRoutes.detail(publishedId)) {
-                            if (editingExisting && editingNewsId != null) {
-                                popUpTo(TeamNewsRoutes.detail(editingNewsId)) { inclusive = true }
+                            if (editNewsId != null) {
+                                popUpTo(TeamNewsRoutes.detail(editNewsId)) { inclusive = true }
                             } else {
                                 popUpTo(TeamNewsRoutes.LIST) { inclusive = false }
                             }

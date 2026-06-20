@@ -26,12 +26,17 @@ internal fun validateTeamNewsEditorDraft(
     pollInvalidMessageRes: Int,
     maxImagesMessageRes: Int? = null,
     maxImages: Int = MAX_TEAM_NEWS_IMAGES,
+    isEdit: Boolean = false,
 ): TeamNewsEditorValidationResult {
     if (attachments.any { it.uploading }) {
         return TeamNewsEditorValidationResult(isValid = false)
     }
     val pollOnly = mode == JournalEditorMode.PollOnly
-    val wantsPoll = pollOnly || includePoll
+    val wantsPoll = when {
+        pollOnly -> true
+        isEdit -> includePoll
+        else -> false
+    }
     val errors = mutableSetOf<TeamNewsEditorFieldError>()
     var messageRes: Int? = null
 

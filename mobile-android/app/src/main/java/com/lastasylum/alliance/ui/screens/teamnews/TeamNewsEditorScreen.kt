@@ -8,12 +8,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -51,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.ui.chat.MessengerImagesPreviewHost
@@ -59,13 +57,17 @@ import com.lastasylum.alliance.ui.components.team.journal.JournalEditorTokens
 import com.lastasylum.alliance.ui.components.team.journal.JournalImageAttachment
 import com.lastasylum.alliance.ui.components.team.journal.JournalImageAttachmentGrid
 import com.lastasylum.alliance.ui.components.team.journal.JournalModeChips
+import com.lastasylum.alliance.ui.components.team.journal.JournalPollOnlyHint
 import com.lastasylum.alliance.ui.components.team.journal.JournalPollOptionEditor
 import com.lastasylum.alliance.ui.components.team.journal.JournalPrimaryButton
+import com.lastasylum.alliance.ui.components.team.journal.journalEditorBottomBarInsets
 import com.lastasylum.alliance.ui.components.team.journal.JournalSectionDivider
 import com.lastasylum.alliance.ui.components.team.journal.JournalSectionHeader
 import com.lastasylum.alliance.ui.components.team.journal.JournalTextField
 import com.lastasylum.alliance.ui.screens.teamnews.resolvedTeamNewsImageUrl
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -121,7 +123,37 @@ internal fun TeamNewsEditorScreen(
     var showDiscardDialog by remember { mutableStateOf(false) }
     var imagePreviewStart by remember { mutableIntStateOf(-1) }
 
-    val bringIntoView = remember { BringIntoViewRequester() }
+    val listState = rememberLazyListState()
+    var scrollTarget by remember { mutableStateOf<TeamNewsEditorScrollField?>(null) }
+    val isCreate = newsId == null
+    val showPollSection = editorMode == JournalEditorMode.PollOnly ||
+        (newsId != null && includePoll)
+
+    LaunchedEffect(overlayUi) {
+        if (!overlayUi) return@LaunchedEffect
+        CombatOverlayService.extendInGameOverlayUiHold()
+        while (isActive) {
+            delay(2_000L)
+            CombatOverlayService.extendInGameOverlayUiHold()
+        }
+    }
+
+    LaunchedEffect(scrollTarget, editorMode, showPollSection, err) {
+        val field = scrollTarget ?: return@LaunchedEffect
+        delay(100)
+        val index = teamNewsEditorScrollIndex(
+            field = field,
+            hasErrorBanner = err != null,
+            isCreate = isCreate,
+            editorMode = editorMode,
+            showPollSection = showPollSection,
+        )
+        if (index >= 0) {
+            listState.animateScrollToItem(index)
+        }
+        scrollTarget = null
+    }
+
     val titleFocus = remember { FocusRequester() }
     val bodyFocus = remember { FocusRequester() }
     val pollQuestionFocus = remember { FocusRequester() }
@@ -134,12 +166,8 @@ internal fun TeamNewsEditorScreen(
             pollOptionFocuses.removeAt(pollOptionFocuses.lastIndex)
         }
     }
-    var focusedScrollNonce by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(focusedScrollNonce) {
-        if (focusedScrollNonce > 0) {
-            bringIntoView.bringIntoView()
-        }
+    fun requestScroll(field: TeamNewsEditorScrollField) {
+        scrollTarget = field
     }
 
     val fillRequired = stringResource(R.string.team_news_fill_required)
@@ -373,6 +401,7 @@ internal fun TeamNewsEditorScreen(
                             fillRequiredMessageRes = R.string.team_news_fill_required,
                             pollInvalidMessageRes = R.string.team_news_poll_invalid,
                             maxImagesMessageRes = R.string.team_news_max_images,
+                            isEdit = newsId != null,
                         )
                         titleError = TeamNewsEditorFieldError.Title in validation.fieldErrors
                         bodyError = TeamNewsEditorFieldError.Body in validation.fieldErrors
@@ -392,8 +421,7 @@ internal fun TeamNewsEditorScreen(
                     enabled = !loading,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .imePadding()
+                        .journalEditorBottomBarInsets(overlayUi)
                         .padding(horizontal = JournalEditorTokens.screenHorizontalPad, vertical = 12.dp),
                 )
             }
@@ -406,11 +434,10 @@ internal fun TeamNewsEditorScreen(
             return@Scaffold
         }
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .padding(pad)
-                .fillMaxSize()
-                .bringIntoViewRequester(bringIntoView)
-                .imePadding(),
+                .fillMaxSize(),
             contentPadding = PaddingValues(
                 horizontal = JournalEditorTokens.screenHorizontalPad,
                 vertical = 8.dp,
@@ -428,8 +455,18 @@ internal fun TeamNewsEditorScreen(
                         selected = editorMode,
                         onSelect = { mode ->
                             editorMode = mode
-                            if (mode == JournalEditorMode.PollOnly) {
-                                includePoll = true
+                            when (mode) {
+                                JournalEditorMode.PollOnly -> includePoll = true
+                                JournalEditorMode.News -> {
+                                    includePoll = false
+                                    pollQuestion = ""
+                                    pollOptions.clear()
+                                    pollOptions.add("")
+                                    pollOptions.add("")
+                                    pollOptionIds.clear()
+                                    pollOptionIds.add(null)
+                                    pollOptionIds.add(null)
+                                }
                             }
                         },
                         newsLabel = stringResource(R.string.team_news_editor_mode_news),
@@ -439,10 +476,8 @@ internal fun TeamNewsEditorScreen(
             }
             if (editorMode == JournalEditorMode.PollOnly) {
                 item(key = "poll_hint") {
-                    Text(
+                    JournalPollOnlyHint(
                         text = stringResource(R.string.team_news_poll_only_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -461,8 +496,7 @@ internal fun TeamNewsEditorScreen(
                         errorMessage = if (titleError) fillRequired else null,
                         hint = "${title.length}/200",
                         focusRequester = titleFocus,
-                        bringIntoViewRequester = bringIntoView,
-                        onFocused = { focusedScrollNonce++ },
+                        onFocused = { requestScroll(TeamNewsEditorScrollField.Title) },
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences,
                             imeAction = ImeAction.Next,
@@ -483,8 +517,7 @@ internal fun TeamNewsEditorScreen(
                         isError = bodyError,
                         errorMessage = if (bodyError) fillRequired else null,
                         focusRequester = bodyFocus,
-                        bringIntoViewRequester = bringIntoView,
-                        onFocused = { focusedScrollNonce++ },
+                        onFocused = { requestScroll(TeamNewsEditorScrollField.Body) },
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences,
                             imeAction = ImeAction.Default,
@@ -505,21 +538,10 @@ internal fun TeamNewsEditorScreen(
                         },
                     )
                 }
-                item(key = "poll_toggle") {
-                    if (includePoll) {
-                        TextButton(onClick = { includePoll = false }) {
-                            Text(stringResource(R.string.team_news_remove_poll))
-                        }
-                    } else if (newsId == null) {
-                        TextButton(onClick = { includePoll = true }) {
-                            Text(stringResource(R.string.team_news_editor_mode_poll))
-                        }
-                    }
-                }
             }
-            if (editorMode == JournalEditorMode.PollOnly || includePoll) {
+            if (showPollSection) {
                 item(key = "poll_divider") {
-                    if (editorMode == JournalEditorMode.News) {
+                    if (editorMode == JournalEditorMode.PollOnly) {
                         JournalSectionDivider()
                     }
                     JournalSectionHeader(stringResource(R.string.team_news_poll_section))
@@ -537,8 +559,7 @@ internal fun TeamNewsEditorScreen(
                         isError = pollError,
                         errorMessage = if (pollError) pollInvalid else null,
                         focusRequester = pollQuestionFocus,
-                        bringIntoViewRequester = bringIntoView,
-                        onFocused = { focusedScrollNonce++ },
+                        onFocused = { requestScroll(TeamNewsEditorScrollField.PollQuestion) },
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences,
                             imeAction = ImeAction.Next,
@@ -563,8 +584,7 @@ internal fun TeamNewsEditorScreen(
                             pollOptions.removeAt(index)
                             pollOptionIds.removeAt(index)
                         },
-                        bringIntoViewRequester = bringIntoView,
-                        onOptionFocused = { focusedScrollNonce++ },
+                        onOptionFocused = { requestScroll(TeamNewsEditorScrollField.PollOptions) },
                         focusRequesters = pollOptionFocuses,
                     )
                     if (pollOptions.size < 8) {

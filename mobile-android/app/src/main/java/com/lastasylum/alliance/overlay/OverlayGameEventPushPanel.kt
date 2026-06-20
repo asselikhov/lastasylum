@@ -34,6 +34,9 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.gameevents.GameEventCategory
 import com.lastasylum.alliance.gameevents.GameEventDefinition
+import com.lastasylum.alliance.ui.components.gameevents.GameEventCategoryTabs
+import com.lastasylum.alliance.ui.components.gameevents.gameEventCategoryAccent
+import com.lastasylum.alliance.ui.components.gameevents.gameEventShortLabel
 
 @Composable
 fun OverlayGameEventPushPanel(
@@ -42,7 +45,7 @@ fun OverlayGameEventPushPanel(
 ) {
     var selectedCategory by remember { mutableStateOf(GameEventCategory.HQ) }
     var selectedId by remember { mutableStateOf<String?>(null) }
-    val accent = categoryAccent(selectedCategory)
+    val accent = gameEventCategoryAccent(selectedCategory)
     val events = remember(selectedCategory) {
         GameEventCatalog.eventsByCategory(selectedCategory)
     }
@@ -86,56 +89,6 @@ fun OverlayGameEventPushPanel(
 }
 
 @Composable
-private fun GameEventCategoryTabs(
-    selected: GameEventCategory,
-    onSelect: (GameEventCategory) -> Unit,
-) {
-    val trackShape = RoundedCornerShape(12.dp)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(trackShape)
-            .background(Color(0xFF0C1018))
-            .border(1.dp, Color(0xFF243040), trackShape)
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        GameEventCategory.entries.forEach { category ->
-            val isSelected = category == selected
-            val accent = categoryAccent(category)
-            val tabShape = RoundedCornerShape(9.dp)
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(tabShape)
-                    .then(
-                        if (isSelected) {
-                            Modifier.background(accent.copy(alpha = 0.92f))
-                        } else {
-                            Modifier
-                                .background(Color(0xFF141A24))
-                                .border(1.dp, accent.copy(alpha = 0.28f), tabShape)
-                        },
-                    )
-                    .clickable { onSelect(category) }
-                    .padding(vertical = 10.dp, horizontal = 4.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = categoryTabLabel(category),
-                    color = if (isSelected) Color.White else accent.copy(alpha = 0.92f),
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun GameEventListCard(
     accent: Color,
     events: List<GameEventDefinition>,
@@ -152,7 +105,7 @@ private fun GameEventListCard(
     ) {
         events.forEachIndexed { index, event ->
             GameEventRow(
-                label = eventDisplayLabel(event),
+                label = gameEventShortLabel(event),
                 accent = accent,
                 selected = selectedId == event.id,
                 onSelect = { onSelect(event.id) },
@@ -235,25 +188,4 @@ private fun NotifyActionButton(
             fontSize = 13.sp,
         )
     }
-}
-
-@Composable
-private fun categoryTabLabel(category: GameEventCategory): String = when (category) {
-    GameEventCategory.HQ -> stringResource(R.string.game_event_section_hq)
-    GameEventCategory.PVE -> stringResource(R.string.game_event_section_pve)
-    GameEventCategory.PVP -> stringResource(R.string.game_event_section_pvp)
-}
-
-private fun eventDisplayLabel(event: GameEventDefinition): String {
-    val prefix = when (event.category) {
-        GameEventCategory.HQ -> "[ШТАБ] "
-        GameEventCategory.PVE -> "[PvE] "
-        GameEventCategory.PVP -> "[PvP] "
-    }
-    return event.messageText.removePrefix(prefix).trim()
-}
-
-private fun categoryAccent(category: GameEventCategory): Color {
-    val argb = GameEventCatalog.notificationColor(category)
-    return Color(argb)
 }
