@@ -390,6 +390,8 @@ class CombatOverlayService : Service() {
     private val overlayChatVmBindFlow = MutableStateFlow(0)
     private val panelCloseMutex = kotlinx.coroutines.sync.Mutex()
     private var panelCloseJob: Job? = null
+    /** Incremented on each panel open; stale close pipelines must not reset UI state. */
+    private var overlayPanelSessionGeneration = 0
     /** When activity VM is gone (game-only FGS), overlay chat uses this until panel closes. */
     private var overlayFallbackChatViewModel: ChatViewModel? = null
     /** URIs from picker if result arrived while Compose owner was torn down. */
@@ -6477,9 +6479,23 @@ class CombatOverlayService : Service() {
         }
     }
 
+    private fun beginOverlayPanelOpenSession() {
+        panelCloseJob?.cancel()
+        panelCloseJob = null
+        overlayPanelSessionGeneration++
+    }
+
+    private fun shouldApplyOverlayPanelCloseCleanup(closingSession: Int): Boolean =
+        OverlayHudPanelSession.shouldApplyCloseCleanup(
+            closingSession = closingSession,
+            currentSession = overlayPanelSessionGeneration,
+            panelVisible = overlayChatTeamPanelVisible,
+        )
+
     private suspend fun runOverlayPanelClosePipeline(
         closingPane: OverlayHudPane?,
         hadVisible: Boolean,
+        closingSession: Int,
     ) {
         val chatVmSnapshot = withContext(Dispatchers.Main) { resolveChatViewModel() }
         val forumFlushSnapshot = withContext(Dispatchers.Main) {
@@ -6497,6 +6513,7 @@ class CombatOverlayService : Service() {
             )
         }
         withContext(Dispatchers.Main) {
+            if (!shouldApplyOverlayPanelCloseCleanup(closingSession)) return@withContext
             overlayForumFlushPendingRead = null
             overlayNewsFlushPendingRead = null
             syncOverlayChatPanelVisibilityToViewModel(false)
@@ -6504,17 +6521,21 @@ class CombatOverlayService : Service() {
             overlayHudPanelHostState.value = OverlayHudPanelHostState()
             notifyOverlayChatVmBindingChanged()
         }
+        if (!shouldApplyOverlayPanelCloseCleanup(closingSession)) return
         chatVmSnapshot?.let { vm ->
             withContext(Dispatchers.Main) {
+                if (!shouldApplyOverlayPanelCloseCleanup(closingSession)) return@withContext
                 vm.syncReadStateFromPreferences()
                 vm.syncRoomsFromServer(reconfirmVisibleRoom = false)
             }
         }
+        if (!shouldApplyOverlayPanelCloseCleanup(closingSession)) return
         runCatching {
             AppContainer.from(this@CombatOverlayService).chatRepository
                 .notifyOverlayChatPanelClosed()
         }
         withContext(Dispatchers.Main) {
+            if (!shouldApplyOverlayPanelCloseCleanup(closingSession)) return@withContext
             val canonical = activityScopedChatViewModel ?: ChatViewModelRegistry.shared
             canonical?.reconnectRealtimeIfNeeded()
         }
@@ -6644,10 +6665,11 @@ class CombatOverlayService : Service() {
         applyOverlayStripVisibility(rebalanceZOrder = false)
         refreshOverlayChatStripNow()
         mainHandler.removeCallbacks(overlayCloseHudBadgeRefreshRunnable)
+        val closingSession = overlayPanelSessionGeneration
         panelCloseJob?.cancel()
         panelCloseJob = serviceScope.launch {
             panelCloseMutex.withLock {
-                runOverlayPanelClosePipeline(closingPane, hadVisible)
+                runOverlayPanelClosePipeline(closingPane, hadVisible, closingSession)
             }
         }
     }
@@ -6670,6 +6692,7 @@ class CombatOverlayService : Service() {
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }
         overlayChatTeamComposeOwner?.destroy()
         overlayChatTeamComposeOwner = null
+        beginOverlayPanelOpenSession()
         overlayHudPanelHostState.value = OverlayHudPanelHostState()
     }
 
@@ -6992,8 +7015,11 @@ class CombatOverlayService : Service() {
         }
         if (warmHostOnly) {
             if (overlayChatTeamRoot != null) return
-        } else if (overlayChatTeamPanelVisible) {
-            return
+        } else {
+            beginOverlayPanelOpenSession()
+            if (overlayChatTeamPanelVisible) {
+                return
+            }
         }
         val needsChatPrime = !warmHostOnly && hudPane == OverlayHudPane.Chat
         overlayHudPanelHostState.update { state ->
