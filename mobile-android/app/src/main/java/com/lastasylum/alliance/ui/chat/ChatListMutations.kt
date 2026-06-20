@@ -608,9 +608,17 @@ internal fun shouldSkipBackgroundMessageRefresh(
     overlayPanelVisible: Boolean = false,
     forceAfterReconnect: Boolean = false,
     socketConnected: Boolean = true,
+    latestSocketMessageId: String? = null,
 ): Boolean {
     if (!socketConnected) return false
     if (forceAfterReconnect) return false
+    val visibleHead = visible.firstOrNull()?._id?.trim().orEmpty()
+    val latestSocketId = latestSocketMessageId?.trim().orEmpty()
+    if (visibleHead.isNotEmpty() && latestSocketId.isNotEmpty() &&
+        isObjectIdNewer(latestSocketId, visibleHead)
+    ) {
+        return false
+    }
     val reconcileInterval = if (overlayPanelVisible) {
         CHAT_OVERLAY_ACTIVE_ROOM_RECONCILE_INTERVAL_MS
     } else {
@@ -881,7 +889,10 @@ internal fun upsertMessagesBatch(
             newestMessageKey = update.newestMessageKey
         }
     }
-    val capped = dedupeMessagesByIdNewestFirst(capNewestFirst(messages, maxMessages))
+    val sorted = messages.sortedWith(
+        compareByDescending<ChatMessage> { it._id?.trim().orEmpty() },
+    )
+    val capped = dedupeMessagesByIdNewestFirst(capNewestFirst(sorted, maxMessages))
     rebuildMessageIdIndex(capped, idIndex)
     return MessageUpsertResult(
         messages = capped,

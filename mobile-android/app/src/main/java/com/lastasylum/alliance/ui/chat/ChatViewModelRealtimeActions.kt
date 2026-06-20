@@ -403,7 +403,9 @@ internal fun ChatViewModel.mergeSessionCacheForSelectedRoomImpl() {
         )
         if (merged.isEmpty()) return
         session.forEach { message ->
-            message._id?.trim()?.takeIf { it.isNotEmpty() }?.let { trackRecentSocketMessageId(it) }
+            message._id?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                trackRecentSocketMessageId(rid, it)
+            }
         }
         roomMessageCache[rid] = ChatRoomMessageCache(
             messages = capMessagesForMemory(merged),
@@ -443,7 +445,7 @@ internal fun ChatViewModel.stashIncomingMessageForRoomImpl(message: ChatMessage)
             ChatDeliveryMetrics.logStash(roomId, null, "no_id")
             return
         }
-        trackRecentSocketMessageId(messageId)
+        trackRecentSocketMessageId(roomId, messageId)
         pendingIdlessStash.keys.removeIf { key ->
             val pending = pendingIdlessStash[key] ?: return@removeIf false
             pending.senderId == message.senderId &&

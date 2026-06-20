@@ -8,7 +8,7 @@ type EligibleUsersCacheEntry = {
 /** Room-scoped eligible user list cache shared by gateway and roster invalidation. */
 @Injectable()
 export class ChatEligibleUsersCacheService {
-  static readonly CACHE_MS = 15_000;
+  static readonly CACHE_MS = 3_000;
 
   private readonly cache = new Map<string, EligibleUsersCacheEntry>();
 

@@ -121,6 +121,26 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun upsertMessagesBatch_outOfOrderBatchSortsNewestFirst() {
+        val known = linkedSetOf<String>()
+        val index = mutableMapOf<String, Int>()
+        val current = listOf(msg("507f1f77bcf86cd799439011", "anchor"))
+        val batch = listOf(
+            msg("507f1f77bcf86cd799439012", "older socket"),
+            msg("507f1f77bcf86cd799439013", "newer socket"),
+        )
+        val r = upsertMessagesBatch(current, batch, known, index)
+        assertEquals(
+            listOf(
+                "507f1f77bcf86cd799439013",
+                "507f1f77bcf86cd799439012",
+                "507f1f77bcf86cd799439011",
+            ),
+            r.messages.map { it._id },
+        )
+    }
+
+    @Test
     fun chatMessagesListContentEqual_detectsChanges() {
         val a = listOf(msg("1", "a"), msg("2", "b"))
         val b = listOf(msg("1", "a"), msg("2", "b"))
@@ -418,7 +438,7 @@ class ChatListMutationsTest {
     }
 
     @Test
-    fun shouldSkipBackgroundMessageRefresh_overlayUsesLongerReconcileInterval() {
+    fun shouldSkipBackgroundMessageRefresh_respectsOverlayReconcileInterval() {
         val visible = listOf(msg("507f1f77bcf86cd799439013", "new"))
         val now = 200_000L
         assertFalse(
@@ -427,9 +447,9 @@ class ChatListMutationsTest {
                 sessionCache = visible,
                 roomCache = visible,
                 pageSize = 1,
-                lastRestSyncAtMs = now - 70_000L,
+                lastRestSyncAtMs = now - 25_000L,
                 nowMs = now,
-                overlayPanelVisible = false,
+                overlayPanelVisible = true,
             ),
         )
         assertTrue(
@@ -438,9 +458,24 @@ class ChatListMutationsTest {
                 sessionCache = visible,
                 roomCache = visible,
                 pageSize = 1,
-                lastRestSyncAtMs = now - 70_000L,
+                lastRestSyncAtMs = now - 15_000L,
                 nowMs = now,
                 overlayPanelVisible = true,
+            ),
+        )
+    }
+
+    @Test
+    fun shouldSkipBackgroundMessageRefresh_falseWhenLatestSocketNewerThanVisible() {
+        val visible = listOf(msg("507f1f77bcf86cd799439011", "visible"))
+        val session = visible
+        assertFalse(
+            shouldSkipBackgroundMessageRefresh(
+                visible = visible,
+                sessionCache = session,
+                roomCache = session,
+                pageSize = 1,
+                latestSocketMessageId = "507f1f77bcf86cd799439013",
             ),
         )
     }

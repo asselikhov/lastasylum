@@ -57,6 +57,7 @@ class ChatRoomPagingSync(
         fun updateRoomMessageCache(roomId: String, cache: ChatRoomMessageCache)
         fun roomMessageCache(roomId: String): ChatRoomMessageCache?
         fun lastBackgroundRefreshAtMs(roomId: String): Long
+        fun latestSocketMessageIdForRoom(roomId: String): String?
         fun setLastBackgroundRefreshAtMs(roomId: String, atMs: Long)
         fun forceBackgroundRefreshAfterReconnect(): Boolean
         fun setForceBackgroundRefreshAfterReconnect(value: Boolean)
@@ -315,7 +316,7 @@ class ChatRoomPagingSync(
             host.messagesWithoutLocallyRemoved(host.filterMessagesForRoom(it, rid))
         }
         if (!roomCache.isNullOrEmpty() && roomCache.size > visible.size) return false
-        return shouldSkipBackgroundMessageRefresh(
+        val skip = shouldSkipBackgroundMessageRefresh(
             visible = visible,
             sessionCache = sessionCache,
             roomCache = roomCache,
@@ -324,6 +325,11 @@ class ChatRoomPagingSync(
             forceAfterReconnect = host.forceBackgroundRefreshAfterReconnect(),
             overlayPanelVisible = host.overlayChatPanelVisible(),
             socketConnected = host.isChatSocketConnected(),
+            latestSocketMessageId = host.latestSocketMessageIdForRoom(rid),
         )
+        if (skip) {
+            com.lastasylum.alliance.ui.chat.ChatDeliveryMetrics.logSkipRefresh(rid)
+        }
+        return skip
     }
 }

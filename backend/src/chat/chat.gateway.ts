@@ -694,7 +694,7 @@ export class ChatGateway {
    * HTTP + WS: broadcast message, unread snapshots, optional game-event push.
    * Unread/push run in the background so POST /chat/messages returns quickly.
    */
-  afterMessageCreated(input: {
+    afterMessageCreated(input: {
     roomId: string;
     message: unknown;
     senderUserId: string;
@@ -708,16 +708,27 @@ export class ChatGateway {
     const senderUserId = input.senderUserId.trim();
     if (!roomId || !senderUserId) return;
     const eventId = input.gameEventId?.trim();
+    this.invalidateEligibleUsersCache(roomId);
     this.broadcastNewMessage(roomId, input.message);
     void (async () => {
       try {
         const eligible = await this.getEligibleUserIdsCached(roomId);
-        await this.fanOutNewMessageToEligibleOverlayClients(
+        const room = await this.chatRoomsService.findById(roomId);
+        const isRaidRoom = room?.title === ALLIANCE_RAID_ROOM_TITLE;
+        const fanout = this.fanOutNewMessageToEligibleOverlayClients(
           roomId,
           input.message,
           senderUserId,
           eligible,
         );
+        if (isRaidRoom) {
+          await Promise.race([
+            fanout,
+            new Promise<void>((resolve) => setTimeout(resolve, 500)),
+          ]);
+        } else {
+          await fanout;
+        }
         await this.notifyRoomUnreadAfterNewMessage(
           roomId,
           senderUserId,

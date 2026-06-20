@@ -88,6 +88,8 @@ internal class ChatViewModelSyncBundle(
         }
         override fun roomMessageCache(roomId: String): ChatRoomMessageCache? = vm.roomMessageCache[roomId]
         override fun lastBackgroundRefreshAtMs(roomId: String): Long = vm.lastBackgroundRefreshAtMs[roomId] ?: 0L
+        override fun latestSocketMessageIdForRoom(roomId: String): String? =
+            vm.lastSocketMessageIdByRoom[roomId.trim()]
         override fun setLastBackgroundRefreshAtMs(roomId: String, atMs: Long) {
             vm.lastBackgroundRefreshAtMs[roomId] = atMs
         }

@@ -9,10 +9,10 @@ internal const val FORUM_GAP_RECONCILE_THRESHOLD_MS = 30_000L
 internal const val FORUM_GAP_MIN_COUNTER = 1L
 
 /** Max ObjectId timestamp gap before we assume missed messages and force REST reconcile. */
-internal const val CHAT_GAP_RECONCILE_THRESHOLD_MS = 30_000L
+internal const val CHAT_GAP_RECONCILE_THRESHOLD_MS = 10_000L
 
 /** Raid room: shorter gap window — overlay stash + quick commands need faster reconcile. */
-internal const val RAID_GAP_RECONCILE_THRESHOLD_MS = 60_000L
+internal const val RAID_GAP_RECONCILE_THRESHOLD_MS = 10_000L
 
 internal fun incomingMessageFingerprint(
     senderId: String,
@@ -43,7 +43,7 @@ internal fun shouldTriggerGapReconcile(
     incomingId: String?,
     knownMessageIds: Set<String>,
     thresholdMs: Long = CHAT_GAP_RECONCILE_THRESHOLD_MS,
-    minCounterGap: Long = 2L,
+    minCounterGap: Long = 1L,
 ): Boolean {
     val newest = visibleNewestId?.trim().orEmpty()
     val incoming = incomingId?.trim().orEmpty()

@@ -75,7 +75,7 @@ class ChatIncomingSync(
         fun shouldBlockOwnOutgoingRealtime(message: ChatMessage): Boolean
         fun stashIncomingMessageForRoom(message: ChatMessage)
         fun processRealtimeMessageForUnread(message: ChatMessage)
-        fun trackRecentSocketMessageId(id: String?)
+        fun trackRecentSocketMessageId(roomId: String?, id: String?)
         fun transferOutgoingLazyColumnKey(pendingId: String, serverId: String)
 
         fun overlayChatPanelVisible(): Boolean
@@ -267,7 +267,7 @@ class ChatIncomingSync(
         val knownMessageIds = host.knownMessageIds().toMutableSet()
         val messageIdIndex = host.messageIdIndex().toMutableMap()
         for (message in fresh) {
-            host.trackRecentSocketMessageId(message._id)
+            host.trackRecentSocketMessageId(message.roomId, message._id)
             if (host.shouldDeferOwnOutgoingSocketEcho(message)) {
                 host.stashIncomingMessageForRoom(message)
                 continue

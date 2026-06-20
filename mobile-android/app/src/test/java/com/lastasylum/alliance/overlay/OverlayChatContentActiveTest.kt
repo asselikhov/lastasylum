@@ -7,35 +7,20 @@ import org.junit.Test
 class OverlayChatContentActiveTest {
     @Test
     fun hudChatPane_isActive() {
-        assertTrue(isOverlayChatContentActiveForTest(OverlayHudPane.Chat, teamTabIndex = 1))
+        assertTrue(isOverlayChatContentActiveForTest(OverlayHudPane.Chat))
     }
 
     @Test
     fun hudForumPane_isNotActive() {
-        assertFalse(isOverlayChatContentActiveForTest(OverlayHudPane.Forum, teamTabIndex = 0))
+        assertFalse(isOverlayChatContentActiveForTest(OverlayHudPane.Forum))
     }
 
     @Test
-    fun legacyPanel_tabZero_isActive() {
-        assertTrue(isOverlayChatContentActiveForTest(hudPane = null, teamTabIndex = 0))
-    }
-
-    @Test
-    fun legacyPanel_nonChatTab_isNotActive() {
-        assertFalse(isOverlayChatContentActiveForTest(hudPane = null, teamTabIndex = 1))
+    fun hudNewsPane_isNotActive() {
+        assertFalse(isOverlayChatContentActiveForTest(OverlayHudPane.News))
     }
 }
 
 /** Mirrors [CombatOverlayService.isOverlayChatContentActive] for unit tests. */
-private fun isOverlayChatContentActiveForTest(
-    hudPane: OverlayHudPane?,
-    teamTabIndex: Int,
-): Boolean = when (hudPane) {
-    OverlayHudPane.Chat -> true
-    OverlayHudPane.Forum,
-    OverlayHudPane.News,
-    OverlayHudPane.Participants,
-    OverlayHudPane.Notifications,
-    -> false
-    null -> teamTabIndex == 0
-}
+private fun isOverlayChatContentActiveForTest(hudPane: OverlayHudPane?): Boolean =
+    hudPane == OverlayHudPane.Chat

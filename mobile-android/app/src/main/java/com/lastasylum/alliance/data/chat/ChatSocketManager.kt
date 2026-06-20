@@ -380,7 +380,11 @@ class ChatSocketManager(
         reconnectScheduled = true
         emitConnectionState(ChatConnectionState.Reconnecting)
         val attempt = reconnectAttempt++
-        val delayMs = min(8_000L, (1L shl min(attempt, 4)) * 1000L)
+        val delayMs = if (attempt < 3) {
+            min(3_000L, (1L shl attempt) * 1_000L)
+        } else {
+            min(8_000L, (1L shl min(attempt, 4)) * 1_000L)
+        }
         mainHandler.postDelayed(reconnectRunnable, delayMs)
     }
 

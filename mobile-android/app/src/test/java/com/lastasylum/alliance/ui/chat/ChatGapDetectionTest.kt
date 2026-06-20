@@ -31,14 +31,14 @@ class ChatGapDetectionTest {
     }
 
     @Test
-    fun noGapReconcile_whenJumpBelowRaidThreshold() {
+    fun gapReconcile_whenObjectIdCounterIncrementsByOne() {
         val older = "507f1f77bcf86cd799439011"
         val newer = "507f1f77bcf86cd799439012"
-        assertFalse(
+        assertTrue(
             shouldTriggerGapReconcile(
                 visibleNewestId = older,
                 incomingId = newer,
-                knownMessageIds = emptySet(),
+                knownMessageIds = setOf(older),
                 thresholdMs = RAID_GAP_RECONCILE_THRESHOLD_MS,
             ),
         )

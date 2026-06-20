@@ -986,7 +986,7 @@ internal fun ChatViewModel.shouldSkipBackgroundMessageRefreshForRoomImpl(roomId:
         messagesWithoutLocallyRemoved(filterMessagesForRoom(it, rid))
     }
     if (!roomCache.isNullOrEmpty() && roomCache.size > visible.size) return false
-    return shouldSkipBackgroundMessageRefresh(
+    val skip = shouldSkipBackgroundMessageRefresh(
         visible = visible,
         sessionCache = sessionCache,
         roomCache = roomCache,
@@ -995,7 +995,12 @@ internal fun ChatViewModel.shouldSkipBackgroundMessageRefreshForRoomImpl(roomId:
         forceAfterReconnect = forceBackgroundRefreshAfterReconnect,
         overlayPanelVisible = overlayChatPanelVisible,
         socketConnected = vmRepository.isChatSocketConnected(),
+        latestSocketMessageId = lastSocketMessageIdByRoom[rid],
     )
+    if (skip) {
+        ChatDeliveryMetrics.logSkipRefresh(rid)
+    }
+    return skip
 }
 
     /** Pull peer rows from [roomMessageCache] into visible UI after tab/foreground resume. */

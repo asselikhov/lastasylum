@@ -315,14 +315,19 @@ class ChatViewModel(
     internal val pendingIdlessStash = java.util.concurrent.ConcurrentHashMap<String, ChatMessage>()
     internal val recentSocketMessageIds = LinkedHashSet<String>()
     internal val lastBackgroundRefreshAtMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    internal val lastSocketMessageIdByRoom = java.util.concurrent.ConcurrentHashMap<String, String>()
     @Volatile
     internal var forceBackgroundRefreshAfterReconnect = false
     private var forceSubscribeAllRoomsOnce = false
     internal var periodicReconcileJob: Job? = null
 
-    internal fun trackRecentSocketMessageId(id: String?) {
+    internal fun trackRecentSocketMessageId(roomId: String?, id: String?) {
         val trimmed = id?.trim().orEmpty()
         if (trimmed.isEmpty() || isOptimisticOutgoingMessageId(trimmed)) return
+        val rid = roomId?.trim().orEmpty()
+        if (rid.isNotEmpty()) {
+            lastSocketMessageIdByRoom[rid] = trimmed
+        }
         synchronized(recentSocketMessageIds) {
             recentSocketMessageIds.add(trimmed)
             while (recentSocketMessageIds.size > 256) {
@@ -398,8 +403,8 @@ class ChatViewModel(
         override fun processRealtimeMessageForUnread(message: ChatMessage) =
             this@ChatViewModel.processRealtimeMessageForUnread(message)
 
-        override fun trackRecentSocketMessageId(id: String?) =
-            this@ChatViewModel.trackRecentSocketMessageId(id)
+        override fun trackRecentSocketMessageId(roomId: String?, id: String?) =
+            this@ChatViewModel.trackRecentSocketMessageId(roomId, id)
 
         override fun transferOutgoingLazyColumnKey(pendingId: String, serverId: String) =
             this@ChatViewModel.transferOutgoingLazyColumnKey(pendingId, serverId)
@@ -855,6 +860,7 @@ class ChatViewModel(
         val messageId = message._id?.trim().orEmpty()
         if (messageId.isNotEmpty()) {
             if (!com.lastasylum.alliance.data.chat.ChatSocketIngress.claimForChatList(roomId, messageId)) {
+                ChatDeliveryMetrics.logIngressDrop(roomId, messageId, "claimed_by_primary")
                 return
             }
         }

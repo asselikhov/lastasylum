@@ -4,9 +4,10 @@ import android.util.Log
 import com.lastasylum.alliance.BuildConfig
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Logcat: `adb logcat -s SR_ChatDiag:D` */
+/** Logcat: `adb logcat -s SR_ChatDiag:D SR_ChatDelivery:D` */
 object ChatDeliveryMetrics {
     private const val TAG = "SR_ChatDiag"
+    private const val DELIVERY_TAG = "SR_ChatDelivery"
 
     private val stashCount = AtomicInteger()
     private val applyCount = AtomicInteger()
@@ -16,6 +17,7 @@ object ChatDeliveryMetrics {
     private val gapReconcileCount = AtomicInteger()
     private val stripDropCount = AtomicInteger()
     private val stripPendingCount = AtomicInteger()
+    private val ingressDropCount = AtomicInteger()
 
     fun logStash(roomId: String, messageId: String?, reason: String = "socket") {
         stashCount.incrementAndGet()
@@ -42,6 +44,27 @@ object ChatDeliveryMetrics {
         skipRefreshCount.incrementAndGet()
         if (BuildConfig.DEBUG) {
             Log.d(TAG, "skipRefresh room=$roomId reason=$reason")
+            Log.d(DELIVERY_TAG, "skipRefresh room=$roomId reason=$reason")
+        }
+    }
+
+    fun logSocketReceived(roomId: String, messageId: String?, receivedAtMs: Long = System.currentTimeMillis()) {
+        if (BuildConfig.DEBUG) {
+            Log.d(DELIVERY_TAG, "socketReceived room=$roomId id=${messageId ?: "-"} at=$receivedAtMs")
+        }
+    }
+
+    fun logSocketApplied(roomId: String, messageId: String?, receivedAtMs: Long) {
+        if (BuildConfig.DEBUG) {
+            val latencyMs = (System.currentTimeMillis() - receivedAtMs).coerceAtLeast(0L)
+            Log.d(DELIVERY_TAG, "socketApplied room=$roomId id=${messageId ?: "-"} latencyMs=$latencyMs")
+        }
+    }
+
+    fun logIngressDrop(roomId: String, messageId: String?, reason: String) {
+        ingressDropCount.incrementAndGet()
+        if (BuildConfig.DEBUG) {
+            Log.d(DELIVERY_TAG, "ingressDrop room=$roomId id=${messageId ?: "-"} reason=$reason")
         }
     }
 
@@ -82,5 +105,5 @@ object ChatDeliveryMetrics {
         "stash=${stashCount.get()} apply=${applyCount.get()} drop=${dropCount.get()} " +
             "skipRefresh=${skipRefreshCount.get()} capTrim=${capTrimCount.get()} " +
             "gapReconcile=${gapReconcileCount.get()} stripDrop=${stripDropCount.get()} " +
-            "stripPending=${stripPendingCount.get()}"
+            "stripPending=${stripPendingCount.get()} ingressDrop=${ingressDropCount.get()}"
 }
