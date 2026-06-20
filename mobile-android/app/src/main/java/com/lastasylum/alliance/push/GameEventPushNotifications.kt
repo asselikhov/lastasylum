@@ -105,6 +105,143 @@ object GameEventPushNotifications {
         val bannerTeamName = teamDisplayName.trim().ifBlank {
             resolveTeamDisplayNameFallback(context, senderLine, senderNickname)
         }
+        val builder = NotificationCompat.Builder(context, event.channelId)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(senderHeader)
+            .setContentText(gameEventLine)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setAutoCancel(true)
+            .setContentIntent(pending)
+            .setColor(color)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+        builder.setLargeIcon(senderLargeIcon)
+        applyRichStyle(
+            builder = builder,
+            context = context,
+            event = event,
+            senderHeader = senderHeader,
+            gameEventLine = gameEventLine,
+            bannerTeamName = bannerTeamName,
+            includeBanner = true,
+        )
+        postNotification(context, event, builder)
+    }
+
+    /** Text-only notify path — avatar/banner loaded and applied via [enrich]. */
+    fun showTextFirst(
+        context: Context,
+        event: GameEventDefinition,
+        eventText: String,
+        roomId: String?,
+        senderLine: CharSequence,
+        teamDisplayName: String,
+        senderNickname: String = "",
+        senderLargeIcon: Bitmap,
+    ) {
+        ensureChannels(context)
+        val builder = buildBaseNotification(
+            context = context,
+            event = event,
+            eventText = eventText,
+            roomId = roomId,
+            senderLine = senderLine,
+            teamDisplayName = teamDisplayName,
+            senderNickname = senderNickname,
+        )
+        builder.setLargeIcon(senderLargeIcon)
+        builder.setStyle(
+            NotificationCompat.BigTextStyle()
+                .bigText(eventText.ifBlank { event.messageText })
+                .setBigContentTitle(
+                    senderLine.ifBlank { senderNickname.trim().ifBlank { "?" } },
+                ),
+        )
+        postNotification(context, event, builder)
+    }
+
+    /** Update an already-posted notification with avatar chip and banner bitmap. */
+    fun enrich(
+        context: Context,
+        event: GameEventDefinition,
+        eventText: String,
+        roomId: String?,
+        senderLine: CharSequence,
+        teamDisplayName: String,
+        senderNickname: String = "",
+        senderLargeIcon: Bitmap,
+    ) {
+        ensureChannels(context)
+        val builder = buildBaseNotification(
+            context = context,
+            event = event,
+            eventText = eventText,
+            roomId = roomId,
+            senderLine = senderLine,
+            teamDisplayName = teamDisplayName,
+            senderNickname = senderNickname,
+        )
+        builder.setLargeIcon(senderLargeIcon)
+        applyRichStyle(
+            builder = builder,
+            context = context,
+            event = event,
+            senderHeader = senderLine.ifBlank { senderNickname.trim().ifBlank { "?" } },
+            gameEventLine = eventText.ifBlank { event.messageText },
+            bannerTeamName = teamDisplayName.trim().ifBlank {
+                resolveTeamDisplayNameFallback(context, senderLine, senderNickname)
+            },
+            includeBanner = true,
+        )
+        postNotification(context, event, builder)
+    }
+
+    private fun buildBaseNotification(
+        context: Context,
+        event: GameEventDefinition,
+        eventText: String,
+        roomId: String?,
+        senderLine: CharSequence,
+        teamDisplayName: String,
+        senderNickname: String,
+    ): NotificationCompat.Builder {
+        val launch = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(ExcavationPushNotifications.EXTRA_OPEN_CHAT_ROOM_ID, roomId)
+        }
+        val pending = PendingIntent.getActivity(
+            context,
+            (event.id + (roomId ?: "")).hashCode(),
+            launch,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val color = GameEventPushBannerRenderer.accentColor(event.category)
+        val gameEventLine = eventText.ifBlank { event.messageText }
+        val senderHeader: CharSequence = senderLine.ifBlank {
+            senderNickname.trim().ifBlank { "?" }
+        }
+        return NotificationCompat.Builder(context, event.channelId)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(senderHeader)
+            .setContentText(gameEventLine)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setAutoCancel(true)
+            .setContentIntent(pending)
+            .setColor(color)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+    }
+
+    private fun applyRichStyle(
+        builder: NotificationCompat.Builder,
+        context: Context,
+        event: GameEventDefinition,
+        senderHeader: CharSequence,
+        gameEventLine: String,
+        bannerTeamName: String,
+        includeBanner: Boolean,
+    ) {
+        if (!includeBanner) return
         val banner = GameEventPushBannerRenderer.createBanner(
             context = context,
             category = event.category,
@@ -121,18 +258,14 @@ object GameEventPushNotifications {
                     s.showBigPictureWhenCollapsed(false)
                 }
             }
-        val builder = NotificationCompat.Builder(context, event.channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(senderHeader)
-            .setContentText(gameEventLine)
-            .setStyle(style)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setAutoCancel(true)
-            .setContentIntent(pending)
-            .setColor(color)
-            .setDefaults(NotificationCompat.DEFAULT_ALL)
-        builder.setLargeIcon(senderLargeIcon)
+        builder.setStyle(style)
+    }
+
+    private fun postNotification(
+        context: Context,
+        event: GameEventDefinition,
+        builder: NotificationCompat.Builder,
+    ) {
         val notification = builder.build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(

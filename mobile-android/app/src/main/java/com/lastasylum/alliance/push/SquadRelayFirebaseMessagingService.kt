@@ -102,6 +102,22 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
             squadRole = squadRole.ifBlank { null },
         )
         val avatarRelativeUrl = message.data["senderAvatarRelativeUrl"]?.trim().orEmpty()
+        val placeholderIcon = PushNotificationSenderAvatar.placeholderLargeIcon(
+            squadRole = squadRole.ifBlank { null },
+            fallbackName = nickname.ifBlank { null },
+        )
+        withContext(Dispatchers.Main) {
+            GameEventPushNotifications.showTextFirst(
+                context = app,
+                event = event,
+                eventText = eventText,
+                roomId = message.data["roomId"],
+                senderLine = senderLineColored,
+                teamDisplayName = teamDisplayName.orEmpty(),
+                senderNickname = nickname,
+                senderLargeIcon = placeholderIcon,
+            )
+        }
         val largeIcon = PushNotificationSenderAvatar.loadLargeIcon(
             context = app,
             avatarRelativeUrl = avatarRelativeUrl.ifBlank { null },
@@ -109,7 +125,7 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
             fallbackName = nickname.ifBlank { null },
         )
         withContext(Dispatchers.Main) {
-            GameEventPushNotifications.show(
+            GameEventPushNotifications.enrich(
                 context = app,
                 event = event,
                 eventText = eventText,

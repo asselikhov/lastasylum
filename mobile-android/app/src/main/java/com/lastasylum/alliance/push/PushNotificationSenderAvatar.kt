@@ -43,6 +43,12 @@ object PushNotificationSenderAvatar {
         composeWithRank(avatar, squadRole, fallbackName)
     }
 
+    /** Sync initials + rank chip for notify-first path (no network). */
+    fun placeholderLargeIcon(
+        squadRole: String?,
+        fallbackName: String?,
+    ): Bitmap = composeWithRank(null, squadRole, fallbackName)
+
     private suspend fun loadAvatarBitmapWithRetry(
         context: Context,
         avatarRelativeUrl: String?,

@@ -69,7 +69,14 @@ internal fun ChatViewModel.markOverlayVisibleMessagesAsReadImpl(
         lastOverlayVisibleMessageIds = messageIds
         val roomId = vmState.value.selectedRoomId?.trim().orEmpty()
         if (roomId.isEmpty()) return
-        if (!forceFlushOnClose && !isRoomActivelyViewed(roomId)) return
+        val viewportEligible = isMainAppChatViewportEligible(
+            isChatTabActive = isChatTabActive,
+            selectedRoomId = vmState.value.selectedRoomId.orEmpty(),
+            roomId = roomId,
+            overlayChatPanelOpenInGame = CombatOverlayService.isOverlayChatPanelOpenInGame(),
+            appInForeground = appInForeground,
+        )
+        if (!forceFlushOnClose && !isRoomActivelyViewed(roomId) && !viewportEligible) return
         val room = vmState.value.rooms.find { it.id == roomId } ?: return
         val lastRead = resolvedLastReadMessageId(room)?.trim().orEmpty()
         val markId = computeOverlayViewportReadWatermark(

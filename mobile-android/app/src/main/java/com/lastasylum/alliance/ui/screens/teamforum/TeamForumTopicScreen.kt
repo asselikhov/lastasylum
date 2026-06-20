@@ -74,7 +74,10 @@ import com.lastasylum.alliance.data.teams.TeamForumMessageDeletedEvent
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.data.teams.TeamForumMessageReactionEvent
 import com.lastasylum.alliance.data.teams.TeamForumSocketManager
+import com.lastasylum.alliance.data.teams.TeamForumSocketState
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
+import com.lastasylum.alliance.data.telemetry.DeliveryLatencyTracker
+import com.lastasylum.alliance.data.telemetry.LatencySpanType
 import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
 import com.lastasylum.alliance.data.teams.TeamForumTopicReadEvent
 import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
@@ -1741,6 +1744,18 @@ fun TeamForumTopicScreen(
                                 lastError = null,
                             )
                             topicViewModel.persistOutbox(outboxEntry)
+                            val latencyTracker =
+                                AppContainer.from(context.applicationContext).deliveryLatencyTracker
+                            val socketPrefired = prefireForumSocketMessage(
+                                forumSocket = forumSocket,
+                                latencyTracker = latencyTracker,
+                                teamId = teamId,
+                                topicId = topicId,
+                                text = trimmed,
+                                clientMessageId = clientMessageId,
+                                replyToMessageId = replyId,
+                                imageFileIds = imageFileIds,
+                            )
                             forumRepository.postForumMessageWithRetries(
                                 currentUserId,
                                 teamId,
@@ -1750,6 +1765,7 @@ fun TeamForumTopicScreen(
                                 imageFileId = null,
                                 imageFileIds = imageFileIds,
                                 clientMessageId = clientMessageId,
+                                startLatencySpan = !socketPrefired,
                             )
                                 .onSuccess {
                                     topicViewModel.markOutboxSent(clientMessageId)
@@ -1818,6 +1834,18 @@ fun TeamForumTopicScreen(
                                 lastError = null,
                             )
                             topicViewModel.persistOutbox(outboxEntry)
+                            val latencyTracker =
+                                AppContainer.from(context.applicationContext).deliveryLatencyTracker
+                            val socketPrefired = prefireForumSocketMessage(
+                                forumSocket = forumSocket,
+                                latencyTracker = latencyTracker,
+                                teamId = teamId,
+                                topicId = topicId,
+                                text = payload,
+                                clientMessageId = clientMessageId,
+                                replyToMessageId = replyId,
+                                imageFileIds = null,
+                            )
                             forumRepository.postForumMessageWithRetries(
                                 userId = currentUserId,
                                 teamId = teamId,
@@ -1827,6 +1855,7 @@ fun TeamForumTopicScreen(
                                 imageFileId = null,
                                 imageFileIds = null,
                                 clientMessageId = clientMessageId,
+                                startLatencySpan = !socketPrefired,
                             )
                                 .onSuccess {
                                     topicViewModel.markOutboxSent(clientMessageId)
@@ -2352,6 +2381,30 @@ private fun ForumSelectionToolbar(
         }
         HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.45f))
     }
+}
+
+/** Parallel socket prefire before forum HTTP (mirror chat dual-path). Returns true when span started. */
+private fun prefireForumSocketMessage(
+    forumSocket: TeamForumSocketManager,
+    latencyTracker: DeliveryLatencyTracker,
+    teamId: String,
+    topicId: String,
+    text: String,
+    clientMessageId: String,
+    replyToMessageId: String?,
+    imageFileIds: List<String>?,
+): Boolean {
+    if (forumSocket.connectionState.value != TeamForumSocketState.Connected) return false
+    latencyTracker.startSpan(LatencySpanType.ForumSendToSocket, clientMessageId)
+    forumSocket.emitMessageSend(
+        teamId = teamId,
+        topicId = topicId,
+        text = text,
+        clientMessageId = clientMessageId,
+        replyToMessageId = replyToMessageId,
+        imageFileIds = imageFileIds,
+    )
+    return true
 }
 
 /** Telegram-like instant feedback before REST round-trip. */

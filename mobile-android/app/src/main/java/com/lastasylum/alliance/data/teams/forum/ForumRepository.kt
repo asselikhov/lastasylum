@@ -303,8 +303,11 @@ class ForumRepository(
         imageFileIds: List<String>? = null,
         fileFileId: String? = null,
         clientMessageId: String = java.util.UUID.randomUUID().toString(),
+        startLatencySpan: Boolean = true,
     ): Result<TeamForumMessageDto> {
-        latencyTracker?.startSpan(LatencySpanType.ForumSendToSocket, clientMessageId)
+        if (startLatencySpan) {
+            latencyTracker?.startSpan(LatencySpanType.ForumSendToSocket, clientMessageId)
+        }
         return teamsRepository.postForumMessageWithRetries(
             teamId = teamId,
             topicId = topicId,

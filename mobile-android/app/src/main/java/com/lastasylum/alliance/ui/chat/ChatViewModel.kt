@@ -1697,6 +1697,13 @@ class ChatViewModel(
         httpAckSpanId: Long? = null,
     ) = confirmOutgoingByClientMessageIdImpl(clientMessageId, sent, pendingIdHint, httpAckSpanId)
 
+    /** [OutboxSendWorker] success path when VM is bound but send was not launched from UI scope. */
+    fun onBackgroundOutboxConfirmed(
+        clientMessageId: String,
+        sent: ChatMessage,
+        pendingIdHint: String? = null,
+    ) = confirmOutgoingByClientMessageIdImpl(clientMessageId, sent, pendingIdHint, null)
+
     internal fun applyIncomingMessage(
         message: ChatMessage,
         clearComposer: Boolean = false,

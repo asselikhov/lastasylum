@@ -113,7 +113,7 @@ class ChatUnreadCountsTest {
                 previouslyDisplayed = 0,
             ),
         )
-        assertEquals(8, ChatUnreadCounts.allianceHubDisplayUnread(rooms))
+        assertEquals(0, ChatUnreadCounts.allianceHubDisplayUnread(rooms, local))
     }
 
     @Test

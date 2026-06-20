@@ -314,6 +314,40 @@ class TeamForumSocketManager {
         )
     }
 
+    /** Fire-and-forget socket send before HTTP (mirror chat dual-path). */
+    fun emitMessageSend(
+        teamId: String,
+        topicId: String,
+        text: String,
+        clientMessageId: String,
+        replyToMessageId: String? = null,
+        imageFileIds: List<String>? = null,
+    ) {
+        val tid = teamId.trim()
+        val top = topicId.trim()
+        val body = text
+        val cid = clientMessageId.trim()
+        if (tid.isEmpty() || top.isEmpty() || cid.isEmpty()) return
+        val payload = JSONObject()
+            .put("teamId", tid)
+            .put("topicId", top)
+            .put("text", body)
+            .put("clientMessageId", cid)
+        replyToMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            payload.put("replyToMessageId", it)
+        }
+        imageFileIds?.takeIf { it.isNotEmpty() }?.let { ids ->
+            val arr = org.json.JSONArray()
+            ids.forEach { id ->
+                id.trim().takeIf { it.isNotEmpty() }?.let { arr.put(it) }
+            }
+            if (arr.length() > 0) {
+                payload.put("imageFileIds", arr)
+            }
+        }
+        socket?.emit("message:send", payload)
+    }
+
     fun disconnect() {
         intentionalDisconnect = true
         cancelReconnect()
@@ -449,6 +483,9 @@ class TeamForumSocketManager {
                     if (activeTopic == null) {
                         if (msg.topicId.isNotBlank()) {
                             ForumMessageStash.stash(msg)
+                            dispatchMain {
+                                messageListeners.forEach { l -> runCatching { l(msg) } }
+                            }
                             if (com.lastasylum.alliance.BuildConfig.DEBUG) {
                                 android.util.Log.d(
                                     "SR_Forum",
@@ -461,6 +498,9 @@ class TeamForumSocketManager {
                     if (msg.topicId != activeTopic) {
                         if (msg.topicId.isNotBlank()) {
                             ForumMessageStash.stash(msg)
+                            dispatchMain {
+                                messageListeners.forEach { l -> runCatching { l(msg) } }
+                            }
                         }
                         return@on
                     }

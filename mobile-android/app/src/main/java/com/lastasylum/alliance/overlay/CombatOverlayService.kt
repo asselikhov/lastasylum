@@ -2767,6 +2767,12 @@ class CombatOverlayService : Service() {
         serverEffectiveCount: Int,
         rawServerUnread: Int = serverEffectiveCount,
     ) {
+        if (isAllianceHubLocallyReadSuppressedNow()) {
+            clearHubUnreadOptimisticState()
+            applyAllianceHubUnreadCount(0)
+            patchHubUnreadInSessionCacheAfterLocalRead()
+            return
+        }
         val effective = serverEffectiveCount.coerceAtLeast(0)
         if (effective <= 0) {
             val hubBumpGraceActive = hubUnreadOptimisticFloor > 0 &&
@@ -5000,6 +5006,11 @@ class CombatOverlayService : Service() {
             val text = pendingQuickCommandTexts[pendingId]?.trim().orEmpty()
             if (!raidId.isNullOrBlank() && pendingId.isNotEmpty() && text.isNotEmpty()) {
                 mainHandler.post {
+                    applyOptimisticPendingQuickCommandToStrip(
+                        pendingId = pendingId,
+                        roomId = raidId,
+                        text = text,
+                    )
                     prepareOverlayRaidQuickCommandChatOptimistic(
                         pendingId = pendingId,
                         text = text,
@@ -5053,6 +5064,11 @@ class CombatOverlayService : Service() {
             warmupOverlayRaidForQuickCommands()
         } else {
             scheduleOverlayRaidRealtimeWarm(roomId)
+            applyOptimisticPendingQuickCommandToStrip(
+                pendingId = pendingId,
+                roomId = roomId,
+                text = body,
+            )
             prepareOverlayRaidQuickCommandChatOptimistic(pendingId, body, roomId, gameEventAlert)
         }
         return pendingId
@@ -5183,14 +5199,20 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun buildOptimisticRaidCommandMessage(roomId: String, text: String): ChatMessage {
+    private fun buildOptimisticRaidCommandMessage(
+        roomId: String,
+        text: String,
+        pendingId: String? = null,
+    ): ChatMessage {
         val rid = roomId.trim()
         val body = text.trim()
         val senderId = jwtSubFromAccessToken()?.trim().orEmpty()
         val profile = AppContainer.from(this).usersRepository.peekMyProfile()
             ?: AppContainer.from(this).usersRepository.peekMyProfileDisk()
+        val messageId = pendingId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "overlay-pending-${System.nanoTime()}"
         return ChatMessage(
-            _id = "overlay-pending-${System.nanoTime()}",
+            _id = messageId,
             allianceId = "",
             roomId = rid,
             senderId = senderId,
@@ -5208,6 +5230,45 @@ class CombatOverlayService : Service() {
             deletedAt = null,
             deletedByUserId = null,
         )
+    }
+
+    /** Sender strip card at tap — bypasses [OverlayStripRecipientPolicy] until HTTP confirms. */
+    private fun applyOptimisticPendingQuickCommandToStrip(
+        pendingId: String,
+        roomId: String,
+        text: String,
+    ) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post {
+                applyOptimisticPendingQuickCommandToStrip(pendingId, roomId, text)
+            }
+            return
+        }
+        val body = text.trim()
+        val rid = roomId.trim()
+        val pid = pendingId.trim()
+        if (body.isEmpty() || rid.isEmpty() || pid.isEmpty()) return
+        if (!isOverlayChatStripEnabled()) return
+        ensureOverlayStripVisibleSession()
+        extendOverlayUiHold()
+        rememberOverlayRaidRoomId(rid)
+        val optimistic = buildOptimisticRaidCommandMessage(rid, body, pendingId = pid)
+        stripBuffer.upsert(optimistic)
+        stripBuffer.markClientSend(optimistic)
+        stripLiveRevision++
+        val preview = stripPreviewForUi()
+        lastStripRenderSignature = overlayStripPreviewSignature(preview)
+        forceShowStripUntilMs = maxOf(
+            forceShowStripUntilMs,
+            System.currentTimeMillis() + FORCE_SHOW_STRIP_AFTER_LOCAL_SEND_MS,
+        )
+        ensureOverlayIfPermitted()
+        val wm = windowManager ?: systemWindowManager()
+        if (wm != null) {
+            runCatching { ensureChatStripWindow(wm) }
+        }
+        chatStripPreviewFlow.value = preview
+        publishStripAfterLocalRaidSend()
     }
 
     private fun applyLocalSentMessageToStrip(

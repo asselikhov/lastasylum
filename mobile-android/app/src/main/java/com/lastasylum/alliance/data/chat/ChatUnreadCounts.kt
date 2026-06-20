@@ -22,12 +22,14 @@ object ChatUnreadCounts {
         localReadByRoom: Map<String, String> = emptyMap(),
     ): Int = OverlayGameStatusHudRefresh.allianceHubUnread(rooms, localReadByRoom)
 
-    /** Hub badge from merged [ChatViewModel] room list — matches chat room chip. */
-    fun allianceHubDisplayUnread(rooms: List<ChatRoomDto>): Int =
-        ChatRoomKindResolver.allianceHubRoom(rooms)
-            ?.unreadCount
-            ?.coerceAtLeast(0)
-            ?: 0
+    /** Hub badge from merged [ChatViewModel] room list — matches overlay cursor-aware path. */
+    fun allianceHubDisplayUnread(
+        rooms: List<ChatRoomDto>,
+        localReadByRoom: Map<String, String> = emptyMap(),
+    ): Int {
+        if (isAllianceHubLocallyReadSuppressed(rooms, localReadByRoom)) return 0
+        return allianceHubUnread(rooms, localReadByRoom)
+    }
 
     fun allianceHubRawUnread(rooms: List<ChatRoomDto>): Int =
         OverlayGameStatusHudRefresh.allianceHubRawUnread(rooms)

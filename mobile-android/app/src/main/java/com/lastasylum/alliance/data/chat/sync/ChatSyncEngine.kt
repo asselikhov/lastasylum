@@ -7,6 +7,7 @@ import com.lastasylum.alliance.data.chat.store.MessageStore
 import com.lastasylum.alliance.data.chat.outbox.ChatOutbox
 import com.lastasylum.alliance.data.chat.outbox.OutboxEntry
 import com.lastasylum.alliance.data.chat.outbox.OutboxSendSource
+import com.lastasylum.alliance.data.chat.outbox.OutboxSendUiBridge
 import com.lastasylum.alliance.data.telemetry.DeliveryLatencyTracker
 import com.lastasylum.alliance.data.telemetry.LatencySpanType
 import kotlinx.coroutines.CoroutineScope
@@ -149,6 +150,7 @@ class ChatSyncEngine(
                 clientMessageId = entry.clientMessageId,
                 serverMessage = sent,
             )
+            OutboxSendUiBridge.onSendSuccess(entry, sent)
         }.onFailure { err ->
             chatOutbox.markFailed(entry.clientMessageId, err.message ?: "send_failed")
         }

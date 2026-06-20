@@ -46,6 +46,23 @@ internal fun isMainAppRoomActivelyViewed(
     return isChatTabActive
 }
 
+/**
+ * Main-app LazyColumn viewport mark-read: user is on the chat tab viewing the room
+ * (does not require the game to be backgrounded).
+ */
+internal fun isMainAppChatViewportEligible(
+    isChatTabActive: Boolean,
+    selectedRoomId: String,
+    roomId: String,
+    overlayChatPanelOpenInGame: Boolean,
+    appInForeground: Boolean,
+): Boolean {
+    if (roomId.trim() != selectedRoomId.trim()) return false
+    if (!isChatTabActive) return false
+    if (overlayChatPanelOpenInGame) return false
+    return appInForeground
+}
+
 /** Batch/incoming auto mark-read only when the user is at the bottom of the thread (Telegram). */
 internal fun shouldAutoMarkReadIncomingAtBottom(
     isRoomActivelyViewed: Boolean,
