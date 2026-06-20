@@ -100,6 +100,10 @@ object GameForegroundGate {
         cachedForeground = null
         mergedStatsCachedAtMs = 0L
         mergedStatsCache = emptyList()
+        invalidateFullHeuristicCache()
+    }
+
+    fun invalidateFullHeuristicCache() {
         synchronized(fullHeuristicCacheLock) {
             fullHeuristicCacheAtMs = 0L
             fullHeuristicCacheKey = ""
@@ -227,6 +231,45 @@ object GameForegroundGate {
     /** Полный доступ (не MODE_FOREGROUND — тот только пока UI SquadRelay на экране). */
     private fun isUsageStatsOpAllowed(mode: Int): Boolean =
         mode == AppOpsManager.MODE_ALLOWED
+
+    enum class UsageAccessMode {
+        FULL,
+        LIMITED_FOREGROUND,
+        NONE,
+    }
+
+    fun usageAccessMode(context: Context): UsageAccessMode {
+        if (!usageStatsProbeReturnsAny(context)) return UsageAccessMode.NONE
+        val mode = readUsageStatsOpMode(context)
+        return if (mode == AppOpsManager.MODE_ALLOWED) {
+            UsageAccessMode.FULL
+        } else {
+            UsageAccessMode.LIMITED_FOREGROUND
+        }
+    }
+
+    /**
+     * Weak positive during game launch (package events / TTF growth) before RESUME stabilizes.
+     */
+    fun hasWeakTargetForegroundSignal(
+        context: Context,
+        targetGamePackages: Collection<String>,
+    ): Boolean {
+        val targets = targetGamePackages.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (targets.isEmpty() || !hasUsageStatsAccessForOverlay(context)) return false
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return false
+        val end = System.currentTimeMillis()
+        val targetSet = targets.toSet()
+        for (t in targets) {
+            if (runCatching { targetForegroundFromPackageOnlyEvents(usm, t, end) }.getOrDefault(false)) {
+                return true
+            }
+        }
+        val stats = runCatching {
+            queryUsageStatsMerged(usm, end, USAGE_STATS_LOOKBACK_MS)
+        }.getOrDefault(emptyList())
+        return targetForegroundByGrowingTotalTime(stats, targetSet)
+    }
 
     private fun computeHasUsageStatsAccessForOverlay(context: Context): Boolean {
         val mode = readUsageStatsOpMode(context) ?: return usageStatsProbeReturnsAny(context)

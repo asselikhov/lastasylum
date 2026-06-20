@@ -4,11 +4,13 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.util.chatSenderDisplayLine
 import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.CombatOverlayService
+import com.lastasylum.alliance.overlay.OverlayRuntimeDiagnostics
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -21,9 +23,18 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onNewToken(token: String) {
+        PushTokenRefreshScheduler.scheduleImmediate(applicationContext)
         scope.launch {
-            runCatching {
-                AppContainer.from(applicationContext).usersRepository.registerPushToken(token)
+            val delaysMs = longArrayOf(0L, 2_000L, 10_000L, 30_000L)
+            for (delayMs in delaysMs) {
+                if (delayMs > 0) delay(delayMs)
+                val ok = runCatching {
+                    AppContainer.from(applicationContext).usersRepository.registerPushToken(token)
+                }.isSuccess
+                if (ok) {
+                    OverlayRuntimeDiagnostics.recordFcmTokenRegistered()
+                    return@launch
+                }
             }
         }
     }

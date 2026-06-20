@@ -29,10 +29,13 @@ object FcmTokenManager {
         }
         return AppContainer.from(context).usersRepository.registerPushToken(token).also { r ->
             r.onFailure { e ->
-                if (BuildConfig.DEBUG) Log.w(TAG, "registerPushToken API failed", e)
+                android.util.Log.w(TAG, "registerPushToken API failed", e)
             }
-            if (BuildConfig.DEBUG && r.isSuccess) {
-                Log.d(TAG, "push token registered (${token.take(12)}…)")
+            if (r.isSuccess) {
+                com.lastasylum.alliance.overlay.OverlayRuntimeDiagnostics.recordFcmTokenRegistered()
+                if (BuildConfig.DEBUG) {
+                    Log.d(TAG, "push token registered (${token.take(12)}…)")
+                }
             }
         }
     }

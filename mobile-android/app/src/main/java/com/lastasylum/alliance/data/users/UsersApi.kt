@@ -50,6 +50,9 @@ interface UsersApi {
         @Body body: UpdateNotificationPreferencesBody,
     ): MyProfileDto
 
+    @GET("users/me/push-health")
+    suspend fun getPushHealth(): PushHealthDto
+
     @POST("users/me/push-token")
     suspend fun registerPushToken(@Body body: PushTokenBody): Map<String, Boolean?>
 

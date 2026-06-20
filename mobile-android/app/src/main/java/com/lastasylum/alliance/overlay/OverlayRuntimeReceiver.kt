@@ -27,6 +27,9 @@ class OverlayRuntimeReceiver : BroadcastReceiver() {
                 Intent.ACTION_USER_UNLOCKED -> {
                     wakeOverlayRuntime(app, "unlock")
                 }
+                Intent.ACTION_USER_PRESENT -> {
+                    wakeOverlayRuntime(app, "present")
+                }
                 Intent.ACTION_LOCKED_BOOT_COMPLETED -> {
                     OverlayRuntimeScheduler.scheduleImmediateRetry(app, delayMs = 45_000L)
                 }
@@ -65,6 +68,9 @@ class OverlayRuntimeReceiver : BroadcastReceiver() {
     private fun wakeOverlayRuntime(app: Context, reason: String) {
         val started = CombatOverlayService.ensureRuntimeIfUserEnabled(app, showErrorToast = false)
         OverlayRuntimeScheduler.syncSchedule(app)
+        runCatching {
+            com.lastasylum.alliance.push.PushTokenRefreshScheduler.scheduleImmediate(app)
+        }
         Log.i(TAG, "wakeOverlayRuntime reason=$reason started=$started")
     }
 

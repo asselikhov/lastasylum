@@ -106,6 +106,16 @@ data class PushTokenBody(
 )
 
 @JsonClass(generateAdapter = true)
+data class PushHealthDto(
+    val pushTokenCount: Int = 0,
+    val presenceStatus: String? = null,
+    val lastPresenceAt: String? = null,
+    val overlayIngameNow: Boolean = false,
+    val gameEventPushExcludedNow: Boolean = false,
+    val gameEventPushExcludeStaleMs: Long = 20_000L,
+)
+
+@JsonClass(generateAdapter = true)
 data class PresenceBody(
     val status: String,
 )

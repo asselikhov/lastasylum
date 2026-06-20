@@ -152,6 +152,12 @@ export class UsersController {
     return { success: true };
   }
 
+  @Get('me/push-health')
+  @Roles(AllianceRole.MEMBER)
+  async getMyPushHealth(@Req() req: { user: RequestUser }) {
+    return this.usersService.getPushHealth(req.user.userId);
+  }
+
   @Post('me/presence')
   @Roles(AllianceRole.MEMBER)
   async updatePresence(

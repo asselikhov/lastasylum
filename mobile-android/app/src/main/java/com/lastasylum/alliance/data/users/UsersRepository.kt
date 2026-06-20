@@ -126,6 +126,9 @@ class UsersRepository(
     suspend fun registerPushToken(token: String): Result<Unit> =
         runCatching { usersApi.registerPushToken(PushTokenBody(token)) }
 
+    suspend fun getPushHealth(): Result<PushHealthDto> =
+        runCatching { usersApi.getPushHealth() }
+
     suspend fun clearPushTokens(): Result<Unit> =
         runCatching { usersApi.clearPushTokens() }
 

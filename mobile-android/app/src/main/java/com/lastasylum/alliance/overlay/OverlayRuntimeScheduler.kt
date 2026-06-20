@@ -20,7 +20,7 @@ object OverlayRuntimeScheduler {
     private const val REQUEST_CODE = 41_021
     private const val INTERVAL_SERVICE_UP_MS = 90 * 1000L
     private const val INTERVAL_SERVICE_DOWN_MS = 15 * 1000L
-    private const val INTERVAL_SERVICE_DOWN_MAX_MS = 5 * 60 * 1000L
+    private const val INTERVAL_SERVICE_DOWN_MAX_MS = 90 * 1000L
     private const val RETRY_AFTER_KILL_MS = 5_000L
     @Volatile
     private var downBackoffMs: Long = INTERVAL_SERVICE_DOWN_MS

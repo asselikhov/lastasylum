@@ -33,4 +33,20 @@ class OverlayGameGatePollPolicyTest {
         )
         assertEquals(OverlayGameGatePollPolicy.Poll.STABLE_MS, delay)
     }
+
+    @Test
+    fun entryBoost_usesFastPollWhenHudNotAttached() {
+        val delay = OverlayGameGatePollPolicy.nextPollDelayMs(
+            mainAppForegroundActive = false,
+            inGameOverlayUiActive = false,
+            overlayShellActive = false,
+            modalUiActive = false,
+            lastOverlayInGameAtMs = 0L,
+            stableGatePollTicks = 0,
+            stableTicksForSlowPoll = 5,
+            entryBoostActive = true,
+            overlayPanelEnabled = true,
+        )
+        assertEquals(OverlayGameGatePollPolicy.Poll.ENTRY_FAST_MS, delay)
+    }
 }

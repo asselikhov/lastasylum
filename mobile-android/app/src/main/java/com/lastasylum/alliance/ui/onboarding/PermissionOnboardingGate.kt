@@ -120,6 +120,20 @@ fun PermissionOnboardingGate() {
                 }
                 TextButton(
                     onClick = {
+                        val overlayGranted = OverlayPermissions.canDrawOverlays(context)
+                        val usageGranted = GameForegroundGate.usageAccessMode(context) ==
+                            GameForegroundGate.UsageAccessMode.FULL
+                        val notifGranted = if (Build.VERSION.SDK_INT >= 33) {
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.POST_NOTIFICATIONS,
+                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        } else {
+                            true
+                        }
+                        if (!overlayGranted || !usageGranted || !notifGranted) {
+                            return@TextButton
+                        }
                         visible = false
                         app.onboardingPreferences.setPermissionOnboardingDone(true)
                     },

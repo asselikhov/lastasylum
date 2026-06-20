@@ -17,6 +17,7 @@ import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayRuntimeScheduler
 import com.lastasylum.alliance.push.GameEventPushNotifications
 import com.lastasylum.alliance.push.FcmTokenManager
+import com.lastasylum.alliance.push.PushTokenRefreshScheduler
 import com.lastasylum.alliance.ui.chat.SquadRelayImageLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +46,7 @@ class SquadRelayApplication : Application(), SingletonImageLoader.Factory {
             val access = runCatching { container.tokenStore.getAccessToken() }.getOrNull()
             if (!access.isNullOrBlank()) {
                 runCatching { FcmTokenManager.registerWithBackend(this@SquadRelayApplication) }
+                runCatching { PushTokenRefreshScheduler.schedule(this@SquadRelayApplication) }
                 runCatching {
                     val profile = container.usersRepository.peekMyProfileDisk()
                         ?: container.usersRepository.peekMyProfile()

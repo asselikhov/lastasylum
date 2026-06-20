@@ -612,6 +612,54 @@ export class UsersService implements OnModuleInit {
       .exec();
   }
 
+  async getPushHealth(userId: string): Promise<{
+    pushTokenCount: number;
+    presenceStatus: string | null;
+    lastPresenceAt: string | null;
+    overlayIngameNow: boolean;
+    gameEventPushExcludedNow: boolean;
+    gameEventPushExcludeStaleMs: number;
+  }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      return {
+        pushTokenCount: 0,
+        presenceStatus: null,
+        lastPresenceAt: null,
+        overlayIngameNow: false,
+        gameEventPushExcludedNow: false,
+        gameEventPushExcludeStaleMs:
+          UsersService.GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS,
+      };
+    }
+    const row = await this.userModel
+      .findById(userId)
+      .select('pushFcmTokens presenceStatus lastPresenceAt')
+      .lean<{
+        pushFcmTokens?: string[];
+        presenceStatus?: string | null;
+        lastPresenceAt?: Date | null;
+      }>()
+      .exec();
+    const tokens = row?.pushFcmTokens ?? [];
+    const lastAt = row?.lastPresenceAt ?? null;
+    const overlayIngame = await this.isOverlayIngameNow(userId);
+    const staleBeforeMs =
+      Date.now() - UsersService.GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS;
+    const gameEventPushExcludedNow =
+      (row?.presenceStatus ?? '').trim().toLowerCase() === 'ingame' &&
+      lastAt instanceof Date &&
+      lastAt.getTime() >= staleBeforeMs;
+    return {
+      pushTokenCount: Array.isArray(tokens) ? tokens.length : 0,
+      presenceStatus: row?.presenceStatus ?? null,
+      lastPresenceAt: lastAt instanceof Date ? lastAt.toISOString() : null,
+      overlayIngameNow: overlayIngame,
+      gameEventPushExcludedNow,
+      gameEventPushExcludeStaleMs:
+        UsersService.GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS,
+    };
+  }
+
   async touchAppActivity(userId: string): Promise<void> {
     await this.userModel
       .updateOne({ _id: userId }, { $set: { lastAppActiveAt: new Date() } })
@@ -713,7 +761,7 @@ export class UsersService implements OnModuleInit {
    */
   static readonly OVERLAY_INGAME_LIST_STALE_MS = 60_000;
   /** Push: shorter ingame exclusion so offline users still get FCM after brief overlay session. */
-  static readonly GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS = 30_000;
+  static readonly GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS = 20_000;
 
   /** Fresh overlay «ingame» ping (same window as list/broadcast). */
   async isOverlayIngameNow(userId: string): Promise<boolean> {

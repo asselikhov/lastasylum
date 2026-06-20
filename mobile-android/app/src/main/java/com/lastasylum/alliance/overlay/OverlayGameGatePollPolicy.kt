@@ -14,8 +14,13 @@ internal object OverlayGameGatePollPolicy {
         lastOverlayInGameAtMs: Long,
         stableGatePollTicks: Int,
         stableTicksForSlowPoll: Int,
+        entryBoostActive: Boolean = false,
+        overlayPanelEnabled: Boolean = true,
         nowMs: Long = System.currentTimeMillis(),
     ): Long {
+        if (entryBoostActive && overlayPanelEnabled && !overlayShellActive) {
+            return Poll.ENTRY_FAST_MS
+        }
         if (mainAppForegroundActive && !inGameOverlayUiActive && !overlayShellActive) {
             val last = lastOverlayInGameAtMs
             return if (last > 0L && nowMs - last <= RECENT_INGAME_WINDOW_MS) {
@@ -44,6 +49,7 @@ internal object OverlayGameGatePollPolicy {
 
     object Poll {
         const val ACTIVE_MS = 1_200L
+        const val ENTRY_FAST_MS = 800L
         const val STABLE_MS = 3_500L
         const val MODAL_UI_MS = 5_000L
         const val WARM_MS = 1_800L

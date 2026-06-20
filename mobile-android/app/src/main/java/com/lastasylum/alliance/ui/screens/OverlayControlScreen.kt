@@ -1,5 +1,9 @@
 package com.lastasylum.alliance.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
@@ -42,6 +46,10 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.GameForegroundGate
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
+import androidx.core.content.ContextCompat
+import com.lastasylum.alliance.overlay.OverlayGateDiagnostics
 import com.lastasylum.alliance.overlay.OverlayGamePackageSuggestions
 import com.lastasylum.alliance.overlay.OverlayPermissions
 import com.lastasylum.alliance.ui.components.SettingsNavigationRow
@@ -69,8 +77,17 @@ fun OverlayControlScreen() {
     var enabledGameEventsCount by remember {
         mutableIntStateOf(countEnabledGameEventPushes(prefs))
     }
+    var diagnosticsLines by remember { mutableStateOf<List<String>>(emptyList()) }
+    val serviceRunning by CombatOverlayService.serviceRunning.collectAsState()
+    val inGameHud by CombatOverlayService.inGameOverlayUiActive.collectAsState()
     val undetectedGamePackages = remember(detectedGamePackages) {
         detectedGamePackages.filter { !it.alreadyInFilter }
+    }
+
+    fun refreshDiagnostics() {
+        diagnosticsLines = OverlayGateDiagnostics.summaryLines(
+            OverlayGateDiagnostics.capture(appContext, prefs),
+        )
     }
 
     fun refreshGameEventsSummary() {
@@ -79,7 +96,8 @@ fun OverlayControlScreen() {
 
     fun overlayOk(): Boolean = OverlayPermissions.canDrawOverlays(context)
 
-    fun usageOk(): Boolean = GameForegroundGate.hasUsageStatsAccessForOverlay(context)
+    fun usageOk(): Boolean =
+        GameForegroundGate.usageAccessMode(context) == GameForegroundGate.UsageAccessMode.FULL
 
     fun refreshOverlayRuntime() {
         GameForegroundGate.invalidateUsageAccessCache()
@@ -93,6 +111,11 @@ fun OverlayControlScreen() {
             prefs.applyGameEventPushEnabledFromServer(profile.gameEventPushEnabled)
             refreshGameEventsSummary()
         }
+        refreshDiagnostics()
+    }
+
+    LaunchedEffect(serviceRunning, inGameHud, overlayEnabled) {
+        refreshDiagnostics()
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -102,6 +125,7 @@ fun OverlayControlScreen() {
                 overlayEnabled = prefs.isOverlayPanelEnabled()
                 refreshOverlayRuntime()
                 refreshGameEventsSummary()
+                refreshDiagnostics()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -295,6 +319,66 @@ fun OverlayControlScreen() {
                         bottom = SquadRelayDimens.listRowVerticalPadding,
                     ),
                 )
+            }
+        }
+
+        item {
+            val postNotifDenied = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (postNotifDenied) {
+                SettingsSectionLabel(stringResource(R.string.settings_section_notifications))
+                SettingsPanelCard {
+                    Column(
+                        modifier = Modifier.padding(
+                            horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                            vertical = SquadRelayDimens.listRowVerticalPadding,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.overlay_post_notifications_denied),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        TextButton(
+                            onClick = {
+                                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                }
+                                context.startActivity(intent)
+                            },
+                        ) {
+                            Text(stringResource(R.string.overlay_post_notifications_open_settings))
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            SettingsSectionLabel(stringResource(R.string.overlay_diagnostics_section))
+            SettingsPanelCard {
+                Column(
+                    modifier = Modifier.padding(
+                        horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                        vertical = SquadRelayDimens.listRowVerticalPadding,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    diagnosticsLines.forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = { refreshDiagnostics() }) {
+                        Text(stringResource(R.string.overlay_diagnostics_refresh))
+                    }
+                }
             }
         }
 

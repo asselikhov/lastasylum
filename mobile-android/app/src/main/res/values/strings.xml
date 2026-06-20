@@ -212,6 +212,10 @@
     <string name="onboarding_permissions_usage">Статистика использования</string>
     <string name="onboarding_permissions_battery">Батарея</string>
     <string name="onboarding_permissions_later">Позже</string>
+    <string name="overlay_diagnostics_section">Диагностика оверлея</string>
+    <string name="overlay_diagnostics_refresh">Обновить</string>
+    <string name="overlay_post_notifications_denied">Push-уведомления отключены — игровые события не будут показываться в шторке. Включите в настройках системы.</string>
+    <string name="overlay_post_notifications_open_settings">Настройки уведомлений</string>
 
     <!-- Overlay screen -->
     <string name="settings_screen_title">Настройки</string>

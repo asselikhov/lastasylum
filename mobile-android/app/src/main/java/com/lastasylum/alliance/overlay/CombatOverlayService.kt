@@ -1044,7 +1044,11 @@ class CombatOverlayService : Service() {
             when (intent?.action) {
                 Intent.ACTION_SCREEN_ON -> {
                     GameForegroundGate.invalidateForegroundHintCache()
+                    GameForegroundGate.invalidateFullHeuristicCache()
                     GameForegroundGate.invalidateUsageAccessCache()
+                    gameEntryBoostUntilMs =
+                        System.currentTimeMillis() + OverlayGameEntryPolicy.ENTRY_BOOST_MS
+                    ensureRuntimeIfUserEnabled(this@CombatOverlayService, showErrorToast = false)
                 }
                 Intent.ACTION_SCREEN_OFF -> {
                     GameForegroundGate.invalidateForegroundHintCache()
@@ -1219,6 +1223,14 @@ class CombatOverlayService : Service() {
     @Volatile
     private var gateQuickProbeNotInTarget: Boolean = false
 
+    /** Boost faster gate polling + lenient show while attaching HUD after game launch / screen on. */
+    private var gameEntryBoostUntilMs: Long = 0L
+
+    /** Consecutive NOT_IN_TARGET probes before fast dismiss (avoids launcher/splash false negative). */
+    private var gateNotInTargetStreak: Int = 0
+
+    private var lastDetachedRepairAtMs: Long = 0L
+
     /** Keep raid strip visible after local send despite brief gate flap. */
     @Volatile
     private var forceShowStripUntilMs: Long = 0L
@@ -1296,6 +1308,7 @@ class CombatOverlayService : Service() {
                 if (delayMs > 0) delay(delayMs)
                 if (FcmTokenManager.registerWithBackend(this@CombatOverlayService).isSuccess) {
                     registered = true
+                    OverlayRuntimeDiagnostics.recordFcmTokenRegistered()
                     break
                 }
             }
@@ -1342,6 +1355,12 @@ class CombatOverlayService : Service() {
         inGameProbe: Boolean = overlayInGameProbeActive,
     ): Boolean {
         if (!inGameProbe) {
+            val inInGameGrace = lastOverlayInGameAtMs > 0L &&
+                System.currentTimeMillis() - lastOverlayInGameAtMs < OVERLAY_INGAME_GRACE_MS
+            if (inInGameGrace && lastAppliedGateShouldShow == true && !forceHideNow) {
+                gateUiHideStreak = 0
+                return true
+            }
             gateUiHideStreak = GATE_HIDE_UI_HYSTERESIS_TICKS
             return probeShow
         }
@@ -1928,6 +1947,32 @@ class CombatOverlayService : Service() {
                     if (!hasUsageAccess && shouldKeepUsageAccessDiag()) {
                         Log.i(TAG, "overlayGate: usage access missing (cached), idlePollMs=$GAME_GATE_POLL_IDLE_MS")
                     }
+                    val diagNowMs = System.currentTimeMillis()
+                    val entryBoostActive = OverlayGameEntryPolicy.isEntryBoostActive(
+                        nowMs = diagNowMs,
+                        boostUntilMs = gameEntryBoostUntilMs,
+                    )
+                    val quickInTarget = quickProbe == GameForegroundGate.QuickForegroundProbe.IN_TARGET
+                    val fullHeuristicShow = entryBoostActive && hasUsageAccess && targets.isNotEmpty() &&
+                        GameForegroundGate.shouldShowOverlayCached(
+                            this@CombatOverlayService,
+                            targets,
+                            activityTokens,
+                        )
+                    if (inGame && lastAppliedGateShouldShow != true) {
+                        gameEntryBoostUntilMs = maxOf(
+                            gameEntryBoostUntilMs,
+                            System.currentTimeMillis() + OverlayGameEntryPolicy.ENTRY_BOOST_MS,
+                        )
+                        GameForegroundGate.invalidateFullHeuristicCache()
+                        GameForegroundGate.primeTotalTimeForegroundWatch(this@CombatOverlayService, targets)
+                        gateNotInTargetStreak = 0
+                    }
+                    if (gateQuickProbeNotInTarget) {
+                        gateNotInTargetStreak++
+                    } else {
+                        gateNotInTargetStreak = 0
+                    }
                     // Попап команд/реакций — только на main: иначе на части ROM гонка снимает HUD.
                     // HUD только в игре (или при системном пикере). Попап/чат не держат кнопки после minimize.
                     val shouldShowInGameOverlayUi = when {
@@ -1936,13 +1981,26 @@ class CombatOverlayService : Service() {
                         else -> true
                     }
                     val popoverBlocksDismiss = overlayCommandsPopover.isBlockingGameGateDismiss()
-                    val stableShowInGameOverlayUi = resolveStableOverlayUiVisible(
+                    var stableShowInGameOverlayUi = resolveStableOverlayUiVisible(
                         probeShow = shouldShowInGameOverlayUi,
                         forceHideNow = (!inGame && !popoverBlocksDismiss) ||
                             (conflictingForeground && !popoverBlocksDismiss),
                         inGameProbe = inGame,
                     )
-                    val diagNowMs = System.currentTimeMillis()
+                    if (OverlayGameEntryPolicy.shouldForceStableShowDuringEntry(
+                            entryBoostActive = entryBoostActive,
+                            inGame = inGame,
+                            fullHeuristicShow = fullHeuristicShow,
+                            quickInTarget = quickInTarget,
+                        ) || (entryBoostActive && hasUsageAccess && targets.isNotEmpty() &&
+                            GameForegroundGate.hasWeakTargetForegroundSignal(
+                                this@CombatOverlayService,
+                                targets,
+                            ))
+                    ) {
+                        stableShowInGameOverlayUi = true
+                        gateUiHideStreak = 0
+                    }
                     if (diagNowMs - lastGateDiagLogMs >= 25_000L) {
                         lastGateDiagLogMs = diagNowMs
                         val draw = canDrawOverlaysNow()
@@ -1973,12 +2031,27 @@ class CombatOverlayService : Service() {
                             mainAppForeground = mainAppForegroundActive,
                         )
                     }
-                    syncOverlayIngamePresence(inGameProbe = inGame)
+                    syncOverlayIngamePresence(inGameProbe = inGame && stableShowInGameOverlayUi)
+                    OverlayRuntimeDiagnostics.recordGateTick(
+                        inGameProbe = inGame,
+                        stableShow = stableShowInGameOverlayUi,
+                        hudAttachAllowed = isOverlayHudAttachAllowed(),
+                        statusAttached = overlayStatusHudHost?.isAttachedToWindow == true,
+                        topRightAttached = overlayTopRightHudHost?.isAttachedToWindow == true,
+                        entryBoost = entryBoostActive,
+                    )
                     applyGameGateState(
                         hasUsageAccess = hasUsageAccess,
                         shouldShow = stableShowInGameOverlayUi,
-                        confirmedNotInTarget = gateQuickProbeNotInTarget,
+                        confirmedNotInTarget = gateQuickProbeNotInTarget &&
+                            gateNotInTargetStreak >= OverlayGameEntryPolicy.NOT_IN_TARGET_DISMISS_STREAK,
                     )
+                    if (stableShowInGameOverlayUi &&
+                        diagNowMs - lastDetachedRepairAtMs >= DETACHED_REPAIR_INTERVAL_MS
+                    ) {
+                        lastDetachedRepairAtMs = diagNowMs
+                        repairDetachedOverlayShellIfNeeded()
+                    }
                     gateCheckInFlight = false
                     scheduleGameGateTick(nextGameGateDelayMs())
                 }
@@ -2007,6 +2080,11 @@ class CombatOverlayService : Service() {
             lastOverlayInGameAtMs = lastOverlayInGameAtMs,
             stableGatePollTicks = stableGatePollTicks,
             stableTicksForSlowPoll = GATE_STABLE_TICKS_FOR_SLOW_POLL,
+            entryBoostActive = OverlayGameEntryPolicy.isEntryBoostActive(
+                System.currentTimeMillis(),
+                gameEntryBoostUntilMs,
+            ),
+            overlayPanelEnabled = AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled(),
         )
 
     private fun shouldKeepUsageAccessDiag(): Boolean {
@@ -3271,14 +3349,22 @@ class CombatOverlayService : Service() {
             return
         }
         if (!isOverlayHudAttachAllowed()) {
-            if (isOverlayUiHoldActive() || isOverlayQuickCommandSendInFlight()) {
+            if (isInGameOverlayUiActive()) {
+                markOverlayHudAttachAllowed()
+            } else if (isOverlayUiHoldActive() || isOverlayQuickCommandSendInFlight()) {
                 extendOverlayUiHold()
+                return
+            } else {
+                return
             }
-            return
         }
         val prefs = AppContainer.from(this).userSettingsPreferences
         if (!canDrawOverlaysNow()) return
         repairDetachedOverlayShellIfNeeded()
+        if (overlayStatusHudHost == null || overlayTopRightHudHost == null) {
+            attachOverlayHudWindowsIfNeeded()
+            return
+        }
         val panelObscuring = isOverlayFullscreenPanelObscuringHud()
         if (!panelObscuring) {
             resetHudWindowTouchPolicy()
@@ -3723,6 +3809,41 @@ class CombatOverlayService : Service() {
         }
     }
 
+    private fun addOverlayViewWithRetry(
+        manager: WindowManager,
+        host: android.view.View,
+        params: WindowManager.LayoutParams,
+        label: String,
+        onSuccess: () -> Unit,
+    ) {
+        val stepDelaysMs = longArrayOf(0L, 100L, 300L, 800L)
+        fun attempt(step: Int) {
+            if (step >= stepDelaysMs.size) {
+                OverlayRuntimeDiagnostics.recordAddViewFailure(label, null)
+                Log.w(TAG, "$label addView failed after retries")
+                return
+            }
+            val runStep = Runnable {
+                val result = runCatching { manager.addView(host, params) }
+                if (result.isSuccess) {
+                    onSuccess()
+                } else if (step + 1 < stepDelaysMs.size) {
+                    val nextDelay = stepDelaysMs[step + 1] - stepDelaysMs[step]
+                    mainHandler.postDelayed({ attempt(step + 1) }, nextDelay.coerceAtLeast(1L))
+                } else {
+                    OverlayRuntimeDiagnostics.recordAddViewFailure(label, result.exceptionOrNull())
+                    Log.w(TAG, "$label addView failed", result.exceptionOrNull())
+                }
+            }
+            if (stepDelaysMs[step] == 0L) {
+                runStep.run()
+            } else {
+                mainHandler.postDelayed(runStep, stepDelaysMs[step])
+            }
+        }
+        attempt(0)
+    }
+
     private fun ensureOverlayStatusHudWindow(allowDuringFullscreenPanel: Boolean = false) {
         if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
@@ -3787,17 +3908,14 @@ class CombatOverlayService : Service() {
             )
         }
 
-        val attach = runCatching { manager.addView(host, params) }
-        if (attach.isFailure) {
-            Log.w(TAG, "ensureOverlayStatusHudWindow addView failed", attach.exceptionOrNull())
-            return
+        addOverlayViewWithRetry(manager, host, params, "statusHud") {
+            compose.post { compose.requestLayout() }
+            overlayStatusHudHost = host
+            overlayStatusHudParams = params
+            Companion.trackEmergencyOverlayHost(host)
+            retainWindowManager(manager)
+            _overlayVisible.value = true
         }
-        compose.post { compose.requestLayout() }
-        overlayStatusHudHost = host
-        overlayStatusHudParams = params
-        Companion.trackEmergencyOverlayHost(host)
-        retainWindowManager(manager)
-        _overlayVisible.value = true
     }
 
     private fun removeOverlayStatusHudWindow() {
@@ -3889,25 +4007,22 @@ class CombatOverlayService : Service() {
             )
         }
 
-        val attach = runCatching { manager.addView(host, params) }
-        if (attach.isFailure) {
-            Log.w(TAG, "ensureOverlayTopRightHudWindow addView failed", attach.exceptionOrNull())
-            return
+        addOverlayViewWithRetry(manager, host, params, "topRightHud") {
+            compose.post {
+                compose.requestLayout()
+                overlayCommandsPopover.invalidateReactionBurstAnchor()
+            }
+            val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                overlayCommandsPopover.invalidateReactionBurstAnchor()
+            }
+            overlayTopRightHudLayoutListener = layoutListener
+            host.addOnLayoutChangeListener(layoutListener)
+            overlayTopRightHudHost = host
+            overlayTopRightHudParams = params
+            Companion.trackEmergencyOverlayHost(host)
+            retainWindowManager(manager)
+            _overlayVisible.value = true
         }
-        compose.post {
-            compose.requestLayout()
-            overlayCommandsPopover.invalidateReactionBurstAnchor()
-        }
-        val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            overlayCommandsPopover.invalidateReactionBurstAnchor()
-        }
-        overlayTopRightHudLayoutListener = layoutListener
-        host.addOnLayoutChangeListener(layoutListener)
-        overlayTopRightHudHost = host
-        overlayTopRightHudParams = params
-        Companion.trackEmergencyOverlayHost(host)
-        retainWindowManager(manager)
-        _overlayVisible.value = true
     }
 
     /** Anchor below overlay HUD buttons; burst stack is centered on screen width. */
@@ -8164,6 +8279,7 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_HISTORY_LOAD = 40
         /** 1 тик гейта (~1.2 с) после «в игре» — достаточно, если HUD уже показан при входе. */
         private const val HUD_STABLE_TICKS_BEFORE_ATTACH = 1
+        private const val DETACHED_REPAIR_INTERVAL_MS = 30_000L
         private const val GATE_STABLE_TICKS_FOR_SLOW_POLL = 5
         private const val HUD_REFRESH_MIN_INTERVAL_MS = 2_000L
         private const val HUB_HUD_REFRESH_DEBOUNCE_MS = 500L
