@@ -1,11 +1,14 @@
 package com.lastasylum.alliance.game
 
 import android.app.Activity
+import android.app.ActivityOptions
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -19,8 +22,7 @@ import com.lastasylum.alliance.overlay.OverlayGameBridgeActivity
  * Brings the target game to foreground and fires [globalphslink] VIEW intents.
  * Map coordinates also use clipboard via [GameMapNavigator].
  *
- * From overlay [android.app.Service], deep links are delivered directly while FGS is active
- * so [OverlayGameBridgeActivity] does not steal focus (system bars + paused game).
+ * Overlay path: clipboard → delay → direct start (FGS/BAL) → transparent bridge fallback.
  */
 object GameDeepLinkNavigator {
     private const val TAG = "GameDeepLinkNavigator"
@@ -40,16 +42,6 @@ object GameDeepLinkNavigator {
                 )
             }
 
-    fun bringGameToForeground(context: Context) {
-        val appContext = context.applicationContext
-        for (pkg in targetPackages(appContext)) {
-            val launch = appContext.packageManager.getLaunchIntentForPackage(pkg) ?: continue
-            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-            runCatching { appContext.startActivity(launch) }
-            return
-        }
-    }
-
     fun copyToClipboard(context: Context, clipLabel: String, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText(clipLabel, text))
@@ -57,48 +49,44 @@ object GameDeepLinkNavigator {
 
     /** Returns true if any resolved activity accepted the intent. */
     fun openUri(context: Context, uri: String): Boolean {
-        if (deliverViaOverlayDirect(context, clipLabel = "", clipText = "", uris = listOf(uri))) {
-            return true
-        }
+        if (openDeepLinksToGame(context, listOf(uri))) return true
         if (needsTrampoline(context)) {
-            OverlayGameBridgeActivity.launch(
+            return OverlayGameBridgeActivity.launch(
                 context = context.applicationContext,
                 clipLabel = "",
                 clipText = "",
                 uris = listOf(uri),
             )
-            return true
         }
-        return openUriDirect(context.applicationContext, uri)
+        return false
     }
 
     fun openFirstMatching(context: Context, uris: Iterable<String>): Boolean {
-        if (deliverViaOverlayDirect(context, clipLabel = "", clipText = "", uris = uris)) {
-            return true
-        }
+        if (openDeepLinksToGame(context, uris)) return true
         if (needsTrampoline(context)) {
-            OverlayGameBridgeActivity.launch(
+            return OverlayGameBridgeActivity.launch(
                 context = context.applicationContext,
                 clipLabel = "",
                 clipText = "",
                 uris = uris,
             )
-            return true
         }
-        return openDeepLinksToGame(context.applicationContext, uris)
+        return false
     }
 
-    /** Fire the first resolvable deep link to the configured game package(s). */
+    /** Fire the first deep link the game accepts (package VIEW → explicit activity). */
     fun openDeepLinksToGame(context: Context, uris: Iterable<String>): Boolean {
-        for (uri in uris) {
-            if (openUriDirect(context.applicationContext, uri)) return true
+        for (launchContext in deepLinkLaunchContexts(context)) {
+            for (uri in uris) {
+                if (startDeepLinkUri(launchContext, uri)) return true
+            }
         }
         return false
     }
 
     /** Called from [OverlayGameBridgeActivity] after clipboard is set. */
     fun openFirstMatchingFromActivity(activity: Activity, uris: Iterable<String>): Boolean =
-        openDeepLinksToGame(activity.applicationContext, uris)
+        openDeepLinksToGame(activity, uris)
 
     /**
      * Foreground game → clipboard → short delay → deep link (flyWorldLua reads clip).
@@ -110,49 +98,14 @@ object GameDeepLinkNavigator {
         uris: Iterable<String>,
         onLaunched: ((Boolean) -> Unit)? = null,
     ) {
-        if (deliverViaOverlayDirect(context, clipLabel, clipText, uris, onLaunched)) {
-            return
-        }
-        if (needsTrampoline(context)) {
-            OverlayGameBridgeActivity.launch(
-                context = context.applicationContext,
-                clipLabel = clipLabel,
-                clipText = clipText,
-                uris = uris,
-            )
-            return
-        }
         scheduleClipboardDeepLink(
-            context = context.applicationContext,
+            context = context,
             clipLabel = clipLabel,
             clipText = clipText,
             uris = uris,
             onLaunched = onLaunched,
+            allowBridgeFallback = true,
         )
-    }
-
-    /**
-     * While overlay FGS is active, copy + deep link without [OverlayGameBridgeActivity].
-     * Starting our Activity pauses the game and shows system nav/status bars.
-     */
-    private fun deliverViaOverlayDirect(
-        context: Context,
-        clipLabel: String,
-        clipText: String,
-        uris: Iterable<String>,
-        onLaunched: ((Boolean) -> Unit)? = null,
-    ): Boolean {
-        if (!needsTrampoline(context) || !CombatOverlayService.isOverlayServiceRunning()) {
-            return false
-        }
-        scheduleClipboardDeepLink(
-            context = context.applicationContext,
-            clipLabel = clipLabel,
-            clipText = clipText,
-            uris = uris,
-            onLaunched = onLaunched,
-        )
-        return true
     }
 
     private fun scheduleClipboardDeepLink(
@@ -161,6 +114,7 @@ object GameDeepLinkNavigator {
         clipText: String,
         uris: Iterable<String>,
         onLaunched: ((Boolean) -> Unit)? = null,
+        allowBridgeFallback: Boolean,
     ) {
         val appContext = context.applicationContext
         if (clipText.isNotBlank()) {
@@ -168,52 +122,82 @@ object GameDeepLinkNavigator {
         }
         val delayMs = if (clipText.isNotBlank()) CLIPBOARD_SETTLE_MS else 0L
         mainHandler.postDelayed({
-            val launched = openDeepLinksToGame(appContext, uris)
-            onLaunched?.invoke(launched)
+            if (openDeepLinksToGame(context, uris)) {
+                onLaunched?.invoke(true)
+                return@postDelayed
+            }
+            if (allowBridgeFallback && needsTrampoline(context)) {
+                val bridgeStarted = OverlayGameBridgeActivity.launch(
+                    context = appContext,
+                    clipLabel = "",
+                    clipText = "",
+                    uris = uris,
+                )
+                onLaunched?.invoke(bridgeStarted)
+                return@postDelayed
+            }
+            logFailure("all deep link attempts failed uris=${uris.take(3)}")
+            onLaunched?.invoke(false)
         }, delayMs)
     }
 
-    private fun needsTrampoline(context: Context): Boolean = context !is Activity
+    private fun deepLinkLaunchContexts(preferred: Context): List<Context> {
+        val ordered = mutableListOf<Context>()
+        if (CombatOverlayService.isOverlayServiceRunning()) {
+            CombatOverlayService.overlayServiceForDeepLinks()?.let { ordered.add(it) }
+        }
+        if (preferred is Activity) {
+            ordered.add(preferred)
+        }
+        if (preferred !in ordered) {
+            ordered.add(preferred)
+        }
+        val app = preferred.applicationContext
+        if (app !in ordered) {
+            ordered.add(app)
+        }
+        return ordered
+    }
 
-    private fun openUriDirect(context: Context, uri: String): Boolean {
+    private fun startDeepLinkUri(context: Context, uri: String): Boolean {
         val parsed = runCatching { Uri.parse(uri) }.getOrNull() ?: return false
         for (pkg in targetPackages(context)) {
-            val packageIntent = buildPackageViewIntent(parsed, pkg)
-            if (context.packageManager.resolveActivity(packageIntent, 0) != null) {
-                runCatching {
-                    context.startActivity(packageIntent)
-                    logDebug("opened via package intent: $uri -> $pkg")
-                    return true
-                }.onFailure { e ->
-                    logDebug("package intent failed: $uri -> $pkg (${e.message})")
-                }
-            }
-            val targeted = buildGameViewIntent(parsed, pkg)
-            if (context.packageManager.resolveActivity(targeted, 0) != null) {
-                runCatching {
-                    context.startActivity(targeted)
-                    logDebug("opened via explicit activity: $uri -> $pkg")
-                    return true
-                }.onFailure { e ->
-                    logDebug("explicit activity failed: $uri -> $pkg (${e.message})")
-                }
-            }
+            if (tryStartActivity(context, buildPackageViewIntent(parsed, pkg), uri)) return true
+            if (tryStartActivity(context, buildGameViewIntent(parsed, pkg), uri)) return true
         }
         val generic = Intent(Intent.ACTION_VIEW, parsed).apply {
             addFlags(deepLinkActivityFlags())
         }
-        if (context.packageManager.resolveActivity(generic, 0) != null) {
-            runCatching {
-                context.startActivity(generic)
-                logDebug("opened via generic VIEW: $uri")
-                return true
-            }.onFailure { e ->
-                logDebug("generic VIEW failed: $uri (${e.message})")
-            }
-        }
-        logDebug("no handler for deep link: $uri")
-        return false
+        return tryStartActivity(context, generic, uri)
     }
+
+    private fun tryStartActivity(context: Context, intent: Intent, uriForLog: String): Boolean =
+        runCatching {
+            val options = backgroundActivityStartOptions(context)
+            if (options != null) {
+                context.startActivity(intent, options)
+            } else {
+                context.startActivity(intent)
+            }
+            logDebug("started deep link: $uriForLog via ${context.javaClass.simpleName}")
+            true
+        }.getOrElse { error ->
+            logDebug("startActivity failed: $uriForLog (${error.message})")
+            false
+        }
+
+    /** Allow FGS / overlay tap to start the game activity on Android 14+. */
+    private fun backgroundActivityStartOptions(context: Context): Bundle? {
+        if (context is Activity) return null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return null
+        return ActivityOptions.makeBasic().apply {
+            setPendingIntentBackgroundActivityStartMode(
+                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
+            )
+        }.toBundle()
+    }
+
+    private fun needsTrampoline(context: Context): Boolean = context !is Activity
 
     private fun buildPackageViewIntent(parsed: Uri, pkg: String): Intent =
         Intent(Intent.ACTION_VIEW, parsed).apply {
@@ -237,5 +221,9 @@ object GameDeepLinkNavigator {
         if (BuildConfig.DEBUG) {
             Log.d(TAG, message)
         }
+    }
+
+    private fun logFailure(message: String) {
+        Log.w(TAG, message)
     }
 }

@@ -8101,6 +8101,9 @@ class CombatOverlayService : Service() {
         /** True while [CombatOverlayService] FGS is alive (overlay over the game). */
         fun isOverlayServiceRunning(): Boolean = runningInstance != null
 
+        /** Context for starting game intents from overlay FGS (user-initiated deep links). */
+        fun overlayServiceForDeepLinks(): CombatOverlayService? = runningInstance
+
         private val emergencyOverlayHosts =
             java.util.concurrent.CopyOnWriteArrayList<java.lang.ref.WeakReference<View>>()
 

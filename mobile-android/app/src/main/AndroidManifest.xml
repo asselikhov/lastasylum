@@ -28,6 +28,17 @@
         android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Resolve globalphslink handlers and target game package (Android 11+ package visibility). -->
+    <queries>
+        <package android:name="com.phs.global" />
+        <package android:name="com.lastasylum.plague" />
+        <package android:name="com.lastasylum.plague.debug" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="globalphslink" />
+        </intent>
+    </queries>
+
     <application
         android:name=".SquadRelayApplication"
         android:allowBackup="false"

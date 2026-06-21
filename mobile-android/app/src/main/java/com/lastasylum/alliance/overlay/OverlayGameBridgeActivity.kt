@@ -13,10 +13,9 @@ import androidx.activity.ComponentActivity
 import com.lastasylum.alliance.game.GameDeepLinkNavigator
 
 /**
- * Transparent trampoline: FGS/overlay cannot reliably start the game activity on Android 12+.
- * Copies clipboard, brings the game to front, fires [globalphslink] VIEW intents, then finishes.
- *
- * Uses a non-focusable translucent window so the game is not paused by an opaque SquadRelay screen.
+ * Transparent trampoline when FGS cannot start the game activity directly.
+ * Clipboard is usually pre-set by [GameDeepLinkNavigator]; this Activity only
+ * fires VIEW intents from an Activity context (BAL-safe), then finishes immediately.
  */
 class OverlayGameBridgeActivity : ComponentActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -40,12 +39,13 @@ class OverlayGameBridgeActivity : ComponentActivity() {
         if (clipText.isNotBlank()) {
             copyToClipboard(applicationContext, clipLabel.ifBlank { "game_bridge" }, clipText)
         }
-        // Deep link VIEW intent uses REORDER_TO_FRONT; avoid launcher intent (resets game lifecycle).
+
+        val delayMs = if (clipText.isNotBlank()) GameDeepLinkNavigator.CLIPBOARD_SETTLE_MS else 0L
         mainHandler.postDelayed({
-            GameDeepLinkNavigator.openDeepLinksToGame(applicationContext, uris)
+            GameDeepLinkNavigator.openDeepLinksToGame(this@OverlayGameBridgeActivity, uris)
             suppressActivityTransition(isClosing = true)
             finish()
-        }, GameDeepLinkNavigator.CLIPBOARD_SETTLE_MS)
+        }, delayMs)
     }
 
     override fun onDestroy() {
@@ -77,16 +77,20 @@ class OverlayGameBridgeActivity : ComponentActivity() {
             clipLabel: String,
             clipText: String,
             uris: Iterable<String>,
-        ) {
+        ): Boolean {
             val list = uris.toList()
-            if (list.isEmpty() && clipText.isBlank()) return
+            if (list.isEmpty() && clipText.isBlank()) return false
             val intent = Intent(context, OverlayGameBridgeActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                )
                 putExtra(EXTRA_CLIP_LABEL, clipLabel)
                 putExtra(EXTRA_CLIP_TEXT, clipText)
                 putExtra(EXTRA_URIS, list.toTypedArray())
             }
-            runCatching { context.startActivity(intent) }
+            return runCatching { context.startActivity(intent); true }.getOrDefault(false)
         }
 
         private fun copyToClipboard(context: Context, clipLabel: String, text: String) {
