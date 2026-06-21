@@ -33,10 +33,10 @@ object GameSearchDeepLinks {
         }
         val s = serverPath(serverNumber)
         return listOf(
-            "globalphslink://search",
             "globalphslink://search/$type/$n$s",
             "globalphslink://search/$type/$n",
             "globalphslink://$type/search/$n$s",
+            "globalphslink://search",
             "globalphslink://search?type=$type",
             "globalphslink://search?$type=$n",
         )
@@ -67,6 +67,9 @@ object GameSearchDeepLinks {
     fun mapUrlsForCoordinates(x: Int, y: Int, serverNumber: Int?): List<String> {
         val s = serverPath(serverNumber)
         return listOf(
+            // Clipboard `X:{x} Y:{y}` is read by flyWorldLua; generic triggers first.
+            "globalphslink://map",
+            "globalphslink://world",
             "globalphslink://map/$x/$y$s",
             "globalphslink://world/$x/$y$s",
             "globalphslink://coordinate/$x/$y$s",
@@ -75,8 +78,6 @@ object GameSearchDeepLinks {
             "globalphslink://coordinate?xy=$x,$y",
             "globalphslink://coordinate?$x,$y",
             "globalphslink://map?x=$x",
-            "globalphslink://world",
-            "globalphslink://map",
         )
     }
 

@@ -88,8 +88,9 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:finishOnTaskLaunch="true"
             android:launchMode="singleTop"
+            android:noHistory="true"
             android:taskAffinity=""
-            android:theme="@style/Theme.LastAsylum.OverlayDialog"
+            android:theme="@style/Theme.LastAsylum.GameBridge"
             android:excludeFromRecents="true" />
 
         <service
