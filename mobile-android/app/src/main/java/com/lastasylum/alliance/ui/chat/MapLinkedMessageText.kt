@@ -5,6 +5,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInRoot
@@ -25,6 +26,7 @@ import androidx.compose.ui.text.withLink
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.game.GameMapNavigator
 import com.lastasylum.alliance.game.MapCoordinateParser
+import com.lastasylum.alliance.overlay.LocalOverlayDismissBeforeMapNavigate
 import kotlin.math.roundToInt
 
 /**
@@ -86,7 +88,9 @@ fun MapLinkedMessageText(
         return
     }
 
-    val onOpenMap: () -> Unit = {
+    val dismissBeforeMap = LocalOverlayDismissBeforeMapNavigate.current
+    val onOpenMapState = rememberUpdatedState {
+        dismissBeforeMap?.invoke()
         GameMapNavigator.openFromMessage(context, text)
     }
 
@@ -104,7 +108,7 @@ fun MapLinkedMessageText(
                             textDecoration = TextDecoration.Underline,
                         ),
                     ),
-                    linkInteractionListener = { onOpenMap() },
+                    linkInteractionListener = { onOpenMapState.value.invoke() },
                 ),
             ) {
                 append(text.substring(coordRange.first, coordRange.last + 1))
@@ -143,7 +147,7 @@ fun MapLinkedMessageText(
             .semantics {
                 customActions = listOf(
                     CustomAccessibilityAction(goToMapLabel) {
-                        onOpenMap()
+                        onOpenMapState.value.invoke()
                         true
                     },
                 )

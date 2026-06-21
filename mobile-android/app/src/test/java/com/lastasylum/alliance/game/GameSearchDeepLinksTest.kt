@@ -23,10 +23,10 @@ class GameSearchDeepLinksTest {
     @Test
     fun mapUrlsForCoordinates_usePathStyleWithoutAmpersand() {
         val urls = GameSearchDeepLinks.mapUrlsForCoordinates(100, 200, serverNumber = 3)
-        assertEquals("globalphslink://map", urls.first())
-        assertTrue(urls.contains("globalphslink://map/100/200/3"))
+        assertEquals("globalphslink://map/100/200/3", urls.first())
         assertTrue(urls.contains("globalphslink://world/100/200/3"))
         assertTrue(urls.contains("globalphslink://coordinate/100/200/3"))
+        assertTrue(urls.contains("globalphslink://map"))
         assertFalse(urls.any { it.contains("&") })
     }
 

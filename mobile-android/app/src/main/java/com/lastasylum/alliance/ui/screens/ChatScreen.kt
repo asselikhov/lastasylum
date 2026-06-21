@@ -171,6 +171,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomKind
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.overlay.LocalOverlayDismissBeforeMapNavigate
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
@@ -1087,6 +1088,7 @@ fun ChatScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val overlayUi = LocalOverlayUiMode.current
+    val dismissBeforeMapNavigate = LocalOverlayDismissBeforeMapNavigate.current
     var showClearRoomHistoryConfirm by remember { mutableStateOf(false) }
     var showMarkAllReadConfirm by remember { mutableStateOf(false) }
     var markAllReadBusy by remember { mutableStateOf(false) }
@@ -1372,6 +1374,7 @@ fun ChatScreen(
                                 null
                             },
                             onGoToMap = {
+                                dismissBeforeMapNavigate?.invoke()
                                 com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, message.text)
                                 dismissMessageActions()
                             },

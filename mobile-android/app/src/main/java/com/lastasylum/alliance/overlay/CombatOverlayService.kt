@@ -3225,7 +3225,7 @@ class CombatOverlayService : Service() {
         if (msg.isCompactReactionSocketUpdate()) {
             return msg.roomId.trim().isNotEmpty()
         }
-        val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
+        val raidId = resolveOverlayRaidRoomIdForStrip()
         return shouldIngestForRaidStrip(normalizeStripRaidMessage(msg, raidId))
     }
 
@@ -5253,6 +5253,7 @@ class CombatOverlayService : Service() {
         pendingOverlayQuickCommandId = pendingId
         val roomId = resolveCachedRaidRoomIdForSend()
         if (roomId.isNullOrBlank()) {
+            serviceScope.launch { ensureOverlayRaidRoomReadyForSend() }
             warmupOverlayRaidForQuickCommands()
         } else {
             scheduleOverlayRaidRealtimeWarm(roomId)
@@ -5322,6 +5323,10 @@ class CombatOverlayService : Service() {
         resolveOverlayRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
             ?: trustedOverlayRaidRoomId?.trim()?.takeIf { it.isNotEmpty() }
             ?: AppContainer.from(this).chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
+
+    /** Raid room id for strip ingest/normalize — includes prefs cache before network resolve. */
+    private fun resolveOverlayRaidRoomIdForStrip(): String? =
+        resolveCachedRaidRoomIdForSend()
 
     private fun scheduleOverlayRaidRealtimeWarm(roomId: String) {
         rememberOverlayRaidRoomId(roomId)
@@ -5553,7 +5558,6 @@ class CombatOverlayService : Service() {
                 trustedRaidRoomId = raid,
                 displayText = fallbackText,
             )
-            forwardOverlayRaidMessageToViewModel(normalized, pendingId)
         }
     }
 
@@ -5816,7 +5820,7 @@ class CombatOverlayService : Service() {
             }
             return
         }
-        val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
+        val raidId = resolveOverlayRaidRoomIdForStrip()
         val normalized = normalizeStripRaidMessage(msg, raidId)
         if (OverlayStripDismissTracker.isDismissed(normalized)) {
             return
@@ -6079,6 +6083,11 @@ class CombatOverlayService : Service() {
         val compose = ComposeView(this).apply {
             setContent {
                 SquadRelayTheme {
+                    CompositionLocalProvider(
+                        LocalOverlayDismissBeforeMapNavigate provides {
+                            hideOverlayChatTeamPanel(clearStrip = false)
+                        },
+                    ) {
                     val preview by chatStripPreviewFlow.collectAsStateWithLifecycle(owner)
                     val raidPin by raidPinPreviewFlow.collectAsStateWithLifecycle(owner)
                     val hudPanel by overlayHudPanelHostState.collectAsStateWithLifecycle(owner)
@@ -6110,6 +6119,7 @@ class CombatOverlayService : Service() {
                             onDismissRegionsChanged = { updateStripDismissScreenRects(it) },
                             modifier = Modifier.fillMaxWidth(),
                         )
+                    }
                     }
                 }
             }
@@ -6520,7 +6530,7 @@ class CombatOverlayService : Service() {
         }
         val hubId = resolveOverlayHubRoomId()
         val isHub = hubId.isNotBlank() && msg.roomId.trim() == hubId
-        val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
+        val raidId = resolveOverlayRaidRoomIdForStrip()
         val normalized = normalizeStripRaidMessage(msg, raidId)
         val isRaid = shouldIngestForRaidStrip(normalized)
         val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
@@ -6530,9 +6540,13 @@ class CombatOverlayService : Service() {
                 if (OverlayQuickCommandStripPolicy.shouldSuppressOwnStripCard(msg.text)) {
                     OverlayQuickCommandStripPolicy.clearOutgoingQuickCommand(msg.text)
                 }
-                forwardOverlayRaidMessageToViewModel(msg, pendingOverlayQuickCommandId)
-                pendingOverlayQuickCommandId = null
-                forwardOverlaySocketMessageToViewModel(msg)
+                val pendingQuick = pendingOverlayQuickCommandId
+                if (pendingQuick != null) {
+                    forwardOverlayRaidMessageToViewModel(msg, pendingQuick)
+                    pendingOverlayQuickCommandId = null
+                } else {
+                    forwardOverlaySocketMessageToViewModel(msg)
+                }
                 return
             }
             val allowIngest = shouldIngestInboundRaidStrip(normalized)
@@ -7398,6 +7412,9 @@ class CombatOverlayService : Service() {
                     LocalLifecycleOwner provides owner,
                     LocalSavedStateRegistryOwner provides owner,
                     LocalOverlayUiMode provides true,
+                    LocalOverlayDismissBeforeMapNavigate provides {
+                        hideOverlayChatTeamPanel(clearStrip = false)
+                    },
                 ) {
                     SquadRelayTheme {
                         if (!isChatPane) {
@@ -8476,7 +8493,7 @@ class CombatOverlayService : Service() {
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 0L
         /** После present не поднимаем панель remove/add — только NOT_TOUCHABLE aux; lift ленты — force. */
         private const val PANEL_PRESENT_ZORDER_GRACE_MS = 500L
-        private val STRIP_INGEST_RETRY_DELAYS_MS = longArrayOf(0L, 25L, 75L, 200L)
+        private val STRIP_INGEST_RETRY_DELAYS_MS = longArrayOf(0L, 12L, 40L, 120L)
         /** Симметричный отступ HUD от края игрового экрана (левый START / правый END). */
         private const val OVERLAY_HUD_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP
         private const val OVERLAY_HUD_LEFT_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP

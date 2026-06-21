@@ -122,7 +122,6 @@ fun OverlayChatStrip(
 
     LaunchedEffect(Unit) {
         snapshotFlow { interactiveRegions.values.toList() }
-            .debounce(48)
             .collect { rects -> onDismissRegionsChanged(rects) }
     }
 

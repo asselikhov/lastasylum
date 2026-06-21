@@ -8,6 +8,9 @@ import com.lastasylum.alliance.data.teams.TeamNewsPollVoteDto
 /** True when [ChatScreen] / [TeamScreen] run inside the overlay fullscreen panel (not MainActivity). */
 val LocalOverlayUiMode = staticCompositionLocalOf { false }
 
+/** Hide overlay fullscreen panel before opening the game map (coordinates must not stay obscured). */
+val LocalOverlayDismissBeforeMapNavigate = staticCompositionLocalOf<(() -> Unit)?> { null }
+
 /** Запрос на полноэкранный sheet «Кто голосовал» в оверлее (не внутри карточки варианта). */
 data class OverlayPollVotersRequest(
     val optionText: String,
