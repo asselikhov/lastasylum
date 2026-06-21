@@ -15,16 +15,15 @@ object GameMapNavigator {
     private const val TAG = "GameMapNavigator"
 
     fun open(context: Context, x: Int, y: Int, serverNumber: Int? = null) {
-        val clipText = MapCoordinate(null, x, y, serverNumber).gameBracketText()
+        val clipText = MapCoordinate(null, x, y, serverNumber).mapClipboardText()
         val uris = GameSearchDeepLinks.mapUrlsForCoordinates(x, y, serverNumber)
-        logDebug("open x=$x y=$y server=$serverNumber firstUri=${uris.firstOrNull()} clip=$clipText")
+        logDebug("open x=$x y=$y server=$serverNumber firstUri=${uris.firstOrNull()} clip=$clipText overlay=${CombatOverlayService.isOverlayServiceRunning()}")
         GameDeepLinkNavigator.openWithClipboard(
             context = context,
             clipLabel = "map_coordinates",
             clipText = clipText,
             uris = uris,
         ) { deepLinkLaunched ->
-            // In overlay the player is already in-game — success toast is misleading.
             if (CombatOverlayService.isOverlayServiceRunning()) {
                 if (!deepLinkLaunched) {
                     toast(context, R.string.map_coord_copied_fallback)

@@ -27,6 +27,9 @@ data class MapCoordinate(
             "X:$x Y:$y"
         }
 
+    /** flyWorldLua reads `X:{x} Y:{y}` from clipboard (Frida RE, v1.0.77). */
+    fun mapClipboardText(): String = "X:$x Y:$y"
+
     fun fullMessageText(): String =
         if (label.isNullOrBlank()) gameBracketText() else "${label.trim()} ${gameBracketText()}"
 }

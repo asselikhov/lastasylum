@@ -2,6 +2,7 @@ package com.lastasylum.alliance.game
 
 import android.app.Activity
 import android.app.ActivityOptions
+import android.app.PendingIntent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -30,6 +31,18 @@ object GameDeepLinkNavigator {
     private const val GAME_ACTIVITY = "com.games37.sdk.AtlasPluginDemoActivity"
 
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** Start [intent] from FGS / app context on Android 14+ (BAL). */
+    internal fun startActivityAllowBackground(context: Context, intent: Intent): Boolean =
+        runCatching {
+            val options = backgroundActivityStartOptions(context)
+            if (options != null) {
+                context.startActivity(intent, options)
+            } else {
+                context.startActivity(intent)
+            }
+            true
+        }.getOrDefault(false)
 
     fun targetPackages(context: Context): List<String> =
         AppContainer.from(context).userSettingsPreferences.getOverlayTargetGamePackages()
@@ -117,26 +130,23 @@ object GameDeepLinkNavigator {
         allowBridgeFallback: Boolean,
     ) {
         val appContext = context.applicationContext
+        val overlayActive = CombatOverlayService.isOverlayServiceRunning()
         if (clipText.isNotBlank()) {
             copyToClipboard(appContext, clipLabel, clipText)
         }
         val delayMs = if (clipText.isNotBlank()) CLIPBOARD_SETTLE_MS else 0L
         mainHandler.postDelayed({
-            if (allowBridgeFallback && needsTrampoline(context)) {
-                val bridgeStarted = OverlayGameBridgeActivity.launch(
-                    context = appContext,
-                    clipLabel = clipLabel,
-                    clipText = clipText,
-                    uris = uris,
-                )
-                onLaunched?.invoke(bridgeStarted)
-                return@postDelayed
+            // Re-copy right before the game reads flyWorldLua clip (overlay must not start our Activity).
+            if (clipText.isNotBlank()) {
+                copyToClipboard(appContext, clipLabel, clipText)
             }
             if (openDeepLinksToGame(context, uris)) {
+                logDebug("map nav deep link ok overlay=$overlayActive clip=$clipText uri=${uris.firstOrNull()}")
                 onLaunched?.invoke(true)
                 return@postDelayed
             }
-            if (allowBridgeFallback) {
+            // Bridge steals focus from the game (status/nav bars flash) — never use while overlay is up.
+            if (allowBridgeFallback && needsTrampoline(context) && !overlayActive) {
                 val bridgeStarted = OverlayGameBridgeActivity.launch(
                     context = appContext,
                     clipLabel = clipLabel,
@@ -146,7 +156,9 @@ object GameDeepLinkNavigator {
                 onLaunched?.invoke(bridgeStarted)
                 return@postDelayed
             }
-            logFailure("all deep link attempts failed uris=${uris.take(3)}")
+            logFailure(
+                "all deep link attempts failed overlay=$overlayActive uris=${uris.take(3)} clip=$clipText",
+            )
             onLaunched?.invoke(false)
         }, delayMs)
     }
@@ -181,8 +193,11 @@ object GameDeepLinkNavigator {
         return tryStartActivity(context, generic, uri)
     }
 
-    private fun tryStartActivity(context: Context, intent: Intent, uriForLog: String): Boolean =
-        runCatching {
+    private fun tryStartActivity(context: Context, intent: Intent, uriForLog: String): Boolean {
+        if (context !is Activity) {
+            if (tryStartViaPendingIntent(context, intent, uriForLog)) return true
+        }
+        return runCatching {
             val options = backgroundActivityStartOptions(context)
             if (options != null) {
                 context.startActivity(intent, options)
@@ -192,7 +207,30 @@ object GameDeepLinkNavigator {
             logDebug("started deep link: $uriForLog via ${context.javaClass.simpleName}")
             true
         }.getOrElse { error ->
-            logDebug("startActivity failed: $uriForLog (${error.message})")
+            logFailure("startActivity failed: $uriForLog via ${context.javaClass.simpleName} (${error.message})")
+            false
+        }
+    }
+
+    /** Prefer PendingIntent from FGS — avoids launching SquadRelay Activity (BAL-safe on API 34+). */
+    private fun tryStartViaPendingIntent(context: Context, intent: Intent, uriForLog: String): Boolean =
+        runCatching {
+            val pi = PendingIntent.getActivity(
+                context.applicationContext,
+                uriForLog.hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val options = backgroundActivityStartOptions(context)
+            if (options != null) {
+                pi.send(context, 0, null, null, null, null, options)
+            } else {
+                pi.send()
+            }
+            logDebug("started deep link via PendingIntent: $uriForLog")
+            true
+        }.getOrElse { error ->
+            logFailure("PendingIntent.send failed: $uriForLog (${error.message})")
             false
         }
 

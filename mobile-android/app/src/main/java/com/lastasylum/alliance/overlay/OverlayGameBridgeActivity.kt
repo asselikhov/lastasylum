@@ -42,7 +42,13 @@ class OverlayGameBridgeActivity : ComponentActivity() {
 
         val delayMs = if (clipText.isNotBlank()) GameDeepLinkNavigator.CLIPBOARD_SETTLE_MS else 0L
         mainHandler.postDelayed({
-            GameDeepLinkNavigator.openDeepLinksToGame(this@OverlayGameBridgeActivity, uris)
+            val launched = GameDeepLinkNavigator.openDeepLinksToGame(this@OverlayGameBridgeActivity, uris)
+            if (!launched) {
+                android.util.Log.w(
+                    "OverlayGameBridge",
+                    "deep link not started uris=${uris.take(3)} clip=$clipText",
+                )
+            }
             suppressActivityTransition(isClosing = true)
             finish()
         }, delayMs)
@@ -90,7 +96,9 @@ class OverlayGameBridgeActivity : ComponentActivity() {
                 putExtra(EXTRA_CLIP_TEXT, clipText)
                 putExtra(EXTRA_URIS, list.toTypedArray())
             }
-            return runCatching { context.startActivity(intent); true }.getOrDefault(false)
+            return runCatching {
+                GameDeepLinkNavigator.startActivityAllowBackground(context, intent)
+            }.getOrDefault(false)
         }
 
         private fun copyToClipboard(context: Context, clipLabel: String, text: String) {
