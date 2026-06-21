@@ -64,25 +64,23 @@ object GameSearchDeepLinks {
         )
     }
 
-    fun mapUrlsForCoordinates(x: Int, y: Int, serverNumber: Int?): List<String> {
-        val s = serverPath(serverNumber)
-        return listOf(
-            // Clipboard + generic trigger — flyWorldLua reads clip (RE: path URLs open map but do not fly).
-            "globalphslink://map",
-            "globalphslink://world",
-            "globalphslink://map/$x/$y$s",
-            "globalphslink://world/$x/$y$s",
-            "globalphslink://coordinate/$x/$y$s",
-            "globalphslink://map/$x/$y",
-            "globalphslink://world/$x/$y",
-            "globalphslink://coordinate/$x/$y",
+    fun mapUrlsForCoordinates(x: Int, y: Int, serverNumber: Int?): List<String> =
+        mapFlyBurstUrls(x, y, serverNumber) + listOf(
+            "globalphslink://coordinate/$x/$y${serverPath(serverNumber)}",
             "globalphslink://map?xy=$x,$y",
             "globalphslink://world?xy=$x,$y",
-            "globalphslink://coordinate?xy=$x,$y",
-            "globalphslink://coordinate?$x,$y",
-            "globalphslink://map?x=$x",
+        )
+
+    /** Staggered map fly: path coords first, then world/map triggers (Frida RE, v1.0.77). */
+    fun mapFlyBurstUrls(x: Int, y: Int, serverNumber: Int?): List<String> {
+        val s = serverPath(serverNumber)
+        return listOf(
+            "globalphslink://map/$x/$y$s",
+            "globalphslink://world",
+            "globalphslink://map",
         )
     }
+
 
     fun mapUrlsForName(
         kind: GameSearchBridge.SearchKind,

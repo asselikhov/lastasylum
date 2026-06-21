@@ -15,20 +15,27 @@ object GameMapNavigator {
     private const val TAG = "GameMapNavigator"
 
     fun open(context: Context, x: Int, y: Int, serverNumber: Int? = null) {
-        val clipText = MapCoordinate(null, x, y, serverNumber).mapClipboardText()
-        val uris = GameSearchDeepLinks.mapUrlsForCoordinates(x, y, serverNumber)
-        logDebug("open x=$x y=$y server=$serverNumber firstUri=${uris.firstOrNull()} clip=$clipText overlay=${CombatOverlayService.isOverlayServiceRunning()}")
-        GameDeepLinkNavigator.openWithClipboard(
+        val coord = MapCoordinate(null, x, y, serverNumber)
+        val clipText = coord.mapClipboardText()
+        val bracketClipText = coord.gameBracketText()
+        logDebug(
+            "open x=$x y=$y server=$serverNumber clip=$clipText bracket=$bracketClipText " +
+                "overlay=${CombatOverlayService.isOverlayServiceRunning()}",
+        )
+        GameDeepLinkNavigator.openMapCoordinates(
             context = context,
             clipLabel = "map_coordinates",
             clipText = clipText,
-            uris = uris,
+            bracketClipText = bracketClipText,
+            x = x,
+            y = y,
+            serverNumber = serverNumber,
         ) { deepLinkLaunched ->
             if (CombatOverlayService.isOverlayServiceRunning()) {
                 if (!deepLinkLaunched) {
                     toast(context, R.string.map_coord_copied_fallback)
                 }
-                return@openWithClipboard
+                return@openMapCoordinates
             }
             val messageRes = if (deepLinkLaunched) {
                 R.string.map_coord_opened_game

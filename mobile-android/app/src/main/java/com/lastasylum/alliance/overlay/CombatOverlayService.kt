@@ -484,6 +484,9 @@ class CombatOverlayService : Service() {
     /** Снимок окон overlay на время системного пикера (TYPE_APPLICATION_OVERLAY выше Activity — иначе галерея «под» чатом). */
     private val overlayTouchPassthroughSnaps = mutableListOf<OverlayWindowFlagSnap>()
 
+    /** Passthrough while firing game map deep links from overlay. */
+    private val gameDeepLinkTouchSnaps = mutableListOf<OverlayWindowFlagSnap>()
+
     private data class AuxiliaryOverlayTouchSnap(
         val view: View,
         val params: WindowManager.LayoutParams,
@@ -555,7 +558,6 @@ class CombatOverlayService : Service() {
                 prevAlpha = root.alpha,
             ),
         )
-        // GONE: TYPE_APPLICATION_OVERLAY иначе перекрывает системную Activity пикера.
         if (root.visibility != View.GONE) {
             root.visibility = View.GONE
         }
@@ -566,6 +568,59 @@ class CombatOverlayService : Service() {
                 .onFailure { e ->
                     Log.w(TAG, "hideOverlayChatPanelForPicker: updateViewLayout failed", e)
                 }
+        }
+    }
+
+    private fun prepareOverlayForGameDeepLink() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { prepareOverlayForGameDeepLink() }
+            return
+        }
+        if (gameDeepLinkTouchSnaps.isNotEmpty()) return
+        val mgr = windowManager ?: return
+        fun snap(params: WindowManager.LayoutParams?, view: View?) {
+            if (params == null || view == null || !view.isAttachedToWindow) return
+            gameDeepLinkTouchSnaps.add(
+                OverlayWindowFlagSnap(
+                    view = view,
+                    params = params,
+                    prevFlags = params.flags,
+                    prevVisibility = view.visibility,
+                    prevAlpha = view.alpha,
+                ),
+            )
+            val with = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            if (params.flags != with) {
+                params.flags = with
+                runCatching { mgr.updateViewLayout(view, params) }
+            }
+        }
+        snap(overlayStatusHudParams, overlayStatusHudHost)
+        snap(overlayTopRightHudParams, overlayTopRightHudHost)
+        snap(chatStripParams, chatStripHost)
+        snap(overlayChatTeamParams, overlayChatTeamRoot)
+        overlayTicker.applyTouchPassthrough(true)
+    }
+
+    private fun restoreOverlayAfterGameDeepLink() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { restoreOverlayAfterGameDeepLink() }
+            return
+        }
+        val mgr = windowManager
+        if (gameDeepLinkTouchSnaps.isNotEmpty() && mgr != null) {
+            for (snap in gameDeepLinkTouchSnaps) {
+                snap.params.flags = snap.prevFlags
+                snap.view.visibility = snap.prevVisibility
+                snap.view.alpha = snap.prevAlpha
+                if (snap.view.isAttachedToWindow) {
+                    runCatching { mgr.updateViewLayout(snap.view, snap.params) }
+                }
+            }
+            gameDeepLinkTouchSnaps.clear()
+        }
+        if (!OverlayChatInteractionHold.isOverlaySystemPickerSessionActive()) {
+            overlayTicker.applyTouchPassthrough(false)
         }
     }
 
@@ -8103,6 +8158,15 @@ class CombatOverlayService : Service() {
 
         /** Context for starting game intents from overlay FGS (user-initiated deep links). */
         fun overlayServiceForDeepLinks(): CombatOverlayService? = runningInstance
+
+        /** Let touches reach the game while map/search deep links are in flight. */
+        fun prepareForGameDeepLink() {
+            runningInstance?.prepareOverlayForGameDeepLink()
+        }
+
+        fun finishGameDeepLink() {
+            runningInstance?.restoreOverlayAfterGameDeepLink()
+        }
 
         private val emergencyOverlayHosts =
             java.util.concurrent.CopyOnWriteArrayList<java.lang.ref.WeakReference<View>>()
