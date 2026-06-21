@@ -77,6 +77,8 @@ import com.lastasylum.alliance.ui.theme.roleAccentColor
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
+private fun overlayStripInteractiveRegionKey(messageKey: String, kind: String): String =
+    "$messageKey:$kind"
 private const val STRIP_EXIT_ANIM_MS = 120L
 private const val STRIP_ENTER_ANIM_MS = 100
 private const val STRIP_CARD_ESTIMATE_DP = 120
@@ -96,7 +98,7 @@ fun OverlayChatStrip(
     val leaving = remember { mutableStateMapOf<String, Boolean>() }
     /** User dismissed via ✕ — hide until server buffer drops the row. */
     val dismissedKeys = remember { mutableStateListOf<String>() }
-    val dismissRegions = remember { mutableStateMapOf<String, Rect>() }
+    val interactiveRegions = remember { mutableStateMapOf<String, Rect>() }
     val latestMessages by rememberUpdatedState(messages)
     val stripScroll = rememberLazyListState()
     val atStripBottom by remember(stripScroll) {
@@ -109,14 +111,17 @@ fun OverlayChatStrip(
     LaunchedEffect(latestMessages) {
         val valid = latestMessages.map { keyOf(it) }.toSet()
         dismissedKeys.removeAll { key -> key !in valid }
-        val stale = dismissRegions.keys.filter { it !in valid }
+        val stale = interactiveRegions.keys.filter { key ->
+            val msgKey = key.substringBefore(':')
+            msgKey !in valid
+        }
         if (stale.isNotEmpty()) {
-            stale.forEach { dismissRegions.remove(it) }
+            stale.forEach { interactiveRegions.remove(it) }
         }
     }
 
     LaunchedEffect(Unit) {
-        snapshotFlow { dismissRegions.values.toList() }
+        snapshotFlow { interactiveRegions.values.toList() }
             .debounce(48)
             .collect { rects -> onDismissRegionsChanged(rects) }
     }
@@ -125,8 +130,8 @@ fun OverlayChatStrip(
         snapshotFlow { stripScroll.isScrollInProgress }
             .debounce(80)
             .collect { scrolling ->
-                if (!scrolling && dismissRegions.isNotEmpty()) {
-                    onDismissRegionsChanged(dismissRegions.values.toList())
+                if (!scrolling && interactiveRegions.isNotEmpty()) {
+                    onDismissRegionsChanged(interactiveRegions.values.toList())
                 }
             }
     }
@@ -203,13 +208,18 @@ fun OverlayChatStrip(
             val key = keyOf(msg)
             val isVisible = leaving[key] != true
 
-            fun reportBounds(mk: String, rect: Rect) {
+            fun reportInteractiveRegion(mk: String, kind: String, rect: Rect) {
                 if (latestMessages.none { keyOf(it) == mk }) return
                 if (rect.isEmpty()) return
-                dismissRegions[mk] = rect
+                interactiveRegions[overlayStripInteractiveRegionKey(mk, kind)] = rect
             }
-            fun clearRegion(mk: String) {
-                dismissRegions.remove(mk)
+            fun clearInteractiveRegion(mk: String, kind: String) {
+                interactiveRegions.remove(overlayStripInteractiveRegionKey(mk, kind))
+            }
+            fun clearAllInteractiveRegions(mk: String) {
+                interactiveRegions.keys.filter { it.startsWith("$mk:") }.forEach {
+                    interactiveRegions.remove(it)
+                }
             }
 
             AnimatedVisibility(
@@ -228,11 +238,20 @@ fun OverlayChatStrip(
                     onDismiss = {
                         if (!dismissedKeys.contains(key)) dismissedKeys.add(key)
                         leaving[key] = true
-                        dismissRegions.remove(key)
+                        clearAllInteractiveRegions(key)
                         onDismissMessage(msg)
                     },
-                    onReportDismissBounds = { mk, rect -> reportBounds(mk, rect) },
-                    onClearDismissRegion = { mk -> clearRegion(mk) },
+                    onReportDismissBounds = { mk, rect ->
+                        reportInteractiveRegion(mk, "dismiss", rect)
+                    },
+                    onClearDismissRegion = { mk -> clearInteractiveRegion(mk, "dismiss") },
+                    onReportMapLinkBounds = { mk, rect ->
+                        if (rect != null) {
+                            reportInteractiveRegion(mk, "maplink", rect)
+                        } else {
+                            clearInteractiveRegion(mk, "maplink")
+                        }
+                    },
                 )
             }
         }
@@ -247,6 +266,7 @@ private fun OverlayChatStripMessage(
     onDismiss: () -> Unit,
     onReportDismissBounds: (String, Rect) -> Unit,
     onClearDismissRegion: (String) -> Unit,
+    onReportMapLinkBounds: (String, Rect?) -> Unit,
 ) {
     val noticeId = msg._id
     val isNotice = OverlayStripNoticeIds.isNotice(noticeId)
@@ -282,7 +302,10 @@ private fun OverlayChatStripMessage(
     val dismissCd = stringResource(R.string.overlay_chat_dismiss_cd)
 
     DisposableEffect(messageKey) {
-        onDispose { onClearDismissRegion(messageKey) }
+        onDispose {
+            onClearDismissRegion(messageKey)
+            onReportMapLinkBounds(messageKey, null)
+        }
     }
 
     Surface(
@@ -396,6 +419,9 @@ private fun OverlayChatStripMessage(
                             linkColor = Color(0xFF5EB3F6),
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
+                            onCoordinateLinkBoundsInRoot = { rect ->
+                                onReportMapLinkBounds(messageKey, rect)
+                            },
                         )
                     }
                     if (time.isNotBlank()) {

@@ -4735,7 +4735,7 @@ class CombatOverlayService : Service() {
     }
 
     /**
-     * Когда зон крестика нет, на окно ленты ставим [FLAG_NOT_TOUCHABLE]: иначе на части OEM
+     * Когда интерактивных зон нет, на окно ленты ставим [FLAG_NOT_TOUCHABLE]: иначе на части OEM
      * касания по «пустому» месту после закрытия карточек остаются в оверлее и блокируют игру,
      * даже если корень ленты не забирает жест в [OverlayStripPassthroughFrameLayout].
      */
@@ -4757,9 +4757,9 @@ class CombatOverlayService : Service() {
         if (!host.isAttachedToWindow) return
         val stripEmpty = stripPreviewForUi().isEmpty() &&
             chatStripPreviewFlow.value.isEmpty()
-        val hasDismissZones = !stripEmpty && host.dismissRectsInCompose.isNotEmpty()
+        val hasTouchCaptureZones = !stripEmpty && host.dismissRectsInCompose.isNotEmpty()
         val mask = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        val newFlags = if (hasDismissZones) {
+        val newFlags = if (hasTouchCaptureZones) {
             params.flags and mask.inv()
         } else {
             params.flags or mask
@@ -6061,7 +6061,7 @@ class CombatOverlayService : Service() {
 
         val stripMaxWidth =
             (resources.displayMetrics.widthPixels - dp(20)).coerceAtLeast(dp(220))
-        // Touches pass through except dismiss rects handled by [OverlayStripPassthroughFrameLayout].
+        // Touches pass through except interactive rects handled by [OverlayStripPassthroughFrameLayout].
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,

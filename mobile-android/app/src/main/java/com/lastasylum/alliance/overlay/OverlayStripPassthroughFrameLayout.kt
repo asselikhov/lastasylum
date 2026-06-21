@@ -7,7 +7,8 @@ import android.view.View
 import android.widget.FrameLayout
 
 /**
- * Корень окна ленты сообщений: касания проходят к игре, кроме зон крестика закрытия.
+ * Корень окна ленты сообщений: касания проходят к игре, кроме интерактивных зон
+ * (крестик закрытия, кликабельные координаты на карте).
  * Прямоугольники задаются в координатах содержимого [composeLocatorView] (как [boundsInRoot] в Compose).
  */
 internal class OverlayStripPassthroughFrameLayout(context: Context) : FrameLayout(context) {
@@ -15,6 +16,7 @@ internal class OverlayStripPassthroughFrameLayout(context: Context) : FrameLayou
     /** [ComposeView] ленты — для перевода координат касания в систему Compose. */
     var composeLocatorView: View? = null
 
+    /** Touch-capture rects in Compose root space (dismiss buttons, map coordinate links). */
     @Volatile
     var dismissRectsInCompose: List<Rect> = emptyList()
 
@@ -40,8 +42,8 @@ internal class OverlayStripPassthroughFrameLayout(context: Context) : FrameLayou
                     }
                 }
                 // [compose] вложен в промежуточный [FrameLayout]; [View.getLeft]/[getTop] — относительно родителя,
-                // не этого хоста. Без экранных координат зоны крестика смещаются: DOWN уходит в Compose мимо кнопки,
-                // жест не доходит до игре — остаётся «мёртвая» полоса после закрытия карточек.
+                // не этого хоста. Без экранных координат зоны крестика/ссылок смещаются: DOWN уходит в Compose
+                // мимо кнопки, жест не доходит до игре — остаётся «мёртвая» полоса после закрытия карточек.
                 val loc = IntArray(2)
                 compose.getLocationOnScreen(loc)
                 val lx = (ev.rawX - loc[0]).toInt()
