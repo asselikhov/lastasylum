@@ -13,8 +13,9 @@ class OverlayWindowLayoutTest {
     }
 
     @Test
-    fun historyFlags_excludeNotFocusable() {
-        val f = OverlayWindowLayout.historyPanelWindowFlags()
+    fun overlayModalFlags_excludeNotFocusable() {
+        val f = OverlayWindowLayout.overlayModalWindowFlags()
         assertEquals(0, f and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+        assertTrue(f and WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL != 0)
     }
 }

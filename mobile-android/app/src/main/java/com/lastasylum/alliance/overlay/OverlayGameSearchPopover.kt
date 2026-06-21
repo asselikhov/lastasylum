@@ -17,6 +17,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.LifecycleOwner
@@ -110,6 +117,7 @@ class OverlayGameSearchPopover(
             runCatching { manager.addView(host, params) }
         }
         host.visibility = View.VISIBLE
+        (host.getChildAt(0) as? ComposeView)?.requestFocus()
         OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(isOverlayUi = true)
     }
 
@@ -124,16 +132,19 @@ class OverlayGameSearchPopover(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
-            OverlayWindowLayout.popupWindowFlags(),
+            OverlayWindowLayout.overlayModalWindowFlags(),
             PixelFormat.TRANSLUCENT,
         ).apply {
-            OverlayWindowLayout.applyPopupLayoutCompat(this)
+            OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
+            OverlayWindowLayout.applyOverlayModalSoftInputMode(this)
             gravity = Gravity.TOP or Gravity.START
         }
     }
 
     private fun buildShell(): FrameLayout {
         val compose = ComposeView(context).apply {
+            isFocusable = true
+            isFocusableInTouchMode = true
             setContent {
                 SquadRelayTheme {
                     OverlayGameSearchPanel(
@@ -221,11 +232,46 @@ private fun OverlayGameSearchPanel(
     val errorGenericText = stringResource(R.string.overlay_game_search_error)
     val errorShortQueryText = stringResource(R.string.overlay_game_search_query_short)
     val errorNoServerText = stringResource(R.string.overlay_game_search_no_server)
+    val queryFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        queryFocusRequester.requestFocus()
+    }
+    fun runSearch() {
+        if (searching || query.trim().length < 2) return
+        val kind = if (playerChecked) {
+            GameSearchBridge.SearchKind.PLAYER
+        } else {
+            GameSearchBridge.SearchKind.ALLIANCE
+        }
+        searching = true
+        errorText = null
+        infoText = null
+        results = emptyList()
+        onSearch(kind, query) { result ->
+            searching = false
+            result.onSuccess { hits ->
+                results = hits
+                infoText = if (hits.all { it.mapX == null && it.mapY == null }) {
+                    sentToGameText
+                } else {
+                    null
+                }
+            }.onFailure { err ->
+                infoText = null
+                errorText = when (err.message) {
+                    "query_too_short" -> errorShortQueryText
+                    "no_active_server" -> errorNoServerText
+                    else -> errorGenericText
+                }
+            }
+        }
+    }
     val shape = RoundedCornerShape(16.dp)
     val panelModifier = Modifier
         .padding(horizontal = 20.dp)
         .widthIn(max = 420.dp)
         .fillMaxWidth()
+        .imePadding()
         .background(Color(0xF010141E), shape)
         .border(1.dp, Color(0x889B7CFF), shape)
         .padding(16.dp)
@@ -294,8 +340,14 @@ private fun OverlayGameSearchPanel(
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(queryFocusRequester),
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(
+                onSearch = { runSearch() },
+            ),
             label = {
                 Text(
                     if (playerChecked) {
@@ -307,35 +359,7 @@ private fun OverlayGameSearchPanel(
             },
         )
         Button(
-            onClick = {
-                val kind = if (playerChecked) {
-                    GameSearchBridge.SearchKind.PLAYER
-                } else {
-                    GameSearchBridge.SearchKind.ALLIANCE
-                }
-                searching = true
-                errorText = null
-                infoText = null
-                results = emptyList()
-                onSearch(kind, query) { result ->
-                    searching = false
-                    result.onSuccess { hits ->
-                        results = hits
-                        infoText = if (hits.all { it.mapX == null && it.mapY == null }) {
-                            sentToGameText
-                        } else {
-                            null
-                        }
-                    }.onFailure { err ->
-                        infoText = null
-                        errorText = when (err.message) {
-                            "query_too_short" -> errorShortQueryText
-                            "no_active_server" -> errorNoServerText
-                            else -> errorGenericText
-                        }
-                    }
-                }
-            },
+            onClick = { runSearch() },
             enabled = !searching && query.trim().length >= 2,
             modifier = Modifier.fillMaxWidth(),
         ) {
