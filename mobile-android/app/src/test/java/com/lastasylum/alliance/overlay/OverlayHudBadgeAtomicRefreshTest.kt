@@ -2,8 +2,15 @@ package com.lastasylum.alliance.overlay
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLooper
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class OverlayHudBadgeAtomicRefreshTest {
     @Test
     fun fullRefreshResult_replacesAllChipsAtomically() {
@@ -30,12 +37,15 @@ class OverlayHudBadgeAtomicRefreshTest {
                 allianceChatUnread = 1,
                 teamNewsUnread = 0,
                 forumUnread = 4,
+                gameSearchEnabled = true,
             ),
         )
+        ShadowLooper.idleMainLooper()
         val state = bus.current()
         assertEquals(1, state.allianceChatUnread)
         assertEquals(0, state.teamNewsUnread)
         assertEquals(4, state.forumUnread)
+        assertTrue(state.gameSearchEnabled)
     }
 
     @Test
@@ -55,6 +65,7 @@ class OverlayHudBadgeAtomicRefreshTest {
         bus.emit(OverlayHudBadgeEvent.HubUnread(2))
         bus.emit(OverlayHudBadgeEvent.NewsUnread(1))
         bus.emit(OverlayHudBadgeEvent.ForumUnread(3, rawServer = 3))
+        ShadowLooper.idleMainLooper()
         val state = bus.current()
         assertEquals(2, state.allianceChatUnread)
         assertEquals(1, state.teamNewsUnread)

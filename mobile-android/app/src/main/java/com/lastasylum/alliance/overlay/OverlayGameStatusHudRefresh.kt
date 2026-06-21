@@ -93,9 +93,10 @@ internal object OverlayGameStatusHudRefresh {
             allianceChatUnread = allianceUnread ?: 0,
             teamNewsUnread = if (hasBadgeSeed) cachedNewsUnread else 0,
             forumUnread = if (hasBadgeSeed) cachedForumUnread else 0,
-            gameSearchEnabled = container.usersRepository.peekMyProfile()
-                ?.overlayGameSearchEnabled
-                ?: container.usersRepository.peekMyProfileDisk()?.overlayGameSearchEnabled == true,
+            gameSearchEnabled = (
+                container.usersRepository.peekMyProfile()
+                    ?: container.usersRepository.peekMyProfileDisk()
+                )?.overlayGameSearchEnabled == true,
         )
     }
 

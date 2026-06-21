@@ -15,12 +15,14 @@ sealed class OverlayHudBadgeEvent {
         val allianceChatUnread: Int,
         val teamNewsUnread: Int,
         val forumUnread: Int,
+        val gameSearchEnabled: Boolean = false,
     ) : OverlayHudBadgeEvent()
 
     data class SeedFromLocal(
         val allianceChatUnread: Int,
         val teamNewsUnread: Int,
         val forumUnread: Int,
+        val gameSearchEnabled: Boolean = false,
     ) : OverlayHudBadgeEvent()
 
     data class AppUpdateUrl(val url: String?) : OverlayHudBadgeEvent()
