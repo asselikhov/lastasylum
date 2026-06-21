@@ -195,9 +195,9 @@ class CombatOverlayService : Service() {
             mainHandler = mainHandler,
             scope = serviceScope,
             dp = { dp(it) },
-            sendCoords = { label, x, y ->
+            sendCoords = { label, x, y, serverNumber ->
                 sendOverlayRaidQuickCommandHttp(
-                    text = formatOverlayRaidQuickCommandText(label, x, y),
+                    text = formatOverlayRaidQuickCommandText(label, x, y, serverNumber),
                 )
             },
             notifyGameEvent = { eventId ->
@@ -211,9 +211,9 @@ class CombatOverlayService : Service() {
                 )
             },
             warmupOverlayRaid = { warmupOverlayRaidForQuickCommands() },
-            prepareOptimisticRaidQuickCommand = { label, x, y ->
+            prepareOptimisticRaidQuickCommand = { label, x, y, serverNumber ->
                 postOptimisticOverlayRaidQuickCommand(
-                    formatOverlayRaidQuickCommandText(label, x, y),
+                    formatOverlayRaidQuickCommandText(label, x, y, serverNumber),
                 )
             },
             prepareOptimisticGameEvent = { eventId ->
@@ -5225,12 +5225,14 @@ class CombatOverlayService : Service() {
         label: String,
         x: Int,
         y: Int,
+        serverNumber: Int,
     ): String =
         com.lastasylum.alliance.game.MapCoordinateFormatter.format(
             label = label,
             targetName = null,
             x = x,
             y = y,
+            serverNumber = serverNumber,
         )
 
     /** Register outgoing quick command; optimistic chat row when raid room id is known. */
@@ -8095,6 +8097,10 @@ class CombatOverlayService : Service() {
 
         @Volatile
         private var runningInstance: CombatOverlayService? = null
+
+        /** True while [CombatOverlayService] FGS is alive (overlay over the game). */
+        fun isOverlayServiceRunning(): Boolean = runningInstance != null
+
         private val emergencyOverlayHosts =
             java.util.concurrent.CopyOnWriteArrayList<java.lang.ref.WeakReference<View>>()
 

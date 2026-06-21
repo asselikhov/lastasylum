@@ -81,6 +81,66 @@ class MapCoordinateParserTest {
     }
 
     @Test
+    fun parse_gameBracketWithServer() {
+        val c = MapCoordinateParser.parse("[#:109 X:505 Y:495]")
+        assertNotNull(c)
+        assertEquals(109, c!!.serverNumber)
+        assertEquals(505, c.x)
+        assertEquals(495, c.y)
+        assertNull(c.label)
+    }
+
+    @Test
+    fun parse_gameBracketEmbeddedInShareLine() {
+        val c = MapCoordinateParser.parse("Поделиться 60Воин скверны [#:109 X:505 Y:495]")
+        assertNotNull(c)
+        assertEquals(109, c!!.serverNumber)
+        assertEquals(505, c.x)
+        assertEquals(495, c.y)
+        assertEquals("Поделиться 60Воин скверны", c.label)
+    }
+
+    @Test
+    fun parse_gameBracketWithoutSquareBrackets() {
+        val c = MapCoordinateParser.parse("#:108 X:895 Y:648")
+        assertNotNull(c)
+        assertEquals(108, c!!.serverNumber)
+        assertEquals(895, c.x)
+        assertEquals(648, c.y)
+    }
+
+    @Test
+    fun coordinateRangeIn_gameBracket() {
+        val text = "Отбить орду[#:108 X:895 Y:648]"
+        val range = MapCoordinateParser.coordinateRangeIn(text)
+        assertNotNull(range)
+        assertEquals("[#:108 X:895 Y:648]", text.substring(range!!.first, range.last + 1))
+    }
+
+    @Test
+    fun parseSharedText_gameBracket() {
+        val c = MapCoordinateParser.parseSharedText("Share [#:109 X:505 Y:495]")
+        assertNotNull(c)
+        assertEquals(109, c!!.serverNumber)
+        assertEquals(505, c.x)
+        assertEquals(495, c.y)
+    }
+
+    @Test
+    fun formatter_labelWithServer() {
+        assertEquals(
+            "Атака [#:109 X:1 Y:2]",
+            MapCoordinateFormatter.format(
+                label = "Атака",
+                targetName = null,
+                x = 1,
+                y = 2,
+                serverNumber = 109,
+            ),
+        )
+    }
+
+    @Test
     fun formatter_label() {
         assertEquals(
             "Атака X:1 Y:2",

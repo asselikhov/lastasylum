@@ -1,21 +1,43 @@
 package com.lastasylum.alliance.game
 
 /**
- * Parsed map coordinates from raid chat / overlay messages.
- * Format tail: `X:{x} Y:{y}` with optional prefix (command label or target name).
+ * Parsed map coordinates from raid chat / overlay / in-game share messages.
+ *
+ * SquadRelay quick commands: `{label} X:{x} Y:{y}`.
+ * Last Asylum in-game share: `[#:{server} X:{x} Y:{y}]` (server = kingdom/world id on the map).
  */
 data class MapCoordinate(
     val label: String?,
     val x: Int,
     val y: Int,
+    val serverNumber: Int? = null,
 ) {
-    fun coordinateSuffix(): String = "X:$x Y:$y"
+    fun coordinateSuffix(): String =
+        if (serverNumber != null) {
+            "#:$serverNumber X:$x Y:$y"
+        } else {
+            "X:$x Y:$y"
+        }
+
+    /** In-game bracket form for clipboard / display when server is known. */
+    fun gameBracketText(): String =
+        if (serverNumber != null) {
+            "[#:$serverNumber X:$x Y:$y]"
+        } else {
+            "X:$x Y:$y"
+        }
 
     fun fullMessageText(): String =
-        if (label.isNullOrBlank()) coordinateSuffix() else "${label.trim()} ${coordinateSuffix()}"
+        if (label.isNullOrBlank()) gameBracketText() else "${label.trim()} ${gameBracketText()}"
 }
 
 object MapCoordinateParser {
+    /** Last Asylum share: `[#:109 X:505 Y:495]` or `#:109 X:505 Y:495`. */
+    private val GAME_COORD = Regex(
+        """\[?#:(\d+)\s+X:(\d+)\s+Y:(\d+)\]?""",
+        RegexOption.IGNORE_CASE,
+    )
+
     private val COORD_TAIL = Regex("""X:(\d+)\s+Y:(\d+)\s*$""", RegexOption.IGNORE_CASE)
 
     /** Loose `123, 456` or `123/456` when the whole string is short. */
@@ -24,6 +46,7 @@ object MapCoordinateParser {
     fun parse(text: String): MapCoordinate? {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return null
+        parseGameCoord(trimmed)?.let { return it }
         COORD_TAIL.find(trimmed)?.let { match ->
             val x = match.groupValues[1].toIntOrNull() ?: return null
             val y = match.groupValues[2].toIntOrNull() ?: return null
@@ -38,9 +61,10 @@ object MapCoordinateParser {
         return null
     }
 
-    /** Character range of `X:… Y:…` in [text], if present. */
+    /** Character range of the clickable coordinate block in [text], if present. */
     fun coordinateRangeIn(text: String): IntRange? {
         val trimmed = text.trimEnd()
+        gameCoordRangeIn(trimmed)?.let { return it }
         val coord = parse(trimmed) ?: return null
         val suffix = coord.coordinateSuffix()
         val start = trimmed.lastIndexOf(suffix, ignoreCase = true)
@@ -50,12 +74,17 @@ object MapCoordinateParser {
 
     /**
      * Parse text shared from another app (game share sheet).
-     * Tries strict format first, then embedded coordinates in longer text.
+     * Tries in-game bracket format, strict tail, then embedded coordinates.
      */
     fun parseSharedText(raw: String): MapCoordinate? {
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) return null
         parse(trimmed)?.let { return it }
+        parseGameCoord(trimmed)?.let { return it }
+        val embeddedGame = GAME_COORD.find(trimmed)
+        if (embeddedGame != null) {
+            return coordFromGameMatch(trimmed, embeddedGame)
+        }
         val embedded = Regex("""X:(\d+)\s+Y:(\d+)""", RegexOption.IGNORE_CASE)
         embedded.find(trimmed)?.let { match ->
             val x = match.groupValues[1].toIntOrNull() ?: return null
@@ -67,6 +96,27 @@ object MapCoordinateParser {
         }
         return null
     }
+
+    private fun parseGameCoord(text: String): MapCoordinate? {
+        val match = GAME_COORD.findAll(text).lastOrNull() ?: return null
+        return coordFromGameMatch(text, match)
+    }
+
+    private fun gameCoordRangeIn(text: String): IntRange? =
+        GAME_COORD.findAll(text).lastOrNull()?.range
+
+    private fun coordFromGameMatch(text: String, match: MatchResult): MapCoordinate? {
+        val server = match.groupValues[1].toIntOrNull()?.takeIf { it in 1..9999 } ?: return null
+        val x = match.groupValues[2].toIntOrNull() ?: return null
+        val y = match.groupValues[3].toIntOrNull() ?: return null
+        val prefix = text.substring(0, match.range.first).trim()
+        return MapCoordinate(
+            label = prefix.takeIf { it.isNotEmpty() },
+            x = x,
+            y = y,
+            serverNumber = server,
+        )
+    }
 }
 
 object MapCoordinateFormatter {
@@ -75,12 +125,16 @@ object MapCoordinateFormatter {
         targetName: String?,
         x: Int,
         y: Int,
+        serverNumber: Int? = null,
     ): String {
+        val coords = MapCoordinate(null, x, y, serverNumber).let { c ->
+            if (serverNumber != null) c.gameBracketText() else c.coordinateSuffix()
+        }
         val name = targetName?.trim()?.takeIf { it.isNotEmpty() }
         return when {
-            name != null -> "$name X:$x Y:$y"
-            !label.isNullOrBlank() -> "${label.trim()} X:$x Y:$y"
-            else -> "X:$x Y:$y"
+            name != null -> "$name $coords"
+            !label.isNullOrBlank() -> "${label.trim()} $coords"
+            else -> coords
         }
     }
 

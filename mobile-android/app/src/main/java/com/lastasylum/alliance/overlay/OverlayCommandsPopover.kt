@@ -60,11 +60,11 @@ class OverlayCommandsPopover(
     private val mainHandler: Handler,
     private val scope: CoroutineScope,
     private val dp: (Int) -> Int,
-    private val sendCoords: suspend (label: String, x: Int, y: Int) -> Result<ChatMessage>,
+    private val sendCoords: suspend (label: String, x: Int, y: Int, serverNumber: Int) -> Result<ChatMessage>,
     private val notifyGameEvent: suspend (eventId: String) -> Result<ChatMessage>,
     private val warmupOverlayRaid: () -> Unit = {},
-    private val prepareOptimisticRaidQuickCommand: (label: String, x: Int, y: Int) -> String? =
-        { _, _, _ -> null },
+    private val prepareOptimisticRaidQuickCommand: (label: String, x: Int, y: Int, serverNumber: Int) -> String? =
+        { _, _, _, _ -> null },
     private val prepareOptimisticGameEvent: (eventId: String) -> String? = { null },
     private val removeOptimisticRaidSend: (pendingId: String) -> Unit = {},
     private val emitOverlayReaction: (targetUserId: String, reactionId: String) -> Unit = { _, _ -> },
@@ -1659,17 +1659,23 @@ class OverlayCommandsPopover(
             addView(close)
         }
 
-        fun coordField(hint: String): Pair<LinearLayout, EditText> {
+        fun coordField(
+            hint: String,
+            defaultText: String? = null,
+            signed: Boolean = true,
+        ): Pair<LinearLayout, EditText> {
             val label = labelText(hint, 10f, Color.parseColor("#FF8FAEFF"), bold = true)
             val edit = EditText(context).apply {
                 setHint("0")
                 setTextColor(Color.parseColor("#FFF4F7FF"))
                 setHintTextColor(Color.parseColor("#558899AA"))
-                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+                inputType = InputType.TYPE_CLASS_NUMBER or
+                    if (signed) InputType.TYPE_NUMBER_FLAG_SIGNED else 0
                 background = fieldBackground()
                 setPadding(dp(10), dp(7), dp(10), dp(7))
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                 gravity = Gravity.CENTER
+                defaultText?.let { setText(it) }
             }
             val col = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -1685,13 +1691,24 @@ class OverlayCommandsPopover(
             return col to edit
         }
 
+        val (colServer, editServer) = coordField(
+            hint = context.getString(R.string.overlay_coord_server_label),
+            defaultText = DEFAULT_COORD_SERVER.toString(),
+            signed = false,
+        )
         val (colX, editX) = coordField(context.getString(R.string.overlay_coord_x_label))
         val (colY, editY) = coordField(context.getString(R.string.overlay_coord_y_label))
 
         val coordsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            val gap = dp(8)
-            addView(colX, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            val gap = dp(6)
+            addView(colServer, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.85f))
+            addView(
+                colX,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = gap
+                },
+            )
             addView(
                 colY,
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -1775,6 +1792,7 @@ class OverlayCommandsPopover(
         val scrim = FrameLayout(context).apply {
             setBackgroundColor(Color.argb(100, 0, 0, 0))
             setDismissOnOutsideCardTouch(card) {
+                hideKeyboard(editServer)
                 hideKeyboard(editX)
                 hideKeyboard(editY)
                 hideCoordOnly()
@@ -1810,27 +1828,31 @@ class OverlayCommandsPopover(
         attachedWindowManager = windowManager
 
         close.setOnClickListener {
+            hideKeyboard(editServer)
             hideKeyboard(editX)
             hideKeyboard(editY)
             hideCoordOnly()
         }
 
         cancelBtn.setOnClickListener {
+            hideKeyboard(editServer)
             hideKeyboard(editX)
             hideKeyboard(editY)
             hideCoordOnly()
         }
 
         sendBtn.setOnClickListener {
+            val server = editServer.text?.toString()?.trim()?.toIntOrNull()
             val xv = editX.text?.toString()?.trim()?.toIntOrNull()
             val yv = editY.text?.toString()?.trim()?.toIntOrNull()
-            if (xv == null || yv == null) {
+            if (server == null || server !in MIN_COORD_SERVER..MAX_COORD_SERVER || xv == null || yv == null) {
                 Toast.makeText(context, R.string.overlay_coord_invalid, Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
+            hideKeyboard(editServer)
             hideKeyboard(editX)
             hideKeyboard(editY)
-            val pendingId = prepareOptimisticRaidQuickCommand(commandLabel, xv, yv)
+            val pendingId = prepareOptimisticRaidQuickCommand(commandLabel, xv, yv, server)
             if (pendingId == null) {
                 Toast.makeText(context, R.string.overlay_strip_no_raid, Toast.LENGTH_SHORT).show()
             }
@@ -1838,7 +1860,7 @@ class OverlayCommandsPopover(
             hideCoordOnly()
             scope.launch {
                 CombatOverlayService.warmupRaidForQuickCommandSend()
-                val result = sendCoords(commandLabel, xv, yv)
+                val result = sendCoords(commandLabel, xv, yv, server)
                 mainHandler.post {
                     result.onFailure { e ->
                         pendingId?.let(removeOptimisticRaidSend)
@@ -2044,6 +2066,10 @@ class OverlayCommandsPopover(
     }
 
     private companion object {
+        /** Default kingdom/server for coord quick commands (team plays on #109). */
+        private const val DEFAULT_COORD_SERVER = 109
+        private const val MIN_COORD_SERVER = 1
+        private const val MAX_COORD_SERVER = 9999
         /** Delay suppress release after coord dialog closes so game gate does not tear down HUD. */
         private const val POPOVER_SUPPRESS_RELEASE_DELAY_MS = 500L
         /** Р РµР¶Рµ Р±СѓРґРёС‚СЊ Lottie-РїСЂРµРІСЊСЋ вЂ” РЅР° РіР»Р°РІРЅРѕРј РїРѕС‚РѕРєРµ С‚РѕР»СЊРєРѕ РґРѕ [MAX_REACTION_LOTTIE_PREVIEWS_PLAYING] С€С‚СѓРє. */

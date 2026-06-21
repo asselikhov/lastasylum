@@ -842,11 +842,12 @@
     <string name="excavation_push_channel_name">Раскопки альянса</string>
     <string name="excavation_push_channel_desc">Срочные координаты раскопок от союзников</string>
     <string name="excavation_push_default_title">⛏ Раскопки</string>
+    <string name="overlay_coord_server_label">#:</string>
     <string name="overlay_coord_x_label">X:</string>
     <string name="overlay_coord_y_label">Y:</string>
     <string name="overlay_coord_send">Отправить</string>
     <string name="overlay_coord_cancel">Отмена</string>
-    <string name="overlay_coord_invalid">Введите координаты (целые числа)</string>
+    <string name="overlay_coord_invalid">Введите сервер (#:) и координаты X/Y (целые числа)</string>
     <string name="overlay_cmd_attack_city">Атака по городу</string>
     <string name="overlay_cmd_attack_player">Атака по игроку</string>
     <string name="overlay_cmd_attack_monster">Атака по монстру</string>
