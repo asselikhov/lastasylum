@@ -734,6 +734,31 @@ class AdminViewModel(
         }
     }
 
+    fun setUserOverlayGameSearch(userId: String, enabled: Boolean, okMessage: String) {
+        viewModelScope.launch {
+            adminRepository.setOverlayGameSearchEnabled(userId, enabled)
+                .onSuccess {
+                    val selfId = usersRepository.peekMyProfile()?.id?.trim().orEmpty()
+                    if (selfId.isNotEmpty() && selfId == userId) {
+                        runCatching { usersRepository.getMyProfile(forceRefresh = true) }
+                    }
+                    _state.value = _state.value.copy(
+                        snackMessage = okMessage,
+                        usersOnServers = _state.value.usersOnServers.map { row ->
+                            if (row.userId == userId) {
+                                row.copy(overlayGameSearchEnabled = enabled)
+                            } else {
+                                row
+                            }
+                        },
+                    )
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(actionError = e.toUserMessageRu(res))
+                }
+        }
+    }
+
     fun openStickerSettings(allianceCode: String) {
         _state.value = _state.value.copy(
             stickerAllianceCode = allianceCode,

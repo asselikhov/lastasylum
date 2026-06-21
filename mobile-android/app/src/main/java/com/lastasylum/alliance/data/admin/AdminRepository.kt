@@ -93,6 +93,17 @@ class AdminRepository(
             )
         }
 
+    suspend fun setOverlayGameSearchEnabled(
+        userId: String,
+        enabled: Boolean,
+    ): Result<Unit> =
+        runCatching {
+            adminApi.updateOverlayGameSearch(
+                userId,
+                UpdateOverlayGameSearchBody(overlayGameSearchEnabled = enabled),
+            )
+        }
+
     suspend fun listGameServers(): Result<List<AdminServerSummaryDto>> =
         runCatching { adminApi.listGameServers() }
 

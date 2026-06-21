@@ -12,6 +12,8 @@ data class OverlayGameStatusHudState(
     val forumUnread: Int = 0,
     /** Non-null when backend reports a newer APK; shows update chip after alliance chat. */
     val appUpdateDownloadUrl: String? = null,
+    /** Per-user admin flag: show in-game search chip next to chat. */
+    val gameSearchEnabled: Boolean = false,
 )
 
 @Composable
@@ -21,6 +23,7 @@ fun OverlayGameStatusHud(
     onNewsClick: () -> Unit,
     onForumClick: () -> Unit,
     onAppUpdateClick: () -> Unit,
+    onGameSearchClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     if (!state.appUpdateDownloadUrl.isNullOrBlank()) {
@@ -59,6 +62,14 @@ fun OverlayGameStatusHud(
                 ),
                 onClick = onMailClick,
             )
+            if (state.gameSearchEnabled) {
+                OverlayGameHudChip(
+                    icon = OverlayHudIcons.search,
+                    accent = OverlayHudChipAccent.Search,
+                    contentDescription = stringResource(R.string.overlay_hud_game_search_cd),
+                    onClick = onGameSearchClick,
+                )
+            }
         }
     }
 }

@@ -45,6 +45,7 @@ export type SafeUser = {
   allianceName: string;
   alliancePublicId: string;
   overlayTabVisible: boolean;
+  overlayGameSearchEnabled: boolean;
   teamDisplayName: string | null;
   teamTag: string | null;
   membershipStatus: TeamMembershipStatus;
@@ -315,6 +316,26 @@ export class UsersService implements OnModuleInit {
       .exec();
   }
 
+  async updateOverlayGameSearchEnabled(
+    userId: string,
+    enabled: boolean,
+  ): Promise<UserDocument | null> {
+    if (!Types.ObjectId.isValid(userId)) {
+      return null;
+    }
+    const updated = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        { $set: { overlayGameSearchEnabled: enabled === true } },
+        { returnDocument: 'after' },
+      )
+      .exec();
+    if (updated) {
+      this.invalidateSafeUserCache(userId);
+    }
+    return updated;
+  }
+
   async deleteUser(userId: string): Promise<boolean> {
     if (!Types.ObjectId.isValid(userId)) {
       return false;
@@ -432,6 +453,7 @@ export class UsersService implements OnModuleInit {
       allianceName: reconciled.allianceName,
       alliancePublicId: flags.alliancePublicId,
       overlayTabVisible: flags.overlayTabVisible,
+      overlayGameSearchEnabled: reconciled.overlayGameSearchEnabled === true,
       teamDisplayName: inSquad
         ? teamFields.playerTeamDisplayName
         : (reconciled.teamDisplayName ?? null),

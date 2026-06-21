@@ -279,6 +279,7 @@ fun AppNavigation(
     val msgTeamSaved = stringResource(R.string.admin_team_edit_saved)
     val msgDeleted = stringResource(R.string.admin_ok_deleted)
     val msgOverlaySaved = stringResource(R.string.admin_ok_overlay)
+    val msgOverlayGameSearchSaved = stringResource(R.string.admin_ok_overlay_game_search)
     val msgStickerSaved = stringResource(R.string.admin_sticker_saved)
     // Bottom nav CHAT badge sums all rooms; overlay mail HUD chip is alliance hub only (by design).
     val chatTabUnreadTotal by chatViewModel.state
@@ -602,6 +603,13 @@ fun AppNavigation(
                             name,
                             tag,
                             msgTeamSaved,
+                        )
+                    },
+                    onUserOverlayGameSearchChange = { userId, enabled ->
+                        adminViewModel.setUserOverlayGameSearch(
+                            userId,
+                            enabled,
+                            msgOverlayGameSearchSaved,
                         )
                     },
                     onLoadMorePlayers = adminViewModel::loadMorePlayersList,

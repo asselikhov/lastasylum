@@ -71,6 +71,12 @@ interface AdminApi {
         @Body body: PatchUserStickerAccessBody,
     ): AllianceStickerAccessDto
 
+    @PATCH("admin/users/{userId}/overlay-game-search")
+    suspend fun updateOverlayGameSearch(
+        @Path("userId") userId: String,
+        @Body body: UpdateOverlayGameSearchBody,
+    ): com.lastasylum.alliance.data.users.MyProfileDto
+
     @GET("admin/game-servers")
     suspend fun listGameServers(): List<AdminServerSummaryDto>
 

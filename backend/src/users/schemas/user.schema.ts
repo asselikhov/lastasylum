@@ -126,6 +126,10 @@ export class User {
 
   @Prop({ type: MongooseSchema.Types.ObjectId, default: null })
   activeGameIdentityId: Types.ObjectId | null;
+
+  /** R5 admin: overlay HUD «Поиск игрока/альянса в игре» for this account. */
+  @Prop({ type: Boolean, default: false })
+  overlayGameSearchEnabled: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

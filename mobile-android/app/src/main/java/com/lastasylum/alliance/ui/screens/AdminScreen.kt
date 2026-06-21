@@ -130,6 +130,7 @@ fun AdminScreen(
     onDismissSnack: () -> Unit,
     onUpdateGameIdentity: (userId: String, identityId: String, gameNickname: String, serverNumber: Int) -> Unit = { _, _, _, _ -> },
     onUpdatePlayerTeam: (teamId: String, tag: String, displayName: String) -> Unit = { _, _, _ -> },
+    onUserOverlayGameSearchChange: (userId: String, enabled: Boolean) -> Unit = { _, _ -> },
     onLoadMorePlayers: () -> Unit = {},
     onLoadMorePlayerTeams: () -> Unit = {},
     onRequestClearAllChatHistory: () -> Unit = {},
@@ -264,6 +265,9 @@ fun AdminScreen(
     }
 
     selectedPlayer?.let { player ->
+        val currentPlayer = state.usersOnServers.find {
+            it.userId == player.userId && it.identityId == player.identityId
+        } ?: player
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
             onDismissRequest = {
@@ -273,7 +277,7 @@ fun AdminScreen(
             sheetState = sheetState,
         ) {
             AdminPlayerManageSheet(
-                player = player,
+                player = currentPlayer,
                 currentUserId = currentUserId,
                 state = state,
                 allianceCode = selectedPlayerAllianceCode
@@ -288,17 +292,20 @@ fun AdminScreen(
                 },
                 onTogglePlayerStickerPack = onTogglePlayerStickerPack,
                 onSavePlayerStickerAccess = onSavePlayerStickerAccess,
-                onSaveGameIdentity = { nick, server ->
-                    onUpdateGameIdentity(player.userId, player.identityId, nick, server)
+                onOverlayGameSearchChange = { enabled ->
+                    onUserOverlayGameSearchChange(currentPlayer.userId, enabled)
                 },
-                onApprove = { onApprove(player.userId); selectedPlayer = null },
+                onSaveGameIdentity = { nick, server ->
+                    onUpdateGameIdentity(currentPlayer.userId, currentPlayer.identityId, nick, server)
+                },
+                onApprove = { onApprove(currentPlayer.userId); selectedPlayer = null },
                 onRemoveFromTeam = {
-                    removeFromTeamUserId = player.userId
+                    removeFromTeamUserId = currentPlayer.userId
                     selectedPlayer = null
                 },
-                onRestorePending = { onRestorePending(player.userId); selectedPlayer = null },
-                onSetRole = { role -> onSetRole(player.userId, role) },
-                onDelete = { deleteUserId = player.userId; selectedPlayer = null },
+                onRestorePending = { onRestorePending(currentPlayer.userId); selectedPlayer = null },
+                onSetRole = { role -> onSetRole(currentPlayer.userId, role) },
+                onDelete = { deleteUserId = currentPlayer.userId; selectedPlayer = null },
             )
         }
     }
