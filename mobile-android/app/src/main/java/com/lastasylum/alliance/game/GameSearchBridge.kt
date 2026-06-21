@@ -4,7 +4,6 @@ import android.content.Context
 import android.widget.Toast
 import com.lastasylum.alliance.R
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -41,20 +40,15 @@ object GameSearchBridge {
             return Result.failure(IllegalStateException("no_active_server"))
         }
         withContext(Dispatchers.Main) {
-            val appContext = context.applicationContext
-            GameDeepLinkNavigator.bringGameToForeground(appContext)
-            GameDeepLinkNavigator.copyToClipboard(
-                appContext,
+            GameDeepLinkNavigator.openWithClipboard(
+                context = context,
                 clipLabel = "game_search_query",
-                text = trimmed,
-            )
-            delay(GameDeepLinkNavigator.CLIPBOARD_SETTLE_MS)
-            val launched = GameDeepLinkNavigator.openFirstMatching(
-                appContext,
-                GameSearchDeepLinks.searchUrls(kind, trimmed, serverNumber),
-            )
-            if (launched) {
-                toast(appContext, R.string.overlay_game_search_sent_to_game)
+                clipText = trimmed,
+                uris = GameSearchDeepLinks.searchUrls(kind, trimmed, serverNumber),
+            ) { launched ->
+                if (launched) {
+                    toast(context, R.string.overlay_game_search_sent_to_game)
+                }
             }
         }
         return Result.success(
@@ -68,17 +62,16 @@ object GameSearchBridge {
     }
 
     fun openProfile(context: Context, hit: SearchHit, serverNumber: Int?) {
-        val appContext = context.applicationContext
         GameDeepLinkNavigator.openWithClipboard(
-            context = appContext,
+            context = context,
             clipLabel = "game_search_profile",
             clipText = hit.displayName,
             uris = GameSearchDeepLinks.profileUrls(hit.kind, hit.displayName, serverNumber),
         ) { launched ->
             if (launched) {
-                toast(appContext, R.string.overlay_game_search_profile_sent)
+                toast(context, R.string.overlay_game_search_profile_sent)
             } else {
-                toast(appContext, R.string.overlay_game_search_bridge_pending)
+                toast(context, R.string.overlay_game_search_bridge_pending)
             }
         }
     }
@@ -90,17 +83,16 @@ object GameSearchBridge {
             GameMapNavigator.open(context, x, y, serverNumber)
             return
         }
-        val appContext = context.applicationContext
         GameDeepLinkNavigator.openWithClipboard(
-            context = appContext,
+            context = context,
             clipLabel = "game_search_map",
             clipText = hit.displayName,
             uris = GameSearchDeepLinks.mapUrlsForName(hit.kind, hit.displayName, serverNumber),
         ) { launched ->
             if (launched) {
-                toast(appContext, R.string.overlay_game_search_map_sent)
+                toast(context, R.string.overlay_game_search_map_sent)
             } else {
-                toast(appContext, R.string.overlay_game_search_bridge_pending)
+                toast(context, R.string.overlay_game_search_bridge_pending)
             }
         }
     }

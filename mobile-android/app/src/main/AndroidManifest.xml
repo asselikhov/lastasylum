@@ -81,6 +81,17 @@
             android:theme="@style/Theme.LastAsylum.OverlayDialog"
             android:excludeFromRecents="true" />
 
+        <!-- Trampoline for globalphslink + clipboard from overlay FGS (background activity start). -->
+        <activity
+            android:name=".overlay.OverlayGameBridgeActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:finishOnTaskLaunch="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/Theme.LastAsylum.OverlayDialog"
+            android:excludeFromRecents="true" />
+
         <service
             android:name=".overlay.CombatOverlayService"
             android:enabled="true"

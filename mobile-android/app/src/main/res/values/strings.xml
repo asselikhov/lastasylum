@@ -797,8 +797,8 @@
     <string name="overlay_game_search_hint_alliance">Название альянса</string>
     <string name="overlay_game_search_action">Найти</string>
     <string name="overlay_game_search_not_found">В игре ничего не найдено</string>
-    <string name="overlay_game_search_sent_to_game">Запрос передан в игру — проверьте клиент Last Asylum</string>
-    <string name="overlay_game_search_profile_sent">Профиль открывается в игре</string>
+    <string name="overlay_game_search_sent_to_game">Запрос передан в игру — проверьте окно поиска в Last Asylum</string>
+    <string name="overlay_game_search_profile_sent">Открываем профиль в игре…</string>
     <string name="overlay_game_search_map_sent">Переход на карту передан в игру</string>
     <string name="overlay_game_search_error">Не удалось выполнить поиск</string>
     <string name="overlay_game_search_query_short">Введите не менее 2 символов</string>

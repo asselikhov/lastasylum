@@ -37,24 +37,52 @@ const CMD_INTEREST_RE = /search|player|alliance|profile|map|world|fly|goto|coord
 const seenCmds = new Set();
 const seenDeepLinks = new Set();
 
+const DEVICE_LOG = '/sdcard/Download/la_hook.log';
+let deviceLogFile = null;
+
+function openDeviceLog() {
+  try {
+    deviceLogFile = new File(DEVICE_LOG, 'a');
+    deviceLogFile.write('=== hook session started ===\n');
+    deviceLogFile.flush();
+  } catch (e) {
+    deviceLogFile = null;
+  }
+}
+
+function appendDeviceLog(line) {
+  if (!deviceLogFile) return;
+  try {
+    deviceLogFile.write(line + '\n');
+    deviceLogFile.flush();
+  } catch (e) {
+    deviceLogFile = null;
+  }
+}
+
+function emit(line) {
+  console.log(line);
+  appendDeviceLog(line);
+}
+
 function logInterestingCmd(tag, cmd) {
   if (!cmd) return;
   const interesting = CMD_INTEREST_RE.test(cmd);
   if (interesting || cmd.length < 120) {
-    console.log(`[SimpleInstrSend:${tag}] ${cmd}`);
+    emit(`[SimpleInstrSend:${tag}] ${cmd}`);
   }
   if (interesting && !seenCmds.has(cmd)) {
     seenCmds.add(cmd);
-    console.log(`[CMD_NEW] ${cmd}`);
+    emit(`[CMD_NEW] ${cmd}`);
   }
 }
 
 function logDeepLink(url) {
   if (!url) return;
-  console.log(`[deepLink] ${url}`);
+  emit(`[deepLink] ${url}`);
   if (!seenDeepLinks.has(url)) {
     seenDeepLinks.add(url);
-    console.log(`[DEEPLINK_NEW] ${url}`);
+    emit(`[DEEPLINK_NEW] ${url}`);
   }
 }
 
@@ -164,7 +192,7 @@ function hookRequireLua() {
     onEnter(args) {
       const path = readIl2CppString(args[0]);
       if (path && MAP_PATH_RE.test(path)) {
-        console.log(`[RequireLua] ${path}`);
+        emit(`[RequireLua] ${path}`);
       }
     },
   });
@@ -191,7 +219,7 @@ function hookFormatCoord(name, rva) {
       const maxX = args[1].toInt32();
       const maxY = args[2].toInt32();
       if (content) {
-        console.log(`[${name}] content="${content}" maxX=${maxX} maxY=${maxY}`);
+        emit(`[${name}] content="${content}" maxX=${maxX} maxY=${maxY}`);
       }
     },
   });
@@ -224,7 +252,7 @@ function main() {
   hookFormatCoord('FormatKXY', RVA.LuaManager_FormatKXY);
   hookFormatCoord('FormatXAndY', RVA.LuaManager_FormatXAndY);
   hookLuaRegisterHandler();
-  console.log('hooks ready - open map search / paste coords / deep link to capture traffic');
+  emit('hooks ready - open map search / paste coords / deep link to capture traffic');
   return true;
 }
 
@@ -237,7 +265,10 @@ function waitForLib(retries) {
   setTimeout(() => waitForLib(retries - 1), 1000);
 }
 
-setImmediate(() => waitForLib(120));
+setImmediate(() => {
+  openDeviceLog();
+  waitForLib(120);
+});
 
 // Keep Frida session alive (non-interactive mode).
 setInterval(function () {}, 5000);

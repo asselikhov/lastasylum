@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.game
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -9,15 +10,17 @@ import android.os.Handler
 import android.os.Looper
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.GameForegroundGate
+import com.lastasylum.alliance.overlay.OverlayGameBridgeActivity
 
 /**
  * Brings the target game to foreground and fires [globalphslink] VIEW intents.
  * Map coordinates also use clipboard via [GameMapNavigator].
  *
- * Game Lua reads clipboard (`X:{x} Y:{y}` / nick) via [flyWorldLua] after [InvokeDeepLinkActivated].
+ * From overlay [android.app.Service], uses [OverlayGameBridgeActivity] trampoline (BAL-safe).
  */
 object GameDeepLinkNavigator {
-    internal const val CLIPBOARD_SETTLE_MS = 250L
+    internal const val CLIPBOARD_SETTLE_MS = 400L
+    private const val GAME_ACTIVITY = "com.games37.sdk.AtlasPluginDemoActivity"
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -49,35 +52,38 @@ object GameDeepLinkNavigator {
 
     /** Returns true if any resolved activity accepted the intent. */
     fun openUri(context: Context, uri: String): Boolean {
-        val appContext = context.applicationContext
-        val parsed = runCatching { Uri.parse(uri) }.getOrNull() ?: return false
-        for (pkg in targetPackages(appContext)) {
-            val targeted = Intent(Intent.ACTION_VIEW, parsed).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                setPackage(pkg)
-            }
-            if (appContext.packageManager.resolveActivity(targeted, 0) != null) {
-                runCatching {
-                    appContext.startActivity(targeted)
-                    return true
-                }
-            }
+        if (needsTrampoline(context)) {
+            OverlayGameBridgeActivity.launch(
+                context = context.applicationContext,
+                clipLabel = "",
+                clipText = "",
+                uris = listOf(uri),
+            )
+            return true
         }
-        val generic = Intent(Intent.ACTION_VIEW, parsed).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        return openUriDirect(context.applicationContext, uri)
+    }
+
+    fun openFirstMatching(context: Context, uris: Iterable<String>): Boolean {
+        if (needsTrampoline(context)) {
+            OverlayGameBridgeActivity.launch(
+                context = context.applicationContext,
+                clipLabel = "",
+                clipText = "",
+                uris = uris,
+            )
+            return true
         }
-        if (appContext.packageManager.resolveActivity(generic, 0) != null) {
-            runCatching {
-                appContext.startActivity(generic)
-                return true
-            }
+        for (uri in uris) {
+            if (openUriDirect(context.applicationContext, uri)) return true
         }
         return false
     }
 
-    fun openFirstMatching(context: Context, uris: Iterable<String>): Boolean {
+    /** Called from [OverlayGameBridgeActivity] after clipboard is set. */
+    fun openFirstMatchingFromActivity(activity: Activity, uris: Iterable<String>): Boolean {
         for (uri in uris) {
-            if (openUri(context, uri)) return true
+            if (openUriDirect(activity, uri)) return true
         }
         return false
     }
@@ -92,12 +98,60 @@ object GameDeepLinkNavigator {
         uris: Iterable<String>,
         onLaunched: ((Boolean) -> Unit)? = null,
     ) {
+        if (needsTrampoline(context)) {
+            OverlayGameBridgeActivity.launch(
+                context = context.applicationContext,
+                clipLabel = clipLabel,
+                clipText = clipText,
+                uris = uris,
+            )
+            onLaunched?.invoke(true)
+            return
+        }
         val appContext = context.applicationContext
-        bringGameToForeground(appContext)
         copyToClipboard(appContext, clipLabel, clipText)
         mainHandler.postDelayed({
-            val launched = openFirstMatching(appContext, uris)
+            val launched = openFirstMatchingFromActivity(context as Activity, uris)
             onLaunched?.invoke(launched)
         }, CLIPBOARD_SETTLE_MS)
     }
+
+    private fun needsTrampoline(context: Context): Boolean = context !is Activity
+
+    private fun openUriDirect(context: Context, uri: String): Boolean {
+        val parsed = runCatching { Uri.parse(uri) }.getOrNull() ?: return false
+        for (pkg in targetPackages(context)) {
+            val targeted = buildGameViewIntent(parsed, pkg)
+            if (context.packageManager.resolveActivity(targeted, 0) != null) {
+                runCatching {
+                    context.startActivity(targeted)
+                    return true
+                }
+            }
+        }
+        val generic = Intent(Intent.ACTION_VIEW, parsed).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
+            )
+        }
+        if (context.packageManager.resolveActivity(generic, 0) != null) {
+            runCatching {
+                context.startActivity(generic)
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun buildGameViewIntent(parsed: Uri, pkg: String): Intent =
+        Intent(Intent.ACTION_VIEW, parsed).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
+            )
+            setClassName(pkg, GAME_ACTIVITY)
+        }
 }

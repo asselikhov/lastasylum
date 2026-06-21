@@ -1,22 +1,23 @@
 package com.lastasylum.alliance.game
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GameSearchDeepLinksTest {
     @Test
-    fun searchUrls_usePathStyleWithoutAmpersand() {
+    fun searchUrls_openPanelFirstWithoutAmpersand() {
         val urls = GameSearchDeepLinks.searchUrls(
             GameSearchBridge.SearchKind.PLAYER,
             "Nick Name",
             serverNumber = 42,
         )
         assertTrue(urls.isNotEmpty())
-        assertTrue(urls.first().startsWith("globalphslink://search/player/"))
-        assertTrue(urls.first().endsWith("/42"))
-        assertTrue(urls.any { it.contains("Nick%20Name") || it.contains("Nick+Name") })
-        assertFalse(urls.first().contains("&"))
+        assertEquals("globalphslink://search", urls.first())
+        assertTrue(urls.any { it.startsWith("globalphslink://search/player/") })
+        assertTrue(urls.any { it.endsWith("/42") })
+        assertFalse(urls.any { it.contains("&") })
     }
 
     @Test
@@ -24,7 +25,7 @@ class GameSearchDeepLinksTest {
         val urls = GameSearchDeepLinks.mapUrlsForCoordinates(100, 200, serverNumber = 3)
         assertTrue(urls.contains("globalphslink://map/100/200/3"))
         assertTrue(urls.contains("globalphslink://world/100/200/3"))
-        assertTrue(urls.contains("globalphslink://map?xy=100,200"))
+        assertTrue(urls.contains("globalphslink://coordinate/100/200/3"))
         assertFalse(urls.first().contains("&"))
     }
 
