@@ -32,7 +32,7 @@ const RVA = {
 };
 
 const MAP_PATH_RE = /map|search|goto|worldmap|coord|flyworld|profile|player|alliance|role/i;
-const CMD_INTEREST_RE = /search|player|alliance|profile|map|world|fly|goto|coord|nick|role|guild|union/i;
+const CMD_INTEREST_RE = /search|player|alliance|profile|map|world|fly|goto|coord|nick|role|guild|union|WorldSearch|WorldMapView|EnterWorldMap|LeaveWorldMap/i;
 
 const seenCmds = new Set();
 const seenDeepLinks = new Set();
@@ -74,6 +74,14 @@ function logInterestingCmd(tag, cmd) {
   if (interesting && !seenCmds.has(cmd)) {
     seenCmds.add(cmd);
     emit(`[CMD_NEW] ${cmd}`);
+  }
+}
+
+function logCmdData(tag, cmd, dataPtr) {
+  if (!cmd || !CMD_INTEREST_RE.test(cmd)) return;
+  const dataSummary = summarizeData(dataPtr);
+  if (dataSummary) {
+    emit(`[SimpleInstrSend:${tag}:data] ${dataSummary}`);
   }
 }
 
@@ -149,10 +157,7 @@ function hookSimpleInstrSend(name, rva) {
       const cmd = readIl2CppString(cmdPtr);
       if (cmd) {
         logInterestingCmd(name, cmd);
-        const dataSummary = summarizeData(dataPtr);
-        if (dataSummary && CMD_INTEREST_RE.test(cmd)) {
-          console.log(`[SimpleInstrSend:${name}:data] ${dataSummary}`);
-        }
+        logCmdData(name, cmd, dataPtr);
       }
     },
   });

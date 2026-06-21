@@ -67,7 +67,9 @@ object GameSearchDeepLinks {
     fun mapUrlsForCoordinates(x: Int, y: Int, serverNumber: Int?): List<String> {
         val s = serverPath(serverNumber)
         return listOf(
-            // Path-style first: generic `map`/`world` resolve but do not fly to X/Y.
+            // Clipboard + generic trigger — flyWorldLua reads clip (RE: path URLs open map but do not fly).
+            "globalphslink://map",
+            "globalphslink://world",
             "globalphslink://map/$x/$y$s",
             "globalphslink://world/$x/$y$s",
             "globalphslink://coordinate/$x/$y$s",
@@ -79,9 +81,6 @@ object GameSearchDeepLinks {
             "globalphslink://coordinate?xy=$x,$y",
             "globalphslink://coordinate?$x,$y",
             "globalphslink://map?x=$x",
-            // Clipboard `X:{x} Y:{y}` + generic trigger — fallback after explicit coords.
-            "globalphslink://map",
-            "globalphslink://world",
         )
     }
 

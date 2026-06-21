@@ -15,7 +15,7 @@ object GameMapNavigator {
     private const val TAG = "GameMapNavigator"
 
     fun open(context: Context, x: Int, y: Int, serverNumber: Int? = null) {
-        val clipText = "X:$x Y:$y"
+        val clipText = MapCoordinate(null, x, y, serverNumber).gameBracketText()
         val uris = GameSearchDeepLinks.mapUrlsForCoordinates(x, y, serverNumber)
         logDebug("open x=$x y=$y server=$serverNumber firstUri=${uris.firstOrNull()} clip=$clipText")
         GameDeepLinkNavigator.openWithClipboard(

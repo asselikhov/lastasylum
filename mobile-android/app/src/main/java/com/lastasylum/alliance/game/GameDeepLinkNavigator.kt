@@ -122,15 +122,25 @@ object GameDeepLinkNavigator {
         }
         val delayMs = if (clipText.isNotBlank()) CLIPBOARD_SETTLE_MS else 0L
         mainHandler.postDelayed({
+            if (allowBridgeFallback && needsTrampoline(context)) {
+                val bridgeStarted = OverlayGameBridgeActivity.launch(
+                    context = appContext,
+                    clipLabel = clipLabel,
+                    clipText = clipText,
+                    uris = uris,
+                )
+                onLaunched?.invoke(bridgeStarted)
+                return@postDelayed
+            }
             if (openDeepLinksToGame(context, uris)) {
                 onLaunched?.invoke(true)
                 return@postDelayed
             }
-            if (allowBridgeFallback && needsTrampoline(context)) {
+            if (allowBridgeFallback) {
                 val bridgeStarted = OverlayGameBridgeActivity.launch(
                     context = appContext,
-                    clipLabel = "",
-                    clipText = "",
+                    clipLabel = clipLabel,
+                    clipText = clipText,
                     uris = uris,
                 )
                 onLaunched?.invoke(bridgeStarted)
