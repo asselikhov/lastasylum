@@ -8,19 +8,25 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.widthIn
@@ -28,10 +34,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -136,7 +142,7 @@ class OverlayGameSearchPopover(
             PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
-            OverlayWindowLayout.applyOverlayModalSoftInputMode(this)
+            OverlayWindowLayout.applyOverlaySearchSoftInputMode(this)
             gravity = Gravity.TOP or Gravity.START
         }
     }
@@ -185,12 +191,28 @@ class OverlayGameSearchPopover(
             setBackgroundColor(android.graphics.Color.parseColor("#99000000"))
             setOnClickListener { hide() }
             attachComposeTree(this)
+            // Стабильный подъём над клавиатурой: окно с ADJUST_NOTHING не ресайзится (нет «прыжков»),
+            // карточку поднимаем ручным padding корня на высоту IME. ime-инсет поглощаем, чтобы
+            // Compose внутри не добавил отступ повторно.
+            ViewCompat.setOnApplyWindowInsetsListener(this) { view, windowInsets ->
+                val safeTypes = WindowInsetsCompat.Type.systemBars() or
+                    WindowInsetsCompat.Type.displayCutout()
+                val imeTypes = WindowInsetsCompat.Type.ime()
+                val safe = windowInsets.getInsets(safeTypes)
+                val ime = windowInsets.getInsets(imeTypes)
+                val bottom = if (ime.bottom > 0) ime.bottom else safe.bottom
+                view.setPadding(safe.left, safe.top, safe.right, bottom)
+                WindowInsetsCompat.Builder(windowInsets)
+                    .setInsets(safeTypes, Insets.of(safe.left, 0, safe.right, 0))
+                    .setInsets(imeTypes, Insets.NONE)
+                    .build()
+            }
             addView(
                 compose,
                 FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.CENTER,
+                    Gravity.BOTTOM,
                 ),
             )
             compose.setOnClickListener { /* consume */ }
@@ -221,8 +243,7 @@ private fun OverlayGameSearchPanel(
     onOpenProfile: (GameSearchBridge.SearchHit) -> Unit,
     onOpenOnMap: (GameSearchBridge.SearchHit) -> Unit,
 ) {
-    var playerChecked by remember { mutableStateOf(true) }
-    var allianceChecked by remember { mutableStateOf(false) }
+    var isPlayer by remember { mutableStateOf(true) }
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<GameSearchBridge.SearchHit>>(emptyList()) }
@@ -236,9 +257,10 @@ private fun OverlayGameSearchPanel(
     LaunchedEffect(Unit) {
         queryFocusRequester.requestFocus()
     }
+    val canSearch = !searching && query.trim().length >= 2
     fun runSearch() {
-        if (searching || query.trim().length < 2) return
-        val kind = if (playerChecked) {
+        if (!canSearch) return
+        val kind = if (isPlayer) {
             GameSearchBridge.SearchKind.PLAYER
         } else {
             GameSearchBridge.SearchKind.ALLIANCE
@@ -266,19 +288,18 @@ private fun OverlayGameSearchPanel(
             }
         }
     }
-    val shape = RoundedCornerShape(16.dp)
-    val panelModifier = Modifier
-        .padding(horizontal = 20.dp)
-        .widthIn(max = 420.dp)
-        .fillMaxWidth()
-        .imePadding()
-        .background(Color(0xF010141E), shape)
-        .border(1.dp, Color(0x889B7CFF), shape)
-        .padding(16.dp)
 
+    val sheetShape = RoundedCornerShape(18.dp)
     Column(
-        modifier = panelModifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier
+            .padding(horizontal = 10.dp)
+            .padding(bottom = 10.dp)
+            .widthIn(max = 460.dp)
+            .fillMaxWidth()
+            .background(Color(0xF20D111B), sheetShape)
+            .border(1.dp, Color(0x559B7CFF), sheetShape)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -288,120 +309,205 @@ private fun OverlayGameSearchPanel(
             Text(
                 text = stringResource(R.string.overlay_game_search_title),
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 18.sp,
+                fontSize = 16.sp,
                 color = Color(0xFFF4F0FF),
             )
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.overlay_game_search_close))
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onDismiss() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "\u2715",
+                    color = Color(0xFFAEB4C2),
+                    fontSize = 15.sp,
+                )
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
-                checked = playerChecked,
-                onCheckedChange = { checked ->
-                    if (checked) {
-                        playerChecked = true
-                        allianceChecked = false
-                    } else if (!allianceChecked) {
-                        playerChecked = true
-                    }
-                },
-            )
-            Text(
-                text = stringResource(R.string.overlay_game_search_kind_player),
-                color = Color(0xFFE8EAEF),
-                modifier = Modifier.clickable {
-                    playerChecked = true
-                    allianceChecked = false
-                },
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
-                checked = allianceChecked,
-                onCheckedChange = { checked ->
-                    if (checked) {
-                        allianceChecked = true
-                        playerChecked = false
-                    } else if (!playerChecked) {
-                        allianceChecked = true
-                    }
-                },
-            )
-            Text(
-                text = stringResource(R.string.overlay_game_search_kind_alliance),
-                color = Color(0xFFE8EAEF),
-                modifier = Modifier.clickable {
-                    allianceChecked = true
-                    playerChecked = false
-                },
-            )
-        }
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(queryFocusRequester),
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(
-                onSearch = { runSearch() },
-            ),
-            label = {
-                Text(
-                    if (playerChecked) {
-                        stringResource(R.string.overlay_game_search_hint_player)
-                    } else {
-                        stringResource(R.string.overlay_game_search_hint_alliance)
-                    },
-                )
+
+        SearchKindToggle(
+            isPlayer = isPlayer,
+            onSelect = { selectedPlayer ->
+                if (isPlayer != selectedPlayer) {
+                    isPlayer = selectedPlayer
+                    results = emptyList()
+                    infoText = null
+                    errorText = null
+                }
             },
         )
-        Button(
-            onClick = { runSearch() },
-            enabled = !searching && query.trim().length >= 2,
+
+        Row(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(stringResource(R.string.overlay_game_search_action))
-        }
-        if (searching) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-        }
-        errorText?.let { msg ->
-            Text(text = msg, color = Color(0xFFFFB4AB), fontSize = 13.sp)
-        }
-        infoText?.let { msg ->
-            Text(text = msg, color = Color(0xFFB8C5FF), fontSize = 13.sp)
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            results.forEach { hit ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0x331A1F2B), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(queryFocusRequester),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { runSearch() }),
+                placeholder = {
                     Text(
-                        text = hit.displayName,
-                        color = Color(0xFFF4F0FF),
-                        modifier = Modifier.weight(1f),
+                        text = if (isPlayer) {
+                            stringResource(R.string.overlay_game_search_hint_player)
+                        } else {
+                            stringResource(R.string.overlay_game_search_hint_alliance)
+                        },
+                        fontSize = 14.sp,
+                        maxLines = 1,
                     )
-                    OutlinedButton(onClick = { onOpenProfile(hit) }) {
-                        Text(stringResource(R.string.overlay_game_search_profile))
-                    }
-                    OutlinedButton(onClick = { onOpenOnMap(hit) }) {
-                        Text(stringResource(R.string.overlay_game_search_on_map))
-                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0x889B7CFF),
+                    unfocusedBorderColor = Color(0x33FFFFFF),
+                    focusedContainerColor = Color(0x22000000),
+                    unfocusedContainerColor = Color(0x22000000),
+                    cursorColor = Color(0xFF9B7CFF),
+                ),
+            )
+            Button(
+                onClick = { runSearch() },
+                enabled = canSearch,
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 18.dp),
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                if (searching) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = Color(0xFFF4F0FF),
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.overlay_game_search_action),
+                        fontSize = 14.sp,
+                    )
                 }
             }
+        }
+
+        errorText?.let { msg ->
+            Text(text = msg, color = Color(0xFFFFB4AB), fontSize = 12.sp)
+        }
+        infoText?.let { msg ->
+            Text(text = msg, color = Color(0xFFB8C5FF), fontSize = 12.sp)
+        }
+
+        if (results.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 240.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                results.forEach { hit ->
+                    SearchResultRow(
+                        hit = hit,
+                        onOpenProfile = { onOpenProfile(hit) },
+                        onOpenOnMap = { onOpenOnMap(hit) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchKindToggle(
+    isPlayer: Boolean,
+    onSelect: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0x22000000))
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        SegmentPill(
+            text = stringResource(R.string.overlay_game_search_kind_player),
+            selected = isPlayer,
+            onClick = { onSelect(true) },
+            modifier = Modifier.weight(1f),
+        )
+        SegmentPill(
+            text = stringResource(R.string.overlay_game_search_kind_alliance),
+            selected = !isPlayer,
+            onClick = { onSelect(false) },
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun SegmentPill(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Color(0x339B7CFF) else Color.Transparent)
+            .clickable { onClick() }
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            color = if (selected) Color(0xFFF4F0FF) else Color(0xFF9AA0AE),
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun SearchResultRow(
+    hit: GameSearchBridge.SearchHit,
+    onOpenProfile: () -> Unit,
+    onOpenOnMap: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0x33161B27), RoundedCornerShape(10.dp))
+            .padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = hit.displayName,
+            color = Color(0xFFF4F0FF),
+            fontSize = 14.sp,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(
+            onClick = onOpenProfile,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+        ) {
+            Text(stringResource(R.string.overlay_game_search_profile), fontSize = 12.sp)
+        }
+        TextButton(
+            onClick = onOpenOnMap,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+        ) {
+            Text(stringResource(R.string.overlay_game_search_on_map), fontSize = 12.sp)
         }
     }
 }

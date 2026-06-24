@@ -133,6 +133,19 @@ object OverlayWindowLayout {
         params.softInputMode = mode
     }
 
+    /**
+     * Окно поиска (bottom-sheet над клавиатурой): без системного resize/pan, поэтому окно не
+     * «прыгает». Подъём карточки над IME — ручным padding корня по [WindowInsetsCompat.Type.ime]
+     * (см. слушатель в [OverlayGameSearchPopover]). [SOFT_INPUT_STATE_VISIBLE] — клавиатура
+     * показывается сразу при открытии.
+     */
+    fun applyOverlaySearchSoftInputMode(params: WindowManager.LayoutParams) {
+        @Suppress("DEPRECATION")
+        val mode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING or
+            WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+        params.softInputMode = mode
+    }
+
     /** IME для диалога координат в отдельном overlay-окне. */
     fun applyCoordinateDialogSoftInputMode(params: WindowManager.LayoutParams) {
         @Suppress("DEPRECATION")
