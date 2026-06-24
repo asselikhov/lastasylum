@@ -1,7 +1,10 @@
 # Patch com.phs.global base.apk with Frida Gadget (no root). Re-sign all splits for sideload.
 param(
     [string]$Package = 'com.phs.global',
-    [string]$FridaVersion = '17.15.1',
+    # Frida 17+ removed the global `Java`/`ObjC` bridges from gadget scripts, which breaks
+    # map_fly_bridge.js sendShareBroadcast() ("Java bridge unavailable"). Stay on 16.x so the
+    # in-process broadcast to SquadRelay keeps working.
+    [string]$FridaVersion = '16.7.19',
     [switch]$Install,
     [switch]$SkipPull,
     # Required with -Install: patched APK uses a debug signature and Android must uninstall the store build first (game data is lost).
