@@ -47,7 +47,6 @@ export type AdminUserOnServerRow = {
   appVersionName: string | null;
   appVersionCode: number | null;
   appVersionReportedAt: string | null;
-  overlayGameSearchEnabled: boolean;
 };
 
 export type SafeGameIdentity = {
@@ -985,7 +984,6 @@ export class GameIdentitiesService {
         lastAppVersionName: 1,
         lastAppVersionCode: 1,
         lastAppVersionReportedAt: 1,
-        overlayGameSearchEnabled: { $ifNull: ['$overlayGameSearchEnabled', false] },
       },
     });
     pipeline.push({
@@ -1015,7 +1013,6 @@ export class GameIdentitiesService {
           lastAppVersionName?: string | null;
           lastAppVersionCode?: number | null;
           lastAppVersionReportedAt?: Date | string | null;
-          overlayGameSearchEnabled?: boolean;
         }>;
         meta: Array<{ total: number }>;
       }>(pipeline as unknown as PipelineStage[])
@@ -1046,7 +1043,6 @@ export class GameIdentitiesService {
       appVersionCode:
         typeof row.lastAppVersionCode === 'number' ? row.lastAppVersionCode : null,
       appVersionReportedAt: toIso(row.lastAppVersionReportedAt),
-      overlayGameSearchEnabled: row.overlayGameSearchEnabled === true,
     }));
 
     return {
