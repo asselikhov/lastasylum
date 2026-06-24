@@ -117,11 +117,6 @@ data class AdminUpdatePlayerTeamBody(
 )
 
 @JsonClass(generateAdapter = true)
-data class UpdateOverlayGameSearchBody(
-    val overlayGameSearchEnabled: Boolean,
-)
-
-@JsonClass(generateAdapter = true)
 data class AdminUserOnServerDto(
     val userId: String,
     val identityId: String,
@@ -138,7 +133,6 @@ data class AdminUserOnServerDto(
     val appVersionName: String? = null,
     val appVersionCode: Int? = null,
     val appVersionReportedAt: String? = null,
-    val overlayGameSearchEnabled: Boolean = false,
 )
 
 @JsonClass(generateAdapter = true)

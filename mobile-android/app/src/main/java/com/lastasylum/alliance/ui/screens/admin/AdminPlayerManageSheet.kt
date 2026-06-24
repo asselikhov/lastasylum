@@ -17,7 +17,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -57,7 +56,6 @@ fun AdminPlayerManageSheet(
     onOpenStickerEditor: (allianceCode: String, userId: String) -> Unit,
     onTogglePlayerStickerPack: (packKey: String, enabled: Boolean) -> Unit,
     onSavePlayerStickerAccess: () -> Unit,
-    onOverlayGameSearchChange: (Boolean) -> Unit,
 ) {
     var nickDraft by remember(player.identityId) { mutableStateOf(player.gameNickname) }
     val needsGameIdentity = player.identityId.isBlank()
@@ -197,30 +195,6 @@ fun AdminPlayerManageSheet(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.admin_players_save_game))
-        }
-
-        HorizontalDivider()
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.admin_overlay_game_search_switch),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    stringResource(R.string.admin_overlay_game_search_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(
-                checked = player.overlayGameSearchEnabled,
-                onCheckedChange = onOverlayGameSearchChange,
-            )
         }
 
         if (alliance.isNotEmpty()) {

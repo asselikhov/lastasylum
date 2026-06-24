@@ -2350,7 +2350,6 @@ class CombatOverlayService : Service() {
                             allianceChatUnread = mergedState.allianceChatUnread,
                             teamNewsUnread = mergedState.teamNewsUnread,
                             forumUnread = mergedState.forumUnread,
-                            gameSearchEnabled = mergedState.gameSearchEnabled,
                         ),
                     )
                     val durationMs = android.os.SystemClock.elapsedRealtime() - startedAt
@@ -2550,7 +2549,6 @@ class CombatOverlayService : Service() {
                             allianceChatUnread = hubMerged,
                             teamNewsUnread = newsMerged,
                             forumUnread = forumMerged,
-                            gameSearchEnabled = profile?.overlayGameSearchEnabled == true,
                         ),
                     )
                     if (includeReactionLog) {
@@ -2653,7 +2651,6 @@ class CombatOverlayService : Service() {
                     previouslyDisplayed = prev.forumUnread,
                     optimisticFloor = inboxBadgeCoordinator.forumOptimisticFloor,
                 ),
-                gameSearchEnabled = instant.gameSearchEnabled,
             ),
         )
     }
@@ -2718,10 +2715,6 @@ class CombatOverlayService : Service() {
                         allianceChatUnread = hubSeed,
                         teamNewsUnread = newsSeed,
                         forumUnread = forumSeed,
-                        gameSearchEnabled = (
-                            profile.overlayGameSearchEnabled ||
-                                instant?.gameSearchEnabled == true
-                        ),
                     ),
                 )
             }

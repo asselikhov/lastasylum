@@ -12,8 +12,6 @@ data class OverlayGameStatusHudState(
     val forumUnread: Int = 0,
     /** Non-null when backend reports a newer APK; shows update chip after alliance chat. */
     val appUpdateDownloadUrl: String? = null,
-    /** Per-user admin flag: show in-game search chip next to chat. */
-    val gameSearchEnabled: Boolean = false,
 )
 
 @Composable

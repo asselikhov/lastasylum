@@ -2,7 +2,6 @@ package com.lastasylum.alliance.overlay
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -37,7 +36,6 @@ class OverlayHudBadgeAtomicRefreshTest {
                 allianceChatUnread = 1,
                 teamNewsUnread = 0,
                 forumUnread = 4,
-                gameSearchEnabled = true,
             ),
         )
         ShadowLooper.idleMainLooper()
@@ -45,7 +43,6 @@ class OverlayHudBadgeAtomicRefreshTest {
         assertEquals(1, state.allianceChatUnread)
         assertEquals(0, state.teamNewsUnread)
         assertEquals(4, state.forumUnread)
-        assertTrue(state.gameSearchEnabled)
     }
 
     @Test

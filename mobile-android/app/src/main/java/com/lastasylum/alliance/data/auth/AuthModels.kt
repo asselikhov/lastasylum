@@ -32,7 +32,6 @@ data class AuthUser(
     val allianceName: String? = null,
     val alliancePublicId: String? = null,
     val overlayTabVisible: Boolean = false,
-    val overlayGameSearchEnabled: Boolean = false,
     val teamDisplayName: String? = null,
     val teamTag: String? = null,
     val presenceStatus: String? = null,

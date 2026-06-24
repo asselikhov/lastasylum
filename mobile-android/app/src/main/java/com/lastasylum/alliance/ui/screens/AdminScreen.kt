@@ -130,7 +130,6 @@ fun AdminScreen(
     onDismissSnack: () -> Unit,
     onUpdateGameIdentity: (userId: String, identityId: String, gameNickname: String, serverNumber: Int) -> Unit = { _, _, _, _ -> },
     onUpdatePlayerTeam: (teamId: String, tag: String, displayName: String) -> Unit = { _, _, _ -> },
-    onUserOverlayGameSearchChange: (userId: String, enabled: Boolean) -> Unit = { _, _ -> },
     onLoadMorePlayers: () -> Unit = {},
     onLoadMorePlayerTeams: () -> Unit = {},
     onRequestClearAllChatHistory: () -> Unit = {},
@@ -292,9 +291,6 @@ fun AdminScreen(
                 },
                 onTogglePlayerStickerPack = onTogglePlayerStickerPack,
                 onSavePlayerStickerAccess = onSavePlayerStickerAccess,
-                onOverlayGameSearchChange = { enabled ->
-                    onUserOverlayGameSearchChange(currentPlayer.userId, enabled)
-                },
                 onSaveGameIdentity = { nick, server ->
                     onUpdateGameIdentity(currentPlayer.userId, currentPlayer.identityId, nick, server)
                 },
