@@ -5227,7 +5227,6 @@ class CombatOverlayService : Service() {
             x = x,
             y = y,
             serverNumber = serverNumber,
-            coordsOnNewLine = true,
         )
 
     /** Register outgoing quick command; optimistic chat row when raid room id is known. */
