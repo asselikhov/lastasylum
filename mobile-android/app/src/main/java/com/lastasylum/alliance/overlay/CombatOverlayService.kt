@@ -257,6 +257,24 @@ class CombatOverlayService : Service() {
             it.setSafeTopMinYProvider { overlayReactionSafeTopMinY() }
         }
     }
+    private val overlayRaidSharePanel by lazy {
+        OverlayRaidSharePanel(
+            context = this,
+            mainHandler = mainHandler,
+            dp = { dp(it) },
+            onSend = { commandLabel, target -> onRaidShareSend(commandLabel, target) },
+        )
+    }
+    private var raidShareReceiverRegistered = false
+    private var lastRaidShareSeq = 0L
+    private val raidShareReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            if (intent?.action != com.lastasylum.alliance.game.RaidShareBridge.ACTION_SHARE_TARGET) return
+            handleRaidShareBroadcast(
+                intent.getStringExtra(com.lastasylum.alliance.game.RaidShareBridge.EXTRA_PAYLOAD),
+            )
+        }
+    }
     private val overlayPresenceCoordinator by lazy {
         OverlayPresenceCoordinator(
             scope = serviceScope,
@@ -1344,6 +1362,7 @@ class CombatOverlayService : Service() {
         val targets = AppContainer.from(this).userSettingsPreferences.getOverlayTargetGamePackages()
         GameForegroundGate.primeTotalTimeForegroundWatch(this, targets)
         registerScreenOnReceiver()
+        registerRaidShareReceiver()
         startOverlayFcmTokenRegistration()
         serviceScope.launch {
             ensureOverlayRaidRoomReadyForSend()
@@ -4532,6 +4551,8 @@ class CombatOverlayService : Service() {
         runCatching { AppContainer.from(this).teamPresenceSocket.disconnect() }
         serviceScope.cancel()
         unregisterScreenOnReceiver()
+        unregisterRaidShareReceiver()
+        runCatching { (windowManager ?: systemWindowManager())?.let { overlayRaidSharePanel.hide(it) } }
         unregisterVoiceMicPermissionReceiver()
         if (AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
             AppContainer.from(this).authRepository.hasSession()
@@ -5228,6 +5249,110 @@ class CombatOverlayService : Service() {
             y = y,
             serverNumber = serverNumber,
         )
+
+    // region «В рейд» — шаринг цели из игрового окна выбора канала
+
+    private fun registerRaidShareReceiver() {
+        if (raidShareReceiverRegistered) return
+        val filter = IntentFilter(com.lastasylum.alliance.game.RaidShareBridge.ACTION_SHARE_TARGET)
+        runCatching {
+            // Exported: broadcast приходит из процесса игры (другой uid) с explicit setPackage.
+            ContextCompat.registerReceiver(
+                this,
+                raidShareReceiver,
+                filter,
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            raidShareReceiverRegistered = true
+        }.onFailure { e -> Log.w(TAG, "registerRaidShareReceiver failed", e) }
+    }
+
+    private fun unregisterRaidShareReceiver() {
+        if (!raidShareReceiverRegistered) return
+        runCatching { unregisterReceiver(raidShareReceiver) }
+        raidShareReceiverRegistered = false
+    }
+
+    private fun handleRaidShareBroadcast(payload: String?) {
+        val target = com.lastasylum.alliance.game.RaidShareTarget.fromJson(payload) ?: return
+        if (target.seq <= lastRaidShareSeq) return
+        lastRaidShareSeq = target.seq
+        mainHandler.post {
+            val mgr = windowManager ?: systemWindowManager() ?: return@post
+            if (target.open) {
+                if (!isOverlayPanelUserEnabled()) return@post
+                overlayRaidSharePanel.show(mgr, target)
+            } else {
+                overlayRaidSharePanel.hide(mgr)
+            }
+        }
+    }
+
+    private fun isOverlayPanelUserEnabled(): Boolean =
+        runCatching {
+            AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()
+        }.getOrDefault(true)
+
+    /** Сборка текста сообщения для комнаты «Рейд»: [префикс] [инфо о цели] [#:сервер X Y]. */
+    private fun buildRaidShareText(commandLabel: String?, target: com.lastasylum.alliance.game.RaidShareTarget): String {
+        val coords = com.lastasylum.alliance.game.MapCoordinate(
+            label = null,
+            x = target.x,
+            y = target.y,
+            serverNumber = target.serverNumber,
+        ).gameBracketText()
+        val head = raidShareMessageHead(target)
+        val parts = listOfNotNull(
+            commandLabel?.trim()?.takeIf { it.isNotEmpty() },
+            head?.trim()?.takeIf { it.isNotEmpty() },
+        )
+        return if (parts.isEmpty()) coords else parts.joinToString(" ") + " " + coords
+    }
+
+    private fun raidShareMessageHead(target: com.lastasylum.alliance.game.RaidShareTarget): String? =
+        if (target.isChest) {
+            val chest = buildString {
+                target.gradeLabel()?.let { append(it) }
+                target.stars?.let { s ->
+                    if (isNotEmpty()) append(" ")
+                    append("\u2605".repeat(s.coerceIn(1, 5)))
+                }
+                target.playerName?.takeIf { it.isNotBlank() }?.let { p ->
+                    if (isNotEmpty()) append(" ")
+                    append(p)
+                }
+            }
+            chest.takeIf { it.isNotBlank() } ?: target.name?.takeIf { it.isNotBlank() }
+        } else {
+            target.name?.takeIf { it.isNotBlank() } ?: target.playerName?.takeIf { it.isNotBlank() }
+        }
+
+    private fun onRaidShareSend(commandLabel: String?, target: com.lastasylum.alliance.game.RaidShareTarget) {
+        val text = buildRaidShareText(commandLabel, target)
+        mainHandler.post {
+            (windowManager ?: systemWindowManager())?.let { overlayRaidSharePanel.hide(it) }
+            postOptimisticOverlayRaidQuickCommand(text)
+        }
+        serviceScope.launch {
+            warmupOverlayRaidForQuickCommands()
+            val result = sendOverlayRaidQuickCommandHttp(text = text)
+            withContext(Dispatchers.Main) {
+                val msg = if (result.isSuccess) {
+                    getString(R.string.overlay_raid_share_sent)
+                } else {
+                    val cause = result.exceptionOrNull()?.message
+                    if (cause == "no_raid") {
+                        getString(R.string.overlay_raid_share_no_raid)
+                    } else {
+                        getString(R.string.overlay_raid_share_failed)
+                    }
+                }
+                runCatching { Toast.makeText(this@CombatOverlayService, msg, Toast.LENGTH_SHORT).show() }
+            }
+        }
+    }
+
+    // endregion
 
     /** Register outgoing quick command; optimistic chat row when raid room id is known. */
     private fun postOptimisticOverlayRaidQuickCommand(

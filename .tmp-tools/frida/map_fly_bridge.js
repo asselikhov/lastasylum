@@ -11,6 +11,13 @@ const PROBE_FILE = '/data/data/com.phs.global/files/squadrelay_probe.json';
 const LOG = '/data/data/com.phs.global/files/la_map_fly_bridge.log';
 const LOG_SDCARD = '/sdcard/Download/la_map_fly_bridge.log';
 
+// "В рейд" share bridge: Lua hook writes target payload to a game-private file on
+// share-panel open/close; this script polls it and broadcasts to the SquadRelay app.
+const SHARE_FILE = '/data/data/com.phs.global/files/squadrelay_share.json';
+const SHARE_OK_FILE = '/data/data/com.phs.global/files/squadrelay_share_hook.ok';
+const SHARE_ACTION = 'com.lastasylum.alliance.action.SHARE_TARGET';
+const SHARE_APP_PKG = 'com.lastasylum.alliance';
+
 const RVA = {
   LuaManager_FormatKXY: 0x2518350,
   LuaManager_SimpleInstrSend: 0x25148d8,
@@ -1191,6 +1198,114 @@ function logLibStatusOnce() {
   }
 }
 
+// Lua hook: wraps UIChatSharePanel OnBaseEnter/OnBaseExit to persist the share
+// target (paramTable + chest grade/stars from Config.SecretTask) to a game-private file.
+const SHARE_HOOK_LUA = [
+  "pcall(function()",
+  "local pl=package.loaded",
+  "local pcls=pl['Eyu.Logic.UI.Panel.Chat.UIChatSharePanel']",
+  "if not pcls then return end",
+  // Dispatch resolves panel methods via the parent table (idx), not pcls itself.
+  "local idx=(getmetatable(pcls) or {}).__index or pcls",
+  "local F='/data/data/com.phs.global/files/squadrelay_share.json'",
+  "local OK='/data/data/com.phs.global/files/squadrelay_share_hook.ok'",
+  "local function esc(s) return (string.gsub(tostring(s),'\"',\"'\")) end",
+  "local function wr(t) local f=io.open(F,'w') if f then f:write(t) f:close() end end",
+  // OnEnter/OnExit fire for every panel; the shareType+withAll signature gates to the share panel.
+  "local function isShare(pt) return type(pt)=='table' and pt.shareType~=nil and pt.withAll~=nil end",
+  "if not _G.__sr_share_inst then",
+  "_G.__sr_seq=_G.__sr_seq or 0",
+  "local oe=idx.OnEnter idx.__sr_oe=oe",
+  "idx.OnEnter=function(self,...) local r=oe(self,...) pcall(function()",
+  "local pt=self.paramTable",
+  "if isShare(pt) then",
+  "_G.__sr_seq=_G.__sr_seq+1",
+  "local p={}",
+  "p[#p+1]='\"seq\":'.._G.__sr_seq",
+  "p[#p+1]='\"open\":true'",
+  "p[#p+1]='\"x\":'..tostring(pt.x or 0)",
+  "p[#p+1]='\"y\":'..tostring(pt.y or 0)",
+  "p[#p+1]='\"sid\":'..tostring(pt.sid or 0)",
+  "p[#p+1]='\"shareType\":'..tostring(pt.shareType or 0)",
+  "if pt.name then p[#p+1]='\"name\":\"'..esc(pt.name)..'\"' end",
+  "if pt.playerName then p[#p+1]='\"playerName\":\"'..esc(pt.playerName)..'\"' end",
+  "if pt.secretTaskId then p[#p+1]='\"secretTaskId\":'..tostring(pt.secretTaskId)",
+  "local C=_G.Config local st=C and C.SecretTask and C.SecretTask[pt.secretTaskId]",
+  "if type(st)=='table' then",
+  "if st.quality then p[#p+1]='\"grade\":'..tostring(st.quality) end",
+  "if st.secretLevel then p[#p+1]='\"stars\":'..tostring(st.secretLevel) end",
+  "end end",
+  "wr('{'..table.concat(p,',')..'}')",
+  "end end) return r end",
+  "local ox=idx.OnExit idx.__sr_ox=ox",
+  "idx.OnExit=function(self,...) pcall(function() if isShare(self.paramTable) then _G.__sr_seq=_G.__sr_seq+1 wr('{\"seq\":'.._G.__sr_seq..',\"open\":false}') end end) return ox(self,...) end",
+  "_G.__sr_share_inst=true",
+  "end",
+  "local g=io.open(OK,'w') if g then g:write('ok') g:close() end",
+  "end)",
+].join(' ');
+
+let shareHookOk = false;
+let lastShareInstallAt = 0;
+let lastShareText = '';
+
+function maybeInstallShareHook() {
+  if (shareHookOk) return;
+  const ok = readFileUtf8(SHARE_OK_FILE);
+  if (ok && ok.indexOf('ok') >= 0) {
+    shareHookOk = true;
+    log('share hook installed (confirmed)');
+    return;
+  }
+  if (!liveLuaEnv || liveLuaEnv.isNull()) return;
+  const now = Date.now();
+  if (now - lastShareInstallAt < 3000) return;
+  lastShareInstallAt = now;
+  runLua(SHARE_HOOK_LUA);
+}
+
+function sendShareBroadcast(payload) {
+  if (typeof Java === 'undefined' || !Java.available) {
+    log('share broadcast skipped: Java bridge unavailable');
+    return;
+  }
+  try {
+    Java.perform(function () {
+      const ActivityThread = Java.use('android.app.ActivityThread');
+      const app = ActivityThread.currentApplication();
+      if (app === null) {
+        log('share broadcast skipped: no currentApplication');
+        return;
+      }
+      const ctx = app.getApplicationContext();
+      const Intent = Java.use('android.content.Intent');
+      const intent = Intent.$new(SHARE_ACTION);
+      intent.setPackage(SHARE_APP_PKG);
+      intent.putExtra.overload('java.lang.String', 'java.lang.String').call(intent, 'payload', payload);
+      intent.addFlags(0x10000000); // FLAG_RECEIVER_FOREGROUND
+      ctx.sendBroadcast(intent);
+      log('share broadcast -> ' + SHARE_APP_PKG);
+    });
+  } catch (e) {
+    log('share broadcast failed: ' + e);
+  }
+}
+
+function pollShareFile() {
+  try {
+    const text = readFileUtf8(SHARE_FILE);
+    if (!text || !text.trim() || text === lastShareText) return;
+    lastShareText = text;
+    log('share payload: ' + text.trim());
+    sendShareBroadcast(text.trim());
+  } catch (e) {
+    const msg = String(e);
+    if (!msg.includes('No such file') && !msg.includes('not found')) {
+      log('share poll error: ' + e);
+    }
+  }
+}
+
 setImmediate(function () {
   let proc = '?';
   try {
@@ -1198,11 +1313,17 @@ setImmediate(function () {
   } catch (e) {}
   log('bridge started pid=' + Process.id + ' proc=' + proc);
   clearTriggerFiles();
+  writeFileEmpty(SHARE_FILE);
+  writeFileEmpty(SHARE_OK_FILE);
+  shareHookOk = false;
+  lastShareText = '';
   mapsDiagOnce();
   setInterval(function () {
     logLibStatusOnce();
     pollTriggerFile();
     pollProbeFile();
+    maybeInstallShareHook();
+    pollShareFile();
     if (libBase() && pendingFlies.length) scheduleDrainPendingFlies();
   }, 400);
 });

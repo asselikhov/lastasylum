@@ -853,6 +853,12 @@
     <string name="overlay_cmd_column_storm">Штурм</string>
     <string name="overlay_cmd_column_reinf">Подкрепление</string>
     <string name="overlay_cmd_column_reactions">Реакции</string>
+    <string name="overlay_raid_share_title">В рейд</string>
+    <string name="overlay_raid_share_send">В рейд</string>
+    <string name="overlay_raid_share_close_cd">Закрыть</string>
+    <string name="overlay_raid_share_sent">Отправлено в «Рейд»</string>
+    <string name="overlay_raid_share_failed">Не удалось отправить в «Рейд»</string>
+    <string name="overlay_raid_share_no_raid">Откройте чат и подключите комнату «Рейд»</string>
     <string name="overlay_reactions_recipient_title">Кому отправить</string>
     <string name="overlay_reactions_back_cd">Назад к списку реакций</string>
     <string name="overlay_reactions_loading">Загрузка списка…</string>
