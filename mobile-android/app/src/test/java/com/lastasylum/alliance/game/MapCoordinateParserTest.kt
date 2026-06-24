@@ -147,4 +147,41 @@ class MapCoordinateParserTest {
             MapCoordinateFormatter.format(label = "Атака", targetName = null, x = 1, y = 2),
         )
     }
+
+    @Test
+    fun formatter_labelWithServer_coordsOnNewLine() {
+        assertEquals(
+            "Атака по игроку\n[#:109 X:1 Y:2]",
+            MapCoordinateFormatter.format(
+                label = "Атака по игроку",
+                targetName = null,
+                x = 1,
+                y = 2,
+                serverNumber = 109,
+                coordsOnNewLine = true,
+            ),
+        )
+    }
+
+    @Test
+    fun formatter_coordsOnNewLine_stillParsesLabelAndCoords() {
+        val text = MapCoordinateFormatter.format(
+            label = "Штурм по городу",
+            targetName = null,
+            x = 485,
+            y = 495,
+            serverNumber = 109,
+            coordsOnNewLine = true,
+        )
+        val c = MapCoordinateParser.parse(text)
+        assertNotNull(c)
+        assertEquals(109, c!!.serverNumber)
+        assertEquals(485, c.x)
+        assertEquals(495, c.y)
+        assertEquals("Штурм по городу", c.label)
+
+        val range = MapCoordinateParser.coordinateRangeIn(text)
+        assertNotNull(range)
+        assertEquals("[#:109 X:485 Y:495]", text.substring(range!!.first, range.last + 1))
+    }
 }

@@ -129,14 +129,16 @@ object MapCoordinateFormatter {
         x: Int,
         y: Int,
         serverNumber: Int? = null,
+        coordsOnNewLine: Boolean = false,
     ): String {
         val coords = MapCoordinate(null, x, y, serverNumber).let { c ->
             if (serverNumber != null) c.gameBracketText() else c.coordinateSuffix()
         }
         val name = targetName?.trim()?.takeIf { it.isNotEmpty() }
+        val sep = if (coordsOnNewLine) "\n" else " "
         return when {
-            name != null -> "$name $coords"
-            !label.isNullOrBlank() -> "${label.trim()} $coords"
+            name != null -> "$name$sep$coords"
+            !label.isNullOrBlank() -> "${label.trim()}$sep$coords"
             else -> coords
         }
     }
