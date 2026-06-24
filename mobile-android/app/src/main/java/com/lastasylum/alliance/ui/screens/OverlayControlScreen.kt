@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.game.GameDeepLinkNavigator
+import com.lastasylum.alliance.game.GameMapNavigator
+import com.lastasylum.alliance.game.GameMapPatchStatus
 import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.GameForegroundGate
@@ -75,6 +79,14 @@ fun OverlayControlScreen() {
     var enabledGameEventsCount by remember {
         mutableIntStateOf(countEnabledGameEventPushes(prefs))
     }
+    var mapPatchStatus by remember {
+        mutableStateOf(
+            GameMapPatchStatus.read(
+                appContext,
+                GameDeepLinkNavigator.targetPackages(appContext),
+            ),
+        )
+    }
     val undetectedGamePackages = remember(detectedGamePackages) {
         detectedGamePackages.filter { !it.alreadyInFilter }
     }
@@ -87,6 +99,33 @@ fun OverlayControlScreen() {
     fun refreshGameEventsSummary() {
         enabledGameEventsCount = countEnabledGameEventPushes(prefs)
     }
+
+    fun refreshMapPatchStatus() {
+        mapPatchStatus = GameMapPatchStatus.read(
+            appContext,
+            GameDeepLinkNavigator.targetPackages(appContext),
+        )
+    }
+
+    @Composable
+    fun mapPatchStatusText(status: GameMapPatchStatus.Status): String =
+        when (status.state) {
+            GameMapPatchStatus.State.PATCH_READY ->
+                stringResource(
+                    R.string.map_patch_status_ready,
+                    status.gameVersionName ?: status.supportedGameVersion,
+                )
+            GameMapPatchStatus.State.PATCH_NOT_INSTALLED ->
+                stringResource(R.string.map_patch_status_not_installed)
+            GameMapPatchStatus.State.PATCH_OUTDATED ->
+                stringResource(
+                    R.string.map_patch_status_outdated,
+                    status.gameVersionName.orEmpty().ifBlank { "?" },
+                    status.patchForGameVersion ?: status.supportedGameVersion,
+                )
+            GameMapPatchStatus.State.GAME_NOT_FOUND ->
+                stringResource(R.string.map_patch_status_game_not_found)
+        }
 
     fun overlayOk(): Boolean = OverlayPermissions.canDrawOverlays(context)
 
@@ -114,6 +153,7 @@ fun OverlayControlScreen() {
                 overlayEnabled = prefs.isOverlayPanelEnabled()
                 refreshOverlayRuntime()
                 refreshGameEventsSummary()
+                refreshMapPatchStatus()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -135,6 +175,11 @@ fun OverlayControlScreen() {
             squadRelayPackage = context.packageName,
             configuredCsv = targetPkg,
         )
+        refreshMapPatchStatus()
+    }
+
+    LaunchedEffect(Unit) {
+        refreshMapPatchStatus()
     }
 
     if (showGameEventsDialog) {
@@ -307,6 +352,73 @@ fun OverlayControlScreen() {
                         bottom = SquadRelayDimens.listRowVerticalPadding,
                     ),
                 )
+            }
+        }
+
+        item {
+            SettingsSectionLabel(stringResource(R.string.settings_section_map_patch))
+            SettingsPanelCard {
+                Column(
+                    modifier = Modifier.padding(
+                        horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                        vertical = SquadRelayDimens.listRowVerticalPadding,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = mapPatchStatusText(mapPatchStatus),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = when (mapPatchStatus.state) {
+                            GameMapPatchStatus.State.PATCH_READY ->
+                                MaterialTheme.colorScheme.primary
+                            GameMapPatchStatus.State.PATCH_OUTDATED ->
+                                MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.map_patch_supported_version,
+                            mapPatchStatus.supportedGameVersion,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = stringResource(R.string.map_patch_install_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                    )
+                    TextButton(
+                        onClick = {
+                            if (!mapPatchStatus.isAutoFlyAvailable) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(
+                                        R.string.map_patch_test_fly_disabled,
+                                        mapPatchStatus.supportedGameVersion,
+                                    ),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                                return@TextButton
+                            }
+                            GameMapNavigator.open(
+                                context = context,
+                                x = 505,
+                                y = 495,
+                                serverNumber = 109,
+                            )
+                            Toast.makeText(
+                                context,
+                                R.string.map_patch_test_fly_toast,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                        enabled = mapPatchStatus.state != GameMapPatchStatus.State.GAME_NOT_FOUND,
+                    ) {
+                        Text(stringResource(R.string.map_patch_test_fly))
+                    }
+                }
             }
         }
 

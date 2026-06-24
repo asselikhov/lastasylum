@@ -104,6 +104,8 @@ fun gitCommitCount(): Int = runCatching {
 val squadRelayGitCommit = gitCommitShort()
 /** Публичное имя версии (APK, релизы); без -debug/-benchmark — это только в UI приложения. */
 val squadRelayVersionName = "0.1.0"
+/** Game client version the bundled map bridge is built for (see .tmp-tools/patch-frida-gadget.ps1). */
+val squadRelayMapBridgeGameVersion = "1.0.81"
 val squadRelayVersionCode = System.getenv("SQUADRELAY_VERSION_CODE")?.trim()?.toIntOrNull()
     ?.coerceAtLeast(1)
     ?: gitCommitCount()
@@ -130,6 +132,11 @@ android {
         }
         buildConfigField("long", "BUILD_TIME_MS", "${System.currentTimeMillis()}L")
         buildConfigField("String", "GIT_COMMIT", "\"$squadRelayGitCommit\"")
+        buildConfigField(
+            "String",
+            "MAP_BRIDGE_GAME_VERSION",
+            "\"$squadRelayMapBridgeGameVersion\"",
+        )
         buildConfigField(
             "String",
             "FIREBASE_PROJECT_ID",

@@ -223,6 +223,16 @@
     <string name="settings_section_game_filter">Фильтр игры</string>
     <string name="settings_section_overlay">Оверлей</string>
     <string name="settings_section_notifications">Уведомления</string>
+    <string name="settings_section_map_patch">Автопереход по координатам</string>
+    <string name="map_patch_status_ready">Патч установлен — автопереход работает (игра %1$s)</string>
+    <string name="map_patch_status_not_installed">Патч не установлен — только открытие карты без полёта к точке</string>
+    <string name="map_patch_status_outdated">Игра %1$s, патч для %2$s — нужен новый патч</string>
+    <string name="map_patch_status_game_not_found">Игра не найдена — укажите пакет в фильтре выше</string>
+    <string name="map_patch_supported_version">SquadRelay поддерживает патч для версии игры %1$s</string>
+    <string name="map_patch_install_hint">Патч ставится один раз с ПК: скрипт patch-frida-gadget.ps1 (переустановка игры, данные сотрутся). После обновления игры в Play — патч заново.</string>
+    <string name="map_patch_test_fly">Проверить переход на карте</string>
+    <string name="map_patch_test_fly_toast">Команда отправлена — смотрите карту в игре</string>
+    <string name="map_patch_test_fly_disabled">Сначала установите патч для версии %1$s</string>
     <string name="settings_game_events_summary">%1$d из %2$d включено</string>
     <string name="settings_game_events_dialog_close">Закрыть</string>
     <string name="overlay_title">Оверлей</string>
@@ -1007,7 +1017,7 @@
     <string name="overlay_coord_dialog_subtitle">Введите координаты цели</string>
     <string name="map_coord_go_to_map">На карте</string>
     <string name="map_coord_opened_game">Открыта игра</string>
-    <string name="map_coord_copied_fallback">Координаты в буфере — вставьте в поиск на карте</string>
+    <string name="map_coord_fly_failed">Не удалось открыть карту — нужна игра с мостом SquadRelay</string>
     <string name="map_coord_link_cd">Перейти к координатам на карте</string>
     <string name="chat_action_go_to_map">На карте</string>
     <string name="share_coord_sent_raid">Координаты отправлены в «Рейд»</string>

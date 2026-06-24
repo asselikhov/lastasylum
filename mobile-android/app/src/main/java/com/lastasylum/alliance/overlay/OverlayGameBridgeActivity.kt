@@ -14,7 +14,7 @@ import com.lastasylum.alliance.game.GameDeepLinkNavigator
 /**
  * NoDisplay relay: copy clipboard and fire map/search deep links without visible UI.
  * Must [finish] in [onCreate] before resume ([Theme.NoDisplay] requirement).
- * Map burst is scheduled by [GameDeepLinkNavigator.openMapCoordinates] after launch returns.
+ * Map foreground is scheduled by [GameDeepLinkNavigator.openMapAtCoordinates] after launch returns.
  */
 class OverlayGameBridgeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

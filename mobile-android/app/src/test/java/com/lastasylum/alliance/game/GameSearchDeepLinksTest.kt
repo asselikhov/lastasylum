@@ -23,9 +23,9 @@ class GameSearchDeepLinksTest {
     @Test
     fun mapUrlsForCoordinates_pathFirstWithoutAmpersand() {
         val urls = GameSearchDeepLinks.mapUrlsForCoordinates(100, 200, serverNumber = 3)
-        assertEquals("globalphslink://map/100/200/3", urls.first())
-        assertTrue(urls.contains("globalphslink://world"))
+        assertEquals("globalphslink://world/3", urls.first())
         assertTrue(urls.contains("globalphslink://map"))
+        assertTrue(urls.contains("globalphslink://coordinate/100/200/3"))
         assertFalse(urls.any { it.contains("&") })
     }
 
@@ -34,8 +34,11 @@ class GameSearchDeepLinksTest {
         val urls = GameSearchDeepLinks.mapFlyBurstUrls(505, 495, serverNumber = 109)
         assertEquals(
             listOf(
+                "globalphslink://world/109",
+                "globalphslink://map?x=505",
+                "globalphslink://map?y=495",
                 "globalphslink://map/505/495/109",
-                "globalphslink://world",
+                "globalphslink://coordinate/505/495/109",
                 "globalphslink://map",
             ),
             urls,

@@ -589,6 +589,9 @@ class CombatOverlayService : Service() {
                     prevAlpha = view.alpha,
                 ),
             )
+            if (view.visibility != View.GONE) {
+                view.visibility = View.GONE
+            }
             val with = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
             if (params.flags != with) {
                 params.flags = with

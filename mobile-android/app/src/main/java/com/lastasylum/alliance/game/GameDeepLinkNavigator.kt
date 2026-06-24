@@ -5,6 +5,7 @@ import android.app.ActivityOptions
 import android.app.PendingIntent
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -22,14 +23,12 @@ import com.lastasylum.alliance.overlay.OverlayGameBridgeActivity
 /**
  * Brings the target game to foreground and fires [globalphslink] VIEW intents.
  *
- * Map fly (flyWorldLua): clip `[#:server X:x Y:y]` / `X:x Y:y` + path deep link.
- * External apps cannot rely on the game reading cross-app clipboard alone — attach
- * [ClipData] and [Intent.EXTRA_TEXT] on every VIEW intent as well.
+ * Map coordinate fly is handled in-process by [GameMapFlyBridge] + Frida bridge;
+ * deep links here only raise the game / open the world map shell.
  */
 object GameDeepLinkNavigator {
     private const val TAG = "GameDeepLinkNavigator"
-    internal const val CLIPBOARD_SETTLE_MS = 900L
-    private const val MAP_BURST_STEP_MS = 500L
+    internal const val CLIPBOARD_SETTLE_MS = 1200L
     private const val GAME_ACTIVITY = "com.games37.sdk.AtlasPluginDemoActivity"
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -107,45 +106,75 @@ object GameDeepLinkNavigator {
         return false
     }
 
+    /** Hide overlay and raise the game before in-process map fly. */
+    fun prepareBridgeFly(context: Context) {
+        CombatOverlayService.prepareForGameDeepLink()
+        resumeTargetGame(context)
+    }
+
+    fun finishBridgeFly(delayMs: Long = 900L) {
+        mainHandler.postDelayed({ CombatOverlayService.finishGameDeepLink() }, delayMs)
+    }
+
+    /** Bring patched game activity to foreground (overlay / background safe). */
+    fun resumeTargetGame(context: Context): Boolean {
+        val appContext = context.applicationContext
+        for (pkg in targetPackages(appContext)) {
+            val intent = Intent().apply {
+                component = ComponentName(pkg, GAME_ACTIVITY)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
+                )
+            }
+            if (startActivityAllowBackground(appContext, intent)) {
+                logInfo("resumed game pkg=$pkg")
+                return true
+            }
+        }
+        return false
+    }
+
     /**
-     * Map coordinate navigation: clipboard + staggered deep links.
-     * When overlay is active, touch is passthrough so the game can read clip / handle intent.
+     * Bring game to foreground, copy in-game coord format to clipboard, fire map deep links.
+     * Auto-fly to exact tile requires patched game + [GameMapFlyBridge]; stock build may only open the map.
      */
-    fun openMapCoordinates(
+    fun openMapAtCoordinates(
         context: Context,
-        clipLabel: String,
-        clipText: String,
-        bracketClipText: String,
         x: Int,
         y: Int,
         serverNumber: Int?,
         onLaunched: ((Boolean) -> Unit)? = null,
     ) {
         val appContext = context.applicationContext
-        val clipPayloads = clipPayloads(bracketClipText, clipText)
-        copyClipPayloads(appContext, clipLabel, clipPayloads)
-        val burstUris = GameSearchDeepLinks.mapFlyBurstUrls(x, y, serverNumber)
+        val resolvedServer = serverNumber
+            ?: AppContainer.from(appContext).usersRepository.peekMyProfile()?.activeServerNumber
+            ?: AppContainer.from(appContext).usersRepository.peekMyProfileDisk()?.activeServerNumber
+        val coord = MapCoordinate(null, x, y, resolvedServer)
+        val bracketClip = coord.gameBracketText()
+        val xyClip = coord.mapClipboardText()
+        val uris = GameSearchDeepLinks.mapFlyBurstUrls(x, y, resolvedServer)
         logInfo(
-            "map burst scheduled clips=$clipPayloads uris=$burstUris " +
-                "overlay=${CombatOverlayService.isOverlayServiceRunning()}",
+            "map fly scheduled uris=$uris bracket=$bracketClip overlay=${CombatOverlayService.isOverlayServiceRunning()}",
         )
 
         if (needsTrampoline(context)) {
             pendingMapBurstCallback = onLaunched
             val relayStarted = OverlayGameBridgeActivity.launch(
                 context = appContext,
-                clipLabel = clipLabel,
-                clipText = primaryClipText(bracketClipText, clipText),
-                bracketClipText = bracketClipText,
-                uris = burstUris,
+                clipLabel = "map_coord",
+                clipText = xyClip,
+                uris = uris,
                 mapBurst = true,
+                bracketClipText = bracketClip,
             )
             if (relayStarted) {
-                scheduleMapFlyBurst(
+                scheduleMapBurst(
                     context = appContext,
-                    clipLabel = clipLabel,
-                    clipPayloads = clipPayloads,
-                    uris = burstUris,
+                    bracketClip = bracketClip,
+                    xyClip = xyClip,
+                    uris = uris,
                     onLaunched = pendingMapBurstCallback.also { pendingMapBurstCallback = null },
                 )
                 return
@@ -154,46 +183,43 @@ object GameDeepLinkNavigator {
             logFailure("map relay launch failed; running burst from service")
         }
 
-        scheduleMapFlyBurst(
+        scheduleMapBurst(
             context = context,
-            clipLabel = clipLabel,
-            clipPayloads = clipPayloads,
-            uris = burstUris,
+            bracketClip = bracketClip,
+            xyClip = xyClip,
+            uris = uris,
             onLaunched = onLaunched,
         )
     }
 
-    private fun scheduleMapFlyBurst(
+    private fun scheduleMapBurst(
         context: Context,
-        clipLabel: String,
-        clipPayloads: List<String>,
+        bracketClip: String,
+        xyClip: String,
         uris: List<String>,
         onLaunched: ((Boolean) -> Unit)?,
     ) {
-        val appContext = context.applicationContext
         val launchContext = CombatOverlayService.overlayServiceForDeepLinks() ?: context
-        var anyLaunched = false
-        val steps = uris.size.coerceAtLeast(1)
+        val clipPayloads = clipPayloads(bracketClip, xyClip)
+        var launched = false
 
         CombatOverlayService.prepareForGameDeepLink()
+        copyClipPayloads(launchContext.applicationContext, "map_coord", clipPayloads)
 
         mainHandler.postDelayed({
-            copyClipPayloads(appContext, clipLabel, clipPayloads)
-            uris.forEachIndexed { index, uri ->
-                mainHandler.postDelayed({
-                    copyClipPayloads(appContext, clipLabel, clipPayloads)
-                    if (openDeepLinksToGame(launchContext, listOf(uri), clipPayloads)) {
-                        anyLaunched = true
-                        logInfo("map burst step $index ok uri=$uri")
-                    } else {
-                        logFailure("map burst step $index failed uri=$uri")
-                    }
-                }, index * MAP_BURST_STEP_MS)
+            copyClipPayloads(launchContext.applicationContext, "map_coord", clipPayloads)
+            for (uri in uris) {
+                if (openDeepLinksToGame(launchContext, listOf(uri), clipPayloads)) {
+                    launched = true
+                    logInfo("map burst ok uri=$uri")
+                    break
+                }
+                logFailure("map burst failed uri=$uri")
             }
             mainHandler.postDelayed({
                 CombatOverlayService.finishGameDeepLink()
-                onLaunched?.invoke(anyLaunched)
-            }, MAP_BURST_STEP_MS * steps + 80L)
+                onLaunched?.invoke(launched)
+            }, 120L)
         }, CLIPBOARD_SETTLE_MS)
     }
 
@@ -301,15 +327,18 @@ object GameDeepLinkNavigator {
 
     private fun tryStartActivity(context: Context, intent: Intent, uriForLog: String): Boolean {
         if (context !is Activity) {
+            val balStarted = runCatching {
+                val options = backgroundActivityStartOptions(context) ?: return@runCatching false
+                context.startActivity(intent, options)
+                logDebug("started deep link (BAL): $uriForLog via ${context.javaClass.simpleName}")
+                true
+            }.getOrDefault(false)
+            if (balStarted) return true
             if (tryStartViaPendingIntent(context, intent, uriForLog)) return true
+            return false
         }
         return runCatching {
-            val options = backgroundActivityStartOptions(context)
-            if (options != null) {
-                context.startActivity(intent, options)
-            } else {
-                context.startActivity(intent)
-            }
+            context.startActivity(intent)
             logDebug("started deep link: $uriForLog via ${context.javaClass.simpleName}")
             true
         }.getOrElse { error ->

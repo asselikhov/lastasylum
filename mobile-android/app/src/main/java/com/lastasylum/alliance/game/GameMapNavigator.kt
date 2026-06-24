@@ -9,40 +9,48 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
 
 /**
- * Opens the configured target game at map coordinates: clipboard, delay, deep link.
+ * Opens the target game and flies the map to coordinates via in-process bridge broadcast.
  */
 object GameMapNavigator {
     private const val TAG = "GameMapNavigator"
 
     fun open(context: Context, x: Int, y: Int, serverNumber: Int? = null) {
-        val coord = MapCoordinate(null, x, y, serverNumber)
-        val clipText = coord.mapClipboardText()
-        val bracketClipText = coord.gameBracketText()
+        val overlayActive = CombatOverlayService.isOverlayServiceRunning()
         logDebug(
-            "open x=$x y=$y server=$serverNumber clip=$clipText bracket=$bracketClipText " +
-                "overlay=${CombatOverlayService.isOverlayServiceRunning()}",
+            "open x=$x y=$y server=$serverNumber overlay=$overlayActive",
         )
-        GameDeepLinkNavigator.openMapCoordinates(
+        val patchReady = GameMapPatchStatus.read(
+            context,
+            GameDeepLinkNavigator.targetPackages(context),
+        ).isAutoFlyAvailable
+        val bridgeSent = if (patchReady) {
+            GameMapFlyBridge.send(context, x, y, serverNumber)
+        } else {
+            logDebug("patch not ready; deep link fallback only")
+            false
+        }
+        if (bridgeSent && overlayActive) {
+            logDebug("bridge sent while overlay active; skip deep link burst")
+            return
+        }
+        if (!patchReady && overlayActive) {
+            logDebug("patch not ready; deep link fallback")
+        }
+        GameDeepLinkNavigator.openMapAtCoordinates(
             context = context,
-            clipLabel = "map_coordinates",
-            clipText = clipText,
-            bracketClipText = bracketClipText,
             x = x,
             y = y,
             serverNumber = serverNumber,
-        ) { deepLinkLaunched ->
+        ) { gameForegrounded ->
             if (CombatOverlayService.isOverlayServiceRunning()) {
-                if (!deepLinkLaunched) {
-                    toast(context, R.string.map_coord_copied_fallback)
+                if (!gameForegrounded) {
+                    toast(context, R.string.map_coord_fly_failed)
                 }
-                return@openMapCoordinates
+                return@openMapAtCoordinates
             }
-            val messageRes = if (deepLinkLaunched) {
-                R.string.map_coord_opened_game
-            } else {
-                R.string.map_coord_copied_fallback
+            if (!gameForegrounded) {
+                toast(context, R.string.map_coord_fly_failed)
             }
-            toast(context, messageRes)
         }
     }
 

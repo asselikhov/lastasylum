@@ -65,18 +65,32 @@ object GameSearchDeepLinks {
     }
 
     fun mapUrlsForCoordinates(x: Int, y: Int, serverNumber: Int?): List<String> =
-        mapFlyBurstUrls(x, y, serverNumber) + listOf(
+        mapForegroundUrls(x, y, serverNumber) + listOf(
             "globalphslink://coordinate/$x/$y${serverPath(serverNumber)}",
             "globalphslink://map?xy=$x,$y",
             "globalphslink://world?xy=$x,$y",
         )
 
-    /** Staggered map fly: path coords first, then world/map triggers (Frida RE, v1.0.77). */
+    /** Single intent to raise the game and open world map (fly is via [GameMapFlyBridge]). */
+    fun mapForegroundUrls(x: Int, y: Int, serverNumber: Int?): List<String> {
+        val s = serverPath(serverNumber)
+        val world = if (s.isNotEmpty()) "globalphslink://world$s" else "globalphslink://world"
+        return listOf(
+            world,
+            "globalphslink://map",
+        )
+    }
+
+    /** Legacy staggered deep links (clipboard burst); kept for reference / tests. */
     fun mapFlyBurstUrls(x: Int, y: Int, serverNumber: Int?): List<String> {
         val s = serverPath(serverNumber)
+        val world = if (s.isNotEmpty()) "globalphslink://world$s" else "globalphslink://world"
         return listOf(
+            world,
+            "globalphslink://map?x=$x",
+            "globalphslink://map?y=$y",
             "globalphslink://map/$x/$y$s",
-            "globalphslink://world",
+            "globalphslink://coordinate/$x/$y$s",
             "globalphslink://map",
         )
     }
