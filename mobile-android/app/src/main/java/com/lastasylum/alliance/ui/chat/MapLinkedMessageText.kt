@@ -18,11 +18,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.game.GameMapNavigator
 import com.lastasylum.alliance.game.MapCoordinateParser
@@ -97,7 +100,7 @@ fun MapLinkedMessageText(
     val annotated = remember(text, coordRange, linkColor) {
         buildAnnotatedString {
             if (coordRange.first > 0) {
-                append(text.substring(0, coordRange.first))
+                appendWithGradeColors(text.substring(0, coordRange.first))
             }
             withLink(
                 LinkAnnotation.Clickable(
@@ -115,7 +118,7 @@ fun MapLinkedMessageText(
             }
             val after = coordRange.last + 1
             if (after < text.length) {
-                append(text.substring(after))
+                appendWithGradeColors(text.substring(after))
             }
         }
     }
@@ -156,3 +159,31 @@ fun MapLinkedMessageText(
 }
 
 private const val MAP_COORD_LINK_TAG = "map_coord"
+
+/** Грейды сундуков с цветом: SR — синий, SSR — фиолетовый, UR — золотой. */
+private val GRADE_BLUE = Color(0xFF60A5FA)
+private val GRADE_PURPLE = Color(0xFFC084FC)
+private val GRADE_GOLD = Color(0xFFFBBF24)
+
+// Грейд (SSR раньше SR в альтернации) + опциональные звёзды «★».
+private val GRADE_REGEX = Regex("(?<![A-Za-z])(SSR|SR|UR)(\\s*\u2605+)?")
+
+private fun gradeColor(token: String): Color = when (token) {
+    "SR" -> GRADE_BLUE
+    "SSR" -> GRADE_PURPLE
+    "UR" -> GRADE_GOLD
+    else -> GRADE_BLUE
+}
+
+/** Добавляет текст, подсвечивая токены грейда сундука (SR/SSR/UR) и идущие за ними звёзды. */
+private fun AnnotatedString.Builder.appendWithGradeColors(segment: String) {
+    var last = 0
+    for (m in GRADE_REGEX.findAll(segment)) {
+        if (m.range.first > last) append(segment.substring(last, m.range.first))
+        withStyle(SpanStyle(color = gradeColor(m.groupValues[1]), fontWeight = FontWeight.Bold)) {
+            append(segment.substring(m.range.first, m.range.last + 1))
+        }
+        last = m.range.last + 1
+    }
+    if (last < segment.length) append(segment.substring(last))
+}

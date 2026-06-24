@@ -24,8 +24,12 @@ data class RaidShareTarget(
     val playerName: String?,
     /** Категория из игры: player / truck / SlgMonsterInfo / ResourceInfo / SlgRallyInfo / MechCity / … */
     val cat: String?,
-    /** Уровень объекта (монстр/ресурс/ралли), если есть. */
+    /** Уровень объекта (монстр/ресурс/ралли/город игрока), если есть. */
     val lv: Int?,
+    /** Мощь игрока (город игрока), если есть. */
+    val power: Long?,
+    /** Количество поверженных (killEnemyCount, город игрока), если есть. */
+    val kills: Long?,
     val secretTaskId: Int?,
     /** Грейд сундука: 3=SR, 4=SSR, 5=UR. */
     val grade: Int?,
@@ -43,29 +47,18 @@ data class RaidShareTarget(
     /** SR / SSR / UR по [qualityType] (конвой), либо null. */
     fun qualityLabel(): String? = qualityToLabel(qualityType)
 
-    /** Эмодзи-иконка категории для ленты чата. */
-    fun categoryEmoji(): String = when {
-        isChest -> "\uD83C\uDF81" // 🎁
-        isTruck -> "\uD83D\uDE9A" // 🚚
-        cat == "player" -> "\uD83C\uDFF0" // 🏰
-        cat == "SlgMonsterInfo" -> "\uD83D\uDC79" // 👹
-        cat == "ResourceInfo" -> "\uD83D\uDCE6" // 📦
-        cat == "SlgRallyInfo" -> "\uD83D\uDC80" // 💀
-        cat == "MechCity" -> "\uD83E\uDD16" // 🤖
-        cat == "ActivityTempleBattleBuild" -> "\uD83C\uDFDB\uFE0F" // 🏛
-        else -> "\uD83D\uDCCD" // 📍
+    /**
+     * Название цели для первой строки (рядом с координатами): тег альянса + ник игрока,
+     * либо `Сундук` / `Конвой` / имя монстра-ресурса. Без уровня/мощи и без координат.
+     */
+    fun titleLine(): String = when {
+        isChest -> "\u0421\u0443\u043D\u0434\u0443\u043A" // Сундук
+        isTruck -> "\u041A\u043E\u043D\u0432\u043E\u0439" // Конвой
+        else -> cleanGameText(name) ?: cleanGameText(playerName) ?: "\u0426\u0435\u043B\u044C" // Цель
     }
 
-    /**
-     * Богатый однострочный заголовок цели: `🎁 Сундук · UR ★★★ · Elenika29`,
-     * `👹 Золотой вор · ур.5`, `🏰 [OBZH] 6apc`. Без координат и без префикса команды.
-     */
-    fun displayHeadline(): String {
-        val title = when {
-            isChest -> "\u0421\u0443\u043D\u0434\u0443\u043A" // Сундук
-            isTruck -> "\u041A\u043E\u043D\u0432\u043E\u0439" // Конвой
-            else -> cleanGameText(name) ?: cleanGameText(playerName) ?: "\u0426\u0435\u043B\u044C" // Цель
-        }
+    /** Доп. сведения для второй строки: уровень, мощь, поверженные, грейд/звёзды сундука и т.п. */
+    fun metaParts(): List<String> {
         val meta = mutableListOf<String>()
         when {
             isChest -> {
@@ -78,17 +71,21 @@ data class RaidShareTarget(
             }
             else -> {
                 val level = lv
-                if (level != null && level > 0 && !title.contains("\u0443\u0440", ignoreCase = true)) {
+                if (level != null && level > 0 && !titleLine().contains("\u0443\u0440", ignoreCase = true)) {
                     meta.add("\u0443\u0440.$level") // ур.N
                 }
+                power?.takeIf { it > 0 }?.let { meta.add(compact(it)) }
+                kills?.takeIf { it > 0 }?.let { meta.add("\u043F\u043E\u0431.${compact(it)}") } // поб.N
             }
         }
-        val head = if (meta.isEmpty()) title else title + " \u00B7 " + meta.joinToString(" \u00B7 ")
-        return "${categoryEmoji()} $head"
+        return meta
     }
 
-    /** `UR ★★★` для сундука, либо null. */
-    private fun chestGradeStars(): String? {
+    /** Вторая строка целиком (`ур.26 · 54.9M · поб.63.1K`), либо null если данных нет. */
+    fun metaLine(): String? = metaParts().takeIf { it.isNotEmpty() }?.joinToString(" \u00B7 ")
+
+    /** `UR ★★★` для сундука, либо null (публично — для подсветки в UI). */
+    fun chestGradeStars(): String? {
         val g = gradeLabel()
         val s = stars
         val out = buildString {
@@ -102,6 +99,18 @@ data class RaidShareTarget(
     }
 
     companion object {
+        /** Компактная запись больших чисел: 54901923 → «54.9M», 63068 → «63.1K». */
+        private fun compact(n: Long): String = when {
+            n >= 1_000_000 -> trimZero(n / 1_000_000.0) + "M"
+            n >= 1_000 -> trimZero(n / 1_000.0) + "K"
+            else -> n.toString()
+        }
+
+        private fun trimZero(v: Double): String {
+            val s = String.format(java.util.Locale.US, "%.1f", v)
+            return if (s.endsWith(".0")) s.dropLast(2) else s
+        }
+
         private fun qualityToLabel(q: Int?): String? = when (q) {
             3 -> "SR"
             4 -> "SSR"
@@ -109,10 +118,15 @@ data class RaidShareTarget(
             else -> null
         }
 
-        /** Убирает игровые служебные маркеры (jamo-обёртки имён) и обрезает пробелы. */
+        /**
+         * Убирает игровые служебные маркеры (jamo-обёртки имён), ведущий префикс сервера
+         * (`#109 ` у межсерверных целей — он дублировал бы сервер из координат) и обрезает пробелы.
+         */
         private fun cleanGameText(raw: String?): String? =
             raw?.replace("\u3151", "")
                 ?.replace("\u3155", "")
+                ?.trim()
+                ?.replace(Regex("^#\\d+\\s*"), "")
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() }
 
@@ -131,6 +145,8 @@ data class RaidShareTarget(
                     playerName = o.optString("playerName", "").trim().takeIf { it.isNotEmpty() },
                     cat = o.optString("cat", "").trim().takeIf { it.isNotEmpty() },
                     lv = o.optInt("lv", 0).takeIf { it > 0 },
+                    power = o.optLong("power", 0L).takeIf { it > 0 },
+                    kills = o.optLong("kills", 0L).takeIf { it > 0 },
                     secretTaskId = o.optInt("secretTaskId", 0).takeIf { it > 0 },
                     grade = o.optInt("grade", 0).takeIf { it > 0 },
                     stars = o.optInt("stars", 0).takeIf { it > 0 },

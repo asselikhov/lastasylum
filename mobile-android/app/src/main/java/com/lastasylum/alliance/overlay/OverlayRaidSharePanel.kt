@@ -6,6 +6,10 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -22,37 +26,37 @@ import com.lastasylum.alliance.game.RaidShareTarget
  * ([OverlayWindowLayout.popupWindowFlags]). Поэтому штатный список каналов игры остаётся доступен,
  * а тап вне игрового окна (в т.ч. по нашей кнопке) закрывает его — данные цели мы уже получили.
  *
- * Чекбоксы «Атака»/«Штурм»/«Подкрепление» — одиночный выбор (тап по активному снимает выбор);
- * по умолчанию ничего не выбрано и префикс не добавляется.
+ * Чекбоксы «Атака»/«Штурм»/«Подкр.» — одиночный выбор (галочка только на одном, повторный тап снимает);
+ * по умолчанию ничего не отмечено и префикс не добавляется.
  */
 class OverlayRaidSharePanel(
     private val context: Context,
     private val mainHandler: Handler,
     private val dp: (Int) -> Int,
-    /** commandLabel = подпись выбранного чекбокса или null (ничего не выбрано). */
+    /** commandLabel = подпись отмеченного чекбокса или null (ничего не отмечено). */
     private val onSend: (commandLabel: String?, target: RaidShareTarget) -> Unit,
 ) {
-    private data class Command(val label: String)
+    private data class Command(val label: String, val color: Int)
 
     private val commands: List<Command> by lazy {
         listOf(
-            Command(context.getString(R.string.overlay_cmd_column_attack)),
-            Command(context.getString(R.string.overlay_cmd_column_storm)),
-            Command(context.getString(R.string.overlay_cmd_column_reinf)),
+            Command(context.getString(R.string.overlay_cmd_column_attack), Color.parseColor("#FFF43F5E")), // красный
+            Command(context.getString(R.string.overlay_cmd_column_storm), Color.parseColor("#FFF59E0B")), // янтарный
+            Command(context.getString(R.string.overlay_raid_cmd_reinf), Color.parseColor("#FF22C55E")), // зелёный
         )
     }
 
     private val accent = Color.parseColor("#FF3B82F6")
-    private val cardBg = Color.parseColor("#F00F172A")
-    private val chipBg = Color.parseColor("#1FFFFFFF")
-    private val chipText = Color.parseColor("#FFCBD5E1")
-    private val titleColor = Color.parseColor("#FFE2E8F0")
+    private val coordColor = Color.parseColor("#FF7DD3FC")
+    private val titleColor = Color.parseColor("#FFF1F5F9")
+    private val infoColor = Color.parseColor("#FFE2E8F0")
     private val subColor = Color.parseColor("#FF94A3B8")
 
     private var root: LinearLayout? = null
-    private var summaryView: TextView? = null
+    private var infoView: TextView? = null
+    private var coordsView: TextView? = null
     private val chipViews = mutableListOf<TextView>()
-    private var selectedIndex: Int = -1
+    private val selected = mutableSetOf<Int>()
     private var target: RaidShareTarget? = null
     private var attached = false
 
@@ -67,9 +71,9 @@ class OverlayRaidSharePanel(
     fun show(windowManager: WindowManager, target: RaidShareTarget) {
         mainHandler.post {
             this.target = target
-            selectedIndex = -1
+            selected.clear()
             val view = root ?: buildView().also { root = it }
-            summaryView?.text = summaryFor(target)
+            bindTarget(target)
             syncChips()
             if (!attached) {
                 runCatching { windowManager.addView(view, buildParams()) }
@@ -112,21 +116,20 @@ class OverlayRaidSharePanel(
     }
 
     private fun buildView(): LinearLayout {
-        val pad = dp(14)
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, dp(12), pad, dp(12))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(18).toFloat()
-                setColor(cardBg)
-                setStroke(dp(1), Color.parseColor("#33FFFFFF"))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.parseColor("#F51E293B"), Color.parseColor("#F50B1220")),
+            ).apply {
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), Color.parseColor("#3360A5FA"))
             }
-            layoutParams = ViewGroup.LayoutParams(
-                dp(320),
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            )
+            layoutParams = ViewGroup.LayoutParams(dp(300), ViewGroup.LayoutParams.WRAP_CONTENT)
         }
 
+        // Заголовок: цветная точка-акцент + название + крестик.
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -135,55 +138,85 @@ class OverlayRaidSharePanel(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
         }
+        val dot = View(context).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(accent)
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(8), dp(8)).apply { rightMargin = dp(8) }
+        }
         val title = TextView(context).apply {
             text = context.getString(R.string.overlay_raid_share_title)
             setTextColor(titleColor)
-            textSize = 16f
+            textSize = 15f
+            letterSpacing = 0.02f
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         val close = TextView(context).apply {
             text = "\u00D7"
             setTextColor(subColor)
-            textSize = 22f
+            textSize = 20f
             contentDescription = context.getString(R.string.overlay_raid_share_close_cd)
-            setPadding(dp(10), dp(2), dp(6), dp(2))
+            setPadding(dp(10), dp(0), dp(4), dp(2))
             setOnClickListener { dismiss() }
         }
+        header.addView(dot)
         header.addView(title)
         header.addView(close)
         container.addView(header)
 
-        summaryView = TextView(context).apply {
-            setTextColor(subColor)
-            textSize = 13f
-            setPadding(0, dp(4), 0, dp(10))
+        // Карточка цели: имя/инфо + координаты акцентным цветом.
+        val infoCard = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(Color.parseColor("#1FFFFFFF"))
+            }
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-            )
+            ).apply { topMargin = dp(8) }
         }
-        container.addView(summaryView)
+        infoView = TextView(context).apply {
+            setTextColor(infoColor)
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        coordsView = TextView(context).apply {
+            setTextColor(coordColor)
+            textSize = 12f
+            setPadding(0, dp(2), 0, 0)
+        }
+        infoCard.addView(infoView)
+        infoCard.addView(coordsView)
+        container.addView(infoCard)
 
         val chipRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-            )
+            ).apply { topMargin = dp(10) }
         }
         chipViews.clear()
         commands.forEachIndexed { index, command ->
             val chip = TextView(context).apply {
-                text = command.label
                 gravity = Gravity.CENTER
-                textSize = 13f
-                setPadding(dp(6), dp(9), dp(6), dp(9))
+                textSize = 12.5f
+                setPadding(dp(4), dp(8), dp(4), dp(8))
                 val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                if (index > 0) lp.leftMargin = dp(8)
+                if (index > 0) lp.leftMargin = dp(7)
                 layoutParams = lp
                 setOnClickListener {
-                    selectedIndex = if (selectedIndex == index) -1 else index
+                    // Одиночный выбор: отметка одного снимает остальные; повторный тап снимает галочку.
+                    if (index in selected) {
+                        selected.clear()
+                    } else {
+                        selected.clear()
+                        selected.add(index)
+                    }
                     syncChips()
                 }
             }
@@ -196,17 +229,17 @@ class OverlayRaidSharePanel(
             text = context.getString(R.string.overlay_raid_share_send)
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            textSize = 15f
+            textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, dp(12), 0, dp(12))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat()
-                setColor(accent)
-            }
+            setPadding(0, dp(10), 0, dp(10))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.parseColor("#FF3B82F6"), Color.parseColor("#FF6366F1")),
+            ).apply { cornerRadius = dp(11).toFloat() }
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(12) }
+            ).apply { topMargin = dp(10) }
             setOnClickListener { onSendClicked() }
         }
         container.addView(send)
@@ -215,9 +248,54 @@ class OverlayRaidSharePanel(
         return container
     }
 
+    /** Заполняет карточку цели: имя/инфо (строка 1) и координаты (строка 2). */
+    private fun bindTarget(t: RaidShareTarget) {
+        val info = (listOf(t.titleLine()) + t.metaParts()).joinToString(" \u00B7 ")
+        val badge = t.chestGradeStars()
+        val gradeColor = gradeColor(t.grade)
+        infoView?.text = if (badge != null && gradeColor != null) {
+            SpannableString(info).apply {
+                val start = info.indexOf(badge)
+                if (start >= 0) {
+                    setSpan(
+                        ForegroundColorSpan(gradeColor),
+                        start,
+                        start + badge.length,
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                    setSpan(
+                        StyleSpan(Typeface.BOLD),
+                        start,
+                        start + badge.length,
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                }
+            }
+        } else {
+            info
+        }
+        coordsView?.text = buildString {
+            append("[")
+            if (t.serverNumber != null) append("S:").append(t.serverNumber).append(" ")
+            append("X:").append(t.x).append(" Y:").append(t.y)
+            append("]")
+        }
+    }
+
+    /** Цвет грейда сундука: SR — синий, SSR — фиолетовый, UR — золотой. */
+    private fun gradeColor(grade: Int?): Int? = when (grade) {
+        3 -> Color.parseColor("#FF60A5FA") // SR
+        4 -> Color.parseColor("#FFC084FC") // SSR
+        5 -> Color.parseColor("#FFFBBF24") // UR
+        else -> null
+    }
+
     private fun onSendClicked() {
         val t = target ?: return
-        val label = selectedIndex.takeIf { it in commands.indices }?.let { commands[it].label }
+        val label = commands.indices
+            .filter { it in selected }
+            .joinToString(", ") { commands[it].label }
+            .takeIf { it.isNotEmpty() }
         onSend(label, t)
     }
 
@@ -227,22 +305,24 @@ class OverlayRaidSharePanel(
 
     private fun syncChips() {
         chipViews.forEachIndexed { index, chip ->
-            val selected = index == selectedIndex
+            val command = commands[index]
+            val isOn = index in selected
+            val mark = if (isOn) "\u2611 " else "\u2610 " // ☑ / ☐
+            chip.text = mark + command.label
             chip.background = GradientDrawable().apply {
                 cornerRadius = dp(10).toFloat()
-                setColor(if (selected) accent else chipBg)
+                if (isOn) {
+                    setColor(command.color)
+                } else {
+                    setColor(withAlpha(command.color, 0x24))
+                    setStroke(dp(1), withAlpha(command.color, 0x80))
+                }
             }
-            chip.setTextColor(if (selected) Color.WHITE else chipText)
-            chip.typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            chip.setTextColor(if (isOn) Color.WHITE else command.color)
+            chip.typeface = if (isOn) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
         }
     }
 
-    /** Описание цели для превью: заголовок + координаты (как уйдёт в чат). */
-    private fun summaryFor(t: RaidShareTarget): String {
-        val coords = buildString {
-            if (t.serverNumber != null) append("#:").append(t.serverNumber).append(" ")
-            append("X:").append(t.x).append(" Y:").append(t.y)
-        }
-        return t.displayHeadline() + "\n\uD83D\uDCCD " + coords // 📍
-    }
+    private fun withAlpha(color: Int, alpha: Int): Int =
+        (color and 0x00FFFFFF) or (alpha shl 24)
 }

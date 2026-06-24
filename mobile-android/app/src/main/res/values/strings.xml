@@ -852,6 +852,7 @@
     <string name="overlay_cmd_column_attack">Атака</string>
     <string name="overlay_cmd_column_storm">Штурм</string>
     <string name="overlay_cmd_column_reinf">Подкрепление</string>
+    <string name="overlay_raid_cmd_reinf">Подкр.</string>
     <string name="overlay_cmd_column_reactions">Реакции</string>
     <string name="overlay_raid_share_title">В рейд</string>
     <string name="overlay_raid_share_send">В рейд</string>

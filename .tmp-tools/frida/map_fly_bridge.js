@@ -1245,6 +1245,16 @@ const SHARE_HOOK_LUA = [
   "if cat then p[#p+1]='\"cat\":\"'..esc(cat)..'\"' end",
   "if pt.lv then p[#p+1]='\"lv\":'..tostring(pt.lv) end",
   "if pt.qualityType then p[#p+1]='\"qualityType\":'..tostring(pt.qualityType) end",
+  // Player cities expose level/power/kills only on the live map unit, not in paramTable.
+  // GetDynamicUnitDataByCell(x,y) returns the visible unit on the currently-viewed server map.
+  "local gm=_G.GlobalMapCtrlManager local wm=gm and gm.GetWorldManager and gm:GetWorldManager()",
+  "if wm then local ok,u=pcall(function() return wm:GetDynamicUnitDataByCell(pt.x,pt.y) end)",
+  "if ok and type(u)=='table' then",
+  "if u.level and not pt.lv then p[#p+1]='\"lv\":'..tostring(u.level) end",
+  "if u.playerPower then p[#p+1]='\"power\":'..tostring(u.playerPower) end",
+  "if u.killEnemyCount then p[#p+1]='\"kills\":'..tostring(u.killEnemyCount) end",
+  "if u.playerUnionShortName and not pt.playerName then p[#p+1]='\"union\":\"'..esc(u.playerUnionShortName)..'\"' end",
+  "end end",
   "if pt.playerName then p[#p+1]='\"playerName\":\"'..esc(pt.playerName)..'\"' end",
   "if pt.secretTaskId then p[#p+1]='\"secretTaskId\":'..tostring(pt.secretTaskId)",
   "local C=_G.Config local st=C and C.SecretTask and C.SecretTask[pt.secretTaskId]",

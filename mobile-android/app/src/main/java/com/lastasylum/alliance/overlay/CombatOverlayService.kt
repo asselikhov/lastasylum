@@ -5306,18 +5306,12 @@ class CombatOverlayService : Service() {
             y = target.y,
             serverNumber = target.serverNumber,
         ).gameBracketText()
-        val action = commandLabel?.trim()?.takeIf { it.isNotEmpty() }?.let { raidActionTag(it) }
-        val head = target.displayHeadline()
-        val line1 = if (action != null) "$action \u00B7 $head" else head
-        return "$line1\n\uD83D\uDCCD $coords" // 📍
-    }
-
-    /** Эмодзи-префикс выбранной команды для заголовка рейд-сообщения. */
-    private fun raidActionTag(label: String): String = when (label.trim()) {
-        getString(R.string.overlay_cmd_column_attack) -> "\u2694\uFE0F " + label // ⚔️
-        getString(R.string.overlay_cmd_column_storm) -> "\uD83D\uDD25 " + label // 🔥
-        getString(R.string.overlay_cmd_column_reinf) -> "\uD83D\uDEE1\uFE0F " + label // 🛡
-        else -> label
+        val action = commandLabel?.trim()?.takeIf { it.isNotEmpty() }
+        // Строка 1: команда (если выбрана) + имя/тег + уровень/мощь/поверженные.
+        val line1 = (listOfNotNull(action, target.titleLine()) + target.metaParts())
+            .joinToString(" \u00B7 ")
+        // Строка 2: координаты (кликабельны для перелёта).
+        return "$line1\n$coords"
     }
 
     private fun onRaidShareSend(commandLabel: String?, target: com.lastasylum.alliance.game.RaidShareTarget) {
