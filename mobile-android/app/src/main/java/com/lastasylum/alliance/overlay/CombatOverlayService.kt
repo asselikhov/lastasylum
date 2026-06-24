@@ -5293,7 +5293,12 @@ class CombatOverlayService : Service() {
             AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()
         }.getOrDefault(true)
 
-    /** Сборка текста сообщения для комнаты «Рейд»: [префикс] [инфо о цели] [#:сервер X Y]. */
+    /**
+     * Сообщение для комнаты «Рейд» в две строки:
+     *   `{префикс ·} {🎁 заголовок цели}`
+     *   `📍 [#:сервер X Y]`
+     * Координаты на отдельной строке остаются кликабельными (парсер ищет блок `[#:.. X.. Y..]`).
+     */
     private fun buildRaidShareText(commandLabel: String?, target: com.lastasylum.alliance.game.RaidShareTarget): String {
         val coords = com.lastasylum.alliance.game.MapCoordinate(
             label = null,
@@ -5301,31 +5306,19 @@ class CombatOverlayService : Service() {
             y = target.y,
             serverNumber = target.serverNumber,
         ).gameBracketText()
-        val head = raidShareMessageHead(target)
-        val parts = listOfNotNull(
-            commandLabel?.trim()?.takeIf { it.isNotEmpty() },
-            head?.trim()?.takeIf { it.isNotEmpty() },
-        )
-        return if (parts.isEmpty()) coords else parts.joinToString(" ") + " " + coords
+        val action = commandLabel?.trim()?.takeIf { it.isNotEmpty() }?.let { raidActionTag(it) }
+        val head = target.displayHeadline()
+        val line1 = if (action != null) "$action \u00B7 $head" else head
+        return "$line1\n\uD83D\uDCCD $coords" // 📍
     }
 
-    private fun raidShareMessageHead(target: com.lastasylum.alliance.game.RaidShareTarget): String? =
-        if (target.isChest) {
-            val chest = buildString {
-                target.gradeLabel()?.let { append(it) }
-                target.stars?.let { s ->
-                    if (isNotEmpty()) append(" ")
-                    append("\u2605".repeat(s.coerceIn(1, 5)))
-                }
-                target.playerName?.takeIf { it.isNotBlank() }?.let { p ->
-                    if (isNotEmpty()) append(" ")
-                    append(p)
-                }
-            }
-            chest.takeIf { it.isNotBlank() } ?: target.name?.takeIf { it.isNotBlank() }
-        } else {
-            target.name?.takeIf { it.isNotBlank() } ?: target.playerName?.takeIf { it.isNotBlank() }
-        }
+    /** Эмодзи-префикс выбранной команды для заголовка рейд-сообщения. */
+    private fun raidActionTag(label: String): String = when (label.trim()) {
+        getString(R.string.overlay_cmd_column_attack) -> "\u2694\uFE0F " + label // ⚔️
+        getString(R.string.overlay_cmd_column_storm) -> "\uD83D\uDD25 " + label // 🔥
+        getString(R.string.overlay_cmd_column_reinf) -> "\uD83D\uDEE1\uFE0F " + label // 🛡
+        else -> label
+    }
 
     private fun onRaidShareSend(commandLabel: String?, target: com.lastasylum.alliance.game.RaidShareTarget) {
         val text = buildRaidShareText(commandLabel, target)

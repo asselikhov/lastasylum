@@ -237,28 +237,12 @@ class OverlayRaidSharePanel(
         }
     }
 
-    /** Человеческое описание цели для подзаголовка. */
+    /** Описание цели для превью: заголовок + координаты (как уйдёт в чат). */
     private fun summaryFor(t: RaidShareTarget): String {
         val coords = buildString {
-            if (t.serverNumber != null) append("S:").append(t.serverNumber).append(" ")
-            append(t.x).append(",").append(t.y)
+            if (t.serverNumber != null) append("#:").append(t.serverNumber).append(" ")
+            append("X:").append(t.x).append(" Y:").append(t.y)
         }
-        val head: String? = if (t.isChest) {
-            val chest = buildString {
-                t.gradeLabel()?.let { append(it) }
-                t.stars?.let { s ->
-                    if (isNotEmpty()) append(" ")
-                    append("\u2605".repeat(s.coerceIn(1, 5)))
-                }
-                t.playerName?.let { p ->
-                    if (isNotEmpty()) append(" \u00B7 ")
-                    append(p)
-                }
-            }
-            chest.ifBlank { t.playerName ?: t.name ?: "" }.takeIf { it.isNotBlank() }
-        } else {
-            t.name?.takeIf { it.isNotBlank() } ?: t.playerName?.takeIf { it.isNotBlank() }
-        }
-        return if (head.isNullOrBlank()) coords else "$head \u00B7 $coords"
+        return t.displayHeadline() + "\n\uD83D\uDCCD " + coords // 📍
     }
 }

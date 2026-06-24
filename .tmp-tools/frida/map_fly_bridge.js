@@ -1231,7 +1231,20 @@ const SHARE_HOOK_LUA = [
   "p[#p+1]='\"y\":'..tostring(pt.y or 0)",
   "p[#p+1]='\"sid\":'..tostring(pt.sid or 0)",
   "p[#p+1]='\"shareType\":'..tostring(pt.shareType or 0)",
-  "if pt.name then p[#p+1]='\"name\":\"'..esc(pt.name)..'\"' end",
+  // Resolve a readable name + category. shareType=1 is a catch-all map object whose kind is
+  // encoded in nameKey=#FN#Table@<Table>#<id>#<field>; Config[Table][id][field] holds the
+  // already-localized text (monster/resource/rally/etc.). Player cities carry pt.name directly.
+  "local dn=nil local cat=nil",
+  "if pt.name then dn=pt.name cat='player'",
+  "elseif pt.truckName then dn=pt.truckName cat='truck'",
+  "elseif pt.nameKey then local nk=tostring(pt.nameKey)",
+  "local tb,id,fl=string.match(nk,'Table@(%w+)#(%d+)#(%w+)')",
+  "if tb and id then cat=tb local row=_G.Config and _G.Config[tb] and _G.Config[tb][tonumber(id)] if type(row)=='table' then dn=row[fl] or row.name or row.name2 end end",
+  "if not dn then dn=nk end end",
+  "if dn then p[#p+1]='\"name\":\"'..esc(dn)..'\"' end",
+  "if cat then p[#p+1]='\"cat\":\"'..esc(cat)..'\"' end",
+  "if pt.lv then p[#p+1]='\"lv\":'..tostring(pt.lv) end",
+  "if pt.qualityType then p[#p+1]='\"qualityType\":'..tostring(pt.qualityType) end",
   "if pt.playerName then p[#p+1]='\"playerName\":\"'..esc(pt.playerName)..'\"' end",
   "if pt.secretTaskId then p[#p+1]='\"secretTaskId\":'..tostring(pt.secretTaskId)",
   "local C=_G.Config local st=C and C.SecretTask and C.SecretTask[pt.secretTaskId]",
