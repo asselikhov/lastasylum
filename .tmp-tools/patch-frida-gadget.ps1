@@ -1,10 +1,10 @@
 # Patch com.phs.global base.apk with Frida Gadget (no root). Re-sign all splits for sideload.
 param(
     [string]$Package = 'com.phs.global',
-    # Frida 17+ removed the global `Java`/`ObjC` bridges from gadget scripts, which breaks
-    # map_fly_bridge.js sendShareBroadcast() ("Java bridge unavailable"). Stay on 16.x so the
-    # in-process broadcast to SquadRelay keeps working.
-    [string]$FridaVersion = '16.7.19',
+    # map_fly_bridge.js targets Frida 17 APIs (Module.getGlobalExportByName, etc.). Frida 17 also
+    # dropped the global `Java` bridge, so the script is bundled with frida-compile (frida-java-bridge)
+    # before embedding - do not downgrade to 16.x or the file/native helpers break.
+    [string]$FridaVersion = '17.15.1',
     [switch]$Install,
     [switch]$SkipPull,
     # Required with -Install: patched APK uses a debug signature and Android must uninstall the store build first (game data is lost).
@@ -246,7 +246,20 @@ Write-Host 'Decoding base.apk ...'
 $libDir = Join-Path $WorkDir 'lib\arm64-v8a'
 Ensure-Dir $libDir
 Copy-Item $GadgetSo (Join-Path $libDir 'libfrida-gadget.so') -Force
-Copy-Item $HookScript (Join-Path $libDir 'libmapflybridge.so') -Force
+
+# Bundle the bridge (frida-compile) so the Frida 17 `Java` bridge (frida-java-bridge) is embedded;
+# a raw script has no `Java` global on Frida 17 and the SHARE_TARGET broadcast would be skipped.
+$FridaCompileCli = Join-Path $Root '.tmp-tools\node_modules\frida-compile\dist\cli.js'
+$CompiledHook = Join-Path $PatchDir 'map_fly_bridge.compiled.js'
+if (-not (Test-Path $FridaCompileCli)) {
+    throw "frida-compile not found ($FridaCompileCli). Run: npm i in .tmp-tools (frida-compile frida-java-bridge)."
+}
+Write-Host 'Compiling bridge with frida-compile (bundling frida-java-bridge) ...'
+& node $FridaCompileCli $HookScript -o $CompiledHook -S
+if (-not (Test-Path $CompiledHook) -or (Get-Item $CompiledHook).Length -lt 1000) {
+    throw 'frida-compile produced no/empty output.'
+}
+Copy-Item $CompiledHook (Join-Path $libDir 'libmapflybridge.so') -Force
 $gadgetConfig = @'
 {
   "interaction": {

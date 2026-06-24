@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@alexaltea/capstone-js": "^5.0.9",
+    "frida-compile": "^19.0.5",
+    "frida-java-bridge": "^7.0.13"
+  }
+}

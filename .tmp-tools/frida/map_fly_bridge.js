@@ -4,6 +4,10 @@
  */
 'use strict';
 
+// Frida 17 removed the global `Java` bridge from gadget scripts; import it explicitly.
+// This file is bundled with frida-compile before being embedded in the APK.
+import Java from 'frida-java-bridge';
+
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
