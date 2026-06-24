@@ -23,7 +23,6 @@ fun OverlayGameStatusHud(
     onNewsClick: () -> Unit,
     onForumClick: () -> Unit,
     onAppUpdateClick: () -> Unit,
-    onGameSearchClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     if (!state.appUpdateDownloadUrl.isNullOrBlank()) {
@@ -62,14 +61,6 @@ fun OverlayGameStatusHud(
                 ),
                 onClick = onMailClick,
             )
-            if (state.gameSearchEnabled) {
-                OverlayGameHudChip(
-                    icon = OverlayHudIcons.search,
-                    accent = OverlayHudChipAccent.Search,
-                    contentDescription = stringResource(R.string.overlay_hud_game_search_cd),
-                    onClick = onGameSearchClick,
-                )
-            }
         }
     }
 }

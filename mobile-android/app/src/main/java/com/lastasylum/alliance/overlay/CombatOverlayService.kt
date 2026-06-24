@@ -257,26 +257,6 @@ class CombatOverlayService : Service() {
             it.setSafeTopMinYProvider { overlayReactionSafeTopMinY() }
         }
     }
-    private val overlayGameSearchPopover by lazy {
-        OverlayGameSearchPopover(
-            context = this,
-            mainHandler = mainHandler,
-            scope = serviceScope,
-            dp = { dp(it) },
-            serverNumberProvider = {
-                AppContainer.from(this@CombatOverlayService)
-                    .usersRepository
-                    .peekMyProfile()
-                    ?.activeServerNumber
-                    ?: AppContainer.from(this@CombatOverlayService)
-                        .usersRepository
-                        .peekMyProfileDisk()
-                        ?.activeServerNumber
-            },
-            attachComposeTree = { attachOverlayComposeTree(it) },
-            composeOwnerProvider = { obtainOverlayPopoverComposeOwner() },
-        )
-    }
     private val overlayPresenceCoordinator by lazy {
         OverlayPresenceCoordinator(
             scope = serviceScope,
@@ -299,8 +279,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun isOverlayModalPopoverBlocking(): Boolean =
-        overlayCommandsPopover.isBlockingGameGateDismiss() ||
-            overlayGameSearchPopover.isBlockingGameGateDismiss()
+        overlayCommandsPopover.isBlockingGameGateDismiss()
 
     /**
      * Пинги идут только пока гейт видит целевую игру; после выхода heartbeat останавливается
@@ -542,7 +521,6 @@ class CombatOverlayService : Service() {
         }
         overlayTicker.applyTouchPassthrough(true)
         overlayCommandsPopover.hide()
-        overlayGameSearchPopover.hide()
     }
 
     private fun hideOverlayChatPanelForPicker(mgr: WindowManager) {
@@ -1576,7 +1554,6 @@ class CombatOverlayService : Service() {
 
     private fun dismissOverlayHudForUpdateGate() {
         overlayCommandsPopover.hide()
-        overlayGameSearchPopover.hide()
         if (overlayChatTeamPanelVisible || overlayChatTeamRoot?.visibility == View.VISIBLE) {
             hideOverlayChatTeamPanel()
         }
@@ -1889,7 +1866,6 @@ class CombatOverlayService : Service() {
             overlayChatTeamPanelVisible ||
             OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
             overlayCommandsPopover.isBlockingGameGateDismiss() ||
-                overlayGameSearchPopover.isBlockingGameGateDismiss() ||
             OverlayChatInteractionHold.isGameForegroundGateSuppressed()
 
     private fun systemWindowManager(): WindowManager? =
@@ -3417,7 +3393,6 @@ class CombatOverlayService : Service() {
      */
     private fun pauseOverlayUiForAllianceAppForeground() {
         overlayCommandsPopover.hide()
-        overlayGameSearchPopover.hide()
         overlayStatusHudHost?.visibility = View.GONE
         overlayTopRightHudHost?.visibility = View.GONE
         chatStripHost?.visibility = View.GONE
@@ -3453,7 +3428,6 @@ class CombatOverlayService : Service() {
     private fun softHideOverlayUiBecauseNotInGame() {
         resetHudWindowTouchPolicy()
         overlayCommandsPopover.hide()
-        overlayGameSearchPopover.hide()
         overlayStatusHudHost?.visibility = View.GONE
         overlayTopRightHudHost?.visibility = View.GONE
         chatStripHost?.visibility = View.GONE
@@ -3792,7 +3766,6 @@ class CombatOverlayService : Service() {
             OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(isOverlayUi = true)
             return
         }
-        overlayGameSearchPopover.hide()
         val wasShowing = overlayCommandsPopover.isShowing()
         overlayCommandsPopover.toggle(mgr)
         if (overlayCommandsPopover.isShowing()) {
@@ -3803,32 +3776,6 @@ class CombatOverlayService : Service() {
         if (isOverlayChatStripEnabled() && chatStripHost?.isAttachedToWindow != true) {
             repairDetachedOverlayShellIfNeeded()
         }
-    }
-
-    private fun openOverlayGameSearchFromHud() {
-        if (isOverlayAppUpdateGateActive()) return
-        if (overlayStatusHudFlow.value.gameSearchEnabled != true) return
-        OverlayChatInteractionHold.prepareOverlayModalInteraction(isOverlayUi = true)
-        extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
-        ensureOverlayIfPermitted()
-        overlayCommandsPopover.hide()
-        serviceScope.launch(Dispatchers.IO) {
-            runCatching {
-                AppContainer.from(this@CombatOverlayService)
-                    .usersRepository
-                    .getMyProfile(forceRefresh = true)
-            }
-            mainHandler.post {
-                refreshOverlayStatusHudData(force = true)
-            }
-        }
-        val mgr = windowManager ?: systemWindowManager()
-        if (mgr == null) {
-            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(isOverlayUi = true)
-            return
-        }
-        overlayGameSearchPopover.toggle(mgr)
-        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(isOverlayUi = true)
     }
 
     private fun overlayVoiceSoundDisplayedOn(): Boolean {
@@ -4026,7 +3973,6 @@ class CombatOverlayService : Service() {
                         onMailClick = { showOverlayHudPane(OverlayHudPane.Chat) },
                         onNewsClick = { showOverlayHudPane(OverlayHudPane.News) },
                         onAppUpdateClick = { onOverlayAppUpdateClick() },
-                        onGameSearchClick = { openOverlayGameSearchFromHud() },
                     )
                 }
             }
@@ -4110,12 +4056,10 @@ class CombatOverlayService : Service() {
                         state = state,
                         onNotificationsClick = {
                             overlayCommandsPopover.hide()
-        overlayGameSearchPopover.hide()
                             showOverlayHudPane(OverlayHudPane.Notifications)
                         },
                         onOnlineClick = {
                             overlayCommandsPopover.hide()
-        overlayGameSearchPopover.hide()
                             pendingOpenJoinInboxOnParticipants =
                                 overlayTopRightHudFlow.value.teamJoinRequestCount > 0
                             showOverlayHudPane(OverlayHudPane.Participants)
@@ -4421,7 +4365,6 @@ class CombatOverlayService : Service() {
         mainHandler.removeCallbacks(stripPassthroughSyncRunnable)
         syncChatStripWindowTouchPassthrough()
         overlayCommandsPopover.hide()
-        overlayGameSearchPopover.hide()
         OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
         OverlayChatInteractionHold.clearStaleSuppressForGameBackground(
             chatTeamPanelVisible = false,
@@ -7403,7 +7346,6 @@ class CombatOverlayService : Service() {
             OverlayPerfDiag.logPanelOpen(pane = hudPane.name)
             currentOverlayHudPane = hudPane
             overlayCommandsPopover.hide()
-        overlayGameSearchPopover.hide()
             extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
             OverlayChatInteractionHold.acquireGameForegroundSuppress()
         }
@@ -8116,7 +8058,6 @@ class CombatOverlayService : Service() {
         }
         destroyOverlayChatTeamPanelHost()
         overlayCommandsPopover.destroyCachedShells()
-        overlayGameSearchPopover.destroyCachedShells()
         OverlayChatInteractionHold.clearStaleSuppressForGameBackground(
             chatTeamPanelVisible = false,
             commandsPopoverShowing = isOverlayModalPopoverBlocking(),
@@ -8132,7 +8073,6 @@ class CombatOverlayService : Service() {
         }
         overlayTicker.hideTicker()
         overlayCommandsPopover.hide()
-        overlayGameSearchPopover.hide()
         removeOverlayStatusHudWindow()
         removeOverlayTopRightHudWindow()
         val wm = windowManager ?: systemWindowManager()
