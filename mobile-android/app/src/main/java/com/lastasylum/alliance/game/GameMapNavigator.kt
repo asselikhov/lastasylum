@@ -29,11 +29,15 @@ object GameMapNavigator {
             logDebug("patch not ready; deep link fallback only")
             false
         }
-        if (bridgeSent && overlayActive) {
-            logDebug("bridge sent while overlay active; skip deep link burst")
+        if (bridgeSent) {
+            // The in-process bridge performs the jump and foregrounds the game itself
+            // (GameMapFlyBridge.send -> prepareBridgeFly -> resumeTargetGame). The deep-link
+            // burst below is only for the stock build and writes coords to the clipboard, which
+            // triggers Android's "pasted from clipboard" popup on every fly — so skip it here.
+            logDebug("bridge sent; skip deep link/clipboard burst")
             return
         }
-        if (!patchReady && overlayActive) {
+        if (overlayActive) {
             logDebug("patch not ready; deep link fallback")
         }
         GameDeepLinkNavigator.openMapAtCoordinates(
