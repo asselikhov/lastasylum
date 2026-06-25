@@ -8,8 +8,9 @@ import org.junit.Test
 class ForumGapReconcileTest {
 
     @Test
-    fun gapThreshold_matchesChatWindow() {
-        assertEquals(CHAT_GAP_RECONCILE_THRESHOLD_MS, FORUM_GAP_RECONCILE_THRESHOLD_MS)
+    fun gapThreshold_isThirtySeconds() {
+        // Forum намеренно отвязан от chat-окна (10 c) и крупнее — см. ChatGapDetection.kt.
+        assertEquals(30_000L, FORUM_GAP_RECONCILE_THRESHOLD_MS)
     }
 
     @Test

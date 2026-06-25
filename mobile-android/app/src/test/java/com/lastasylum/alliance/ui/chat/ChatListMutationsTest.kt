@@ -207,7 +207,9 @@ class ChatListMutationsTest {
     fun mergeLoadedPageWithExisting_keepsExistingWhenServerPageEmpty() {
         val existing = listOf(msg("stale-1", "old"), msg("pending-1", "sending"))
         val merged = mergeLoadedPageWithExisting(existing, loaded = emptyList())
-        assertEquals(listOf("stale-1", "pending-1"), merged.map { it._id })
+        // Обе строки сохраняются; оптимистичная (in-flight) встаёт в голову как новейшая.
+        assertEquals(setOf("stale-1", "pending-1"), merged.map { it._id }.toSet())
+        assertEquals("pending-1", merged.first()._id)
     }
 
     @Test
@@ -1086,5 +1088,75 @@ class ChatListMutationsTest {
         assertEquals("cid-1", linked[0].clientMessageId)
         val stripped = stripRedundantOwnOutgoingByClientMessageId(linked, "u1")
         assertEquals(listOf("507f1f77bcf86cd799439099", "507f1f77bcf86cd799439011"), stripped.map { it._id })
+    }
+
+    @Test
+    fun sortMessagesNewestFirst_ordersByCreatedAtDescending() {
+        // Ключ — видимый createdAt, а не _id: офлайн-строка с поздним _id, но ранним createdAt
+        // должна встать по своему времени, а не «вверх» по insert-времени.
+        val scrambled = listOf(
+            msg("507f1f77bcf86cd799439011", "oldest").copy(createdAt = "2026-06-07T12:00:01.000Z"),
+            // поздний _id (insert), но ранний createdAt (compose) — типичная офлайн-отправка
+            msg("507f1f77bcf86cd799439099", "offline-mid").copy(createdAt = "2026-06-07T12:00:02.000Z"),
+            msg("507f1f77bcf86cd799439013", "newest").copy(createdAt = "2026-06-07T12:00:03.000Z"),
+        )
+        val out = sortMessagesNewestFirst(scrambled)
+        assertEquals(
+            listOf("507f1f77bcf86cd799439013", "507f1f77bcf86cd799439099", "507f1f77bcf86cd799439011"),
+            out.map { it._id },
+        )
+    }
+
+    @Test
+    fun sortMessagesNewestFirst_keepsOptimisticRowsAtHead() {
+        val scrambled = listOf(
+            msg("507f1f77bcf86cd799439011", "confirmed").copy(createdAt = "2026-06-07T12:00:01.000Z"),
+            msg("pending-abc", "optimistic").copy(createdAt = "2026-06-07T12:00:09.000Z"),
+        )
+        val out = sortMessagesNewestFirst(scrambled)
+        assertEquals(listOf("pending-abc", "507f1f77bcf86cd799439011"), out.map { it._id })
+    }
+
+    @Test
+    fun sanitizeMessagesAfterRealtimeApply_reordersScrambledToNewestFirst() {
+        // currentUserId="other" => own-outgoing шаги — no-op, проверяем именно финальную сортировку.
+        val scrambled = listOf(
+            msg("507f1f77bcf86cd799439011", "a").copy(createdAt = "2026-06-07T12:00:01.000Z"),
+            msg("507f1f77bcf86cd799439014", "d").copy(createdAt = "2026-06-07T12:00:04.000Z"),
+            msg("507f1f77bcf86cd799439012", "b").copy(createdAt = "2026-06-07T12:00:02.000Z"),
+            msg("507f1f77bcf86cd799439013", "c").copy(createdAt = "2026-06-07T12:00:03.000Z"),
+        )
+        val out = sanitizeMessagesAfterRealtimeApply(
+            messages = scrambled,
+            currentUserId = "other",
+            activeOutgoingPendingId = null,
+        )
+        assertEquals(
+            listOf(
+                "507f1f77bcf86cd799439014",
+                "507f1f77bcf86cd799439013",
+                "507f1f77bcf86cd799439012",
+                "507f1f77bcf86cd799439011",
+            ),
+            out.map { it._id },
+        )
+    }
+
+    @Test
+    fun mergeVisibleMessagesWithRoomCache_sortsScrambledCacheWhenVisibleEmpty() {
+        val scrambledCache = listOf(
+            msg("507f1f77bcf86cd799439011", "a").copy(createdAt = "2026-06-07T12:00:01.000Z"),
+            msg("507f1f77bcf86cd799439013", "c").copy(createdAt = "2026-06-07T12:00:03.000Z"),
+            msg("507f1f77bcf86cd799439012", "b").copy(createdAt = "2026-06-07T12:00:02.000Z"),
+        )
+        val out = mergeVisibleMessagesWithRoomCache(
+            visible = emptyList(),
+            cached = scrambledCache,
+            roomId = "room",
+        )
+        assertEquals(
+            listOf("507f1f77bcf86cd799439013", "507f1f77bcf86cd799439012", "507f1f77bcf86cd799439011"),
+            out.map { it._id },
+        )
     }
 }

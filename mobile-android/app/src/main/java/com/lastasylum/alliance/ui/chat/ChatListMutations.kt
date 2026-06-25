@@ -48,6 +48,43 @@ internal fun capNewestFirst(messages: List<ChatMessage>, max: Int): List<ChatMes
     return messages.take(max)
 }
 
+/**
+ * Канонический порядок чат-ленты: новейшие в начале по тому же ключу, который видит пользователь —
+ * [ChatMessage.createdAt] (время в пузыре). Тай-брейк по [_id] descending для детерминизма.
+ *
+ * Почему именно createdAt, а не _id: сервер присваивает ObjectId в момент вставки, но хранит
+ * createdAt = время составления. У офлайн/отложенных отправок _id (insert) расходится с createdAt
+ * (compose), поэтому сортировка по _id давала ленту, «перемешанную» относительно видимых меток
+ * времени. Сорт по createdAt всегда совпадает с отображаемым временем.
+ *
+ * Оптимистичные строки имеют createdAt = now → естественно уезжают в голову (= самые новые). Для
+ * строк без распознаваемого createdAt — фолбэк на timestamp из ObjectId, затем в самый старый хвост.
+ *
+ * Realtime-апплай добавляет одиночные сообщения через prepend, а холодный старт поднимает кэш как
+ * есть — ни тот, ни другой путь сам не пересортировывает. Применяется в финальных чек-поинтах
+ * (sanitize перед UI, merge с room-кэшем и страничные merge), чтобы лента всегда была newest-first.
+ */
+internal fun sortMessagesNewestFirst(messages: List<ChatMessage>): List<ChatMessage> {
+    if (messages.size <= 1) return messages
+    return messages
+        .map { it to messageSortEpochMs(it) }
+        .sortedWith(
+            compareByDescending<Pair<ChatMessage, Long>> { it.second }
+                .thenByDescending { it.first._id?.trim().orEmpty() },
+        )
+        .map { it.first }
+}
+
+/** Ключ сортировки: видимый createdAt, иначе timestamp из ObjectId, иначе самый старый. */
+private fun messageSortEpochMs(message: ChatMessage): Long {
+    parseIsoInstantEpochMilli(message.createdAt)?.let { return it }
+    val id = message._id?.trim().orEmpty()
+    // Оптимистичные (in-flight) строки без распознанного createdAt — всегда новейшие (в голову).
+    if (isOptimisticOutgoingMessageId(id)) return Long.MAX_VALUE
+    if (id.isNotEmpty()) objectIdTimestampMs(id)?.let { return it }
+    return Long.MIN_VALUE
+}
+
 /** Newest-first: keep first row per [_id] (socket echo + HTTP confirm can briefly duplicate). */
 internal fun normalizeOutgoingReplyToId(replyToMessageId: String?): String =
     replyToMessageId?.trim().orEmpty()
@@ -292,7 +329,10 @@ internal fun sanitizeMessagesAfterRealtimeApply(
     out = stripRedundantOwnOutgoingByClientMessageId(out, currentUserId)
     out = dedupeOwnOutgoingByClientMessageId(out, currentUserId)
     out = collapseOwnOutgoingHeadDuplicates(out, currentUserId)
-    return dedupeMessagesByIdNewestFirst(out)
+    // Финальный канонический порядок: realtime-prepend и поднятый из кэша скролл могли оставить
+    // строки вне порядка (поздняя/офлайн доставка, исторически перемешанный кэш). Сортируем по
+    // тому же ключу, что и страничные merge, чтобы лента всегда была строго newest-first.
+    return sortMessagesNewestFirst(dedupeMessagesByIdNewestFirst(out))
 }
 
 /** Drop optimistic rows when a confirmed server row with the same [clientMessageId] exists. */
@@ -541,9 +581,9 @@ internal fun mergeLoadedPageWithExisting(
             val id = msg._id?.trim().orEmpty()
             id.isNotEmpty() && id !in excludedMessageIds
         }
-        return capNewestFirst(kept, maxMessages)
+        return capNewestFirst(sortMessagesNewestFirst(kept), maxMessages)
     }
-    if (scopedExisting.isEmpty()) return capNewestFirst(loaded, maxMessages)
+    if (scopedExisting.isEmpty()) return capNewestFirst(sortMessagesNewestFirst(loaded), maxMessages)
     val loadedIds = loaded.mapNotNull { msg ->
         msg._id?.trim()?.takeIf { it.isNotEmpty() }
     }.toSet()
@@ -580,9 +620,7 @@ internal fun mergeLoadedPageWithExisting(
         )
         messages = update.messages
     }
-    val sorted = messages.sortedWith(
-        compareByDescending<ChatMessage> { it._id?.trim().orEmpty() },
-    )
+    val sorted = sortMessagesNewestFirst(messages)
     val capped = dedupeMessagesByIdNewestFirst(capNewestFirst(sorted, maxMessages))
     return if (currentUserId.isNotBlank()) {
         sanitizeMergedChatMessages(capped, currentUserId)
@@ -604,8 +642,8 @@ internal fun mergeVisibleMessagesWithRoomCache(
     val scopedVisible = filterMessagesForRoom(visible, roomId, hiddenBeforeMessageId)
     val scopedCached = filterMessagesForRoom(cached, roomId, hiddenBeforeMessageId)
     return when {
-        scopedVisible.isEmpty() -> capNewestFirst(scopedCached, maxMessages)
-        scopedCached.isEmpty() -> capNewestFirst(scopedVisible, maxMessages)
+        scopedVisible.isEmpty() -> capNewestFirst(sortMessagesNewestFirst(scopedCached), maxMessages)
+        scopedCached.isEmpty() -> capNewestFirst(sortMessagesNewestFirst(scopedVisible), maxMessages)
         else -> mergeLoadedPageWithExisting(
             existing = scopedCached,
             loaded = scopedVisible,
@@ -927,9 +965,7 @@ internal fun upsertMessagesBatch(
             newestMessageKey = update.newestMessageKey
         }
     }
-    val sorted = messages.sortedWith(
-        compareByDescending<ChatMessage> { it._id?.trim().orEmpty() },
-    )
+    val sorted = sortMessagesNewestFirst(messages)
     val capped = dedupeMessagesByIdNewestFirst(capNewestFirst(sorted, maxMessages))
     rebuildMessageIdIndex(capped, idIndex)
     return MessageUpsertResult(

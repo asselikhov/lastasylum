@@ -33,7 +33,7 @@ class ChatRegressionChecklistTest {
     }
 
     @Test
-    fun forumGapReconcileThreshold_isFortyFiveSeconds() {
+    fun forumGapReconcileThreshold_isThirtySeconds() {
         assertEquals(30_000L, FORUM_GAP_RECONCILE_THRESHOLD_MS)
     }
 
@@ -77,7 +77,8 @@ class ChatRegressionChecklistTest {
     }
 
     @Test
-    fun raidGapReconcileThreshold_isSixtySeconds() {
-        assertEquals(60_000L, RAID_GAP_RECONCILE_THRESHOLD_MS)
+    fun raidGapReconcileThreshold_isTenSeconds() {
+        // Raid намеренно короче (overlay stash + быстрые команды) — см. ChatGapDetection.kt.
+        assertEquals(10_000L, RAID_GAP_RECONCILE_THRESHOLD_MS)
     }
 }
