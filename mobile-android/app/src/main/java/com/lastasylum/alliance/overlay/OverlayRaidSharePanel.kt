@@ -15,6 +15,7 @@ import android.text.style.ImageSpan
 import android.text.style.StyleSpan
 import android.util.Log
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.LinearLayout
@@ -69,12 +70,12 @@ class OverlayRaidSharePanel(
             val view = root ?: buildView().also { root = it }
             bindTarget(target)
             syncChips()
-            applyVerticalPosition(target.dialogTopPx)
             if (!attached) {
                 runCatching { windowManager.addView(view, buildParams().also { layoutParams = it }) }
                     .onSuccess {
                         attached = true
                         attachedWindowManager = windowManager
+                        applyVerticalPosition(target.dialogTopPx)
                         logDebug("show ok seq=${target.seq}")
                     }
                     .onFailure { e ->
@@ -132,29 +133,36 @@ class OverlayRaidSharePanel(
         }
     }
 
-    /** Разместить панель чуть выше игрового окна выбора канала. */
+    /** Разместить панель над игровым окном выбора канала с небольшим отступом. */
     private fun applyVerticalPosition(dialogTopPx: Int?) {
         val view = root ?: return
         val wm = attachedWindowManager ?: return
         val params = layoutParams ?: return
         val minTop = dp(OverlayHudLayout.chatStripTopOffsetDp() + 8)
-        val gap = dp(8)
+        val gap = dp(12)
         val place = Runnable {
-            val panelH = view.height.takeIf { it > 0 } ?: view.measuredHeight
-            params.y = if (dialogTopPx != null && dialogTopPx > 0 && panelH > 0) {
-                (dialogTopPx - panelH - gap).coerceAtLeast(minTop)
-            } else if (dialogTopPx != null && dialogTopPx > 0) {
-                (dialogTopPx - gap - dp(120)).coerceAtLeast(minTop)
+            // Явный замер: высота панели нужна сразу, до первого layout-прохода.
+            val panelH = run {
+                view.measure(
+                    View.MeasureSpec.makeMeasureSpec(dp(300), View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                )
+                view.measuredHeight.takeIf { it > 0 } ?: view.height
+            }
+            val screenH = context.resources.displayMetrics.heightPixels
+            // Верх игрового диалога выбора канала: точное значение из игры используем
+            // только если оно правдоподобно (диалог не может быть в верхней четверти экрана),
+            // иначе берём долю высоты экрана — диалог имеет фиксированную позицию.
+            val dialogTop = dialogTopPx?.takeIf { it > screenH * DIALOG_TOP_MIN_FRACTION }
+                ?: (screenH * DIALOG_TOP_FRACTION).toInt()
+            params.y = if (panelH > 0) {
+                (dialogTop - panelH - gap).coerceAtLeast(minTop)
             } else {
                 dp(OverlayHudLayout.chatStripTopOffsetDp() + 88)
             }
             runCatching { wm.updateViewLayout(view, params) }
         }
-        if (view.height > 0) {
-            place.run()
-        } else {
-            view.post(place)
-        }
+        if (attached) place.run() else view.post(place)
     }
 
     private fun buildView(): LinearLayout {
@@ -263,19 +271,17 @@ class OverlayRaidSharePanel(
 
     private fun buildInfoText(t: RaidShareTarget): CharSequence {
         val builder = SpannableStringBuilder()
-        val title = t.titleLine()
-        builder.append(title)
-        val meta = t.metaPartsForOverlay()
-        if (meta.isNotEmpty()) {
-            builder.append(" \u00B7 ")
-            builder.append(meta.joinToString(" \u00B7 "))
-        }
+        fun sep() { if (builder.isNotEmpty()) builder.append(' ') }
+        // Ур.N перед тегом альянса, разделитель — пробел.
+        t.levelPrefix()?.let { sep(); builder.append(it) }
+        sep(); builder.append(t.titleLine())
+        t.metaPartsForOverlay().forEach { part -> sep(); builder.append(part) }
         t.powerLabel()?.let { label ->
-            if (builder.isNotEmpty()) builder.append(" \u00B7 ")
+            sep()
             appendStatWithIcon(builder, label, t.powerIcon, R.drawable.ic_overlay_game_power)
         }
         t.killsLabel()?.let { label ->
-            if (builder.isNotEmpty()) builder.append(" \u00B7 ")
+            sep()
             appendStatWithIcon(builder, label, t.killsIcon, R.drawable.ic_overlay_game_kills)
         }
         val badge = t.chestGradeStars()
@@ -308,11 +314,15 @@ class OverlayRaidSharePanel(
         fallbackDrawable: Int,
     ) {
         val drawable = context.getDrawable(resolveGameIconDrawable(gameSprite, fallbackDrawable)) ?: return
-        val size = dp(14)
-        drawable.setBounds(0, 0, size, size)
+        val h = dp(15)
+        val iw = drawable.intrinsicWidth.takeIf { it > 0 } ?: h
+        val ih = drawable.intrinsicHeight.takeIf { it > 0 } ?: h
+        val w = (h * iw / ih).coerceAtLeast(1)
+        drawable.setBounds(0, 0, w, h)
         val start = builder.length
         builder.append(' ')
         builder.setSpan(ImageSpan(drawable, ImageSpan.ALIGN_BOTTOM), start, start + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        builder.append('\u200A')
         builder.append(label)
     }
 
@@ -370,5 +380,9 @@ class OverlayRaidSharePanel(
 
     companion object {
         private const val TAG = "OverlayRaidSharePanel"
+        // Доля высоты экрана до верха игрового диалога выбора канала (фиксированная позиция).
+        private const val DIALOG_TOP_FRACTION = 0.31f
+        // Ниже этой доли игровое dialogTopPx считаем недостоверным (диалог не в верхней четверти).
+        private const val DIALOG_TOP_MIN_FRACTION = 0.25f
     }
 }

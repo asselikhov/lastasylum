@@ -5334,13 +5334,11 @@ class CombatOverlayService : Service() {
             serverNumber = target.serverNumber,
         ).gameBracketText()
         val action = commandLabel?.trim()?.takeIf { it.isNotEmpty() }
-        // Строка 1: команда (если выбрана) + имя/тег + уровень/мощь/поверженные.
-        val line1 = (listOfNotNull(action, target.titleLine()) + target.metaPartsForOverlay() +
-            listOfNotNull(
-                target.powerLabel(),
-                target.killsLabel()?.let { "\u043F\u043E\u0431.$it" },
-            ))
-            .joinToString(" \u00B7 ")
+        // Строка 1: [команда] Ур.N [тег] Ник Мощь Поверженные — разделитель пробел.
+        val line1 = (listOfNotNull(action, target.levelPrefix(), target.titleLine()) +
+            target.metaPartsForOverlay() +
+            listOfNotNull(target.powerLabel(), target.killsLabel()))
+            .joinToString(" ")
         // Строка 2: координаты (кликабельны для перелёта).
         return "$line1\n$coords"
     }

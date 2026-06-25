@@ -76,13 +76,22 @@ data class RaidShareTarget(
                 (cleanGameText(name) ?: cleanGameText(playerName))?.let { meta.add(it) }
             }
             else -> {
-                val level = lv
-                if (level != null && level > 0 && !titleLine().contains("\u0443\u0440", ignoreCase = true)) {
-                    meta.add("\u0443\u0440.$level") // ур.N
-                }
+                // Уровень выносится в префикс levelPrefix() (перед тегом альянса).
             }
         }
         return meta
+    }
+
+    /**
+     * Префикс уровня для первой строки — «Ур.N» (перед тегом альянса), либо null.
+     * Не применяется к сундукам/конвоям и если имя уже содержит «ур».
+     */
+    fun levelPrefix(): String? {
+        if (isChest || isTruck) return null
+        val level = lv ?: return null
+        if (level <= 0) return null
+        if (titleLine().contains("\u0443\u0440", ignoreCase = true)) return null
+        return "\u0423\u0440.$level" // Ур.N
     }
 
     /** Компактная подпись мощи для UI/чата. */
@@ -94,12 +103,12 @@ data class RaidShareTarget(
     /** Мета без мощи/поверженных — они показываются отдельно с иконками. */
     fun metaPartsForOverlay(): List<String> = metaParts()
 
-    /** Вторая строка целиком (`ур.26 · 54.9M · поб.63.1K`), либо null если данных нет. */
+    /** Первая строка целиком (`Ур.26 [OBZH] Ник 54.9M 63.1K`), либо null если данных нет. */
     fun metaLine(): String? {
-        val parts = metaPartsForOverlay().toMutableList()
+        val parts = (listOfNotNull(levelPrefix(), titleLine()) + metaPartsForOverlay()).toMutableList()
         powerLabel()?.let { parts.add(it) }
-        killsLabel()?.let { parts.add("\u043F\u043E\u0431.$it") }
-        return parts.takeIf { it.isNotEmpty() }?.joinToString(" \u00B7 ")
+        killsLabel()?.let { parts.add(it) }
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(" ")
     }
 
     /** `UR ★★★` для сундука, либо null (публично — для подсветки в UI). */
