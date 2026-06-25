@@ -30,6 +30,12 @@ data class RaidShareTarget(
     val power: Long?,
     /** Количество поверженных (killEnemyCount, город игрока), если есть. */
     val kills: Long?,
+    /** Верх игрового окна выбора канала (px от верха экрана), для позиции оверлея. */
+    val dialogTopPx: Int?,
+    /** Имя спрайта «Мощь» из игры (напр. pic_zhanli), если есть. */
+    val powerIcon: String?,
+    /** Имя спрайта «Поверженные» из игры (напр. pic_jisha), если есть. */
+    val killsIcon: String?,
     val secretTaskId: Int?,
     /** Грейд сундука: 3=SR, 4=SSR, 5=UR. */
     val grade: Int?,
@@ -74,15 +80,27 @@ data class RaidShareTarget(
                 if (level != null && level > 0 && !titleLine().contains("\u0443\u0440", ignoreCase = true)) {
                     meta.add("\u0443\u0440.$level") // ур.N
                 }
-                power?.takeIf { it > 0 }?.let { meta.add(compact(it)) }
-                kills?.takeIf { it > 0 }?.let { meta.add("\u043F\u043E\u0431.${compact(it)}") } // поб.N
             }
         }
         return meta
     }
 
+    /** Компактная подпись мощи для UI/чата. */
+    fun powerLabel(): String? = power?.takeIf { it > 0 }?.let { compact(it) }
+
+    /** Компактная подпись поверженных для UI/чата. */
+    fun killsLabel(): String? = kills?.takeIf { it > 0 }?.let { compact(it) }
+
+    /** Мета без мощи/поверженных — они показываются отдельно с иконками. */
+    fun metaPartsForOverlay(): List<String> = metaParts()
+
     /** Вторая строка целиком (`ур.26 · 54.9M · поб.63.1K`), либо null если данных нет. */
-    fun metaLine(): String? = metaParts().takeIf { it.isNotEmpty() }?.joinToString(" \u00B7 ")
+    fun metaLine(): String? {
+        val parts = metaPartsForOverlay().toMutableList()
+        powerLabel()?.let { parts.add(it) }
+        killsLabel()?.let { parts.add("\u043F\u043E\u0431.$it") }
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(" \u00B7 ")
+    }
 
     /** `UR ★★★` для сундука, либо null (публично — для подсветки в UI). */
     fun chestGradeStars(): String? {
@@ -147,6 +165,9 @@ data class RaidShareTarget(
                     lv = o.optInt("lv", 0).takeIf { it > 0 },
                     power = o.optLong("power", 0L).takeIf { it > 0 },
                     kills = o.optLong("kills", 0L).takeIf { it > 0 },
+                    dialogTopPx = o.optInt("dialogTopPx", 0).takeIf { it > 0 },
+                    powerIcon = o.optString("powerIcon", "").trim().takeIf { it.isNotEmpty() },
+                    killsIcon = o.optString("killsIcon", "").trim().takeIf { it.isNotEmpty() },
                     secretTaskId = o.optInt("secretTaskId", 0).takeIf { it > 0 },
                     grade = o.optInt("grade", 0).takeIf { it > 0 },
                     stars = o.optInt("stars", 0).takeIf { it > 0 },

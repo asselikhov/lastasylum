@@ -9,7 +9,9 @@ import android.os.Looper
 import android.os.Handler
 import android.text.Spannable
 import android.text.SpannableString
+import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
+import android.text.style.ImageSpan
 import android.text.style.StyleSpan
 import android.util.Log
 import android.view.Gravity
@@ -56,6 +58,7 @@ class OverlayRaidSharePanel(
     private var target: RaidShareTarget? = null
     private var attached = false
     private var attachedWindowManager: WindowManager? = null
+    private var layoutParams: WindowManager.LayoutParams? = null
 
     val isShowing: Boolean get() = attached
 
@@ -66,8 +69,9 @@ class OverlayRaidSharePanel(
             val view = root ?: buildView().also { root = it }
             bindTarget(target)
             syncChips()
+            applyVerticalPosition(target.dialogTopPx)
             if (!attached) {
-                runCatching { windowManager.addView(view, buildParams()) }
+                runCatching { windowManager.addView(view, buildParams().also { layoutParams = it }) }
                     .onSuccess {
                         attached = true
                         attachedWindowManager = windowManager
@@ -84,6 +88,7 @@ class OverlayRaidSharePanel(
                 show(windowManager, target)
             } else {
                 logDebug("show update seq=${target.seq}")
+                applyVerticalPosition(target.dialogTopPx)
             }
         }
     }
@@ -123,8 +128,32 @@ class OverlayRaidSharePanel(
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            // Ниже HUD-чипов и ленты чата (у обоих ~36dp сверху).
             y = dp(OverlayHudLayout.chatStripTopOffsetDp() + 88)
+        }
+    }
+
+    /** Разместить панель чуть выше игрового окна выбора канала. */
+    private fun applyVerticalPosition(dialogTopPx: Int?) {
+        val view = root ?: return
+        val wm = attachedWindowManager ?: return
+        val params = layoutParams ?: return
+        val minTop = dp(OverlayHudLayout.chatStripTopOffsetDp() + 8)
+        val gap = dp(8)
+        val place = Runnable {
+            val panelH = view.height.takeIf { it > 0 } ?: view.measuredHeight
+            params.y = if (dialogTopPx != null && dialogTopPx > 0 && panelH > 0) {
+                (dialogTopPx - panelH - gap).coerceAtLeast(minTop)
+            } else if (dialogTopPx != null && dialogTopPx > 0) {
+                (dialogTopPx - gap - dp(120)).coerceAtLeast(minTop)
+            } else {
+                dp(OverlayHudLayout.chatStripTopOffsetDp() + 88)
+            }
+            runCatching { wm.updateViewLayout(view, params) }
+        }
+        if (view.height > 0) {
+            place.run()
+        } else {
+            view.post(place)
         }
     }
 
@@ -223,35 +252,76 @@ class OverlayRaidSharePanel(
     }
 
     private fun bindTarget(t: RaidShareTarget) {
-        val info = (listOf(t.titleLine()) + t.metaParts()).joinToString(" \u00B7 ")
-        val badge = t.chestGradeStars()
-        val gradeColor = gradeColor(t.grade)
-        infoView?.text = if (badge != null && gradeColor != null) {
-            SpannableString(info).apply {
-                val start = info.indexOf(badge)
-                if (start >= 0) {
-                    setSpan(
-                        ForegroundColorSpan(gradeColor),
-                        start,
-                        start + badge.length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-                    )
-                    setSpan(
-                        StyleSpan(Typeface.BOLD),
-                        start,
-                        start + badge.length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-                    )
-                }
-            }
-        } else {
-            info
-        }
+        infoView?.text = buildInfoText(t)
         coordsView?.text = buildString {
             append("[")
             if (t.serverNumber != null) append("S:").append(t.serverNumber).append(" ")
             append("X:").append(t.x).append(" Y:").append(t.y)
             append("]")
+        }
+    }
+
+    private fun buildInfoText(t: RaidShareTarget): CharSequence {
+        val builder = SpannableStringBuilder()
+        val title = t.titleLine()
+        builder.append(title)
+        val meta = t.metaPartsForOverlay()
+        if (meta.isNotEmpty()) {
+            builder.append(" \u00B7 ")
+            builder.append(meta.joinToString(" \u00B7 "))
+        }
+        t.powerLabel()?.let { label ->
+            if (builder.isNotEmpty()) builder.append(" \u00B7 ")
+            appendStatWithIcon(builder, label, t.powerIcon, R.drawable.ic_overlay_game_power)
+        }
+        t.killsLabel()?.let { label ->
+            if (builder.isNotEmpty()) builder.append(" \u00B7 ")
+            appendStatWithIcon(builder, label, t.killsIcon, R.drawable.ic_overlay_game_kills)
+        }
+        val badge = t.chestGradeStars()
+        val gradeColor = gradeColor(t.grade)
+        if (badge != null && gradeColor != null) {
+            val full = builder.toString()
+            val start = full.indexOf(badge)
+            if (start >= 0) {
+                builder.setSpan(
+                    ForegroundColorSpan(gradeColor),
+                    start,
+                    start + badge.length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                builder.setSpan(
+                    StyleSpan(Typeface.BOLD),
+                    start,
+                    start + badge.length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+            }
+        }
+        return builder
+    }
+
+    private fun appendStatWithIcon(
+        builder: SpannableStringBuilder,
+        label: String,
+        gameSprite: String?,
+        fallbackDrawable: Int,
+    ) {
+        val drawable = context.getDrawable(resolveGameIconDrawable(gameSprite, fallbackDrawable)) ?: return
+        val size = dp(14)
+        drawable.setBounds(0, 0, size, size)
+        val start = builder.length
+        builder.append(' ')
+        builder.setSpan(ImageSpan(drawable, ImageSpan.ALIGN_BOTTOM), start, start + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        builder.append(label)
+    }
+
+    private fun resolveGameIconDrawable(gameSprite: String?, fallback: Int): Int {
+        val key = gameSprite?.lowercase().orEmpty()
+        return when {
+            key.contains("zhanli") || key.contains("power") || key.contains("shili") -> R.drawable.ic_overlay_game_power
+            key.contains("jisha") || key.contains("kill") -> R.drawable.ic_overlay_game_kills
+            else -> fallback
         }
     }
 

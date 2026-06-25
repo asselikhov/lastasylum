@@ -228,6 +228,56 @@
     return-void
 .end method
 
+.method public static writeShareClose(Landroid/content/Context;)V
+    .locals 4
+
+    :try_start_0
+    new-instance v0, Ljava/io/File;
+
+    invoke-virtual {p0}, Landroid/content/Context;->getFilesDir()Ljava/io/File;
+
+    move-result-object p0
+
+    const-string v1, "squadrelay_share_close.json"
+
+    invoke-direct {v0, p0, v1}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+
+    new-instance p0, Ljava/io/FileOutputStream;
+
+    invoke-direct {p0, v0}, Ljava/io/FileOutputStream;-><init>(Ljava/io/File;)V
+
+    const-string v0, "{\"close\":true}"
+
+    invoke-virtual {v0}, Ljava/lang/String;->getBytes()[B
+
+    move-result-object v0
+
+    invoke-virtual {p0, v0}, Ljava/io/FileOutputStream;->write([B)V
+
+    invoke-virtual {p0}, Ljava/io/FileOutputStream;->close()V
+
+    const-string p0, "MapFlyReceiver"
+
+    const-string v0, "share close trigger written"
+
+    invoke-static {p0, v0}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+    :try_end_0
+    .catch Ljava/lang/Exception; {:try_start_0 .. :try_end_0} :catch_0
+
+    return-void
+
+    :catch_0
+    move-exception p0
+
+    const-string v0, "MapFlyReceiver"
+
+    const-string v1, "share close write failed"
+
+    invoke-static {v0, v1, p0}, Landroid/util/Log;->e(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I
+
+    return-void
+.end method
+
 
 # virtual methods
 .method public onReceive(Landroid/content/Context;Landroid/content/Intent;)V
@@ -241,6 +291,21 @@
 
     invoke-static {v0, v1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
 
+    const-string v0, "shareclose"
+
+    const/4 v1, 0x0
+
+    invoke-virtual {p2, v0, v1}, Landroid/content/Intent;->getBooleanExtra(Ljava/lang/String;Z)Z
+
+    move-result v0
+
+    if-eqz v0, :cond_autohelp
+
+    invoke-static {p1}, Lcom/lastasylum/alliance/game/MapFlyReceiver;->writeShareClose(Landroid/content/Context;)V
+
+    return-void
+
+    :cond_autohelp
     const-string v0, "autohelp"
 
     const/4 v1, 0x0

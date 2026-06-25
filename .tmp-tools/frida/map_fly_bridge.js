@@ -19,6 +19,7 @@ const LOG_SDCARD = '/sdcard/Download/la_map_fly_bridge.log';
 // share-panel open/close; this script polls it and broadcasts to the SquadRelay app.
 const SHARE_FILE = '/data/data/com.phs.global/files/squadrelay_share.json';
 const SHARE_OK_FILE = '/data/data/com.phs.global/files/squadrelay_share_hook.ok';
+const SHARE_CLOSE_FILE = '/data/data/com.phs.global/files/squadrelay_share_close.json';
 const SHARE_ACTION = 'com.lastasylum.alliance.action.SHARE_TARGET';
 const SHARE_APP_PKG = 'com.lastasylum.alliance';
 
@@ -362,6 +363,7 @@ function installDoStringHook() {
     Interceptor.attach(base.add(RVA.LuaEnv_DoString), {
       onEnter(args) {
         liveLuaEnv = args[0];
+        maybeInstallShareHook();
         if (doStringLogUntil > Date.now()) {
           const chunk = readIl2CppString(args[1]);
           if (chunk) log('DoString: ' + chunk.substring(0, 240).replace(/\s+/g, ' '));
@@ -1271,40 +1273,35 @@ function logLibStatusOnce() {
   }
 }
 
-// Lua hook: wraps UIChatSharePanel OnBaseEnter/OnBaseExit to persist the share
-// target (paramTable + chest grade/stars from Config.SecretTask) to a game-private file.
+// Lua hook: wraps UIChatSharePanel OnEnter/OnExit; writes share payload + dialogTopPx for overlay layout.
 const SHARE_HOOK_LUA = [
   "pcall(function()",
+  "pcall(function() require('Eyu.Logic.UI.Panel.Chat.UIChatSharePanel') end)",
   "local pl=package.loaded",
   "local pcls=pl['Eyu.Logic.UI.Panel.Chat.UIChatSharePanel']",
   "if not pcls then return end",
-  // Dispatch resolves panel methods via the parent table (idx), not pcls itself.
   "local idx=(getmetatable(pcls) or {}).__index or pcls",
   "local F='/data/data/com.phs.global/files/squadrelay_share.json'",
   "local OK='/data/data/com.phs.global/files/squadrelay_share_hook.ok'",
+  "local PREFAB='UI/UIModules/Chat/ChatSharePanel.prefab'",
   "local function esc(s) return (string.gsub(tostring(s),'\"',\"'\")) end",
   "local function wr(t) local f=io.open(F,'w') if f then f:write(t) f:close() end end",
-  // OnEnter/OnExit fire for every panel; the shareType+withAll signature gates to the share panel.
   "local function isShare(pt) return type(pt)=='table' and pt.shareType~=nil and pt.withAll~=nil end",
-  "if not _G.__sr_share_inst then",
-  "_G.__sr_seq=_G.__sr_seq or 0",
-  "local oe=idx.OnEnter idx.__sr_oe=oe",
-  "idx.OnEnter=function(self,...) local r=oe(self,...) pcall(function()",
-  "local pt=self.paramTable",
-  "if isShare(pt) then",
-  "_G.__sr_seq=_G.__sr_seq+1",
-  "local seq=_G.__sr_seq",
-  "wr('{\"seq\":'..seq..',\"open\":true,\"x\":'..tostring(pt.x or 0)..',\"y\":'..tostring(pt.y or 0)..',\"sid\":'..tostring(pt.sid or 0)..',\"shareType\":'..tostring(pt.shareType or 0)..'}')",
-  "local p={}",
-  "p[#p+1]='\"seq\":'..seq",
-  "p[#p+1]='\"open\":true'",
-  "p[#p+1]='\"x\":'..tostring(pt.x or 0)",
-  "p[#p+1]='\"y\":'..tostring(pt.y or 0)",
-  "p[#p+1]='\"sid\":'..tostring(pt.sid or 0)",
-  "p[#p+1]='\"shareType\":'..tostring(pt.shareType or 0)",
-  // Resolve a readable name + category. shareType=1 is a catch-all map object whose kind is
-  // encoded in nameKey=#FN#Table@<Table>#<id>#<field>; Config[Table][id][field] holds the
-  // already-localized text (monster/resource/rally/etc.). Player cities carry pt.name directly.
+  "local function calcDialogTopPx()",
+  "local ok,y=pcall(function()",
+  "local wm=WinsManager and WinsManager.instance",
+  "if not wm then return nil end",
+  "local win=wm:GetWin(PREFAB)",
+  "if not win or not win.gameObject then return nil end",
+  "local roots=CS.UIRoot.list",
+  "if not roots or roots.Count<1 then return nil end",
+  "local manual=roots[0].manualHeight",
+  "local sh=CS.UnityEngine.Screen.height",
+  "local py=win.gameObject.transform.position.y",
+  "if manual and manual>0 and py then return math.floor((1-py/manual)*sh) end",
+  "return nil end)",
+  "return ok and y or nil end",
+  "local function enrich(pt,p)",
   "local dn=nil local cat=nil",
   "if pt.name then dn=pt.name cat='player'",
   "elseif pt.truckName then dn=pt.truckName cat='truck'",
@@ -1323,25 +1320,80 @@ const SHARE_HOOK_LUA = [
   "if st.quality then p[#p+1]='\"grade\":'..tostring(st.quality) end",
   "if st.secretLevel then p[#p+1]='\"stars\":'..tostring(st.secretLevel) end",
   "end end",
-  "wr('{'..table.concat(p,',')..'}')",
-  "local gm=_G.GlobalMapCtrlManager local wm=gm and gm.GetWorldManager and gm:GetWorldManager()",
-  "if wm then local ok,u=pcall(function() return wm:GetDynamicUnitDataByCell(pt.x,pt.y) end)",
+  "local top=calcDialogTopPx()",
+  "if top and top>0 then p[#p+1]='\"dialogTopPx\":'..tostring(top) end",
+  "local gm=_G.GlobalMapCtrlManager local wmm=gm and gm.GetWorldManager and gm:GetWorldManager()",
+  "if wmm then local ok,u=pcall(function() return wmm:GetDynamicUnitDataByCell(pt.x,pt.y) end)",
   "if ok and type(u)=='table' then",
   "if u.level and not pt.lv then p[#p+1]='\"lv\":'..tostring(u.level) end",
-  "if u.playerPower then p[#p+1]='\"power\":'..tostring(u.playerPower) end",
-  "if u.killEnemyCount then p[#p+1]='\"kills\":'..tostring(u.killEnemyCount) end",
+  "if u.playerPower and u.playerPower>0 then p[#p+1]='\"power\":'..tostring(u.playerPower) p[#p+1]='\"powerIcon\":\"pic_zhanli\"' end",
+  "if u.killEnemyCount and u.killEnemyCount>0 then p[#p+1]='\"kills\":'..tostring(u.killEnemyCount) p[#p+1]='\"killsIcon\":\"pic_jisha\"' end",
   "if u.playerUnionShortName and not pt.playerName then p[#p+1]='\"union\":\"'..esc(u.playerUnionShortName)..'\"' end",
-  "_G.__sr_seq=_G.__sr_seq+1",
-  "p[1]='\"seq\":'.._G.__sr_seq",
-  "wr('{'..table.concat(p,',')..'}')",
   "end end",
-  "end end) return r end",
+  "end",
+  "local function publish(pt,open)",
+  "if not isShare(pt) then return end",
+  "_G.__sr_seq=(_G.__sr_seq or 0)+1",
+  "local seq=_G.__sr_seq",
+  "wr('{\"seq\":'..seq..',\"open\":'..(open and 'true' or 'false')..',\"x\":'..tostring(pt.x or 0)..',\"y\":'..tostring(pt.y or 0)..',\"sid\":'..tostring(pt.sid or 0)..',\"shareType\":'..tostring(pt.shareType or 0)..'}')",
+  "if not open then return end",
+  "local p={}",
+  "p[#p+1]='\"seq\":'..seq",
+  "p[#p+1]='\"open\":true'",
+  "p[#p+1]='\"x\":'..tostring(pt.x or 0)",
+  "p[#p+1]='\"y\":'..tostring(pt.y or 0)",
+  "p[#p+1]='\"sid\":'..tostring(pt.sid or 0)",
+  "p[#p+1]='\"shareType\":'..tostring(pt.shareType or 0)",
+  "enrich(pt,p)",
+  "wr('{'..table.concat(p,',')..'}')",
+  "local gm=_G.GlobalMapCtrlManager local wmm=gm and gm.GetWorldManager and gm:GetWorldManager()",
+  "if wmm then local ok,u=pcall(function() return wmm:GetDynamicUnitDataByCell(pt.x,pt.y) end)",
+  "if ok and type(u)=='table' and (u.playerPower or u.killEnemyCount) then",
+  "_G.__sr_seq=_G.__sr_seq+1",
+  "local p2={'\"seq\":'.._G.__sr_seq,'\"open\":true','\"x\":'..tostring(pt.x or 0),'\"y\":'..tostring(pt.y or 0),'\"sid\":'..tostring(pt.sid or 0),'\"shareType\":'..tostring(pt.shareType or 0)}",
+  "enrich(pt,p2)",
+  "wr('{'..table.concat(p2,',')..'}')",
+  "end end",
+  "end",
+  "local function syncOpenShareIfVisible()",
+  "pcall(function()",
+  "local wm=WinsManager and WinsManager.instance",
+  "if not wm then return end",
+  "local win=wm:GetWin(PREFAB)",
+  "if not win or not win._luaInstance then return end",
+  "local pt=win._luaInstance.paramTable",
+  "if isShare(pt) then publish(pt,true) end",
+  "end) end",
+  "if not _G.__sr_share_inst then",
+  "_G.__sr_seq=_G.__sr_seq or 0",
+  "local oe=idx.OnEnter idx.__sr_oe=oe",
+  "idx.OnEnter=function(self,...) local r=oe(self,...) pcall(function()",
+  "local pt=self.paramTable",
+  "if isShare(pt) then _G.__sr_sharePanel=self publish(pt,true) end",
+  "end) return r end",
   "local ox=idx.OnExit idx.__sr_ox=ox",
-  "idx.OnExit=function(self,...) pcall(function() if isShare(self.paramTable) then _G.__sr_seq=_G.__sr_seq+1 wr('{\"seq\":'.._G.__sr_seq..',\"open\":false}') end end) return ox(self,...) end",
+  "idx.OnExit=function(self,...) pcall(function()",
+  "if isShare(self.paramTable) then _G.__sr_sharePanel=nil _G.__sr_seq=(_G.__sr_seq or 0)+1 wr('{\"seq\":'.._G.__sr_seq..',\"open\":false}') end",
+  "end) return ox(self,...) end",
   "_G.__sr_share_inst=true",
   "end",
   "local g=io.open(OK,'w') if g then g:write('ok') g:close() end",
+  "syncOpenShareIfVisible()",
   "end)",
+].join(' ');
+
+const SHARE_CLOSE_LUA = [
+  'pcall(function()',
+  "local prefab='UI/UIModules/Chat/ChatSharePanel.prefab'",
+  'local wm=WinsManager and WinsManager.instance',
+  'if not wm then return end',
+  'local win=wm:GetWin(prefab)',
+  'if not win then return end',
+  'local lp=win._luaInstance',
+  'if lp and lp.OnCloseHandler then pcall(function() lp:OnCloseHandler() end) end',
+  'pcall(function() wm:CloseWin(prefab,true) end)',
+  'pcall(function() wm:RealyCloseWin(prefab,true) end)',
+  'end)',
 ].join(' ');
 
 let shareHookOk = false;
@@ -1358,9 +1410,24 @@ function maybeInstallShareHook() {
   }
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (now - lastShareInstallAt < 500) return;
+  if (now - lastShareInstallAt < 100) return;
   lastShareInstallAt = now;
   runLua(SHARE_HOOK_LUA);
+}
+
+function pollShareCloseFile() {
+  try {
+    const text = readFileUtf8(SHARE_CLOSE_FILE);
+    if (!text || !text.trim() || text.indexOf('close') < 0) return;
+    log('share close trigger');
+    writeFileEmpty(SHARE_CLOSE_FILE);
+    runLua(SHARE_CLOSE_LUA);
+  } catch (e) {
+    const msg = String(e);
+    if (!msg.includes('No such file') && !msg.includes('not found')) {
+      log('share close poll error: ' + e);
+    }
+  }
 }
 
 function sendShareBroadcast(payload) {
@@ -1414,6 +1481,7 @@ setImmediate(function () {
   clearTriggerFiles();
   writeFileEmpty(SHARE_FILE);
   writeFileEmpty(SHARE_OK_FILE);
+  writeFileEmpty(SHARE_CLOSE_FILE);
   shareHookOk = false;
   lastShareText = '';
   mapsDiagOnce();
@@ -1425,9 +1493,14 @@ setImmediate(function () {
     tickAutoHelp();
     maybeInstallShareHook();
     pollShareFile();
+    pollShareCloseFile();
     if (libBase() && pendingFlies.length) scheduleDrainPendingFlies();
   }, 400);
-  setInterval(pollShareFile, 100);
+  setInterval(function () {
+    maybeInstallShareHook();
+    pollShareFile();
+    pollShareCloseFile();
+  }, 100);
 });
 
 setInterval(function () {}, 5000);

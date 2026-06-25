@@ -5280,7 +5280,13 @@ class CombatOverlayService : Service() {
 
     private fun handleRaidShareBroadcast(payload: String?) {
         val target = com.lastasylum.alliance.game.RaidShareTarget.fromJson(payload) ?: return
-        if (target.seq < lastRaidShareSeq) return
+        // seq в игре (_G.__sr_seq) сбрасывается в 0 при каждом перезапуске игры, тогда как
+        // lastRaidShareSeq в живом сервисе хранит старое (большое) значение. Поэтому небольшой
+        // откат назад трактуем как устаревшую/переставленную доставку и отбрасываем, а крупный
+        // откат — это новая игровая сессия: принимаем и сбрасываем базовую линию.
+        val backJump = lastRaidShareSeq - target.seq
+        if (backJump in 1..RAID_SHARE_SEQ_REORDER_WINDOW) return
+        if (backJump > RAID_SHARE_SEQ_REORDER_WINDOW) lastRaidShareSeq = 0L
         val deliver = Runnable {
             val mgr = windowManager ?: systemWindowManager() ?: return@Runnable
             if (!isOverlayPanelUserEnabled()) return@Runnable
@@ -5329,7 +5335,11 @@ class CombatOverlayService : Service() {
         ).gameBracketText()
         val action = commandLabel?.trim()?.takeIf { it.isNotEmpty() }
         // Строка 1: команда (если выбрана) + имя/тег + уровень/мощь/поверженные.
-        val line1 = (listOfNotNull(action, target.titleLine()) + target.metaParts())
+        val line1 = (listOfNotNull(action, target.titleLine()) + target.metaPartsForOverlay() +
+            listOfNotNull(
+                target.powerLabel(),
+                target.killsLabel()?.let { "\u043F\u043E\u0431.$it" },
+            ))
             .joinToString(" \u00B7 ")
         // Строка 2: координаты (кликабельны для перелёта).
         return "$line1\n$coords"
@@ -5337,6 +5347,7 @@ class CombatOverlayService : Service() {
 
     private fun onRaidShareSend(commandLabel: String?, target: com.lastasylum.alliance.game.RaidShareTarget) {
         val text = buildRaidShareText(commandLabel, target)
+        com.lastasylum.alliance.game.GameShareCloseBridge.close(this)
         mainHandler.post {
             (windowManager ?: systemWindowManager())?.let { overlayRaidSharePanel.hide(it) }
             postOptimisticOverlayRaidQuickCommand(text)
@@ -8650,6 +8661,8 @@ class CombatOverlayService : Service() {
         private const val TAG = "CombatOverlayService"
         /** Минимум видимости после open:true — защита от гонки с open:false, не задержка при закрытии. */
         private const val RAID_SHARE_MIN_VISIBLE_MS = 100L
+        // Откат seq в пределах этого окна — устаревшая/переставленная доставка; больше — перезапуск игры.
+        private const val RAID_SHARE_SEQ_REORDER_WINDOW = 8L
         /** Logcat: `adb logcat -s SR_OverlayDiag:D` или фильтр по тегу в Android Studio. */
         private const val OVERLAY_DIAG_TAG = "SR_OverlayDiag"
 
