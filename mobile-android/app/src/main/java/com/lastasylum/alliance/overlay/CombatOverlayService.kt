@@ -5334,13 +5334,24 @@ class CombatOverlayService : Service() {
             serverNumber = target.serverNumber,
         ).gameBracketText()
         val action = commandLabel?.trim()?.takeIf { it.isNotEmpty() }
-        // Строка 1: [команда] Ур.N [тег] Ник Мощь Поверженные — разделитель пробел.
-        val line1 = (listOfNotNull(action, target.levelPrefix(), target.titleLine()) +
-            target.metaPartsForOverlay() +
-            listOfNotNull(target.powerLabel(), target.killsLabel()))
-            .joinToString(" ")
-        // Строка 2: координаты (кликабельны для перелёта).
-        return "$line1\n$coords"
+        // Строка 1: [команда] координаты (кликабельны для перелёта).
+        val line1 = listOfNotNull(action, coords).joinToString(" ")
+        // Строка 2: Ур.N [тег] Ник [иконка]Мощь [иконка]Поверженные (та же последовательность,
+        // что в карточке шаринга; маркеры заменяются рендерером на реальные иконки).
+        val infoHead = (listOfNotNull(target.levelPrefix(), target.titleLine()) +
+            target.metaPartsForOverlay()).joinToString(" ")
+        val line2 = buildString {
+            append(infoHead)
+            target.powerLabel()?.let {
+                if (isNotEmpty()) append(' ')
+                append(com.lastasylum.alliance.game.RaidShareGlyphs.POWER).append(it)
+            }
+            target.killsLabel()?.let {
+                if (isNotEmpty()) append(' ')
+                append(com.lastasylum.alliance.game.RaidShareGlyphs.KILLS).append(it)
+            }
+        }
+        return "$line1\n$line2"
     }
 
     private fun onRaidShareSend(commandLabel: String?, target: com.lastasylum.alliance.game.RaidShareTarget) {

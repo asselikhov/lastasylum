@@ -3,6 +3,16 @@ package com.lastasylum.alliance.game
 import org.json.JSONObject
 
 /**
+ * Невидимые маркеры (Private Use Area) перед значениями «Мощь»/«Поверженные» в тексте
+ * сообщения рейда. Рендерер ([com.lastasylum.alliance.ui.chat.MapLinkedMessageText]) заменяет
+ * их на реальные PNG-иконки из игры; в обычном тексте они невидимы и не ломают парсер координат.
+ */
+object RaidShareGlyphs {
+    const val POWER = '\uE000'
+    const val KILLS = '\uE001'
+}
+
+/**
  * Цель шаринга, перехваченная игровым патчем (панель «Поделиться в чат»).
  *
  * Канал доставки: Frida-бридж в процессе игры пишет JSON в приватный каталог игры,

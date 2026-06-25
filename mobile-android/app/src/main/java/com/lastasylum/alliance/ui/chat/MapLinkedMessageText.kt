@@ -1,21 +1,30 @@
 package com.lastasylum.alliance.ui.chat
 
 import android.graphics.Rect
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.AnnotatedString
@@ -26,9 +35,11 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.em
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.game.GameMapNavigator
 import com.lastasylum.alliance.game.MapCoordinateParser
+import com.lastasylum.alliance.game.RaidShareGlyphs
 import com.lastasylum.alliance.overlay.LocalOverlayDismissBeforeMapNavigate
 import kotlin.math.roundToInt
 
@@ -100,7 +111,7 @@ fun MapLinkedMessageText(
     val annotated = remember(text, coordRange, linkColor) {
         buildAnnotatedString {
             if (coordRange.first > 0) {
-                appendWithGradeColors(text.substring(0, coordRange.first))
+                appendRich(text.substring(0, coordRange.first))
             }
             withLink(
                 LinkAnnotation.Clickable(
@@ -118,10 +129,15 @@ fun MapLinkedMessageText(
             }
             val after = coordRange.last + 1
             if (after < text.length) {
-                appendWithGradeColors(text.substring(after))
+                appendRich(text.substring(after))
             }
         }
     }
+
+    val inlineContent = mapOf(
+        INLINE_POWER to raidStatInlineIcon(R.drawable.ic_overlay_game_power),
+        INLINE_KILLS to raidStatInlineIcon(R.drawable.ic_overlay_game_kills),
+    )
 
     val linkBoundsModifier = if (onCoordinateLinkBoundsInRoot != null) {
         Modifier.onGloballyPositioned { coords ->
@@ -145,6 +161,7 @@ fun MapLinkedMessageText(
         color = color,
         maxLines = maxLines,
         overflow = overflow,
+        inlineContent = inlineContent,
         modifier = modifier
             .then(linkBoundsModifier)
             .semantics {
@@ -159,6 +176,26 @@ fun MapLinkedMessageText(
 }
 
 private const val MAP_COORD_LINK_TAG = "map_coord"
+private const val INLINE_POWER = "raid_icon_power"
+private const val INLINE_KILLS = "raid_icon_kills"
+
+/** Инлайновая иконка статистики рейда (Мощь/Поверженные) размером со строку текста. */
+private fun raidStatInlineIcon(drawableRes: Int): InlineTextContent =
+    InlineTextContent(
+        Placeholder(
+            width = 1.25.em,
+            height = 1.05.em,
+            placeholderVerticalAlign = PlaceholderVerticalAlign.Center,
+        ),
+    ) {
+        Image(
+            painter = painterResource(drawableRes),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.Center,
+        )
+    }
 
 /** Грейды сундуков с цветом: SR — синий, SSR — фиолетовый, UR — золотой. */
 private val GRADE_BLUE = Color(0xFF60A5FA)
@@ -173,6 +210,28 @@ private fun gradeColor(token: String): Color = when (token) {
     "SSR" -> GRADE_PURPLE
     "UR" -> GRADE_GOLD
     else -> GRADE_BLUE
+}
+
+/**
+ * Добавляет сегмент текста, заменяя маркеры [RaidShareGlyphs] на инлайновые иконки
+ * (Мощь/Поверженные) и подсвечивая грейды сундуков.
+ */
+private fun AnnotatedString.Builder.appendRich(segment: String) {
+    val buf = StringBuilder()
+    fun flush() {
+        if (buf.isNotEmpty()) {
+            appendWithGradeColors(buf.toString())
+            buf.setLength(0)
+        }
+    }
+    for (ch in segment) {
+        when (ch) {
+            RaidShareGlyphs.POWER -> { flush(); appendInlineContent(INLINE_POWER, "\u26A1") }
+            RaidShareGlyphs.KILLS -> { flush(); appendInlineContent(INLINE_KILLS, "\u2694") }
+            else -> buf.append(ch)
+        }
+    }
+    flush()
 }
 
 /** Добавляет текст, подсвечивая токены грейда сундука (SR/SSR/UR) и идущие за ними звёзды. */
