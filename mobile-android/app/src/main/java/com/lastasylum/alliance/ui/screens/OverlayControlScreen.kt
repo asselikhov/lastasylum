@@ -46,6 +46,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.game.GameAutoHelpBridge
 import com.lastasylum.alliance.game.GameDeepLinkNavigator
 import com.lastasylum.alliance.game.GameMapNavigator
 import com.lastasylum.alliance.game.GameMapPatchStatus
@@ -72,6 +73,8 @@ fun OverlayControlScreen() {
 
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
     var overlayEnabled by remember { mutableStateOf(prefs.isOverlayPanelEnabled()) }
+    var autoHelpEnabled by remember { mutableStateOf(prefs.isAutoHelpEnabled()) }
+    var autoHelpIntervalSec by remember { mutableIntStateOf(prefs.getAutoHelpIntervalSec()) }
     var detectedGamePackages by remember {
         mutableStateOf<List<OverlayGamePackageSuggestions.DetectedGamePackage>>(emptyList())
     }
@@ -180,6 +183,10 @@ fun OverlayControlScreen() {
 
     LaunchedEffect(Unit) {
         refreshMapPatchStatus()
+    }
+
+    LaunchedEffect(Unit) {
+        GameAutoHelpBridge.sync(appContext)
     }
 
     if (showGameEventsDialog) {
@@ -419,6 +426,75 @@ fun OverlayControlScreen() {
                         Text(stringResource(R.string.map_patch_test_fly))
                     }
                 }
+            }
+        }
+
+        item {
+            SettingsSectionLabel(stringResource(R.string.settings_section_auto_help))
+            SettingsPanelCard {
+                SettingsToggleRow(
+                    title = stringResource(R.string.auto_help_switch_title),
+                    subtitle = stringResource(R.string.auto_help_switch_subtitle),
+                    checked = autoHelpEnabled,
+                    onCheckedChange = { on ->
+                        autoHelpEnabled = on
+                        prefs.setAutoHelpEnabled(on)
+                        GameAutoHelpBridge.write(context, on, autoHelpIntervalSec)
+                    },
+                )
+                if (autoHelpEnabled) {
+                    Text(
+                        text = stringResource(R.string.auto_help_interval_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(
+                            start = SquadRelayDimens.listRowHorizontalPadding,
+                            end = SquadRelayDimens.listRowHorizontalPadding,
+                            top = SquadRelayDimens.itemGap,
+                        ),
+                    )
+                    FlowRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                                vertical = SquadRelayDimens.itemGap,
+                            ),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(15, 30, 60).forEach { sec ->
+                            FilterChip(
+                                selected = autoHelpIntervalSec == sec,
+                                onClick = {
+                                    autoHelpIntervalSec = sec
+                                    prefs.setAutoHelpIntervalSec(sec)
+                                    GameAutoHelpBridge.write(context, autoHelpEnabled, sec)
+                                },
+                                label = {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.auto_help_interval_seconds,
+                                            sec,
+                                        ),
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.auto_help_requires_patch_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                    modifier = Modifier.padding(
+                        start = SquadRelayDimens.listRowHorizontalPadding,
+                        end = SquadRelayDimens.listRowHorizontalPadding,
+                        top = SquadRelayDimens.itemGap,
+                        bottom = SquadRelayDimens.listRowVerticalPadding,
+                    ),
+                )
             }
         }
 

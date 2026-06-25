@@ -233,6 +233,12 @@
     <string name="map_patch_test_fly">Проверить переход на карте</string>
     <string name="map_patch_test_fly_toast">Команда отправлена — смотрите карту в игре</string>
     <string name="map_patch_test_fly_disabled">Сначала установите патч для версии %1$s</string>
+    <string name="settings_section_auto_help">Авто-помощь альянсу</string>
+    <string name="auto_help_switch_title">Авто-помощь соальянсникам</string>
+    <string name="auto_help_switch_subtitle">Пока включено, периодически нажимает «Помочь всем» в игре</string>
+    <string name="auto_help_interval_label">Как часто помогать</string>
+    <string name="auto_help_interval_seconds">%1$d с</string>
+    <string name="auto_help_requires_patch_hint">Работает только с пропатченной игрой и пока игра запущена. То же действие, что и кнопка «Помощь» — без подделки данных.</string>
     <string name="settings_game_events_summary">%1$d из %2$d включено</string>
     <string name="settings_game_events_dialog_close">Закрыть</string>
     <string name="overlay_title">Оверлей</string>

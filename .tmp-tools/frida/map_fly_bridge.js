@@ -22,6 +22,29 @@ const SHARE_OK_FILE = '/data/data/com.phs.global/files/squadrelay_share_hook.ok'
 const SHARE_ACTION = 'com.lastasylum.alliance.action.SHARE_TARGET';
 const SHARE_APP_PKG = 'com.lastasylum.alliance';
 
+// Auto-help: SquadRelay writes a persistent config file; this script periodically
+// calls the alliance "help all" network action (same as tapping the in-game Help
+// button) while there is something to help with.
+const AUTOHELP_FILE = '/data/data/com.phs.global/files/squadrelay_autohelp.json';
+const AUTOHELP_SDCARD = '/sdcard/Download/squadrelay_autohelp.json';
+const AUTOHELP_MIN_INTERVAL_MS = 5000;
+const AUTOHELP_MAX_INTERVAL_MS = 600000;
+// Gate on the locally-cached help list (no extra network round-trip), then send
+// UnionHelpAllC2S only when the game says there is help available.
+const AUTOHELP_LUA = [
+  'pcall(function()',
+  "  local D = rawget(_G, 'Data')",
+  '  if not D then return end',
+  '  local ad = D.AllianceData',
+  '  if not ad or not ad.help then return end',
+  '  local h = ad.help',
+  '  local ok, can = pcall(function() return h:IsHaveCanHelpData() end)',
+  '  if not ok or not can then return end',
+  "  local sm = package.loaded['Logic.Proto.Send.union_help']",
+  '  if sm and sm.UnionHelpAllC2S then sm.UnionHelpAllC2S() end',
+  'end)',
+].join('\n');
+
 const RVA = {
   LuaManager_FormatKXY: 0x2518350,
   LuaManager_SimpleInstrSend: 0x25148d8,
@@ -51,6 +74,10 @@ let doStringLogUntil = 0;
 let cachedAppFrame = ptr(0);
 let mainThreadFlyQueue = [];
 let unityMainTid = -1;
+let autoHelpEnabled = false;
+let autoHelpIntervalMs = 30000;
+let autoHelpLastRun = 0;
+let lastAutoHelpCfg = '';
 
 function readFileUtf8(path, maxLen) {
   const limit = maxLen || 4096;
@@ -1183,6 +1210,48 @@ function pollProbeFile() {
   }
 }
 
+function pollAutoHelpConfig() {
+  const paths = [AUTOHELP_FILE, AUTOHELP_SDCARD];
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const text = readFileUtf8(paths[i]);
+      if (!text || !text.trim()) continue;
+      if (text === lastAutoHelpCfg) return;
+      lastAutoHelpCfg = text;
+      const me = text.match(/"enabled"\s*:\s*(true|false)/);
+      const mi = text.match(/"intervalSec"\s*:\s*(\d+)/);
+      if (me) autoHelpEnabled = me[1] === 'true';
+      if (mi) {
+        let ms = parseInt(mi[1], 10) * 1000;
+        if (ms < AUTOHELP_MIN_INTERVAL_MS) ms = AUTOHELP_MIN_INTERVAL_MS;
+        if (ms > AUTOHELP_MAX_INTERVAL_MS) ms = AUTOHELP_MAX_INTERVAL_MS;
+        autoHelpIntervalMs = ms;
+      }
+      autoHelpLastRun = 0;
+      log('autohelp config: enabled=' + autoHelpEnabled + ' interval=' + autoHelpIntervalMs + 'ms');
+      return;
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes('No such file') && !msg.includes('not found')) {
+        log('autohelp config poll error: ' + e);
+      }
+    }
+  }
+}
+
+function tickAutoHelp() {
+  if (!autoHelpEnabled) return;
+  if (!liveLuaEnv || liveLuaEnv.isNull()) return;
+  const now = Date.now();
+  if (now - autoHelpLastRun < autoHelpIntervalMs) return;
+  autoHelpLastRun = now;
+  try {
+    runLua(AUTOHELP_LUA);
+  } catch (e) {
+    log('autohelp tick error: ' + e);
+  }
+}
+
 function logLibStatusOnce() {
   if (libReadyLogged) return;
   const base = libBase();
@@ -1349,6 +1418,8 @@ setImmediate(function () {
     logLibStatusOnce();
     pollTriggerFile();
     pollProbeFile();
+    pollAutoHelpConfig();
+    tickAutoHelp();
     maybeInstallShareHook();
     pollShareFile();
     if (libBase() && pendingFlies.length) scheduleDrainPendingFlies();

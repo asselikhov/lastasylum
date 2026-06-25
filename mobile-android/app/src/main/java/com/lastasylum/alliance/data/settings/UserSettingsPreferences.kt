@@ -165,6 +165,30 @@ class UserSettingsPreferences(context: Context) {
     private fun effectiveOverlayVoiceVolume(stored: Float): Float =
         if (stored <= 0f) OVERLAY_VOICE_VOLUME_DEFAULT else clampOverlayVoiceVolume(stored)
 
+    /**
+     * Авто-помощь соальянсникам: пока включено, in-process мост пропатченной игры периодически
+     * вызывает «помочь всем» (UnionHelpAllC2S) — то же сетевое действие, что и кнопка «Помощь».
+     */
+    fun isAutoHelpEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_HELP_ENABLED, false)
+
+    fun setAutoHelpEnabled(value: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_HELP_ENABLED, value).apply()
+    }
+
+    /** Интервал авто-помощи в секундах (зажат в [AUTO_HELP_INTERVAL_MIN_SEC]…[AUTO_HELP_INTERVAL_MAX_SEC]). */
+    fun getAutoHelpIntervalSec(): Int =
+        prefs.getInt(KEY_AUTO_HELP_INTERVAL_SEC, AUTO_HELP_INTERVAL_DEFAULT_SEC)
+            .coerceIn(AUTO_HELP_INTERVAL_MIN_SEC, AUTO_HELP_INTERVAL_MAX_SEC)
+
+    fun setAutoHelpIntervalSec(value: Int) {
+        prefs.edit()
+            .putInt(
+                KEY_AUTO_HELP_INTERVAL_SEC,
+                value.coerceIn(AUTO_HELP_INTERVAL_MIN_SEC, AUTO_HELP_INTERVAL_MAX_SEC),
+            )
+            .apply()
+    }
+
     /** @deprecated Use [isGameEventPushEnabled] for hq_excavation. */
     fun isExcavationPushEnabled(): Boolean = isGameEventPushEnabled("hq_excavation")
 
@@ -436,6 +460,11 @@ class UserSettingsPreferences(context: Context) {
         const val OVERLAY_VOICE_VOLUME_MIN = 0f
         const val OVERLAY_VOICE_VOLUME_MAX = 1.5f
         const val OVERLAY_VOICE_VOLUME_DEFAULT = 1f
+        private const val KEY_AUTO_HELP_ENABLED = "auto_help_enabled"
+        private const val KEY_AUTO_HELP_INTERVAL_SEC = "auto_help_interval_sec"
+        const val AUTO_HELP_INTERVAL_DEFAULT_SEC = 30
+        const val AUTO_HELP_INTERVAL_MIN_SEC = 5
+        const val AUTO_HELP_INTERVAL_MAX_SEC = 600
         private const val KEY_EXCAVATION_PUSH = "excavation_push_enabled"
         private const val KEY_GAME_EVENT_PUSH_PREFIX = "game_event_push_"
         private const val KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT = "last_seen_team_news_created_at"
