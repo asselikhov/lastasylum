@@ -29,6 +29,20 @@ class ChatRealtimeSubscriber(
     private var realtimeRoomUnreadListener: ((ChatRoomUnreadEvent) -> Unit)? = null
     private var realtimeRoomPinChangedListener: ((ChatRoomPinChangedEvent) -> Unit)? = null
     private var realtimeHistoryClearedListener: (() -> Unit)? = null
+
+    /**
+     * Стабильные инстансы, реально зарегистрированные в socketManager (один раз). Форвардят на
+     * текущие делегаты-поля выше, поэтому смена делегата не требует remove/add и не ломает порядок.
+     */
+    private var primaryTrampolinesRegistered = false
+    private val messageTrampoline: (ChatMessage) -> Unit = { realtimeUiListener?.invoke(it) }
+    private val deleteTrampoline: (ChatMessageDeletedEvent) -> Unit = { realtimeDeleteListener?.invoke(it) }
+    private val typingTrampoline: (ChatTypingEvent) -> Unit = { realtimeTypingListener?.invoke(it) }
+    private val readTrampoline: (ChatRoomReadEvent) -> Unit = { realtimeReadListener?.invoke(it) }
+    private val roomUnreadTrampoline: (ChatRoomUnreadEvent) -> Unit = { realtimeRoomUnreadListener?.invoke(it) }
+    private val roomPinChangedTrampoline: (ChatRoomPinChangedEvent) -> Unit =
+        { realtimeRoomPinChangedListener?.invoke(it) }
+    private val historyClearedTrampoline: () -> Unit = { realtimeHistoryClearedListener?.invoke() }
     private val overlayMessageListeners =
         java.util.concurrent.CopyOnWriteArrayList<(ChatMessage) -> Unit>()
     private val overlayReactionListeners =
@@ -132,7 +146,13 @@ class ChatRealtimeSubscriber(
         )
     }
 
-    /** Primary VM listener — must register before overlay listeners for correct fanout order. */
+    /**
+     * Primary VM listener. На сокете регистрируется один раз стабильный «трамплин»
+     * ([registerPrimaryTrampolinesOnce]); он форвардит на текущие делегаты-поля. Это держит
+     * корректный порядок fanout (primary раньше overlay) и убирает прежний баг: VM на каждый
+     * повторный вызов передавала НОВУЮ lambda, а socketManager продолжал звать первую (устаревшее
+     * замыкание / потеря realtime у нового VM). Теперь обновляются только поля-делегаты.
+     */
     fun connectRealtimeRooms(
         roomIds: List<String>,
         onMessage: (ChatMessage) -> Unit,
@@ -144,43 +164,6 @@ class ChatRealtimeSubscriber(
         onHistoryCleared: (() -> Unit)? = null,
     ) {
         val nextIds = roomIds.map { it.trim() }.filter { it.isNotEmpty() }
-        val sameRooms = nextIds.size == primaryRealtimeRoomIds.size &&
-            primaryRealtimeRoomIds.containsAll(nextIds)
-        if (sameRooms && realtimeUiListener != null) {
-            // ВНИМАНИЕ (порядок fanout): для тех же комнат мы только переустанавливаем ссылки на
-            // поля, НО НЕ делаем socketManager.remove/add — это сохраняет порядок регистрации
-            // (primary раньше overlay, см. doc выше). Это корректно ТОЛЬКО если приходит тот же
-            // стабильный инстанс lambda, что уже зарегистрирован в socketManager. Если в будущем
-            // сюда передадут новую (захватывающую) lambda, socketManager продолжит звать СТАРУЮ —
-            // утечка/устаревшее замыкание. Ловим это в debug-сборке телеметрией ниже; при
-            // необходимости тогда нужен явный remove+add (с пересмотром порядка fanout).
-            if (BuildConfig.DEBUG && realtimeUiListener !== onMessage) {
-                android.util.Log.w(
-                    "ChatRealtimeSub",
-                    "same-rooms listener swap got a NEW onMessage instance; socketManager still " +
-                        "holds the previous one (potential stale/duplicate listener)",
-                )
-            }
-            realtimeUiListener = onMessage
-            realtimeDeleteListener = onDeleteMessage
-            realtimeTypingListener = onTyping
-            realtimeReadListener = onRead
-            realtimeRoomUnreadListener = onRoomUnread
-            realtimeRoomPinChangedListener = onRoomPinChanged
-            if (onHistoryCleared != null) {
-                realtimeHistoryClearedListener?.let { socketManager.removeChatHistoryClearedListener(it) }
-                realtimeHistoryClearedListener = onHistoryCleared
-                socketManager.addChatHistoryClearedListener(onHistoryCleared)
-            }
-            return
-        }
-        realtimeUiListener?.let { socketManager.removeMessageListener(it) }
-        realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
-        realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
-        realtimeReadListener?.let { socketManager.removeReadListener(it) }
-        realtimeRoomUnreadListener?.let { socketManager.removeRoomUnreadListener(it) }
-        realtimeRoomPinChangedListener?.let { socketManager.removeRoomPinChangedListener(it) }
-        realtimeHistoryClearedListener?.let { socketManager.removeChatHistoryClearedListener(it) }
         realtimeUiListener = onMessage
         realtimeDeleteListener = onDeleteMessage
         realtimeTypingListener = onTyping
@@ -188,16 +171,26 @@ class ChatRealtimeSubscriber(
         realtimeRoomUnreadListener = onRoomUnread
         realtimeRoomPinChangedListener = onRoomPinChanged
         realtimeHistoryClearedListener = onHistoryCleared
-        socketManager.addMessageListener(onMessage)
-        socketManager.addMessageDeletedListener(onDeleteMessage)
-        socketManager.addTypingListener(onTyping)
-        socketManager.addReadListener(onRead)
-        socketManager.addRoomUnreadListener(onRoomUnread)
-        socketManager.addRoomPinChangedListener(onRoomPinChanged)
-        onHistoryCleared?.let { socketManager.addChatHistoryClearedListener(it) }
+        registerPrimaryTrampolinesOnce()
+        val sameRooms = nextIds.size == primaryRealtimeRoomIds.size &&
+            primaryRealtimeRoomIds.containsAll(nextIds)
+        if (sameRooms) return
         primaryRealtimeRoomIds.clear()
         primaryRealtimeRoomIds.addAll(nextIds)
         ensureRealtimeSocketConnected()
+    }
+
+    /** Стабильные трамплины primary-слушателей — добавляются в socketManager строго один раз. */
+    private fun registerPrimaryTrampolinesOnce() {
+        if (primaryTrampolinesRegistered) return
+        primaryTrampolinesRegistered = true
+        socketManager.addMessageListener(messageTrampoline)
+        socketManager.addMessageDeletedListener(deleteTrampoline)
+        socketManager.addTypingListener(typingTrampoline)
+        socketManager.addReadListener(readTrampoline)
+        socketManager.addRoomUnreadListener(roomUnreadTrampoline)
+        socketManager.addRoomPinChangedListener(roomPinChangedTrampoline)
+        socketManager.addChatHistoryClearedListener(historyClearedTrampoline)
     }
 
     fun emitTypingPing(roomId: String) {
@@ -303,17 +296,14 @@ class ChatRealtimeSubscriber(
     }
 
     fun disconnectRealtime() {
-        realtimeUiListener?.let { socketManager.removeMessageListener(it) }
-        realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
-        realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
-        realtimeReadListener?.let { socketManager.removeReadListener(it) }
-        realtimeRoomUnreadListener?.let { socketManager.removeRoomUnreadListener(it) }
-        realtimeHistoryClearedListener?.let { socketManager.removeChatHistoryClearedListener(it) }
+        // Трамплины оставляем зарегистрированными (стабильный порядок fanout) — гасим делегаты,
+        // поэтому форвардинг становится no-op, пока VM снова не вызовет connectRealtimeRooms.
         realtimeUiListener = null
         realtimeDeleteListener = null
         realtimeTypingListener = null
         realtimeReadListener = null
         realtimeRoomUnreadListener = null
+        realtimeRoomPinChangedListener = null
         realtimeHistoryClearedListener = null
         primaryRealtimeRoomIds.clear()
         if (overlayRealtimeRoomIds.isEmpty()) {

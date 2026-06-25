@@ -338,7 +338,17 @@ class ChatSocketManager(
             }
             dispatchOutgoingAckOnMain(ackCid, parsed)
         }
-        socket?.emit("message:send", payload, ack)
+        // Только при ЖИВОМ соединении: иначе socket.io буферизует emit и при reconnect
+        // отправит его повторно — сервер создаст ДУБЛЬ рядом с durable HTTP-отправкой outbox
+        // (доставку и так гарантирует sendEnqueuedOutbox по тому же clientMessageId).
+        val live = socket?.takeIf { it.connected() }
+        if (live == null) {
+            cid?.let {
+                latencyTracker?.endSpanByCorrelation(LatencySpanType.ChatSendToSocket, it, "skipped_offline")
+            }
+            return
+        }
+        live.emit("message:send", payload, ack)
     }
 
     private fun dispatchOutgoingAckOnMain(clientMessageId: String, message: ChatMessage) {

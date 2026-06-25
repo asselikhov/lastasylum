@@ -165,10 +165,14 @@ internal fun stripRacingServerEchoForPending(
     val racingIds = out.withIndex()
         .filter { (idx, msg) ->
             val id = msg._id?.trim().orEmpty()
+            val msgCid = msg.clientMessageId?.trim().orEmpty()
             idx < pendingIndex &&
                 !isOptimisticOutgoingMessageId(id) &&
                 id.isNotEmpty() &&
                 msg.senderId.trim() == selfId &&
+                // НЕ считать «гонкой» подтверждённую строку ДРУГОЙ отправки: если у обеих строк
+                // есть cid и они различаются — это два разных одинаковых по тексту сообщения.
+                (msgCid.isEmpty() || pendingCid.isEmpty() || msgCid == pendingCid) &&
                 outgoingTextsMatch(msg, pending)
         }
         .mapNotNull { (_, msg) -> msg._id?.trim()?.takeIf { it.isNotEmpty() } }
@@ -404,11 +408,18 @@ internal fun findOptimisticOutgoingPendingForConfirm(
     findOptimisticOutgoingPendingId(messages, clientMessageId, currentUserId)?.let { return it }
     val selfId = currentUserId.trim()
     if (selfId.isEmpty() || confirmed.senderId.trim() != selfId) return null
+    val confirmCid = clientMessageId.trim()
     return messages.firstOrNull { msg ->
         val pendingId = msg._id?.trim().orEmpty()
-        isOptimisticOutgoingMessageId(pendingId) &&
-            msg.senderId.trim() == selfId &&
-            outgoingTextsMatch(msg, confirmed)
+        if (!isOptimisticOutgoingMessageId(pendingId) || msg.senderId.trim() != selfId) {
+            return@firstOrNull false
+        }
+        val msgCid = msg.clientMessageId?.trim().orEmpty()
+        // не подтверждать чужую оптимистичную строку с другим cid по простому совпадению текста.
+        if (msgCid.isNotEmpty() && confirmCid.isNotEmpty() && msgCid != confirmCid) {
+            return@firstOrNull false
+        }
+        outgoingTextsMatch(msg, confirmed)
     }?._id?.trim()?.takeIf { it.isNotEmpty() }
 }
 
@@ -459,7 +470,13 @@ internal fun hasMatchingPendingOutgoing(
     }
     return messages.any { msg ->
         val pendingId = msg._id?.trim().orEmpty()
-        isOptimisticOutgoingMessageId(pendingId) && outgoingTextsMatch(msg, incoming)
+        if (!isOptimisticOutgoingMessageId(pendingId)) return@any false
+        val msgCid = msg.clientMessageId?.trim().orEmpty()
+        // если у incoming и у pending есть разные cid — это разные отправки, не подавлять.
+        if (msgCid.isNotEmpty() && incomingClientId.isNotEmpty() && msgCid != incomingClientId) {
+            return@any false
+        }
+        outgoingTextsMatch(msg, incoming)
     }
 }
 
@@ -741,9 +758,15 @@ internal fun replaceMatchingPendingOutgoing(
     }
     val idx = current.indexOfFirst { msg ->
         val pendingId = msg._id?.trim().orEmpty()
-        isOptimisticOutgoingMessageId(pendingId) &&
-            msg.senderId.trim() == selfId &&
-            outgoingTextsMatch(msg, incoming)
+        if (!isOptimisticOutgoingMessageId(pendingId) || msg.senderId.trim() != selfId) {
+            return@indexOfFirst false
+        }
+        val msgCid = msg.clientMessageId?.trim().orEmpty()
+        // incoming имеет cid, но точного совпадения не нашлось — не подменять чужую строку с иным cid.
+        if (incomingClientId.isNotEmpty() && msgCid.isNotEmpty() && msgCid != incomingClientId) {
+            return@indexOfFirst false
+        }
+        outgoingTextsMatch(msg, incoming)
     }
     if (idx < 0) return null
     val pendingId = current[idx]._id?.trim().orEmpty()
@@ -776,7 +799,15 @@ internal fun dropMatchingPendingOutgoing(
     return current.filter { msg ->
         val id = msg._id?.trim().orEmpty()
         if (!isOptimisticOutgoingMessageId(id)) return@filter true
-        !confirmed.any { sent -> outgoingTextsMatch(msg, sent) }
+        val msgCid = msg.clientMessageId?.trim().orEmpty()
+        !confirmed.any { sent ->
+            val sentCid = sent.clientMessageId?.trim().orEmpty()
+            // не ронять оптимистичную строку другой отправки (другой cid) по совпадению текста.
+            if (msgCid.isNotEmpty() && sentCid.isNotEmpty() && msgCid != sentCid) {
+                return@any false
+            }
+            outgoingTextsMatch(msg, sent)
+        }
     }
 }
 

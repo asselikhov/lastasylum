@@ -441,24 +441,26 @@ class ChatListMutationsTest {
     fun shouldSkipBackgroundMessageRefresh_respectsOverlayReconcileInterval() {
         val visible = listOf(msg("507f1f77bcf86cd799439013", "new"))
         val now = 200_000L
+        // прошёл overlay-интервал реконсиляции → не пропускать (нужен REST refresh)
         assertFalse(
             shouldSkipBackgroundMessageRefresh(
                 visible = visible,
                 sessionCache = visible,
                 roomCache = visible,
                 pageSize = 1,
-                lastRestSyncAtMs = now - 25_000L,
+                lastRestSyncAtMs = now - (CHAT_OVERLAY_ACTIVE_ROOM_RECONCILE_INTERVAL_MS + 5_000L),
                 nowMs = now,
                 overlayPanelVisible = true,
             ),
         )
+        // ещё внутри overlay-интервала → пропускать фоновый refresh
         assertTrue(
             shouldSkipBackgroundMessageRefresh(
                 visible = visible,
                 sessionCache = visible,
                 roomCache = visible,
                 pageSize = 1,
-                lastRestSyncAtMs = now - 15_000L,
+                lastRestSyncAtMs = now - (CHAT_OVERLAY_ACTIVE_ROOM_RECONCILE_INTERVAL_MS / 2),
                 nowMs = now,
                 overlayPanelVisible = true,
             ),
@@ -754,6 +756,55 @@ class ChatListMutationsTest {
             currentUserId = "u1",
         )
         assertEquals(listOf("pending-1"), out.map { it._id })
+    }
+
+    @Test
+    fun stripRacingServerEchoForPending_keepsConfirmedOfDifferentSendWithSameText() {
+        // Две одинаковые по тексту отправки с РАЗНЫМИ cid: подтверждённую строку отправки B
+        // нельзя удалять как «гонку» при санации pending отправки A.
+        val confirmedB = msg("507f1f77bcf86cd799439099", "hello").copy(clientMessageId = "client-B")
+        val pendingA = msg("pending-1", "hello").copy(clientMessageId = "client-A")
+        val out = stripRacingServerEchoForPending(
+            messages = listOf(confirmedB, pendingA),
+            pending = pendingA,
+            currentUserId = "u1",
+        )
+        assertEquals(listOf("507f1f77bcf86cd799439099", "pending-1"), out.map { it._id })
+    }
+
+    @Test
+    fun dropMatchingPendingOutgoing_keepsOtherSendPendingWithSameText() {
+        val pendingA = msg("pending-A", "hello").copy(clientMessageId = "client-A")
+        val pendingB = msg("pending-B", "hello").copy(clientMessageId = "client-B")
+        val serverA = msg("507f1f77bcf86cd799439011", "hello").copy(clientMessageId = "client-A")
+        val out = dropMatchingPendingOutgoing(listOf(pendingA, pendingB), listOf(serverA), "u1")
+        assertEquals(listOf("pending-B"), out.map { it._id })
+    }
+
+    @Test
+    fun replaceMatchingPendingOutgoing_skipsDifferentClientMessageIdSameText() {
+        val pendingA = msg("pending-A", "hello").copy(clientMessageId = "client-A")
+        val serverB = msg("507f1f77bcf86cd799439099", "hello").copy(clientMessageId = "client-B")
+        assertNull(replaceMatchingPendingOutgoing(listOf(pendingA), serverB, "u1"))
+    }
+
+    @Test
+    fun hasMatchingPendingOutgoing_ignoresDifferentClientMessageIdSameText() {
+        val pendingA = msg("pending-A", "hello").copy(clientMessageId = "client-A")
+        val serverB = msg("507f1f77bcf86cd799439099", "hello").copy(clientMessageId = "client-B")
+        assertFalse(hasMatchingPendingOutgoing(listOf(pendingA), serverB, "u1"))
+    }
+
+    @Test
+    fun findOptimisticOutgoingPendingForConfirm_skipsDifferentClientMessageId() {
+        val pendingA = msg("pending-A", "hello").copy(clientMessageId = "client-A")
+        val resolved = findOptimisticOutgoingPendingForConfirm(
+            messages = listOf(pendingA),
+            clientMessageId = "client-B",
+            confirmed = msg("507f1f77bcf86cd799439099", "hello").copy(clientMessageId = "client-B"),
+            currentUserId = "u1",
+        )
+        assertNull(resolved)
     }
 
     @Test
