@@ -10,24 +10,22 @@ import android.text.Spannable
 import android.text.SpannableString
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
+import android.util.Log
 import android.view.Gravity
-import android.view.MotionEvent
-import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.game.RaidShareTarget
 
 /**
  * Плавающая панель «В рейд» поверх игрового окна выбора канала.
  *
- * Полноэкранная прозрачная оболочка: тап вне карточки закрывает панель и уходит в игру
- * ([OverlayWindowLayout.popupWindowFlags]). Список каналов игры остаётся доступен.
- *
- * Чекбоксы «Атака»/«Штурм»/«Подкр.» — одиночный выбор; по умолчанию ничего не отмечено.
+ * Компактное окно [WRAP_CONTENT] сверху по центру: касания вне карточки уходят в игру
+ * ([OverlayWindowLayout.popupWindowFlags]), список каналов остаётся доступен.
+ * Закрытие — кнопка «В рейд» или закрытие игрового диалога (тап по пустой области).
  */
 class OverlayRaidSharePanel(
     private val context: Context,
@@ -49,14 +47,14 @@ class OverlayRaidSharePanel(
     private val coordColor = Color.parseColor("#FF7DD3FC")
     private val infoColor = Color.parseColor("#FFE2E8F0")
 
-    private var root: FrameLayout? = null
-    private var card: LinearLayout? = null
+    private var root: LinearLayout? = null
     private var infoView: TextView? = null
     private var coordsView: TextView? = null
     private val chipViews = mutableListOf<TextView>()
     private val selected = mutableSetOf<Int>()
     private var target: RaidShareTarget? = null
     private var attached = false
+    private var attachedWindowManager: WindowManager? = null
 
     val isShowing: Boolean get() = attached
 
@@ -69,7 +67,23 @@ class OverlayRaidSharePanel(
             syncChips()
             if (!attached) {
                 runCatching { windowManager.addView(view, buildParams()) }
-                    .onSuccess { attached = true }
+                    .onSuccess {
+                        attached = true
+                        attachedWindowManager = windowManager
+                        logDebug("show ok seq=${target.seq}")
+                    }
+                    .onFailure { e ->
+                        Log.w(TAG, "show addView failed seq=${target.seq}", e)
+                    }
+            } else if (attachedWindowManager != windowManager) {
+                // WindowManager changed (service rebind) — re-attach on the new one.
+                val oldMgr = attachedWindowManager
+                runCatching { oldMgr?.removeView(view) }
+                attached = false
+                attachedWindowManager = null
+                show(windowManager, target)
+            } else {
+                logDebug("show update seq=${target.seq}")
             }
         }
     }
@@ -77,10 +91,15 @@ class OverlayRaidSharePanel(
     fun hide(windowManager: WindowManager) {
         mainHandler.post {
             val view = root ?: return@post
-            if (attached) {
-                runCatching { windowManager.removeView(view) }
-                attached = false
-            }
+            if (!attached) return@post
+            val mgr = attachedWindowManager ?: windowManager
+            runCatching { mgr.removeView(view) }
+                .onSuccess {
+                    attached = false
+                    attachedWindowManager = null
+                    logDebug("hide ok")
+                }
+                .onFailure { e -> Log.w(TAG, "hide removeView failed", e) }
         }
     }
 
@@ -92,34 +111,20 @@ class OverlayRaidSharePanel(
             WindowManager.LayoutParams.TYPE_PHONE
         }
         return WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
             type,
             OverlayWindowLayout.popupWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.START
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            // Ниже HUD-чипов и ленты чата (у обоих ~36dp сверху).
+            y = dp(OverlayHudLayout.chatStripTopOffsetDp() + 88)
         }
     }
 
-    private fun buildView(): FrameLayout {
-        val shell = FrameLayout(context).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            )
-            setOnTouchListener { _, event ->
-                if (event.action == MotionEvent.ACTION_UP) {
-                    val cardView = card
-                    if (cardView != null && !isTouchOnCard(event, cardView)) {
-                        dismiss()
-                    }
-                }
-                false
-            }
-        }
-
+    private fun buildView(): LinearLayout {
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -130,12 +135,8 @@ class OverlayRaidSharePanel(
                 cornerRadius = dp(16).toFloat()
                 setStroke(dp(1), Color.parseColor("#3360A5FA"))
             }
-            layoutParams = FrameLayout.LayoutParams(dp(300), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                topMargin = dp(40)
-            }
+            layoutParams = ViewGroup.LayoutParams(dp(300), ViewGroup.LayoutParams.WRAP_CONTENT)
         }
-        card = container
 
         val infoCard = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -213,18 +214,8 @@ class OverlayRaidSharePanel(
         }
         container.addView(send)
 
-        shell.addView(container)
         syncChips()
-        return shell
-    }
-
-    private fun isTouchOnCard(event: MotionEvent, cardView: View): Boolean {
-        val loc = IntArray(2)
-        cardView.getLocationOnScreen(loc)
-        val x = event.rawX
-        val y = event.rawY
-        return x >= loc[0] && x <= loc[0] + cardView.width &&
-            y >= loc[1] && y <= loc[1] + cardView.height
+        return container
     }
 
     private fun bindTarget(t: RaidShareTarget) {
@@ -276,10 +267,6 @@ class OverlayRaidSharePanel(
         onSend(label, t)
     }
 
-    private fun dismiss() {
-        (context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)?.let { hide(it) }
-    }
-
     private fun syncChips() {
         chipViews.forEachIndexed { index, chip ->
             val command = commands[index]
@@ -302,4 +289,12 @@ class OverlayRaidSharePanel(
 
     private fun withAlpha(color: Int, alpha: Int): Int =
         (color and 0x00FFFFFF) or (alpha shl 24)
+
+    private fun logDebug(message: String) {
+        if (BuildConfig.DEBUG) Log.d(TAG, message)
+    }
+
+    companion object {
+        private const val TAG = "OverlayRaidSharePanel"
+    }
 }

@@ -267,6 +267,9 @@ class CombatOverlayService : Service() {
     }
     private var raidShareReceiverRegistered = false
     private var lastRaidShareSeq = 0L
+    private val raidShareHideRunnable = Runnable {
+        (windowManager ?: systemWindowManager())?.let { overlayRaidSharePanel.hide(it) }
+    }
     private val raidShareReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, intent: Intent?) {
             if (intent?.action != com.lastasylum.alliance.game.RaidShareBridge.ACTION_SHARE_TARGET) return
@@ -4552,6 +4555,7 @@ class CombatOverlayService : Service() {
         serviceScope.cancel()
         unregisterScreenOnReceiver()
         unregisterRaidShareReceiver()
+        mainHandler.removeCallbacks(raidShareHideRunnable)
         runCatching { (windowManager ?: systemWindowManager())?.let { overlayRaidSharePanel.hide(it) } }
         unregisterVoiceMicPermissionReceiver()
         if (AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
@@ -5275,13 +5279,20 @@ class CombatOverlayService : Service() {
 
     private fun handleRaidShareBroadcast(payload: String?) {
         val target = com.lastasylum.alliance.game.RaidShareTarget.fromJson(payload) ?: return
-        if (!target.open) return
         if (target.seq <= lastRaidShareSeq) return
         lastRaidShareSeq = target.seq
         mainHandler.post {
             val mgr = windowManager ?: systemWindowManager() ?: return@post
             if (!isOverlayPanelUserEnabled()) return@post
-            overlayRaidSharePanel.show(mgr, target)
+            if (target.open) {
+                mainHandler.removeCallbacks(raidShareHideRunnable)
+                overlayRaidSharePanel.show(mgr, target)
+            } else {
+                // Закрытие игрового диалога часто приходит в ту же миллисекунду, что и open:true —
+                // откладываем hide, чтобы панель успела отрисоваться.
+                mainHandler.removeCallbacks(raidShareHideRunnable)
+                mainHandler.postDelayed(raidShareHideRunnable, RAID_SHARE_HIDE_DELAY_MS)
+            }
         }
     }
 
@@ -8624,6 +8635,8 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_PRESENCE_INGAME = "ingame"
         private const val OVERLAY_PRESENCE_AWAY = "away"
         private const val TAG = "CombatOverlayService"
+        /** Минимальная задержка перед hide после open:false — иначе панель не успевает появиться. */
+        private const val RAID_SHARE_HIDE_DELAY_MS = 400L
         /** Logcat: `adb logcat -s SR_OverlayDiag:D` или фильтр по тегу в Android Studio. */
         private const val OVERLAY_DIAG_TAG = "SR_OverlayDiag"
 
