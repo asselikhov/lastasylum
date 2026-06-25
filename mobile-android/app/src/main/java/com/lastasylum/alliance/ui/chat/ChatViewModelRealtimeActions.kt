@@ -361,6 +361,9 @@ internal fun ChatViewModel.applyMessageReplaceSynchronouslyImpl(updated: ChatMes
                 }
             }
         }
+        // Edits/reactions/socket-replaces mutate text/editedAt/reactions in place. Flush the
+        // durable snapshot so cold start reflects the change (other mutation paths already do this).
+        schedulePersistChatSnapshot()
     }
 
 internal fun ChatViewModel.messagesForRoomMergeImpl(roomId: String): List<ChatMessage> {

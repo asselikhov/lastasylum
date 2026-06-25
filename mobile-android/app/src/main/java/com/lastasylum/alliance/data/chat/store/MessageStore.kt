@@ -4,10 +4,22 @@ import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.ui.chat.dedupeMessagesByIdNewestFirst
+import com.lastasylum.alliance.ui.chat.isOptimisticOutgoingMessageId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+
+/**
+ * Rows safe to write to the durable message DB: de-duplicated and with optimistic ("pending-")
+ * rows removed. Optimistic rows carry a local id that differs from the server ObjectId assigned on
+ * confirm, so persisting them leaves duplicate "ghost" rows after reconciliation. Unconfirmed sends
+ * are re-sent by the durable outbox, so dropping them here is safe.
+ */
+internal fun durableStoreMessages(messages: List<ChatMessage>): List<ChatMessage> =
+    dedupeMessagesByIdNewestFirst(messages).filterNot {
+        isOptimisticOutgoingMessageId(it._id?.trim().orEmpty())
+    }
 
 class MessageStore(
     private val db: SquadRelayDatabase,
@@ -63,7 +75,7 @@ class MessageStore(
         val rid = roomId.trim()
         if (userId.isBlank() || rid.isEmpty() || messages.isEmpty()) return@withContext
         val now = System.currentTimeMillis()
-        val entities = dedupeMessagesByIdNewestFirst(messages).mapNotNull { msg ->
+        val entities = durableStoreMessages(messages).mapNotNull { msg ->
             val id = msg._id?.trim().orEmpty()
             if (id.isEmpty()) return@mapNotNull null
             ChatMessageEntity(
