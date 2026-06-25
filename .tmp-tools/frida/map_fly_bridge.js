@@ -1314,16 +1314,6 @@ const SHARE_HOOK_LUA = [
   "if cat then p[#p+1]='\"cat\":\"'..esc(cat)..'\"' end",
   "if pt.lv then p[#p+1]='\"lv\":'..tostring(pt.lv) end",
   "if pt.qualityType then p[#p+1]='\"qualityType\":'..tostring(pt.qualityType) end",
-  // Player cities expose level/power/kills only on the live map unit, not in paramTable.
-  // GetDynamicUnitDataByCell(x,y) returns the visible unit on the currently-viewed server map.
-  "local gm=_G.GlobalMapCtrlManager local wm=gm and gm.GetWorldManager and gm:GetWorldManager()",
-  "if wm then local ok,u=pcall(function() return wm:GetDynamicUnitDataByCell(pt.x,pt.y) end)",
-  "if ok and type(u)=='table' then",
-  "if u.level and not pt.lv then p[#p+1]='\"lv\":'..tostring(u.level) end",
-  "if u.playerPower then p[#p+1]='\"power\":'..tostring(u.playerPower) end",
-  "if u.killEnemyCount then p[#p+1]='\"kills\":'..tostring(u.killEnemyCount) end",
-  "if u.playerUnionShortName and not pt.playerName then p[#p+1]='\"union\":\"'..esc(u.playerUnionShortName)..'\"' end",
-  "end end",
   "if pt.playerName then p[#p+1]='\"playerName\":\"'..esc(pt.playerName)..'\"' end",
   "if pt.secretTaskId then p[#p+1]='\"secretTaskId\":'..tostring(pt.secretTaskId)",
   "local C=_G.Config local st=C and C.SecretTask and C.SecretTask[pt.secretTaskId]",
@@ -1332,6 +1322,17 @@ const SHARE_HOOK_LUA = [
   "if st.secretLevel then p[#p+1]='\"stars\":'..tostring(st.secretLevel) end",
   "end end",
   "wr('{'..table.concat(p,',')..'}')",
+  "local gm=_G.GlobalMapCtrlManager local wm=gm and gm.GetWorldManager and gm:GetWorldManager()",
+  "if wm then local ok,u=pcall(function() return wm:GetDynamicUnitDataByCell(pt.x,pt.y) end)",
+  "if ok and type(u)=='table' then",
+  "if u.level and not pt.lv then p[#p+1]='\"lv\":'..tostring(u.level) end",
+  "if u.playerPower then p[#p+1]='\"power\":'..tostring(u.playerPower) end",
+  "if u.killEnemyCount then p[#p+1]='\"kills\":'..tostring(u.killEnemyCount) end",
+  "if u.playerUnionShortName and not pt.playerName then p[#p+1]='\"union\":\"'..esc(u.playerUnionShortName)..'\"' end",
+  "_G.__sr_seq=_G.__sr_seq+1",
+  "p[1]='\"seq\":'.._G.__sr_seq",
+  "wr('{'..table.concat(p,',')..'}')",
+  "end end",
   "end end) return r end",
   "local ox=idx.OnExit idx.__sr_ox=ox",
   "idx.OnExit=function(self,...) pcall(function() if isShare(self.paramTable) then _G.__sr_seq=_G.__sr_seq+1 wr('{\"seq\":'.._G.__sr_seq..',\"open\":false}') end end) return ox(self,...) end",
@@ -1355,7 +1356,7 @@ function maybeInstallShareHook() {
   }
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (now - lastShareInstallAt < 3000) return;
+  if (now - lastShareInstallAt < 500) return;
   lastShareInstallAt = now;
   runLua(SHARE_HOOK_LUA);
 }

@@ -11,9 +11,11 @@ import android.text.SpannableString
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.lastasylum.alliance.R
@@ -22,12 +24,10 @@ import com.lastasylum.alliance.game.RaidShareTarget
 /**
  * Плавающая панель «В рейд» поверх игрового окна выбора канала.
  *
- * Окно `WRAP_CONTENT` сверху по центру: касания по карточке ловим, всё вне карточки уходит в игру
- * ([OverlayWindowLayout.popupWindowFlags]). Поэтому штатный список каналов игры остаётся доступен,
- * а тап вне игрового окна (в т.ч. по нашей кнопке) закрывает его — данные цели мы уже получили.
+ * Полноэкранная прозрачная оболочка: тап вне карточки закрывает панель и уходит в игру
+ * ([OverlayWindowLayout.popupWindowFlags]). Список каналов игры остаётся доступен.
  *
- * Чекбоксы «Атака»/«Штурм»/«Подкр.» — одиночный выбор (галочка только на одном, повторный тап снимает);
- * по умолчанию ничего не отмечено и префикс не добавляется.
+ * Чекбоксы «Атака»/«Штурм»/«Подкр.» — одиночный выбор; по умолчанию ничего не отмечено.
  */
 class OverlayRaidSharePanel(
     private val context: Context,
@@ -40,31 +40,23 @@ class OverlayRaidSharePanel(
 
     private val commands: List<Command> by lazy {
         listOf(
-            Command(context.getString(R.string.overlay_cmd_column_attack), Color.parseColor("#FFF43F5E")), // красный
-            Command(context.getString(R.string.overlay_cmd_column_storm), Color.parseColor("#FFF59E0B")), // янтарный
-            Command(context.getString(R.string.overlay_raid_cmd_reinf), Color.parseColor("#FF22C55E")), // зелёный
+            Command(context.getString(R.string.overlay_cmd_column_attack), Color.parseColor("#FFF43F5E")),
+            Command(context.getString(R.string.overlay_cmd_column_storm), Color.parseColor("#FFF59E0B")),
+            Command(context.getString(R.string.overlay_raid_cmd_reinf), Color.parseColor("#FF22C55E")),
         )
     }
 
-    private val accent = Color.parseColor("#FF3B82F6")
     private val coordColor = Color.parseColor("#FF7DD3FC")
-    private val titleColor = Color.parseColor("#FFF1F5F9")
     private val infoColor = Color.parseColor("#FFE2E8F0")
-    private val subColor = Color.parseColor("#FF94A3B8")
 
-    private var root: LinearLayout? = null
+    private var root: FrameLayout? = null
+    private var card: LinearLayout? = null
     private var infoView: TextView? = null
     private var coordsView: TextView? = null
     private val chipViews = mutableListOf<TextView>()
     private val selected = mutableSetOf<Int>()
     private var target: RaidShareTarget? = null
     private var attached = false
-
-    /** Подстраховка: если сигнал закрытия панели игры будет пропущен — прячем сами. */
-    private val autoHideMs = 25_000L
-    private val autoHideRunnable = Runnable {
-        (context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)?.let { hide(it) }
-    }
 
     val isShowing: Boolean get() = attached
 
@@ -79,14 +71,11 @@ class OverlayRaidSharePanel(
                 runCatching { windowManager.addView(view, buildParams()) }
                     .onSuccess { attached = true }
             }
-            mainHandler.removeCallbacks(autoHideRunnable)
-            mainHandler.postDelayed(autoHideRunnable, autoHideMs)
         }
     }
 
     fun hide(windowManager: WindowManager) {
         mainHandler.post {
-            mainHandler.removeCallbacks(autoHideRunnable)
             val view = root ?: return@post
             if (attached) {
                 runCatching { windowManager.removeView(view) }
@@ -103,19 +92,34 @@ class OverlayRaidSharePanel(
             WindowManager.LayoutParams.TYPE_PHONE
         }
         return WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
             type,
             OverlayWindowLayout.popupWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = dp(40)
+            gravity = Gravity.TOP or Gravity.START
         }
     }
 
-    private fun buildView(): LinearLayout {
+    private fun buildView(): FrameLayout {
+        val shell = FrameLayout(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_UP) {
+                    val cardView = card
+                    if (cardView != null && !isTouchOnCard(event, cardView)) {
+                        dismiss()
+                    }
+                }
+                false
+            }
+        }
+
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -126,47 +130,13 @@ class OverlayRaidSharePanel(
                 cornerRadius = dp(16).toFloat()
                 setStroke(dp(1), Color.parseColor("#3360A5FA"))
             }
-            layoutParams = ViewGroup.LayoutParams(dp(300), ViewGroup.LayoutParams.WRAP_CONTENT)
-        }
-
-        // Заголовок: цветная точка-акцент + название + крестик.
-        val header = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            )
-        }
-        val dot = View(context).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(accent)
+            layoutParams = FrameLayout.LayoutParams(dp(300), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                topMargin = dp(40)
             }
-            layoutParams = LinearLayout.LayoutParams(dp(8), dp(8)).apply { rightMargin = dp(8) }
         }
-        val title = TextView(context).apply {
-            text = context.getString(R.string.overlay_raid_share_title)
-            setTextColor(titleColor)
-            textSize = 15f
-            letterSpacing = 0.02f
-            typeface = Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val close = TextView(context).apply {
-            text = "\u00D7"
-            setTextColor(subColor)
-            textSize = 20f
-            contentDescription = context.getString(R.string.overlay_raid_share_close_cd)
-            setPadding(dp(10), dp(0), dp(4), dp(2))
-            setOnClickListener { dismiss() }
-        }
-        header.addView(dot)
-        header.addView(title)
-        header.addView(close)
-        container.addView(header)
+        card = container
 
-        // Карточка цели: имя/инфо + координаты акцентным цветом.
         val infoCard = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(8), dp(10), dp(8))
@@ -177,7 +147,7 @@ class OverlayRaidSharePanel(
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(8) }
+            )
         }
         infoView = TextView(context).apply {
             setTextColor(infoColor)
@@ -210,7 +180,6 @@ class OverlayRaidSharePanel(
                 if (index > 0) lp.leftMargin = dp(7)
                 layoutParams = lp
                 setOnClickListener {
-                    // Одиночный выбор: отметка одного снимает остальные; повторный тап снимает галочку.
                     if (index in selected) {
                         selected.clear()
                     } else {
@@ -244,11 +213,20 @@ class OverlayRaidSharePanel(
         }
         container.addView(send)
 
+        shell.addView(container)
         syncChips()
-        return container
+        return shell
     }
 
-    /** Заполняет карточку цели: имя/инфо (строка 1) и координаты (строка 2). */
+    private fun isTouchOnCard(event: MotionEvent, cardView: View): Boolean {
+        val loc = IntArray(2)
+        cardView.getLocationOnScreen(loc)
+        val x = event.rawX
+        val y = event.rawY
+        return x >= loc[0] && x <= loc[0] + cardView.width &&
+            y >= loc[1] && y <= loc[1] + cardView.height
+    }
+
     private fun bindTarget(t: RaidShareTarget) {
         val info = (listOf(t.titleLine()) + t.metaParts()).joinToString(" \u00B7 ")
         val badge = t.chestGradeStars()
@@ -282,11 +260,10 @@ class OverlayRaidSharePanel(
         }
     }
 
-    /** Цвет грейда сундука: SR — синий, SSR — фиолетовый, UR — золотой. */
     private fun gradeColor(grade: Int?): Int? = when (grade) {
-        3 -> Color.parseColor("#FF60A5FA") // SR
-        4 -> Color.parseColor("#FFC084FC") // SSR
-        5 -> Color.parseColor("#FFFBBF24") // UR
+        3 -> Color.parseColor("#FF60A5FA")
+        4 -> Color.parseColor("#FFC084FC")
+        5 -> Color.parseColor("#FFFBBF24")
         else -> null
     }
 
@@ -307,7 +284,7 @@ class OverlayRaidSharePanel(
         chipViews.forEachIndexed { index, chip ->
             val command = commands[index]
             val isOn = index in selected
-            val mark = if (isOn) "\u2611 " else "\u2610 " // ☑ / ☐
+            val mark = if (isOn) "\u2611 " else "\u2610 "
             chip.text = mark + command.label
             chip.background = GradientDrawable().apply {
                 cornerRadius = dp(10).toFloat()

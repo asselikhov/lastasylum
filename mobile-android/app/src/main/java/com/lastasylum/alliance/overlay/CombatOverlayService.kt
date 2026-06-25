@@ -5275,16 +5275,13 @@ class CombatOverlayService : Service() {
 
     private fun handleRaidShareBroadcast(payload: String?) {
         val target = com.lastasylum.alliance.game.RaidShareTarget.fromJson(payload) ?: return
+        if (!target.open) return
         if (target.seq <= lastRaidShareSeq) return
         lastRaidShareSeq = target.seq
         mainHandler.post {
             val mgr = windowManager ?: systemWindowManager() ?: return@post
-            if (target.open) {
-                if (!isOverlayPanelUserEnabled()) return@post
-                overlayRaidSharePanel.show(mgr, target)
-            } else {
-                overlayRaidSharePanel.hide(mgr)
-            }
+            if (!isOverlayPanelUserEnabled()) return@post
+            overlayRaidSharePanel.show(mgr, target)
         }
     }
 
