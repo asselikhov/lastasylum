@@ -38,13 +38,27 @@ class OverlayRaidSharePanel(
     /** commandLabel = подпись отмеченного чекбокса или null (ничего не отмечено). */
     private val onSend: (commandLabel: String?, target: RaidShareTarget) -> Unit,
 ) {
-    private data class Command(val label: String, val color: Int)
+    /** chipLabel — для чекбокса (допустимо сокращение), messageLabel — для текста сообщения (полное). */
+    private data class Command(val chipLabel: String, val messageLabel: String, val color: Int)
 
     private val commands: List<Command> by lazy {
         listOf(
-            Command(context.getString(R.string.overlay_cmd_column_attack), Color.parseColor("#FFF43F5E")),
-            Command(context.getString(R.string.overlay_cmd_column_storm), Color.parseColor("#FFF59E0B")),
-            Command(context.getString(R.string.overlay_raid_cmd_reinf), Color.parseColor("#FF22C55E")),
+            Command(
+                chipLabel = context.getString(R.string.overlay_cmd_column_attack),
+                messageLabel = context.getString(com.lastasylum.alliance.game.RaidCommandStyle.ATTACK.fullLabelRes),
+                color = com.lastasylum.alliance.game.RaidCommandStyle.ATTACK.colorArgb.toInt(),
+            ),
+            Command(
+                chipLabel = context.getString(R.string.overlay_cmd_column_storm),
+                messageLabel = context.getString(com.lastasylum.alliance.game.RaidCommandStyle.STORM.fullLabelRes),
+                color = com.lastasylum.alliance.game.RaidCommandStyle.STORM.colorArgb.toInt(),
+            ),
+            Command(
+                // В чекбоксе допускается сокращение «Подкр.», в сообщении — полное «Подкрепление».
+                chipLabel = context.getString(R.string.overlay_raid_cmd_reinf),
+                messageLabel = context.getString(com.lastasylum.alliance.game.RaidCommandStyle.REINFORCE.fullLabelRes),
+                color = com.lastasylum.alliance.game.RaidCommandStyle.REINFORCE.colorArgb.toInt(),
+            ),
         )
     }
 
@@ -346,7 +360,7 @@ class OverlayRaidSharePanel(
         val t = target ?: return
         val label = commands.indices
             .filter { it in selected }
-            .joinToString(", ") { commands[it].label }
+            .joinToString(", ") { commands[it].messageLabel }
             .takeIf { it.isNotEmpty() }
         onSend(label, t)
     }
@@ -356,7 +370,7 @@ class OverlayRaidSharePanel(
             val command = commands[index]
             val isOn = index in selected
             val mark = if (isOn) "\u2611 " else "\u2610 "
-            chip.text = mark + command.label
+            chip.text = mark + command.chipLabel
             chip.background = GradientDrawable().apply {
                 cornerRadius = dp(10).toFloat()
                 if (isOn) {

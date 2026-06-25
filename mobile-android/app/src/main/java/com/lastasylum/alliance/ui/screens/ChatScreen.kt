@@ -2884,7 +2884,18 @@ internal fun ChatMessageBubble(
     val swipePx = remember(density) { with(density) { 56.dp.toPx() } }
     val stickerStem = remember(message.text) { StickerPacks.stemForMessage(message.text) }
     val textPreview = chatMessageSemanticsPreview(message.text)
-    val senderLine = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername, message.senderServerNumber)
+    // Чистый билдер строки — мемоизируем по входам, чтобы не пересобирать на каждый recompose.
+    val senderLine = remember(
+        message.senderTeamTag,
+        message.senderUsername,
+        message.senderServerNumber,
+    ) {
+        chatSenderDisplayWithTag(
+            message.senderTeamTag,
+            message.senderUsername,
+            message.senderServerNumber,
+        )
+    }
     val bubbleDescription = stringResource(
         R.string.cd_chat_message,
         senderLine,

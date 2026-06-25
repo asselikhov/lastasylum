@@ -14,6 +14,12 @@ data class ChatSendFailure(
     val messageText: String,
     val replyToMessageId: String?,
     val errorMessage: String,
+    /**
+     * Идентификатор исходного outbox-сообщения. Если задан — «Повторить» переотправляет ту же
+     * строку (тот же [clientMessageId]), что идемпотентно на сервере и не создаёт дубликат у пира.
+     */
+    val clientMessageId: String? = null,
+    val pendingMessageId: String? = null,
 )
 
 data class ChatState(

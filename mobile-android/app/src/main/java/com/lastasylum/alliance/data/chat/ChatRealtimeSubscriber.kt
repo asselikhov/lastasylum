@@ -147,6 +147,20 @@ class ChatRealtimeSubscriber(
         val sameRooms = nextIds.size == primaryRealtimeRoomIds.size &&
             primaryRealtimeRoomIds.containsAll(nextIds)
         if (sameRooms && realtimeUiListener != null) {
+            // ВНИМАНИЕ (порядок fanout): для тех же комнат мы только переустанавливаем ссылки на
+            // поля, НО НЕ делаем socketManager.remove/add — это сохраняет порядок регистрации
+            // (primary раньше overlay, см. doc выше). Это корректно ТОЛЬКО если приходит тот же
+            // стабильный инстанс lambda, что уже зарегистрирован в socketManager. Если в будущем
+            // сюда передадут новую (захватывающую) lambda, socketManager продолжит звать СТАРУЮ —
+            // утечка/устаревшее замыкание. Ловим это в debug-сборке телеметрией ниже; при
+            // необходимости тогда нужен явный remove+add (с пересмотром порядка fanout).
+            if (BuildConfig.DEBUG && realtimeUiListener !== onMessage) {
+                android.util.Log.w(
+                    "ChatRealtimeSub",
+                    "same-rooms listener swap got a NEW onMessage instance; socketManager still " +
+                        "holds the previous one (potential stale/duplicate listener)",
+                )
+            }
             realtimeUiListener = onMessage
             realtimeDeleteListener = onDeleteMessage
             realtimeTypingListener = onTyping

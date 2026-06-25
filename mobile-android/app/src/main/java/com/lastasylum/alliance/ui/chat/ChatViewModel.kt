@@ -720,6 +720,8 @@ class ChatViewModel(
         pinBarIndexByRoom.clear()
         pinStateAuthoritativeRoomIds.clear()
         activeOutgoingClientMessageIds.clear()
+        confirmedOutgoingClientMessageIds.clear()
+        pendingOutgoingByClientMessageId.clear()
         overlayQuickCommandPrepared.clear()
 
         _state.update { st ->

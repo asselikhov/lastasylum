@@ -86,8 +86,22 @@ interface ChatOutboxDao {
     @Query("SELECT * FROM chat_outbox WHERE userId = :userId AND roomId = :roomId AND state IN ('pending','sending','failed')")
     fun observeActiveForRoom(userId: String, roomId: String): Flow<List<ChatOutboxEntity>>
 
-    @Query("SELECT * FROM chat_outbox WHERE userId = :userId AND state IN ('pending','failed') ORDER BY createdAtMs ASC")
-    suspend fun getResumable(userId: String): List<ChatOutboxEntity>
+    @Query(
+        """
+        UPDATE chat_outbox SET state = 'failed', lastError = 'send_timeout', attempts = attempts + 1
+        WHERE userId = :userId AND state = 'sending'
+        """,
+    )
+    suspend fun recoverStuckSendingToFailed(userId: String): Int
+
+    @Query(
+        """
+        SELECT * FROM chat_outbox
+        WHERE userId = :userId AND state IN ('pending','failed') AND attempts < :maxAttempts
+        ORDER BY createdAtMs ASC
+        """,
+    )
+    suspend fun getResumable(userId: String, maxAttempts: Int): List<ChatOutboxEntity>
 
     @Query("SELECT * FROM chat_outbox WHERE clientMessageId = :clientMessageId LIMIT 1")
     suspend fun getByClientId(clientMessageId: String): ChatOutboxEntity?

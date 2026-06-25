@@ -1,6 +1,5 @@
 package com.lastasylum.alliance.data.chat.sync
 
-import android.os.Looper
 import android.util.Log
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -145,12 +144,9 @@ class ChatIncomingSync(
             return
         }
         val fastMainApply = scopedBatch.size == 1 && host.preferFastIncomingApply()
-        val applyDispatcher = if (fastMainApply) {
-            Dispatchers.Main.immediate
-        } else {
-            Dispatchers.Default
-        }
-        scope.launch(applyDispatcher) {
+        // Compute (merge/derive под chatMutationLock) всегда вне main-потока — даже для fast-path
+        // одиночного сообщения, чтобы тяжёлая работа не стопорила кадр при контенции с оверлеем.
+        scope.launch(Dispatchers.Default) {
             incomingApplyMutex.withLock {
                 val indexSnapshot = synchronized(chatMutationLock) {
                     MessageIndexSnapshot(
@@ -225,11 +221,10 @@ class ChatIncomingSync(
                         }
                     }
                 }
-                if (fastMainApply && Looper.myLooper() == Looper.getMainLooper()) {
-                    commitUi()
-                } else {
-                    withContext(Dispatchers.Main) { commitUi() }
-                }
+                // UI-коммит на main; для fast-path — immediate (минимальная задержка отрисовки).
+                val commitDispatcher =
+                    if (fastMainApply) Dispatchers.Main.immediate else Dispatchers.Main
+                withContext(commitDispatcher) { commitUi() }
             }
         }
     }

@@ -47,7 +47,8 @@ internal fun ChatViewModel.launchTextOutgoingSendImpl(
         source: OutboxSendSource = OutboxSendSource.ChatUi,
     ) {
         val trimmed = text.trim()
-        vmState.value = vmState.value.copy(isSending = false, error = null, sendFailure = null)
+        // Send-in-flight: блокирует кнопку до оптимистичной вставки/подтверждения/ошибки.
+        vmState.value = vmState.value.copy(isSending = true, error = null, sendFailure = null)
         deriveJob?.cancel()
         deriveDebounceJob?.cancel()
 
@@ -280,6 +281,15 @@ private fun ChatViewModel.finishFastOutgoingSend(
                             clientMessageId = cid,
                             excavationAlert = prepared.excavationAlert,
                         )
+                    }.onFailure { socketErr ->
+                        // Не критично: REST-путь (sendEnqueuedOutbox) ниже доставит сообщение.
+                        // Раньше ошибка глоталась молча — фиксируем в debug для диагностики.
+                        if (com.lastasylum.alliance.BuildConfig.DEBUG) {
+                            android.util.Log.w(
+                                "ChatOutgoing",
+                                "socket emit failed (REST fallback will deliver) cid=$cid: ${socketErr.message}",
+                            )
+                        }
                     }
                 }
                 withContext(Dispatchers.IO) {
@@ -312,15 +322,23 @@ private fun ChatViewModel.finishFastOutgoingSend(
                 }
             }
             .onFailure { throwable ->
+                // Дубликат-на-ретрае: НЕ удаляем оптимистичную строку. Durable failed-строка
+                // outbox переотправит тот же cid сама; «Повторить» переиспользует этот же cid.
                 if (confirmedOutgoingClientMessageIds.contains(cid)) return@onFailure
-                pendingOutgoingByClientMessageId.remove(cid)
-                removePendingOutgoingMessage(prepared.pendingMessageId)
+                // Определяющая проверка вместо гонки «confirm vs claim»: если строки уже нет
+                // (подтверждена/заменена эхо-сообщением), баннер ошибки не показываем.
+                val rowStillPending = vmState.value.messages.any {
+                    it._id?.trim() == prepared.pendingMessageId
+                }
+                if (!rowStillPending) return@onFailure
                 vmState.value = vmState.value.copy(
                     isSending = false,
                     sendFailure = ChatSendFailure(
                         messageText = trimmed,
                         replyToMessageId = replyToMessageId,
                         errorMessage = throwable.toUserMessageRu(res),
+                        clientMessageId = cid,
+                        pendingMessageId = prepared.pendingMessageId,
                     ),
                 )
             }
@@ -644,7 +662,50 @@ internal fun ChatViewModel.openUriInputStreamImpl(cr: ContentResolver, uri: Uri)
 
 internal fun ChatViewModel.retrySendFailureImpl() {
         val failure = vmState.value.sendFailure ?: return
-        sendMessageImpl(failure.messageText, replyOverride = failure.replyToMessageId)
+        val cid = failure.clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
+        if (cid == null) {
+            // Нет durable-строки (например, упала запись в БД) — отправляем заново с новым cid.
+            sendMessageImpl(failure.messageText, replyOverride = failure.replyToMessageId)
+            return
+        }
+        // Идемпотентный ретрай: переотправляем ту же outbox-строку (тот же cid), поэтому сервер
+        // дедуплицирует и пир никогда не увидит дубликат. Оптимистичная строка уже на экране.
+        vmState.value = vmState.value.copy(sendFailure = null, isSending = true)
+        vmScope.launch {
+            val hasRow = withContext(Dispatchers.IO) { chatOutbox.hasActiveSend(cid) }
+            if (!hasRow) {
+                // Строка уже подтверждена/удалена — ретраить нечего.
+                vmState.value = vmState.value.copy(isSending = false)
+                return@launch
+            }
+            chatSyncEngine.sendEnqueuedOutbox(cid)
+                .onSuccess { sent ->
+                    if (!confirmedOutgoingClientMessageIds.contains(cid)) {
+                        confirmOutgoingByClientMessageId(
+                            clientMessageId = cid,
+                            sent = sent,
+                            pendingIdHint = failure.pendingMessageId,
+                        )
+                    } else {
+                        vmState.value = vmState.value.copy(isSending = false)
+                    }
+                }
+                .onFailure { throwable ->
+                    // Конкурентный фоновый resume уже забрал строку — не показываем ложный баннер.
+                    val claimConflict = throwable.message == "outbox_claim_failed"
+                    val rowStillPending = vmState.value.messages.any {
+                        it._id?.trim() == failure.pendingMessageId
+                    }
+                    vmState.value = vmState.value.copy(
+                        isSending = false,
+                        sendFailure = if (!claimConflict && rowStillPending) {
+                            failure.copy(errorMessage = throwable.toUserMessageRu(res))
+                        } else {
+                            vmState.value.sendFailure
+                        },
+                    )
+                }
+        }
     }
 
 internal fun ChatViewModel.dismissSendFailureImpl() {

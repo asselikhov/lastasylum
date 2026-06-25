@@ -91,13 +91,20 @@ internal fun outgoingPayloadMatches(a: ChatMessage, b: ChatMessage): Boolean {
 internal fun outgoingTextsMatch(a: ChatMessage, b: ChatMessage): Boolean =
     outgoingPayloadMatches(a, b)
 
-private const val OUTGOING_SAME_SEND_MAX_SKEW_MS = 120_000L
+// Узкое окно для cid-less fallback: покрывает обычную задержку подтверждения, но не сливает
+// две отдельные отправки одинакового текста. Раньше было 120 c — это ошибочно объединяло
+// два идентичных сообщения, отправленных в пределах двух минут.
+private const val OUTGOING_SAME_SEND_MAX_SKEW_MS = 30_000L
 
 /** Same in-flight send when [clientMessageId] matches or text and timestamps are close. */
 internal fun isLikelySameOutgoingSend(pending: ChatMessage, confirmed: ChatMessage): Boolean {
     val pendingCid = pending.clientMessageId?.trim().orEmpty()
     val confirmedCid = confirmed.clientMessageId?.trim().orEmpty()
-    if (pendingCid.isNotEmpty() && confirmedCid == pendingCid) return true
+    // Предпочитаем cid: если он есть у обеих строк — решает только равенство cid.
+    // Разные cid = разные отправки, поэтому НЕ откатываемся на совпадение текста.
+    if (pendingCid.isNotEmpty() && confirmedCid.isNotEmpty()) {
+        return pendingCid == confirmedCid
+    }
     if (!outgoingTextsMatch(pending, confirmed)) return false
     val pendingTs = parseIsoInstantEpochMilli(pending.createdAt) ?: return false
     val confirmedTs = parseIsoInstantEpochMilli(confirmed.createdAt) ?: return false

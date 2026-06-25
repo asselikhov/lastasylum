@@ -189,7 +189,8 @@ class ChatOutbox(
         userId: String,
         sendBlock: suspend (OutboxEntry) -> Result<com.lastasylum.alliance.data.chat.ChatMessage>,
     ) = resumeMutex.withLock {
-        val pending = withContext(Dispatchers.IO) { dao.getResumable(userId) }
+        withContext(Dispatchers.IO) { dao.recoverStuckSendingToFailed(userId) }
+        val pending = withContext(Dispatchers.IO) { dao.getResumable(userId, MAX_RESUME_ATTEMPTS) }
         pending.forEach { row ->
             val entry = toEntry(row)
             scope.launch(Dispatchers.IO) {
@@ -204,11 +205,20 @@ class ChatOutbox(
         userId: String,
         sendBlock: suspend (OutboxEntry) -> Result<com.lastasylum.alliance.data.chat.ChatMessage>,
     ) = resumeMutex.withLock {
-        val pending = withContext(Dispatchers.IO) { dao.getResumable(userId) }
+        withContext(Dispatchers.IO) { dao.recoverStuckSendingToFailed(userId) }
+        val pending = withContext(Dispatchers.IO) { dao.getResumable(userId, MAX_RESUME_ATTEMPTS) }
         pending.forEach { row ->
             val entry = tryClaimForSend(row.clientMessageId) ?: return@forEach
             sendBlock(entry)
         }
+    }
+
+    companion object {
+        /**
+         * Потолок авто-ретраев durable-строки. По достижении строка перестаёт переотправляться
+         * (dead-letter), а не висит в вечном цикле; пользователь может вызвать ручной «Повторить».
+         */
+        const val MAX_RESUME_ATTEMPTS = 12
     }
 
     private fun toEntry(row: ChatOutboxEntity): OutboxEntry = OutboxEntry(

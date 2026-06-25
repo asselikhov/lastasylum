@@ -700,6 +700,11 @@ internal fun ChatViewModel.selectRoomImpl(roomId: String) {
         knownMessageIds.clear()
         messageIdIndex.clear()
         lazyColumnKeyByMessageId.clear()
+        // Per-room dedup state не должно протекать между комнатами: оставшиеся cid от прошлой
+        // комнаты могли бы блокировать подтверждение/эхо в новой. Confirm имеет фолбэки
+        // (outboxRoomSnapshot / поиск по messages), durable-отправки переподтвердятся по cid.
+        confirmedOutgoingClientMessageIds.clear()
+        pendingOutgoingByClientMessageId.clear()
         _draftMessage.value = ""
         _pickedImageUris.value = emptyList()
         _typingPeers.value = emptyMap()

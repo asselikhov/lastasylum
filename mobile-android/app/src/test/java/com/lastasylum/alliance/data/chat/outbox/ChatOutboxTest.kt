@@ -78,7 +78,7 @@ class ChatOutboxTest {
         reloadedDb.chatOutboxDao().upsert(
             db.chatOutboxDao().getByClientId("client-resume")!!,
         )
-        val resumable = reloadedDb.chatOutboxDao().getResumable("user1")
+        val resumable = reloadedDb.chatOutboxDao().getResumable("user1", Int.MAX_VALUE)
         assertEquals(1, resumable.size)
         assertTrue(OutboxSendState.fromWire(resumable.first().state) == OutboxSendState.Pending)
     }
@@ -216,7 +216,7 @@ class ChatOutboxTest {
         )
         val reloadedDb = SquadRelayDatabase.createInMemory(context)
         reloadedDb.chatOutboxDao().upsert(dao.getByClientId("client-kill")!!)
-        val resumable = reloadedDb.chatOutboxDao().getResumable("user1")
+        val resumable = reloadedDb.chatOutboxDao().getResumable("user1", Int.MAX_VALUE)
         assertEquals(1, resumable.size)
         assertEquals("client-kill", resumable.first().clientMessageId)
     }

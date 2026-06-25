@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.em
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.game.GameMapNavigator
 import com.lastasylum.alliance.game.MapCoordinateParser
+import com.lastasylum.alliance.game.RaidCommandStyle
 import com.lastasylum.alliance.game.RaidShareGlyphs
 import com.lastasylum.alliance.overlay.LocalOverlayDismissBeforeMapNavigate
 import kotlin.math.roundToInt
@@ -108,10 +109,16 @@ fun MapLinkedMessageText(
         GameMapNavigator.openFromMessage(context, text)
     }
 
-    val annotated = remember(text, coordRange, linkColor) {
+    // Локализованные подписи рейд-команд + их цвета (единый источник — RaidCommandStyle),
+    // чтобы подсветить ведущую команду в строке 1 так же, как в панели «В рейд».
+    val commandLabels: List<Pair<String, Color>> = RaidCommandStyle.ALL.map { style ->
+        stringResource(style.fullLabelRes) to Color(style.colorArgb)
+    }
+
+    val annotated = remember(text, coordRange, linkColor, commandLabels) {
         buildAnnotatedString {
             if (coordRange.first > 0) {
-                appendRich(text.substring(0, coordRange.first))
+                appendRichWithLeadingCommand(text.substring(0, coordRange.first), commandLabels)
             }
             withLink(
                 LinkAnnotation.Clickable(
@@ -134,10 +141,13 @@ fun MapLinkedMessageText(
         }
     }
 
-    val inlineContent = mapOf(
-        INLINE_POWER to raidStatInlineIcon(R.drawable.ic_overlay_game_power),
-        INLINE_KILLS to raidStatInlineIcon(R.drawable.ic_overlay_game_kills),
-    )
+    // Статичная карта (drawable-id константны) — держим один экземпляр, без пересоздания на каждый recompose.
+    val inlineContent = remember {
+        mapOf(
+            INLINE_POWER to raidStatInlineIcon(R.drawable.ic_overlay_game_power),
+            INLINE_KILLS to raidStatInlineIcon(R.drawable.ic_overlay_game_kills),
+        )
+    }
 
     val linkBoundsModifier = if (onCoordinateLinkBoundsInRoot != null) {
         Modifier.onGloballyPositioned { coords ->
@@ -210,6 +220,34 @@ private fun gradeColor(token: String): Color = when (token) {
     "SSR" -> GRADE_PURPLE
     "UR" -> GRADE_GOLD
     else -> GRADE_BLUE
+}
+
+/**
+ * Рендерит префикс строки 1 (до ссылки координат), подсвечивая ведущую рейд-команду
+ * («Атака»/«Штурм»/«Подкрепление») цветом из [RaidCommandStyle]. Если выбрано несколько
+ * команд, перечисленных через «, », красятся все ведущие токены. Остаток уходит в [appendRich].
+ */
+private fun AnnotatedString.Builder.appendRichWithLeadingCommand(
+    segment: String,
+    commands: List<Pair<String, Color>>,
+) {
+    var rest = segment
+    while (true) {
+        val match = commands.firstOrNull { (label, _) -> label.isNotEmpty() && rest.startsWith(label) }
+            ?: break
+        val (label, labelColor) = match
+        withStyle(SpanStyle(color = labelColor, fontWeight = FontWeight.Bold)) {
+            append(rest.substring(0, label.length))
+        }
+        rest = rest.substring(label.length)
+        if (rest.startsWith(", ")) {
+            append(", ")
+            rest = rest.substring(2)
+        } else {
+            break
+        }
+    }
+    appendRich(rest)
 }
 
 /**
