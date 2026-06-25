@@ -267,6 +267,7 @@ class CombatOverlayService : Service() {
     }
     private var raidShareReceiverRegistered = false
     private var lastRaidShareSeq = 0L
+    private var raidShareShownAtMs = 0L
     private val raidShareHideRunnable = Runnable {
         (windowManager ?: systemWindowManager())?.let { overlayRaidSharePanel.hide(it) }
     }
@@ -5279,20 +5280,32 @@ class CombatOverlayService : Service() {
 
     private fun handleRaidShareBroadcast(payload: String?) {
         val target = com.lastasylum.alliance.game.RaidShareTarget.fromJson(payload) ?: return
-        if (target.seq <= lastRaidShareSeq) return
-        lastRaidShareSeq = target.seq
-        mainHandler.post {
-            val mgr = windowManager ?: systemWindowManager() ?: return@post
-            if (!isOverlayPanelUserEnabled()) return@post
+        if (target.seq < lastRaidShareSeq) return
+        val deliver = Runnable {
+            val mgr = windowManager ?: systemWindowManager() ?: return@Runnable
+            if (!isOverlayPanelUserEnabled()) return@Runnable
             if (target.open) {
+                lastRaidShareSeq = target.seq
                 mainHandler.removeCallbacks(raidShareHideRunnable)
+                raidShareShownAtMs = android.os.SystemClock.uptimeMillis()
                 overlayRaidSharePanel.show(mgr, target)
             } else {
-                // Закрытие игрового диалога часто приходит в ту же миллисекунду, что и open:true —
-                // откладываем hide, чтобы панель успела отрисоваться.
-                mainHandler.removeCallbacks(raidShareHideRunnable)
-                mainHandler.postDelayed(raidShareHideRunnable, RAID_SHARE_HIDE_DELAY_MS)
+                lastRaidShareSeq = target.seq
+                scheduleRaidShareHide()
             }
+        }
+        if (Looper.myLooper() == mainHandler.looper) deliver.run() else mainHandler.post(deliver)
+    }
+
+    /** Скрыть панель сразу, кроме гонки open:true/open:false в первые ~100 мс. */
+    private fun scheduleRaidShareHide() {
+        mainHandler.removeCallbacks(raidShareHideRunnable)
+        val elapsed = android.os.SystemClock.uptimeMillis() - raidShareShownAtMs
+        val delay = (RAID_SHARE_MIN_VISIBLE_MS - elapsed).coerceAtLeast(0L)
+        if (delay == 0L) {
+            raidShareHideRunnable.run()
+        } else {
+            mainHandler.postDelayed(raidShareHideRunnable, delay)
         }
     }
 
@@ -8635,8 +8648,8 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_PRESENCE_INGAME = "ingame"
         private const val OVERLAY_PRESENCE_AWAY = "away"
         private const val TAG = "CombatOverlayService"
-        /** Минимальная задержка перед hide после open:false — иначе панель не успевает появиться. */
-        private const val RAID_SHARE_HIDE_DELAY_MS = 400L
+        /** Минимум видимости после open:true — защита от гонки с open:false, не задержка при закрытии. */
+        private const val RAID_SHARE_MIN_VISIBLE_MS = 100L
         /** Logcat: `adb logcat -s SR_OverlayDiag:D` или фильтр по тегу в Android Studio. */
         private const val OVERLAY_DIAG_TAG = "SR_OverlayDiag"
 

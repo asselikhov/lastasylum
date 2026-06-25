@@ -1293,8 +1293,10 @@ const SHARE_HOOK_LUA = [
   "local pt=self.paramTable",
   "if isShare(pt) then",
   "_G.__sr_seq=_G.__sr_seq+1",
+  "local seq=_G.__sr_seq",
+  "wr('{\"seq\":'..seq..',\"open\":true,\"x\":'..tostring(pt.x or 0)..',\"y\":'..tostring(pt.y or 0)..',\"sid\":'..tostring(pt.sid or 0)..',\"shareType\":'..tostring(pt.shareType or 0)..'}')",
   "local p={}",
-  "p[#p+1]='\"seq\":'.._G.__sr_seq",
+  "p[#p+1]='\"seq\":'..seq",
   "p[#p+1]='\"open\":true'",
   "p[#p+1]='\"x\":'..tostring(pt.x or 0)",
   "p[#p+1]='\"y\":'..tostring(pt.y or 0)",
@@ -1425,6 +1427,7 @@ setImmediate(function () {
     pollShareFile();
     if (libBase() && pendingFlies.length) scheduleDrainPendingFlies();
   }, 400);
+  setInterval(pollShareFile, 100);
 });
 
 setInterval(function () {}, 5000);

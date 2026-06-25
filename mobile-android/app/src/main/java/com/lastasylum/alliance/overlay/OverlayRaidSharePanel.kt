@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Looper
 import android.os.Handler
 import android.text.Spannable
 import android.text.SpannableString
@@ -59,7 +60,7 @@ class OverlayRaidSharePanel(
     val isShowing: Boolean get() = attached
 
     fun show(windowManager: WindowManager, target: RaidShareTarget) {
-        mainHandler.post {
+        runOnMain {
             this.target = target
             selected.clear()
             val view = root ?: buildView().also { root = it }
@@ -76,7 +77,6 @@ class OverlayRaidSharePanel(
                         Log.w(TAG, "show addView failed seq=${target.seq}", e)
                     }
             } else if (attachedWindowManager != windowManager) {
-                // WindowManager changed (service rebind) — re-attach on the new one.
                 val oldMgr = attachedWindowManager
                 runCatching { oldMgr?.removeView(view) }
                 attached = false
@@ -89,9 +89,9 @@ class OverlayRaidSharePanel(
     }
 
     fun hide(windowManager: WindowManager) {
-        mainHandler.post {
-            val view = root ?: return@post
-            if (!attached) return@post
+        runOnMain {
+            val view = root ?: return@runOnMain
+            if (!attached) return@runOnMain
             val mgr = attachedWindowManager ?: windowManager
             runCatching { mgr.removeView(view) }
                 .onSuccess {
@@ -101,6 +101,10 @@ class OverlayRaidSharePanel(
                 }
                 .onFailure { e -> Log.w(TAG, "hide removeView failed", e) }
         }
+    }
+
+    private fun runOnMain(block: () -> Unit) {
+        if (Looper.myLooper() == mainHandler.looper) block() else mainHandler.post(block)
     }
 
     private fun buildParams(): WindowManager.LayoutParams {
