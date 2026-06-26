@@ -109,6 +109,13 @@ function writeFileEmpty(path) {
   if (!fp.isNull()) fclose(fp);
 }
 
+const _diagDone = {};
+function diagOnce(key, msg) {
+  if (_diagDone[key]) return;
+  _diagDone[key] = true;
+  log('DIAG ' + key + ': ' + msg);
+}
+
 function log(line) {
   console.log('[map_fly_bridge] ' + line);
   for (const path of [LOG, LOG_SDCARD]) {
@@ -327,6 +334,203 @@ function logFlyFields(tag) {
   return fun;
 }
 
+// --- liveLuaEnv robust capture -------------------------------------------------
+// The game build only rarely calls the hooked LuaEnv.DoString, so after a game
+// restart `liveLuaEnv` could stay null forever and the share-panel hook never
+// arms ("В рейд" never appears). Capture the LuaEnv via il2cpp reflection from
+// any xLua LuaBase-derived object (the LuaFunction caught by the Action hook, or
+// the LuaFunction/LuaEnv passed to the flyWorld* setters) instead of relying on
+// DoString. CRITICAL: every helper here touches il2cpp and MUST only ever be
+// called from a Unity thread (inside a game hook's onEnter/onLeave) — calling
+// il2cpp reflection from the background Frida timer thread aborts the process.
+let luaEnvFieldOffsetCache = -1;
+
+function il2cppClassName(obj) {
+  if (!obj || obj.isNull()) return null;
+  // Reject obvious non-heap values (e.g. small ints stored in adjacent fields).
+  if (obj.compare(ptr('0x100000')) < 0) return null;
+  if (!obj.and(7).isNull()) return null;
+  const objGetClass = nativeFn('il2cpp_object_get_class', 'pointer', ['pointer']);
+  const classGetName = nativeFn('il2cpp_class_get_name', 'pointer', ['pointer']);
+  if (!objGetClass || !classGetName) {
+    diagOnce('classname-fns', 'il2cppClassName missing fns ogc=' + !!objGetClass + ' cgn=' + !!classGetName);
+    return null;
+  }
+  try {
+    const c = objGetClass(obj);
+    if (!c || c.isNull()) return null;
+    const np = classGetName(c);
+    if (!np || np.isNull()) return null;
+    return np.readCString();
+  } catch (e) {
+    diagOnce('classname-exc', 'il2cppClassName threw: ' + e);
+    return null;
+  }
+}
+
+function luaEnvFieldOffset(funcObj) {
+  if (luaEnvFieldOffsetCache >= 0) return luaEnvFieldOffsetCache;
+  const objGetClass = nativeFn('il2cpp_object_get_class', 'pointer', ['pointer']);
+  const getFieldFromName = nativeFn('il2cpp_class_get_field_from_name', 'pointer', ['pointer', 'pointer']);
+  const fieldGetOffset = nativeFn('il2cpp_field_get_offset', 'uint32', ['pointer']);
+  const classGetParent = nativeFn('il2cpp_class_get_parent', 'pointer', ['pointer']);
+  if (!objGetClass || !getFieldFromName || !fieldGetOffset) return -1;
+  try {
+    let cls = objGetClass(funcObj);
+    const nameBuf = Memory.allocUtf8String('luaEnv');
+    for (let depth = 0; depth < 8 && cls && !cls.isNull(); depth++) {
+      const field = getFieldFromName(cls, nameBuf);
+      if (field && !field.isNull()) {
+        luaEnvFieldOffsetCache = fieldGetOffset(field);
+        return luaEnvFieldOffsetCache;
+      }
+      cls = classGetParent ? classGetParent(cls) : ptr(0);
+    }
+  } catch (e) {}
+  return -1;
+}
+
+// Generic: enumerate the instance fields of a managed object and return the
+// first field value whose class is a XLua.LuaEnv. Unity/managed-thread only.
+function findLuaEnvInFields(obj) {
+  if (!obj || obj.isNull()) return null;
+  const objGetClass = nativeFn('il2cpp_object_get_class', 'pointer', ['pointer']);
+  const classGetFields = nativeFn('il2cpp_class_get_fields', 'pointer', ['pointer', 'pointer']);
+  const fieldGetOffset = nativeFn('il2cpp_field_get_offset', 'uint32', ['pointer']);
+  const fieldGetFlags = nativeFn('il2cpp_field_get_flags', 'int', ['pointer']);
+  const classGetParent = nativeFn('il2cpp_class_get_parent', 'pointer', ['pointer']);
+  if (!objGetClass || !classGetFields || !fieldGetOffset) return null;
+  let cls;
+  try { cls = objGetClass(obj); } catch (e) { return null; }
+  for (let depth = 0; depth < 6 && cls && !cls.isNull(); depth++) {
+    const iter = Memory.alloc(Process.pointerSize);
+    iter.writePointer(ptr(0));
+    let field;
+    try {
+      while (!(field = classGetFields(cls, iter)).isNull()) {
+        if (fieldGetFlags) {
+          const fl = fieldGetFlags(field);
+          if (fl & 0x10) continue; // FIELD_ATTRIBUTE_STATIC — skip
+        }
+        let off;
+        try { off = fieldGetOffset(field); } catch (e) { continue; }
+        if (off < 0x10 || off > 0x4000) continue;
+        try {
+          const val = obj.add(off).readPointer();
+          const cn = il2cppClassName(val);
+          if (cn && cn.indexOf('LuaEnv') >= 0) return val;
+        } catch (e) {}
+      }
+    } catch (e) {}
+    cls = classGetParent ? classGetParent(cls) : ptr(0);
+  }
+  return null;
+}
+
+// Capture liveLuaEnv from a managed object that is either a XLua.LuaEnv itself,
+// an xLua LuaBase-derived object (LuaFunction/LuaTable) holding `luaEnv`, or any
+// manager (LuaManager/AppFrame) that references the LuaEnv in one of its fields.
+// Unity/managed-thread only (never the Frida timer thread).
+function captureLuaEnvFrom(obj, tag) {
+  if (liveLuaEnv && !liveLuaEnv.isNull()) return true;
+  if (!obj || obj.isNull()) return false;
+  // Candidate may already be the LuaEnv (e.g. flyWorldLua setter value).
+  const ownCn = il2cppClassName(obj);
+  if (ownCn && ownCn.indexOf('LuaEnv') >= 0) {
+    liveLuaEnv = obj;
+    log('liveLuaEnv captured (direct) via ' + tag + ' class=' + ownCn);
+    return true;
+  }
+  // Fast path: a named `luaEnv` field (LuaBase.luaEnv).
+  try {
+    const off = luaEnvFieldOffset(obj);
+    if (off >= 0) {
+      const cand = obj.add(off).readPointer();
+      const cn = il2cppClassName(cand);
+      if (cn && cn.indexOf('LuaEnv') >= 0) {
+        liveLuaEnv = cand;
+        log('liveLuaEnv captured via ' + tag + '.luaEnv off=0x' + off.toString(16) + ' class=' + cn);
+        return true;
+      }
+    }
+  } catch (e) {}
+  // Generic: scan all instance fields for a LuaEnv-typed value.
+  const found = findLuaEnvInFields(obj);
+  if (found && !found.isNull()) {
+    liveLuaEnv = found;
+    log('liveLuaEnv captured via ' + tag + ' field-scan class=' + il2cppClassName(found));
+    return true;
+  }
+  return false;
+}
+
+// LuaManager is a static class on this build (SimpleInstrSend/RequireLua/FormatKXY
+// are static), so the XLua.LuaEnv lives in one of its STATIC fields. Resolve the
+// class, enumerate its static fields and grab the LuaEnv-typed one. Reflection
+// (assembly enumeration) — Unity/managed-thread only.
+function captureLuaEnvFromClassStatics(ns, name, tag) {
+  if (liveLuaEnv && !liveLuaEnv.isNull()) return true;
+  diagOnce('cs-enter:' + name, 'captureLuaEnvFromClassStatics entered');
+  let cls;
+  try { cls = findManagedClass(ns, name); } catch (e) { diagOnce('cs-findcls:' + name, 'findManagedClass threw: ' + e); return false; }
+  if (!cls || cls.isNull()) { diagOnce('statics:' + name, 'class NOT found (ns=' + ns + ')'); return false; }
+  const classInit = nativeFn('il2cpp_runtime_class_init', 'void', ['pointer']);
+  if (classInit) { try { classInit(cls); } catch (e) {} }
+  const getStaticFieldData = nativeFn('il2cpp_class_get_static_field_data', 'pointer', ['pointer']);
+  const classGetFields = nativeFn('il2cpp_class_get_fields', 'pointer', ['pointer', 'pointer']);
+  const fieldGetOffset = nativeFn('il2cpp_field_get_offset', 'uint32', ['pointer']);
+  const fieldGetFlags = nativeFn('il2cpp_field_get_flags', 'int', ['pointer']);
+  if (!getStaticFieldData || !classGetFields || !fieldGetOffset || !fieldGetFlags) {
+    diagOnce('cs-fns:' + name, 'missing fn gsfd=' + !!getStaticFieldData + ' cgf=' + !!classGetFields + ' fgo=' + !!fieldGetOffset + ' fgf=' + !!fieldGetFlags);
+    return false;
+  }
+  const staticData = getStaticFieldData(cls);
+  if (!staticData || staticData.isNull()) { diagOnce('statics:' + name, 'no static field data'); return false; }
+  const iter = Memory.alloc(Process.pointerSize);
+  iter.writePointer(ptr(0));
+  let field;
+  const diagNames = [];
+  try {
+    while (!(field = classGetFields(cls, iter)).isNull()) {
+      const fl = fieldGetFlags(field);
+      if (!(fl & 0x10)) continue; // only FIELD_ATTRIBUTE_STATIC
+      let off;
+      try { off = fieldGetOffset(field); } catch (e) { continue; }
+      if (off < 0 || off > 0x4000) continue;
+      try {
+        const val = staticData.add(off).readPointer();
+        const cn = il2cppClassName(val);
+        if (cn) diagNames.push('0x' + off.toString(16) + ':' + cn);
+        if (cn && cn.indexOf('LuaEnv') >= 0) {
+          liveLuaEnv = val;
+          log('liveLuaEnv captured via ' + tag + ' static off=0x' + off.toString(16) + ' class=' + cn);
+          return true;
+        }
+        // A static LuaFunction/LuaTable (e.g. GameCommandBase.flyWorldFun) holds luaEnv.
+        if (cn && (cn.indexOf('LuaFunction') >= 0 || cn.indexOf('LuaTable') >= 0 || cn.indexOf('LuaManager') >= 0)) {
+          if (captureLuaEnvFrom(val, tag + '/static:' + cn)) return true;
+        }
+      } catch (e) {}
+    }
+  } catch (e) {}
+  diagOnce('statics:' + name, 'static objs=[' + diagNames.join(', ') + ']');
+  return false;
+}
+
+// Try every reliable static source for the LuaEnv. Unity/managed-thread only.
+function captureLuaEnvViaReflection(tag) {
+  if (liveLuaEnv && !liveLuaEnv.isNull()) return true;
+  diagOnce('refl-enter', 'captureLuaEnvViaReflection entered (tag=' + tag + ')');
+  try {
+    if (captureLuaEnvFromClassStatics('GameFrameWork', 'LuaManager', tag + '/LuaManager')) return true;
+    if (captureLuaEnvFromClassStatics('', 'LuaManager', tag + '/LuaManager2')) return true;
+    if (captureLuaEnvFromClassStatics('', 'GameCommandBase', tag + '/GameCommandBase')) return true;
+  } catch (e) {
+    diagOnce('refl-exc', 'reflection threw: ' + e);
+  }
+  return false;
+}
+
 function installActionCatchHook() {
   if (installActionCatchHook.done) return;
   const base = libBase();
@@ -335,6 +539,7 @@ function installActionCatchHook() {
   try {
     Interceptor.attach(base.add(RVA.LuaFunction_Action), {
       onEnter(args) {
+        if (!liveLuaEnv || liveLuaEnv.isNull()) captureLuaEnvFrom(args[0], 'Action');
         const key = args[0].toString();
         if (actionSeen[key]) return;
         actionSeen[key] = true;
@@ -376,6 +581,34 @@ function installDoStringHook() {
   }
 }
 installDoStringHook.done = false;
+
+// LuaManager.RequireLua(string) is static and called whenever a Lua module/UI
+// panel loads (incl. the share panel). Its return value is an xLua LuaTable that
+// holds a `luaEnv` field, so onLeave is a reliable, Unity-thread place to capture
+// the LuaEnv when DoString/Action never fire in this build.
+function installRequireLuaHook() {
+  if (installRequireLuaHook.done) return;
+  const base = libBase();
+  if (!base) return;
+  installRequireLuaHook.done = true;
+  try {
+    Interceptor.attach(base.add(RVA.LuaManager_RequireLua), {
+      onLeave(retval) {
+        if (!liveLuaEnv || liveLuaEnv.isNull()) {
+          diagOnce('RequireLua-fire', 'RequireLua fired (retval=' + retval + ' class=' + il2cppClassName(retval) + ')');
+          try { captureLuaEnvFrom(retval, 'RequireLua'); } catch (e) { diagOnce('rl-exc1', 'captureLuaEnvFrom threw: ' + e); }
+          if (!liveLuaEnv || liveLuaEnv.isNull()) {
+            try { captureLuaEnvViaReflection('RequireLua'); } catch (e) { diagOnce('rl-exc2', 'reflection threw: ' + e); }
+          }
+        }
+      },
+    });
+    log('RequireLua capture hook installed');
+  } catch (e) {
+    log('RequireLua capture hook failed: ' + e);
+  }
+}
+installRequireLuaHook.done = false;
 
 function doStringNow(code) {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return false;
@@ -435,12 +668,20 @@ function installFlyWorldSetterHooks() {
   installFlyWorldSetterHooks.done = true;
   try {
     Interceptor.attach(base.add(RVA.set_flyWorldFun), {
+      onEnter(args) {
+        // Static setter: args[0] is the LuaFunction value being assigned.
+        if (!liveLuaEnv || liveLuaEnv.isNull()) captureLuaEnvFrom(args[0], 'set_flyWorldFun');
+      },
       onLeave() {
         log('>>> flyWorldFun SET by game');
         logFlyFields('after set_flyWorldFun');
       },
     });
     Interceptor.attach(base.add(RVA.set_flyWorldLua), {
+      onEnter(args) {
+        // Static setter: args[0] is the value (LuaEnv or a LuaBase) being assigned.
+        if (!liveLuaEnv || liveLuaEnv.isNull()) captureLuaEnvFrom(args[0], 'set_flyWorldLua');
+      },
       onLeave() {
         log('>>> flyWorldLua SET by game');
         logFlyFields('after set_flyWorldLua');
@@ -502,6 +743,8 @@ function installWorldMapHijack() {
   try {
     Interceptor.attach(base.add(RVA.LuaManager_SimpleInstrSend), {
       onEnter(args) {
+        diagOnce('lua-send-fire', 'LuaManager.SimpleInstrSend fired');
+        if (!liveLuaEnv || liveLuaEnv.isNull()) captureLuaEnvViaReflection('LuaManager.SimpleInstrSend');
         patch(0, 1, args);
       },
     });
@@ -579,6 +822,15 @@ function installAppFrameCacheHook() {
       onEnter(args) {
         const self = args[0];
         if (!self.isNull()) cachedAppFrame = self;
+        diagOnce('app-send-fire', 'AppFrame.SimpleInstrSend fired (self class=' + il2cppClassName(self) + ')');
+        // Networking fires reliably during normal play (incl. Pong) on a managed
+        // (il2cpp) thread — a safe place to capture the LuaEnv when Action/DoString
+        // don't. Prefer the LuaManager static fields; fall back to scanning self.
+        if (!liveLuaEnv || liveLuaEnv.isNull()) {
+          if (!captureLuaEnvViaReflection('AppFrame.SimpleInstrSend')) {
+            captureLuaEnvFrom(self, 'AppFrame.SimpleInstrSend');
+          }
+        }
       },
     });
     log('AppFrame cache hook installed');
@@ -1124,6 +1376,7 @@ function runProbe(clip, url) {
   installFlyWorldSetterHooks();
   installActionCatchHook();
   installDoStringHook();
+  installRequireLuaHook();
   if (url === 'armcatch') {
     actionCatchUntil = Date.now() + 12000;
     probeObserveUntil = Date.now() + 12000;
@@ -1254,17 +1507,33 @@ function tickAutoHelp() {
   }
 }
 
+function logIl2cppExportsOnce() {
+  if (logIl2cppExportsOnce.done) return;
+  logIl2cppExportsOnce.done = true;
+  const names = [
+    'il2cpp_object_get_class', 'il2cpp_class_get_name', 'il2cpp_class_get_fields',
+    'il2cpp_field_get_offset', 'il2cpp_field_get_flags', 'il2cpp_class_get_field_from_name',
+    'il2cpp_class_get_parent', 'il2cpp_class_get_static_field_data', 'il2cpp_class_from_name',
+    'il2cpp_domain_get_assemblies', 'il2cpp_runtime_class_init',
+  ];
+  const res = names.map(function (n) { return n.replace('il2cpp_', '') + '=' + (findExport(n) ? '1' : '0'); });
+  log('EXPORTS ' + res.join(' '));
+}
+logIl2cppExportsOnce.done = false;
+
 function logLibStatusOnce() {
   if (libReadyLogged) return;
   const base = libBase();
   if (base) {
     libReadyLogged = true;
     log('libil2cpp ready @ ' + base);
+    logIl2cppExportsOnce();
     installAppFrameCacheHook();
     installWorldMapHijack();
     installFlyWorldSetterHooks();
     installActionCatchHook();
     installDoStringHook();
+    installRequireLuaHook();
     return;
   }
   const path = il2CppPathFromMaps();

@@ -11,7 +11,7 @@ param(
     [switch]$ConfirmDataLoss
 )
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 $Root = Split-Path $PSScriptRoot -Parent
 $PatchDir = Join-Path $Root '.tmp-tools\frida-patch'
 $ApkDir = Join-Path $PatchDir 'apks'
@@ -255,7 +255,18 @@ if (-not (Test-Path $FridaCompileCli)) {
     throw "frida-compile not found ($FridaCompileCli). Run: npm i in .tmp-tools (frida-compile frida-java-bridge)."
 }
 Write-Host 'Compiling bridge with frida-compile (bundling frida-java-bridge) ...'
-& node $FridaCompileCli $HookScript -o $CompiledHook -S
+# frida-compile resolves the project root from its working directory; run it from
+# .tmp-tools (where node_modules lives) so the entrypoint is inside the root.
+# Always delete the previous output first so a compile failure can never silently
+# reuse a stale compiled bridge.
+$TmpToolsDir = Join-Path $Root '.tmp-tools'
+if (Test-Path $CompiledHook) { Remove-Item $CompiledHook -Force }
+Push-Location $TmpToolsDir
+try {
+    & node $FridaCompileCli $HookScript -o $CompiledHook -S
+} finally {
+    Pop-Location
+}
 if (-not (Test-Path $CompiledHook) -or (Get-Item $CompiledHook).Length -lt 1000) {
     throw 'frida-compile produced no/empty output.'
 }
