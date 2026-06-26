@@ -202,23 +202,27 @@ internal fun ChatViewModel.applyLaunchDiskPrimePayloadImpl(payload: LaunchDiskPr
         }
         val cached = roomMessageCache[selected]
         if (cached != null && cached.messages.isNotEmpty()) {
+            // Канонический порядок уже на первом кадре: DAO отдаёт createdAtMs DESC без тай-брейка,
+            // а REST-рефреш позже пересортировывает через sortMessagesNewestFirst — без этого
+            // лента визуально «переезжает». Сортируем тем же ключом, что и финальный merge.
+            val orderedCached = sortMessagesNewestFirst(dedupeMessagesByIdNewestFirst(cached.messages))
             knownMessageIds.clear()
             messageIdIndex.clear()
-            knownMessageIds.addAll(cached.messages.mapNotNull { it._id })
-            rebuildMessageIdIndex(cached.messages, messageIdIndex)
+            knownMessageIds.addAll(orderedCached.mapNotNull { it._id })
+            rebuildMessageIdIndex(orderedCached, messageIdIndex)
             vmState.value = applyPinBarUi(
                 vmState.value.copy(
                     isLoading = false,
                     isRoomsLoading = false,
                     rooms = rooms,
                     selectedRoomId = selected,
-                    messages = cached.messages,
+                    messages = orderedCached,
                     hasMoreOlder = cached.hasMoreOlder,
                     error = null,
                     scrollToLatestNonce = vmState.value.scrollToLatestNonce + 1L,
                 ),
             )
-            publishMessagesDerived(cached.messages)
+            publishMessagesDerived(orderedCached)
         } else {
             vmState.value = applyPinBarUi(
                 vmState.value.copy(
@@ -257,19 +261,22 @@ internal fun ChatViewModel.bindRoomStoreObserversImpl() {
             if (vmState.value.messages.isEmpty() ||
                 !messagesBelongToRoom(vmState.value.messages, roomId)
             ) {
+                // Тот же канонический порядок, что и REST/merge, иначе первый кадр из DAO
+                // (createdAtMs DESC без тай-брейка) визуально пересортировывается.
+                val ordered = sortMessagesNewestFirst(dedupeMessagesByIdNewestFirst(filtered))
                 knownMessageIds.clear()
                 messageIdIndex.clear()
-                knownMessageIds.addAll(filtered.mapNotNull { it._id })
-                rebuildMessageIdIndex(filtered, messageIdIndex)
+                knownMessageIds.addAll(ordered.mapNotNull { it._id })
+                rebuildMessageIdIndex(ordered, messageIdIndex)
                 vmState.update {
                     it.copy(
-                        messages = filtered,
+                        messages = ordered,
                         isLoading = false,
                         hasMoreOlder = hasMoreOlder,
                         selectedRoomId = roomId,
                     )
                 }
-                publishMessagesDerived(filtered)
+                publishMessagesDerived(ordered)
             }
         }
         roomStoreBindings.onReadCursorFromStore = { roomId, cursor ->

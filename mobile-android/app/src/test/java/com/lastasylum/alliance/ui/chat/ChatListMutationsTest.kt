@@ -32,6 +32,35 @@ class ChatListMutationsTest {
     )
 
     @Test
+    fun sortMessagesNewestFirst_dbAndRestOrdersConverge() {
+        // Регрессия на «переезд» ленты при открытии комнаты: первый кадр из DAO
+        // (createdAtMs DESC, без тай-брейка) и второй кадр после REST должны давать
+        // один и тот же порядок. Покрываем тай-брейк по _id и метку без зоны (UTC).
+        val oldest = msg("000000000000000000000001").copy(createdAt = "2024-01-01T10:00:00Z")
+        val tieA = msg("000000000000000000000010").copy(createdAt = "2024-01-01T12:00:00Z")
+        val tieB = msg("000000000000000000000011").copy(createdAt = "2024-01-01T12:00:00Z")
+        val zoneless = msg("000000000000000000000020").copy(createdAt = "2024-01-01T11:00:00")
+        val newest = msg("000000000000000000000030").copy(createdAt = "2024-01-01T13:00:00Z")
+
+        val dbOrder = listOf(newest, tieB, tieA, zoneless, oldest)
+        val restOrder = listOf(oldest, tieA, zoneless, tieB, newest)
+
+        val expected = listOf(
+            "000000000000000000000030", // 13:00
+            "000000000000000000000011", // 12:00, тай-брейк по _id desc → ...11 раньше ...10
+            "000000000000000000000010", // 12:00
+            "000000000000000000000020", // 11:00 (без зоны = UTC, между 12:00 и 10:00)
+            "000000000000000000000001", // 10:00
+        )
+
+        assertEquals(expected, sortMessagesNewestFirst(dbOrder).map { it._id })
+        assertEquals(
+            sortMessagesNewestFirst(dbOrder).map { it._id },
+            sortMessagesNewestFirst(restOrder).map { it._id },
+        )
+    }
+
+    @Test
     fun upsertMessage_prependsNewWithId() {
         val known = linkedSetOf<String>()
         val current = listOf(msg("1", "a"))
