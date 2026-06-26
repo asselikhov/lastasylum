@@ -46,6 +46,7 @@ import androidx.savedstate.compose.LocalSavedStateRegistryOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.game.GameMapNavigator
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -569,28 +570,10 @@ class OverlayCommandsPopover(
             cornerDp = 8,
         )
 
-    private fun coordsButtonBackground(): RippleDrawable =
-        rippleOn(
-            roundedRect(
-                fillColor = Color.parseColor("#1E2A3C48"),
-                strokeColor = Color.parseColor("#CC5A7CFF"),
-                cornerDp = 10,
-            ),
-        )
-
     private fun primarySendButtonBackground(): RippleDrawable =
         rippleOn(
             roundedRect(
                 fillColor = Color.parseColor("#FF3A4EC8"),
-                cornerDp = 8,
-            ),
-        )
-
-    private fun ghostButtonRipple(): RippleDrawable =
-        rippleOn(
-            roundedRect(
-                fillColor = Color.parseColor("#22182030"),
-                strokeColor = Color.parseColor("#33445566"),
                 cornerDp = 8,
             ),
         )
@@ -606,7 +589,50 @@ class OverlayCommandsPopover(
         val hintRes: Int? = null,
         val isPush: Boolean = false,
         val isReactions: Boolean = false,
+        val isTarget: Boolean = false,
     )
+
+    /** Bookmark categories for the "Цель → Закладки" tab (target list wiring deferred). */
+    private enum class OverlayTargetBookmark(val labelRes: Int) {
+        ENEMIES(R.string.overlay_bookmark_enemies),
+        FRIENDS(R.string.overlay_bookmark_friends),
+        MOBS(R.string.overlay_bookmark_mobs),
+        CHESTS(R.string.overlay_bookmark_chests),
+        CITIES(R.string.overlay_bookmark_cities),
+    }
+
+    /** Compact numeric field (label + EditText) reused by the Цель → Поиск coordinate block. */
+    private fun coordFieldView(
+        hint: String,
+        defaultText: String? = null,
+        signed: Boolean = true,
+    ): Pair<LinearLayout, EditText> {
+        val label = labelText(hint, 10f, Color.parseColor("#FF8FAEFF"), bold = true)
+        val edit = EditText(context).apply {
+            setHint("0")
+            setTextColor(Color.parseColor("#FFF4F7FF"))
+            setHintTextColor(Color.parseColor("#558899AA"))
+            inputType = InputType.TYPE_CLASS_NUMBER or
+                if (signed) InputType.TYPE_NUMBER_FLAG_SIGNED else 0
+            background = fieldBackground()
+            setPadding(dp(10), dp(7), dp(10), dp(7))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            gravity = Gravity.CENTER
+            defaultText?.let { setText(it) }
+        }
+        val col = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(label)
+            addView(
+                edit,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(4) },
+            )
+        }
+        return col to edit
+    }
 
     private fun labelText(
         text: String,
@@ -706,17 +732,6 @@ class OverlayCommandsPopover(
         }
     }
 
-    private fun openCoordsFromMenu(commandLabel: String) {
-        val wm = attachedWindowManager ?: return
-        hideCoordOnly()
-        removeShell(menuScrim)
-        menuScrim = null
-        showCoordinateDialog(
-            windowManager = wm,
-            commandLabel = commandLabel,
-        )
-    }
-
     private fun showMenu(windowManager: WindowManager) {
         ensurePopoverSuppressHeld()
         menuScrim?.takeIf { it.isAttachedToWindow }?.let { cached ->
@@ -732,36 +747,11 @@ class OverlayCommandsPopover(
 
         val categories = listOf(
             CommandCategory(
-                titleRes = R.string.overlay_cmd_column_attack,
-                shortLabelRes = R.string.overlay_cmd_tab_attack,
-                icon = OverlayQuickCommandIcons.attack,
-                accentColor = Color.parseColor("#FFE53935"),
-                options = listOf(
-                    CommandOption(R.string.overlay_cmd_spinner_by_player, R.string.overlay_cmd_attack_player),
-                    CommandOption(R.string.overlay_cmd_spinner_by_monster, R.string.overlay_cmd_attack_monster),
-                    CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_attack_city),
-                ),
-            ),
-            CommandCategory(
-                titleRes = R.string.overlay_cmd_column_storm,
-                shortLabelRes = R.string.overlay_cmd_tab_storm,
-                icon = OverlayQuickCommandIcons.storm,
-                accentColor = Color.parseColor("#FFFF9800"),
-                options = listOf(
-                    CommandOption(R.string.overlay_cmd_spinner_by_player, R.string.overlay_cmd_storm_player),
-                    CommandOption(R.string.overlay_cmd_spinner_by_monster, R.string.overlay_cmd_storm_monster),
-                    CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_storm_city),
-                ),
-            ),
-            CommandCategory(
-                titleRes = R.string.overlay_cmd_column_reinf,
-                shortLabelRes = R.string.overlay_cmd_tab_reinf,
-                icon = OverlayQuickCommandIcons.reinforcement,
-                accentColor = Color.parseColor("#FF43A047"),
-                options = listOf(
-                    CommandOption(R.string.overlay_cmd_spinner_reinf_to_player, R.string.overlay_cmd_reinf_player),
-                    CommandOption(R.string.overlay_cmd_spinner_reinf_to_city, R.string.overlay_cmd_reinf_city),
-                ),
+                titleRes = R.string.overlay_cmd_column_target,
+                shortLabelRes = R.string.overlay_cmd_tab_target,
+                icon = OverlayQuickCommandIcons.target,
+                accentColor = Color.parseColor("#FF26A69A"),
+                isTarget = true,
             ),
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_push,
@@ -837,35 +827,258 @@ class OverlayCommandsPopover(
         }
         val optionChips = mutableListOf<TextView>()
 
-        val coordsIcon = ImageView(context).apply {
-            setImageDrawable(
-                AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_coords)?.mutate()?.also { d ->
-                    DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
-                },
+        // ---- Цель (Target) section: Поиск / Закладки sub-tabs --------------------------------
+        var selectedTargetTab = 0 // 0 = Поиск, 1 = Закладки
+        var selectedBookmark = OverlayTargetBookmark.ENEMIES
+
+        val targetSearchTabChip = choiceChip(context.getString(R.string.overlay_target_tab_search), true)
+        val targetBookmarksTabChip = choiceChip(context.getString(R.string.overlay_target_tab_bookmarks), false)
+        val targetSubTabsRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START
+            addView(
+                targetSearchTabChip,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginEnd = dp(8) },
             )
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            addView(targetBookmarksTabChip)
         }
-        val coordsLabel = labelText(
-            context.getString(R.string.overlay_cmd_column_open_coords),
+
+        // Поиск: server / X / Y inputs + a search-icon fly button.
+        val (colTargetServer, editTargetServer) = coordFieldView(
+            hint = context.getString(R.string.overlay_coord_server_label),
+            defaultText = DEFAULT_COORD_SERVER.toString(),
+            signed = false,
+        )
+        val (colTargetX, editTargetX) = coordFieldView(context.getString(R.string.overlay_coord_x_label))
+        val (colTargetY, editTargetY) = coordFieldView(context.getString(R.string.overlay_coord_y_label))
+        val targetCoordsRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val gap = dp(6)
+            addView(colTargetServer, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.85f))
+            addView(
+                colTargetX,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = gap },
+            )
+            addView(
+                colTargetY,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = gap },
+            )
+        }
+        val targetSearchIcon = OverlayMaterialIconHost(context, dp(18)).apply {
+            setIcon(OverlayQuickCommandIcons.search, Color.WHITE)
+        }
+        val targetSearchLabel = labelText(
+            context.getString(R.string.overlay_target_fly_btn),
             12.5f,
-            Color.parseColor("#FFE8F0FF"),
+            Color.parseColor("#FFF8FAFF"),
             bold = true,
         )
-        val coordsAction = LinearLayout(context).apply {
+        val targetSearchButton = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            minimumHeight = dp(36)
+            minimumHeight = dp(38)
             setPadding(dp(14), dp(8), dp(14), dp(8))
-            background = coordsButtonBackground()
+            background = primarySendButtonBackground()
             isClickable = true
-            addView(coordsIcon, LinearLayout.LayoutParams(dp(18), dp(18)))
+            contentDescription = context.getString(R.string.overlay_target_search_cd)
+            addView(targetSearchIcon, LinearLayout.LayoutParams(dp(18), dp(18)))
             addView(
-                coordsLabel,
+                targetSearchLabel,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ).apply { marginStart = dp(8) },
             )
+        }
+        val targetSearchContent = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(targetCoordsRow)
+            addView(
+                targetSearchButton,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(12) },
+            )
+        }
+
+        // Закладки: dropdown of bookmark categories + target list (empty for now).
+        val bookmarkSelectorLabel = labelText(
+            context.getString(selectedBookmark.labelRes),
+            12.5f,
+            Color.parseColor("#FFE8F4FF"),
+            bold = true,
+        )
+        val bookmarkSelectorChevron = ImageView(context).apply {
+            setImageDrawable(
+                AppCompatResources.getDrawable(context, R.drawable.ic_overlay_ui_expand)?.mutate()?.also { d ->
+                    DrawableCompat.setTint(d, Color.parseColor("#8AA0B8D0"))
+                },
+            )
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+        }
+        val bookmarkSelector = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(36)
+            setPadding(dp(12), dp(8), dp(10), dp(8))
+            background = rippleOn(fieldBackground())
+            isClickable = true
+            addView(
+                bookmarkSelectorLabel,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            addView(bookmarkSelectorChevron, LinearLayout.LayoutParams(dp(18), dp(18)))
+        }
+        val bookmarkEmpty = labelText(
+            context.getString(R.string.overlay_bookmarks_empty),
+            11f,
+            Color.parseColor("#7A90A4B8"),
+        ).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(18), 0, dp(18))
+        }
+        val bookmarkListContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(bookmarkEmpty)
+        }
+        val targetBookmarksContent = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            addView(
+                bookmarkSelector,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            addView(
+                bookmarkListContainer,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(10) },
+            )
+        }
+
+        val targetHost = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            addView(
+                targetSubTabsRow,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            addView(
+                targetSearchContent,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(12) },
+            )
+            addView(
+                targetBookmarksContent,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(12) },
+            )
+        }
+
+        fun refreshBookmarkList() {
+            bookmarkSelectorLabel.text = context.getString(selectedBookmark.labelRes)
+            // Target list wiring deferred — show empty state for the selected tag for now.
+            bookmarkEmpty.visibility = View.VISIBLE
+        }
+
+        fun openBookmarkPicker() {
+            val popupContext = OverlayTickerUi.themedFabContext(context)
+            val entries = OverlayTargetBookmark.entries
+            val titles = entries.map { context.getString(it.labelRes) }
+            val adapter = object : android.widget.ArrayAdapter<String>(
+                popupContext,
+                android.R.layout.simple_list_item_1,
+                titles,
+            ) {
+                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                    val row = (convertView as? TextView) ?: TextView(popupContext).apply {
+                        setPadding(dp(14), dp(11), dp(14), dp(11))
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                    }
+                    val sel = entries[position] == selectedBookmark
+                    row.text = getItem(position)
+                    row.setTextColor(Color.parseColor(if (sel) "#FFE8F4FF" else "#C8DCE8F4"))
+                    row.typeface = if (sel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    row.setBackgroundColor(if (sel) Color.parseColor("#332A4558") else Color.TRANSPARENT)
+                    return row
+                }
+            }
+            val listPopup = android.widget.ListPopupWindow(popupContext).apply {
+                anchorView = bookmarkSelector
+                setAdapter(adapter)
+                width = bookmarkSelector.width.coerceAtLeast(dp(200))
+                isModal = true
+                inputMethodMode = android.widget.ListPopupWindow.INPUT_METHOD_NOT_NEEDED
+                setBackgroundDrawable(
+                    roundedRect(
+                        fillColor = Color.parseColor("#F0141C28"),
+                        strokeColor = Color.parseColor("#3D5A7CAA"),
+                        cornerDp = 10,
+                    ),
+                )
+                setOnItemClickListener { _, _, position, _ ->
+                    val picked = entries.getOrNull(position)
+                    dismiss()
+                    if (picked != null && picked != selectedBookmark) {
+                        selectedBookmark = picked
+                        refreshBookmarkList()
+                    }
+                }
+            }
+            bookmarkSelector.post {
+                if (!bookmarkSelector.isAttachedToWindow) return@post
+                runCatching { listPopup.show() }
+            }
+        }
+        bookmarkSelector.setOnClickListener { openBookmarkPicker() }
+
+        fun refreshTargetSubTabs() {
+            listOf(targetSearchTabChip to 0, targetBookmarksTabChip to 1).forEach { (chip, idx) ->
+                val sel = selectedTargetTab == idx
+                chip.background = optionChipBackground(sel)
+                chip.setTextColor(Color.parseColor(if (sel) "#FFE8F4FF" else "#9AB0C4D8"))
+                chip.typeface = if (sel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            }
+            targetSearchContent.visibility = if (selectedTargetTab == 0) View.VISIBLE else View.GONE
+            targetBookmarksContent.visibility = if (selectedTargetTab == 1) View.VISIBLE else View.GONE
+        }
+
+        fun selectTargetTab(index: Int) {
+            selectedTargetTab = index
+            if (index == 1) refreshBookmarkList()
+            refreshTargetSubTabs()
+        }
+        targetSearchTabChip.setOnClickListener { selectTargetTab(0) }
+        targetBookmarksTabChip.setOnClickListener { selectTargetTab(1) }
+
+        targetSearchButton.setOnClickListener {
+            val server = editTargetServer.text?.toString()?.trim()?.toIntOrNull()
+            val xv = editTargetX.text?.toString()?.trim()?.toIntOrNull()
+            val yv = editTargetY.text?.toString()?.trim()?.toIntOrNull()
+            if (server == null || server !in MIN_COORD_SERVER..MAX_COORD_SERVER || xv == null || yv == null) {
+                Toast.makeText(context, R.string.overlay_coord_invalid, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            hideKeyboard(editTargetServer)
+            hideKeyboard(editTargetX)
+            hideKeyboard(editTargetY)
+            GameMapNavigator.open(context, xv, yv, server)
+            hide()
         }
 
         var selectedReactionSubcategory = OverlayReactionCategory.ANIMATIONS
@@ -1349,15 +1562,6 @@ class OverlayCommandsPopover(
             }
         }
 
-        fun refreshPrimaryAction(cat: CommandCategory) {
-            coordsLabel.text = context.getString(R.string.overlay_cmd_column_open_coords)
-            coordsIcon.setImageDrawable(
-                AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_coords)?.mutate()?.also { d ->
-                    DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
-                },
-            )
-        }
-
         fun rebuildOptionsForCategory(cat: CommandCategory) {
             optionsRow.removeAllViews()
             optionChips.clear()
@@ -1401,9 +1605,19 @@ class OverlayCommandsPopover(
                 categoryHint.visibility = View.GONE
             }
             rebuildOptionsForCategory(cat)
-            if (cat.isReactions) {
+            if (cat.isTarget) {
+                stopHeartPreviewPulse()
+                targetHost.visibility = View.VISIBLE
+                gameEventPushHost.visibility = View.GONE
+                reactionRow?.visibility = View.GONE
+                reactionStickerPackPicker.dismissPicker()
+                reactionStickerPackPicker.root.visibility = View.GONE
+                categoryHint.visibility = View.GONE
+                refreshTargetSubTabs()
+                invalidateReactionBurstAnchor()
+            } else if (cat.isReactions) {
                 ensurePopoverSuppressHeld()
-                coordsAction.visibility = View.GONE
+                targetHost.visibility = View.GONE
                 gameEventPushHost.visibility = View.GONE
                 reactionRow?.visibility = View.VISIBLE
                 updateStickerPackPickerVisibility()
@@ -1411,7 +1625,7 @@ class OverlayCommandsPopover(
                 reactionRow?.post { invalidateReactionBurstAnchor() }
             } else if (cat.isPush) {
                 stopHeartPreviewPulse()
-                coordsAction.visibility = View.GONE
+                targetHost.visibility = View.GONE
                 reactionRow?.visibility = View.GONE
                 gameEventPushHost.visibility = View.VISIBLE
                 reactionStickerPackPicker.dismissPicker()
@@ -1421,15 +1635,14 @@ class OverlayCommandsPopover(
                 invalidateReactionBurstAnchor()
             } else {
                 stopHeartPreviewPulse()
-                coordsAction.visibility = View.VISIBLE
+                targetHost.visibility = View.GONE
                 gameEventPushHost.visibility = View.GONE
                 reactionRow?.visibility = View.GONE
                 reactionStickerPackPicker.dismissPicker()
                 reactionStickerPackPicker.root.visibility = View.GONE
-                refreshPrimaryAction(cat)
                 invalidateReactionBurstAnchor()
             }
-            if (!cat.isReactions) {
+            if (!cat.isReactions && !cat.isTarget) {
                 warmupOverlayRaid()
             }
         }
@@ -1500,7 +1713,7 @@ class OverlayCommandsPopover(
             ).apply { topMargin = dp(8) },
         )
         bodyColumn.addView(
-            coordsAction,
+            targetHost,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1508,17 +1721,6 @@ class OverlayCommandsPopover(
         )
 
         close.setOnClickListener { hide() }
-        coordsAction.setOnClickListener {
-            val cat = categories[selectedCategoryIndex]
-            if (cat.isPush) return@setOnClickListener
-            val label = if (cat.options != null) {
-                val idx = selectedOptionIndex.coerceIn(0, cat.options.lastIndex)
-                context.getString(cat.options[idx].labelCommandRes)
-            } else {
-                context.getString(cat.titleRes)
-            }
-            openCoordsFromMenu(label)
-        }
 
         val reactionsIndex = categories.indexOfFirst { it.isReactions }
         menuRevealCategory = { reopenOnReactions ->
@@ -1627,260 +1829,6 @@ class OverlayCommandsPopover(
         menuScrim = scrim
         attachPopoverLayoutListener(card)
         attachedWindowManager = windowManager
-    }
-
-    private fun showCoordinateDialog(
-        windowManager: WindowManager,
-        commandLabel: String,
-    ) {
-        ensurePopoverSuppressHeld()
-        CombatOverlayService.extendInGameOverlayUiHold()
-
-        val close = iconCloseButton()
-        val title = labelText(commandLabel, 14f, Color.parseColor("#FFF4F7FF"), bold = true)
-        val subtitle = labelText(
-            context.getString(R.string.overlay_coord_dialog_subtitle),
-            10.5f,
-            Color.parseColor("#7A90A4B8"),
-        )
-
-        val headerRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(10), dp(8), dp(6))
-            addView(
-                LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    addView(title)
-                    addView(subtitle)
-                },
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
-            )
-            addView(close)
-        }
-
-        fun coordField(
-            hint: String,
-            defaultText: String? = null,
-            signed: Boolean = true,
-        ): Pair<LinearLayout, EditText> {
-            val label = labelText(hint, 10f, Color.parseColor("#FF8FAEFF"), bold = true)
-            val edit = EditText(context).apply {
-                setHint("0")
-                setTextColor(Color.parseColor("#FFF4F7FF"))
-                setHintTextColor(Color.parseColor("#558899AA"))
-                inputType = InputType.TYPE_CLASS_NUMBER or
-                    if (signed) InputType.TYPE_NUMBER_FLAG_SIGNED else 0
-                background = fieldBackground()
-                setPadding(dp(10), dp(7), dp(10), dp(7))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                gravity = Gravity.CENTER
-                defaultText?.let { setText(it) }
-            }
-            val col = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(label)
-                addView(
-                    edit,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { topMargin = dp(4) },
-                )
-            }
-            return col to edit
-        }
-
-        val (colServer, editServer) = coordField(
-            hint = context.getString(R.string.overlay_coord_server_label),
-            defaultText = DEFAULT_COORD_SERVER.toString(),
-            signed = false,
-        )
-        val (colX, editX) = coordField(context.getString(R.string.overlay_coord_x_label))
-        val (colY, editY) = coordField(context.getString(R.string.overlay_coord_y_label))
-
-        val coordsRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            val gap = dp(6)
-            addView(colServer, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.85f))
-            addView(
-                colX,
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = gap
-                },
-            )
-            addView(
-                colY,
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = gap
-                },
-            )
-        }
-
-        val sendBtn = TextView(context).apply {
-            text = context.getString(R.string.overlay_coord_send)
-            setTextColor(Color.parseColor("#FFF8FAFF"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            minHeight = dp(34)
-            setPadding(dp(12), dp(7), dp(12), dp(7))
-            background = primarySendButtonBackground()
-            isClickable = true
-        }
-
-        val cancelBtn = TextView(context).apply {
-            text = context.getString(R.string.overlay_coord_cancel)
-            setTextColor(Color.parseColor("#FFB0BDD0"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            gravity = Gravity.CENTER
-            minHeight = dp(34)
-            setPadding(dp(10), dp(7), dp(10), dp(7))
-            background = ghostButtonRipple()
-            isClickable = true
-        }
-
-        val buttonsRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            val gap = dp(6)
-            addView(cancelBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(
-                sendBtn,
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.1f).apply {
-                    marginStart = gap
-                },
-            )
-        }
-
-        val body = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), 0, dp(14), dp(12))
-            addView(coordsRow)
-            addView(
-                buttonsRow,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(10) },
-            )
-        }
-
-        val divider = View(context).apply {
-            setBackgroundColor(Color.parseColor("#288899AA"))
-        }
-
-        val card = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            isClickable = true
-            elevation = dp(8).toFloat()
-            background = panelShellBackground()
-            addView(headerRow)
-            addView(
-                divider,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(1),
-                ).apply {
-                    marginStart = dp(12)
-                    marginEnd = dp(12)
-                },
-            )
-            addView(body)
-            consumeTouchesInSubtree()
-        }
-
-        val scrim = FrameLayout(context).apply {
-            setBackgroundColor(Color.argb(100, 0, 0, 0))
-            setDismissOnOutsideCardTouch(card) {
-                hideKeyboard(editServer)
-                hideKeyboard(editX)
-                hideKeyboard(editY)
-                hideCoordOnly()
-            }
-        }
-
-        val cardW = minOf(dp(288), context.resources.displayMetrics.widthPixels - dp(20))
-        scrim.addView(
-            card,
-            FrameLayout.LayoutParams(cardW, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.CENTER
-            },
-        )
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            overlayWindowType(),
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-            android.graphics.PixelFormat.TRANSLUCENT,
-        ).apply {
-            OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
-            OverlayWindowLayout.applyCoordinateDialogSoftInputMode(this)
-        }
-
-        if (runCatching { windowManager.addView(scrim, params) }.isFailure) {
-            releasePopoverSuppressAfterUiClosed()
-            return
-        }
-
-        coordScrim = scrim
-        attachedWindowManager = windowManager
-
-        close.setOnClickListener {
-            hideKeyboard(editServer)
-            hideKeyboard(editX)
-            hideKeyboard(editY)
-            hideCoordOnly()
-        }
-
-        cancelBtn.setOnClickListener {
-            hideKeyboard(editServer)
-            hideKeyboard(editX)
-            hideKeyboard(editY)
-            hideCoordOnly()
-        }
-
-        sendBtn.setOnClickListener {
-            val server = editServer.text?.toString()?.trim()?.toIntOrNull()
-            val xv = editX.text?.toString()?.trim()?.toIntOrNull()
-            val yv = editY.text?.toString()?.trim()?.toIntOrNull()
-            if (server == null || server !in MIN_COORD_SERVER..MAX_COORD_SERVER || xv == null || yv == null) {
-                Toast.makeText(context, R.string.overlay_coord_invalid, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            hideKeyboard(editServer)
-            hideKeyboard(editX)
-            hideKeyboard(editY)
-            val pendingId = prepareOptimisticRaidQuickCommand(commandLabel, xv, yv, server)
-            if (pendingId == null) {
-                Toast.makeText(context, R.string.overlay_strip_no_raid, Toast.LENGTH_SHORT).show()
-            }
-            CombatOverlayService.extendInGameOverlayUiHold()
-            hideCoordOnly()
-            scope.launch {
-                CombatOverlayService.warmupRaidForQuickCommandSend()
-                val result = sendCoords(commandLabel, xv, yv, server)
-                mainHandler.post {
-                    result.onFailure { e ->
-                        pendingId?.let(removeOptimisticRaidSend)
-                        val msg = when (e.message) {
-                            "no_room" -> context.getString(R.string.overlay_strip_no_room)
-                            "no_raid" -> context.getString(R.string.overlay_strip_no_raid)
-                            else ->
-                                e.message?.takeIf { it.isNotBlank() }
-                                    ?: context.getString(R.string.overlay_history_send_failed, e.javaClass.simpleName)
-                        }
-                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-        }
-
-        mainHandler.post {
-            editX.requestFocus()
-            showKeyboard(editX)
-        }
     }
 
     private fun showReactionRecipientPicker(windowManager: WindowManager, reactionId: String) {
