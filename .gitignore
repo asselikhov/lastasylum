@@ -55,6 +55,10 @@ Last/
 *.local.md
 notes.local.*
 
+# --- Temp / scratch tooling, reverse-engineering dumps, test artifacts ---
+.tmp-*/
+.tmp-*
+
 # --- IDE ---
 .idea/
 .vscode/
