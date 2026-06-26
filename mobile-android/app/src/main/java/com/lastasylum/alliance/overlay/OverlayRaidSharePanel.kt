@@ -206,14 +206,15 @@ class OverlayRaidSharePanel(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
         }
+        // Координаты — первой строкой карточки.
+        coordsView = TextView(context).apply {
+            setTextColor(coordColor)
+            textSize = 12f
+        }
         infoView = TextView(context).apply {
             setTextColor(infoColor)
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
-        }
-        coordsView = TextView(context).apply {
-            setTextColor(coordColor)
-            textSize = 12f
             setPadding(0, dp(2), 0, 0)
         }
         // Мощь/Поверженные — отдельной (третьей) строкой под координатами.
@@ -223,8 +224,8 @@ class OverlayRaidSharePanel(
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(3), 0, 0)
         }
-        infoCard.addView(infoView)
         infoCard.addView(coordsView)
+        infoCard.addView(infoView)
         infoCard.addView(statsView)
         container.addView(infoCard)
 
@@ -239,10 +240,14 @@ class OverlayRaidSharePanel(
         commands.forEachIndexed { index, command ->
             val chip = TextView(context).apply {
                 gravity = Gravity.CENTER
-                textSize = 12.5f
-                setPadding(dp(4), dp(8), dp(4), dp(8))
+                textSize = 12f
+                // Подпись чекбокса всегда в одну строку — без переноса на вторую.
+                maxLines = 1
+                setSingleLine(true)
+                includeFontPadding = false
+                setPadding(dp(2), dp(8), dp(2), dp(8))
                 val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                if (index > 0) lp.leftMargin = dp(7)
+                if (index > 0) lp.leftMargin = dp(5)
                 layoutParams = lp
                 setOnClickListener {
                     if (index in selected) {
