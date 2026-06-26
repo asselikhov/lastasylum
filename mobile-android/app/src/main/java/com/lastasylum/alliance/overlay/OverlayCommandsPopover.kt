@@ -1647,11 +1647,7 @@ class OverlayCommandsPopover(
 
         titleRow.addView(
             View(context),
-            LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f,
-            ),
+            LinearLayout.LayoutParams(0, 0, 1f),
         )
         titleRow.addView(
             reactionStickerPackPicker.root,
