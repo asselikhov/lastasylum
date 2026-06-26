@@ -5321,10 +5321,12 @@ class CombatOverlayService : Service() {
         }.getOrDefault(true)
 
     /**
-     * Сообщение для комнаты «Рейд» в две строки:
-     *   `{префикс ·} {🎁 заголовок цели}`
-     *   `📍 [#:сервер X Y]`
-     * Координаты на отдельной строке остаются кликабельными (парсер ищет блок `[#:.. X.. Y..]`).
+     * Сообщение для комнаты «Рейд» в три строки:
+     *   `{команда} [#:сервер X Y]`
+     *   `Ур.N [тег] Ник (+ грейд/владелец)`
+     *   `⚡Мощь ⚔Поверженные`
+     * Координаты на первой строке остаются кликабельными (парсер ищет блок `[#:.. X.. Y..]`).
+     * Третья строка опускается, если у цели нет мощи/поверженных.
      */
     private fun buildRaidShareText(commandLabel: String?, target: com.lastasylum.alliance.game.RaidShareTarget): String {
         val coords = com.lastasylum.alliance.game.MapCoordinate(
@@ -5336,14 +5338,13 @@ class CombatOverlayService : Service() {
         val action = commandLabel?.trim()?.takeIf { it.isNotEmpty() }
         // Строка 1: [команда] координаты (кликабельны для перелёта).
         val line1 = listOfNotNull(action, coords).joinToString(" ")
-        // Строка 2: Ур.N [тег] Ник [иконка]Мощь [иконка]Поверженные (та же последовательность,
-        // что в карточке шаринга; маркеры заменяются рендерером на реальные иконки).
-        val infoHead = (listOfNotNull(target.levelPrefix(), target.titleLine()) +
+        // Строка 2: Ур.N [тег] Ник (+ грейд/звёзды/владелец сундука/конвоя).
+        val line2 = (listOfNotNull(target.levelPrefix(), target.titleLine()) +
             target.metaPartsForOverlay()).joinToString(" ")
-        val line2 = buildString {
-            append(infoHead)
+        // Строка 3: [иконка]Мощь [иконка]Поверженные — отдельной строкой
+        // (маркеры заменяются рендерером на реальные иконки). Пустая, если данных нет.
+        val line3 = buildString {
             target.powerLabel()?.let {
-                if (isNotEmpty()) append(' ')
                 append(com.lastasylum.alliance.game.RaidShareGlyphs.POWER).append(it)
             }
             target.killsLabel()?.let {
@@ -5351,7 +5352,7 @@ class CombatOverlayService : Service() {
                 append(com.lastasylum.alliance.game.RaidShareGlyphs.KILLS).append(it)
             }
         }
-        return "$line1\n$line2"
+        return listOf(line1, line2, line3).filter { it.isNotEmpty() }.joinToString("\n")
     }
 
     private fun onRaidShareSend(commandLabel: String?, target: com.lastasylum.alliance.game.RaidShareTarget) {

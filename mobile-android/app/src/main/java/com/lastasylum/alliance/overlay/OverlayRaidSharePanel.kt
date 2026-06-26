@@ -68,6 +68,7 @@ class OverlayRaidSharePanel(
     private var root: LinearLayout? = null
     private var infoView: TextView? = null
     private var coordsView: TextView? = null
+    private var statsView: TextView? = null
     private val chipViews = mutableListOf<TextView>()
     private val selected = mutableSetOf<Int>()
     private var target: RaidShareTarget? = null
@@ -215,8 +216,16 @@ class OverlayRaidSharePanel(
             textSize = 12f
             setPadding(0, dp(2), 0, 0)
         }
+        // Мощь/Поверженные — отдельной (третьей) строкой под координатами.
+        statsView = TextView(context).apply {
+            setTextColor(infoColor)
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(3), 0, 0)
+        }
         infoCard.addView(infoView)
         infoCard.addView(coordsView)
+        infoCard.addView(statsView)
         container.addView(infoCard)
 
         val chipRow = LinearLayout(context).apply {
@@ -281,6 +290,29 @@ class OverlayRaidSharePanel(
             append("X:").append(t.x).append(" Y:").append(t.y)
             append("]")
         }
+        val stats = buildStatsText(t)
+        statsView?.apply {
+            if (stats.isNullOrEmpty()) {
+                text = ""
+                visibility = View.GONE
+            } else {
+                text = stats
+                visibility = View.VISIBLE
+            }
+        }
+    }
+
+    /** Третья строка карточки: Мощь/Поверженные с игровыми иконками, либо null если данных нет. */
+    private fun buildStatsText(t: RaidShareTarget): CharSequence? {
+        val builder = SpannableStringBuilder()
+        t.powerLabel()?.let { label ->
+            appendStatWithIcon(builder, label, t.powerIcon, R.drawable.ic_overlay_game_power)
+        }
+        t.killsLabel()?.let { label ->
+            if (builder.isNotEmpty()) builder.append("  ")
+            appendStatWithIcon(builder, label, t.killsIcon, R.drawable.ic_overlay_game_kills)
+        }
+        return builder.takeIf { it.isNotEmpty() }
     }
 
     private fun buildInfoText(t: RaidShareTarget): CharSequence {
@@ -290,14 +322,6 @@ class OverlayRaidSharePanel(
         t.levelPrefix()?.let { sep(); builder.append(it) }
         sep(); builder.append(t.titleLine())
         t.metaPartsForOverlay().forEach { part -> sep(); builder.append(part) }
-        t.powerLabel()?.let { label ->
-            sep()
-            appendStatWithIcon(builder, label, t.powerIcon, R.drawable.ic_overlay_game_power)
-        }
-        t.killsLabel()?.let { label ->
-            sep()
-            appendStatWithIcon(builder, label, t.killsIcon, R.drawable.ic_overlay_game_kills)
-        }
         val badge = t.chestGradeStars()
         val gradeColor = gradeColor(t.grade)
         if (badge != null && gradeColor != null) {

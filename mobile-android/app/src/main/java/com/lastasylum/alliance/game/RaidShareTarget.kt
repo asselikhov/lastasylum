@@ -32,6 +32,8 @@ data class RaidShareTarget(
     /** Уже локализованное имя цели (имя игрока, монстра, ресурса, владельца конвоя…). */
     val name: String?,
     val playerName: String?,
+    /** Короткий тег альянса владельца (напр. для сундука), если есть. */
+    val union: String?,
     /** Категория из игры: player / truck / SlgMonsterInfo / ResourceInfo / SlgRallyInfo / MechCity / … */
     val cat: String?,
     /** Уровень объекта (монстр/ресурс/ралли/город игрока), если есть. */
@@ -64,6 +66,16 @@ data class RaidShareTarget(
     fun qualityLabel(): String? = qualityToLabel(qualityType)
 
     /**
+     * Владелец сундука для отображения: `[ТЕГ] Ник`, либо просто `Ник`, если тег альянса
+     * недоступен. null, если ника нет.
+     */
+    fun chestOwnerLabel(): String? {
+        val nick = cleanGameText(playerName) ?: return null
+        val tag = union?.trim()?.takeIf { it.isNotEmpty() }
+        return if (tag != null) "[$tag] $nick" else nick
+    }
+
+    /**
      * Название цели для первой строки (рядом с координатами): тег альянса + ник игрока,
      * либо `Сундук` / `Конвой` / имя монстра-ресурса. Без уровня/мощи и без координат.
      */
@@ -79,7 +91,7 @@ data class RaidShareTarget(
         when {
             isChest -> {
                 chestGradeStars()?.let { meta.add(it) }
-                cleanGameText(playerName)?.let { meta.add(it) }
+                chestOwnerLabel()?.let { meta.add(it) }
             }
             isTruck -> {
                 qualityLabel()?.let { meta.add(it) }
@@ -164,6 +176,8 @@ data class RaidShareTarget(
                 ?.replace("\u3155", "")
                 ?.trim()
                 ?.replace(Regex("^#\\d+\\s*"), "")
+                // Пробел между тегом альянса и ником, если игра прислала их слитно ("[OBZH]Ник").
+                ?.replace(Regex("\\](?=\\S)"), "] ")
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() }
 
@@ -180,6 +194,7 @@ data class RaidShareTarget(
                     shareType = o.optInt("shareType", 0),
                     name = o.optString("name", "").trim().takeIf { it.isNotEmpty() },
                     playerName = o.optString("playerName", "").trim().takeIf { it.isNotEmpty() },
+                    union = o.optString("union", "").trim().takeIf { it.isNotEmpty() },
                     cat = o.optString("cat", "").trim().takeIf { it.isNotEmpty() },
                     lv = o.optInt("lv", 0).takeIf { it > 0 },
                     power = o.optLong("power", 0L).takeIf { it > 0 },
