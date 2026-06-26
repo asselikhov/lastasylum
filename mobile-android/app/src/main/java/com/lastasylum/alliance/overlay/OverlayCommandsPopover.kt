@@ -1714,7 +1714,13 @@ class OverlayCommandsPopover(
             clipToPadding = false
             elevation = dp(10).toFloat()
             background = panelShellBackground()
-            addView(headerRow)
+            addView(
+                headerRow,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
             addView(
                 divider,
                 LinearLayout.LayoutParams(
@@ -1725,8 +1731,20 @@ class OverlayCommandsPopover(
                     marginEnd = dp(12)
                 },
             )
-            addView(tabsRow)
-            addView(bodyColumn)
+            addView(
+                tabsRow,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            addView(
+                bodyColumn,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
             consumeTouchesInSubtree()
         }
 
