@@ -44,6 +44,14 @@ class ChatSocketManager(
     private var reconnectAttempt = 0
     private var intentionalDisconnect = false
     private var reconnectScheduled = false
+    /**
+     * True between [openSocket] and the next terminal connect/error/disconnect. Guards against the
+     * reconnect storm: while a handshake is in flight, repeated [connect] calls (overlay + primary
+     * subscription reconciliation) must only update the desired room set — never tear down and
+     * reopen the socket, which on a slow handshake never converges to a stable connection.
+     */
+    @Volatile
+    private var connectInFlight = false
     private var staleTokenRefreshHandler: (() -> Unit)? = null
 
     fun setStaleTokenRefreshHandler(handler: () -> Unit) {
@@ -279,6 +287,13 @@ class ChatSocketManager(
             emitConnectionState(ChatConnectionState.Connected)
             return
         }
+        // Handshake already in flight (socket exists but not yet connected): only update the
+        // desired rooms and let EVENT_CONNECT join them. Reopening here would restart the
+        // handshake and, with frequent reconciliation calls, cause a reconnect storm.
+        if (existing != null && connectInFlight && !intentionalDisconnect) {
+            subscribedRoomIds = distinct
+            return
+        }
         subscribedRoomIds = distinct
         openSocket(lastBaseUrl!!, token, distinct)
     }
@@ -415,8 +430,25 @@ class ChatSocketManager(
     }
 
     private fun openSocket(baseUrl: String, accessToken: String, roomIds: List<String>) {
+        // Central coalescing guard: every reopen path funnels through here (connect, reconnect
+        // runnable, fresh-token reconnect). If a handshake is already in flight, or the socket is
+        // already live to the same base, do NOT tear down and reopen — only update the desired
+        // room set. Reopening mid-handshake is what caused the reconnect storm.
+        val base = baseUrl.trimEnd('/')
+        if (!intentionalDisconnect && lastBaseUrl == base &&
+            (connectInFlight || socket?.connected() == true)
+        ) {
+            subscribedRoomIds = roomIds
+            socket?.takeIf { it.connected() }?.let { live ->
+                for (rid in roomIds) {
+                    live.emit("room:join", JSONObject().put("roomId", rid))
+                }
+            }
+            return
+        }
         emitConnectionState(ChatConnectionState.Connecting)
         disconnectSocketOnly()
+        connectInFlight = true
 
         try {
             val options = IO.Options.builder()
@@ -426,8 +458,10 @@ class ChatSocketManager(
             socket = IO.socket("$baseUrl/chat", options).apply {
                 on(Socket.EVENT_CONNECT) {
                     reconnectAttempt = 0
+                    connectInFlight = false
                     emitConnectionState(ChatConnectionState.Connected)
-                    for (rid in roomIds) {
+                    // Join the latest desired set (may have been updated mid-handshake).
+                    for (rid in subscribedRoomIds) {
                         emit(
                             "room:join",
                             JSONObject().put("roomId", rid),
@@ -435,6 +469,7 @@ class ChatSocketManager(
                     }
                 }
                 on(Socket.EVENT_DISCONNECT) {
+                    connectInFlight = false
                     if (!intentionalDisconnect) {
                         scheduleReconnect()
                     } else {
@@ -442,6 +477,7 @@ class ChatSocketManager(
                     }
                 }
                 on(Socket.EVENT_CONNECT_ERROR) {
+                    connectInFlight = false
                     if (!intentionalDisconnect) {
                         scheduleReconnect()
                     }
