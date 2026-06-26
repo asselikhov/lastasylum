@@ -121,6 +121,9 @@ internal fun ChatViewModel.onRoomReadEventImpl(event: ChatRoomReadEvent) {
         if (event.userId == currentUserId) {
             if (event.roomId.isNotBlank()) {
                 mergeReadCursor(event.roomId, event.messageId)
+                // Drop any live socket-bump floor: now that this user read the room (here or on
+                // another device), the optimistic floor must not resurrect the badge on next merge.
+                clearOptimisticUnreadFloor(event.roomId)
                 vmState.update { st ->
                     st.copy(rooms = clearUnreadForRoom(st.rooms, event.roomId))
                 }

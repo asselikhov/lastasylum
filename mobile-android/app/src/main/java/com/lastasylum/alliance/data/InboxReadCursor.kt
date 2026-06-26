@@ -84,9 +84,14 @@ fun shouldClearOptimisticUnreadFloor(
 ): Boolean {
     if (floor <= 0) return true
     val raw = rawServerUnread.coerceAtLeast(0)
+    // Keep the floor while the badge is legitimately showing. A live socket bump means the room
+    // genuinely has unread the user has not opened yet; the floor is dropped only when the room is
+    // actually read (read paths clear it explicitly) — never just because the server count caught
+    // up to it. Without this, a previously-read room whose server read-cursor equals the local one
+    // (effective suppressed to 0) would lose its badge ~1s after each new message.
+    if (displayedUnread > 0) return false
     if (raw >= floor) return true
     if (raw > 0 && displayedUnread == 0) return true
-    if (displayedUnread > 0) return false
     if (raw == 0 && lastBumpAtMs > 0L && nowMs - lastBumpAtMs < graceMs) return false
     return true
 }

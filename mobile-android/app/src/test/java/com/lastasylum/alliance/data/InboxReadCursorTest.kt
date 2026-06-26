@@ -182,17 +182,8 @@ class InboxReadCursorTest {
     }
 
     @Test
-    fun shouldClearOptimisticFloor_clearsWhenServerCaughtUpOrGraceExpired() {
+    fun shouldClearOptimisticFloor_clearsWhenGraceExpiredAndServerZero() {
         val now = 10_000L
-        assertTrue(
-            shouldClearOptimisticUnreadFloor(
-                floor = 1,
-                rawServerUnread = 1,
-                displayedUnread = 1,
-                lastBumpAtMs = now - 500L,
-                nowMs = now,
-            ),
-        )
         assertTrue(
             shouldClearOptimisticUnreadFloor(
                 floor = 1,
@@ -201,6 +192,26 @@ class InboxReadCursorTest {
                 lastBumpAtMs = now - 5_000L,
                 nowMs = now,
                 graceMs = 4_000L,
+            ),
+        )
+    }
+
+    /**
+     * Regression: a previously-read room (server read-cursor == local cursor, so effective is
+     * suppressed to 0) gets a fresh socket message. The badge shows 1 via the optimistic floor and
+     * must NOT be cleared just because the server's raw count caught up to the floor — otherwise the
+     * tab/overlay badge collapses ~1s after every new message in an already-opened room.
+     */
+    @Test
+    fun shouldClearOptimisticFloor_keepsWhileBadgeShownEvenWhenServerCaughtUp() {
+        val now = 10_000L
+        assertFalse(
+            shouldClearOptimisticUnreadFloor(
+                floor = 1,
+                rawServerUnread = 1,
+                displayedUnread = 1,
+                lastBumpAtMs = now - 500L,
+                nowMs = now,
             ),
         )
     }
