@@ -1312,6 +1312,7 @@ const SHARE_HOOK_LUA = [
   "if not dn then dn=nk end end",
   "if dn then p[#p+1]='\"name\":\"'..esc(dn)..'\"' end",
   "if cat then p[#p+1]='\"cat\":\"'..esc(cat)..'\"' end",
+  "local _recAb=cfgrow and tonumber(cfgrow.recAbility) if cat and cat~='player' and _recAb and _recAb>0 then p[#p+1]='\"power\":'..string.format('%d',_recAb) p[#p+1]='\"powerIcon\":\"pic_zhanli\"' end",
   "if pt.lv then p[#p+1]='\"lv\":'..tostring(pt.lv) end",
   "if pt.qualityType then p[#p+1]='\"qualityType\":'..tostring(pt.qualityType) end",
   "if pt.playerName then p[#p+1]='\"playerName\":\"'..esc(pt.playerName)..'\"' end",
