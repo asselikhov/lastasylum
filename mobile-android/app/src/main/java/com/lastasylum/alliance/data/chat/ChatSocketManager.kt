@@ -52,7 +52,64 @@ class ChatSocketManager(
      */
     @Volatile
     private var connectInFlight = false
+
+    /**
+     * Wall-clock instant the current handshake started (when [connectInFlight] flipped true). Used
+     * by [isHandshakeStale] so a handshake that never produces a terminal connect/error/disconnect
+     * event cannot latch [connectInFlight] forever: the next reopen path treats it as stale and
+     * reconnects. This is the primary recovery — it does not depend on a Handler callback firing.
+     */
+    @Volatile
+    private var connectInFlightSinceMs = 0L
+    private var connectWatchdogScheduled = false
     private var staleTokenRefreshHandler: (() -> Unit)? = null
+
+    private fun isHandshakeStale(): Boolean {
+        if (!connectInFlight) return false
+        val since = connectInFlightSinceMs
+        if (since <= 0L) return false
+        return System.currentTimeMillis() - since > CONNECT_STALE_MS
+    }
+
+    /**
+     * Recovery for a stalled handshake: socket.io may start a connection that never produces a
+     * terminal connect/error/disconnect event (observed against slow/cold-starting backends). In
+     * that case [connectInFlight] would latch forever and every reopen path short-circuits, so the
+     * socket never recovers and no realtime events arrive. The watchdog forcibly clears the latch
+     * and reopens once the handshake has been in flight too long.
+     */
+    private val connectWatchdogRunnable = Runnable {
+        connectWatchdogScheduled = false
+        if (intentionalDisconnect) return@Runnable
+        if (socket?.connected() == true) {
+            connectInFlight = false
+            return@Runnable
+        }
+        connectInFlight = false
+        val base = lastBaseUrl
+        val rooms = subscribedRoomIds
+        val token = tokenProvider?.invoke()
+        if (base != null && rooms.isNotEmpty() && token != null &&
+            JwtAccessTokenClaims.isAccessTokenValid(token)
+        ) {
+            openSocket(base, token, rooms)
+        } else {
+            scheduleReconnect()
+        }
+    }
+
+    private fun armConnectWatchdog() {
+        cancelConnectWatchdog()
+        connectWatchdogScheduled = true
+        mainHandler.postDelayed(connectWatchdogRunnable, CONNECT_WATCHDOG_MS)
+    }
+
+    private fun cancelConnectWatchdog() {
+        if (connectWatchdogScheduled) {
+            mainHandler.removeCallbacks(connectWatchdogRunnable)
+            connectWatchdogScheduled = false
+        }
+    }
 
     fun setStaleTokenRefreshHandler(handler: () -> Unit) {
         staleTokenRefreshHandler = handler
@@ -289,8 +346,10 @@ class ChatSocketManager(
         }
         // Handshake already in flight (socket exists but not yet connected): only update the
         // desired rooms and let EVENT_CONNECT join them. Reopening here would restart the
-        // handshake and, with frequent reconciliation calls, cause a reconnect storm.
-        if (existing != null && connectInFlight && !intentionalDisconnect) {
+        // handshake and, with frequent reconciliation calls, cause a reconnect storm. The
+        // exception is a STALE handshake that never produced a terminal event — fall through so
+        // openSocket can tear it down and reopen, otherwise the socket never recovers.
+        if (existing != null && connectInFlight && !intentionalDisconnect && !isHandshakeStale()) {
             subscribedRoomIds = distinct
             return
         }
@@ -384,12 +443,14 @@ class ChatSocketManager(
     fun disconnect() {
         intentionalDisconnect = true
         cancelReconnect()
+        cancelConnectWatchdog()
         disconnectSocket()
     }
 
     fun disconnectSocketAndClearListeners() {
         intentionalDisconnect = true
         cancelReconnect()
+        cancelConnectWatchdog()
         disconnectSocket()
         messageListeners.clear()
         messageDeletedListeners.clear()
@@ -435,7 +496,8 @@ class ChatSocketManager(
         // already live to the same base, do NOT tear down and reopen — only update the desired
         // room set. Reopening mid-handshake is what caused the reconnect storm.
         val base = baseUrl.trimEnd('/')
-        if (!intentionalDisconnect && lastBaseUrl == base &&
+        val stale = isHandshakeStale()
+        if (!intentionalDisconnect && lastBaseUrl == base && !stale &&
             (connectInFlight || socket?.connected() == true)
         ) {
             subscribedRoomIds = roomIds
@@ -449,16 +511,20 @@ class ChatSocketManager(
         emitConnectionState(ChatConnectionState.Connecting)
         disconnectSocketOnly()
         connectInFlight = true
+        connectInFlightSinceMs = System.currentTimeMillis()
+        armConnectWatchdog()
 
         try {
             val options = IO.Options.builder()
                 .setPath("/socket.io/")
                 .setAuth(mapOf("token" to accessToken))
+                .setTimeout(CONNECT_HANDSHAKE_TIMEOUT_MS)
                 .build()
             socket = IO.socket("$baseUrl/chat", options).apply {
                 on(Socket.EVENT_CONNECT) {
                     reconnectAttempt = 0
                     connectInFlight = false
+                    cancelConnectWatchdog()
                     emitConnectionState(ChatConnectionState.Connected)
                     // Join the latest desired set (may have been updated mid-handshake).
                     for (rid in subscribedRoomIds) {
@@ -470,6 +536,7 @@ class ChatSocketManager(
                 }
                 on(Socket.EVENT_DISCONNECT) {
                     connectInFlight = false
+                    cancelConnectWatchdog()
                     if (!intentionalDisconnect) {
                         scheduleReconnect()
                     } else {
@@ -478,6 +545,7 @@ class ChatSocketManager(
                 }
                 on(Socket.EVENT_CONNECT_ERROR) {
                     connectInFlight = false
+                    cancelConnectWatchdog()
                     if (!intentionalDisconnect) {
                         scheduleReconnect()
                     }
@@ -666,6 +734,8 @@ class ChatSocketManager(
             }
         } catch (e: Throwable) {
             Log.e(TAG, "Socket setup failed: $baseUrl/chat", e)
+            connectInFlight = false
+            cancelConnectWatchdog()
             disconnectSocketOnly()
             emitConnectionState(ChatConnectionState.Disconnected)
             if (!intentionalDisconnect) {
@@ -678,6 +748,13 @@ class ChatSocketManager(
         socket?.disconnect()
         socket?.off()
         socket = null
+        // Clear the in-flight latch on every teardown. Otherwise a disconnect that happens while a
+        // handshake is still in flight (socket nulled, no terminal connect/error event) leaves
+        // connectInFlight=true forever, and every subsequent openSocket short-circuits to
+        // SKIP-reopen against a null socket — the socket can never reconnect. openSocket calls this
+        // immediately before setting connectInFlight=true again, so the reopen path is unaffected.
+        connectInFlight = false
+        connectInFlightSinceMs = 0L
     }
 
     private fun disconnectSocket() {
@@ -690,6 +767,24 @@ class ChatSocketManager(
 
     private companion object {
         private const val TAG = "ChatSocket"
+
+        /** socket.io transport/handshake timeout — bounds how long one attempt may hang. */
+        private const val CONNECT_HANDSHAKE_TIMEOUT_MS = 20_000L
+
+        /**
+         * After this long without the handshake reaching a terminal connect/error/disconnect event,
+         * an in-flight handshake is considered stale and the next reopen path tears it down and
+         * reconnects instead of short-circuiting. Set just above the handshake timeout so a normal
+         * (even slow) connect is never pre-empted, while a silently stuck socket still recovers.
+         */
+        private const val CONNECT_STALE_MS = 22_000L
+
+        /**
+         * Wall-clock watchdog over [connectInFlight]. Slightly longer than the handshake timeout so
+         * it only fires when socket.io fails to surface a terminal connect/error/disconnect event at
+         * all, then forces a clean reopen so the in-flight latch cannot stick forever.
+         */
+        private const val CONNECT_WATCHDOG_MS = 25_000L
     }
 }
 

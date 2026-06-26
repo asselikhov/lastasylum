@@ -1152,7 +1152,15 @@ internal fun ChatViewModel.onRoomUnreadFromServerImpl(event: ChatRoomUnreadEvent
                 return
             }
         }
-        if (serverUnread > 0 && !localLast.isNullOrBlank()) {
+        // Only suppress when there is NO live optimistic floor for this room. A floor means a socket
+        // message:new just bumped the badge for a genuinely-new message; the server's matching
+        // rooms:unread (unread>0) is corroboration, not a stale count. effectiveUnreadCount suppresses
+        // to 0 whenever localLast == serverLast even though there is a real unread message after that
+        // shared cursor, so without this guard the fresh badge would be cleared (and the room wrongly
+        // marked read) ~1s after every message. With a floor we fall through to the normal reconcile
+        // path below, which honours the floor and lets maybeClearOptimisticUnreadFloor decide.
+        val activeOptimisticFloor = optimisticUnreadFloorByRoom[roomId] ?: 0
+        if (serverUnread > 0 && !localLast.isNullOrBlank() && activeOptimisticFloor <= 0) {
             val suppressed = effectiveUnreadCount(
                 serverUnread = serverUnread,
                 lastReadMessageId = serverLast.takeIf { it.isNotEmpty() },
