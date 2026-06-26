@@ -18,6 +18,11 @@ class OverlayChatStripBuffer(
     private val messages = mutableListOf<ChatMessage>()
     private val receivedAt = mutableMapOf<String, Instant>()
     /**
+     * Ключи карточек, которые УЖЕ ушли из ленты (вытеснены более свежими или закрыты пользователем).
+     * Такие карточки больше не показываем и не воскрешаем при позднем дубле из сокета/пуша.
+     */
+    private val retiredKeys = LinkedHashSet<String>()
+    /**
      * null — вне игровой сессии, чужие карточки не показываем;
      * [resetVisibleSession] — только сообщения, принятые после входа в матч.
      */
@@ -36,7 +41,22 @@ class OverlayChatStripBuffer(
     fun clear() {
         messages.clear()
         receivedAt.clear()
+        retiredKeys.clear()
         visibleSince = null
+    }
+
+    /** Тот же ключ карточки, что и [keyOf] в UI: [_id] (если есть) либо [ChatMessage.stableKey]. */
+    private fun previewKey(msg: ChatMessage): String =
+        msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
+
+    private fun retire(key: String) {
+        if (key.isBlank()) return
+        retiredKeys.remove(key)
+        retiredKeys.add(key)
+        while (retiredKeys.size > RETIRED_KEYS_CAP) {
+            val oldest = retiredKeys.iterator().next()
+            retiredKeys.remove(oldest)
+        }
     }
 
     /** Drop preview rows for a room after per-user history clear. */
@@ -53,6 +73,8 @@ class OverlayChatStripBuffer(
     }
 
     fun upsert(msg: ChatMessage) {
+        // Карточка уже покинула ленту — не воскрешаем её поздними дублями (сокет/пуш/повтор).
+        if (!OverlayStripNoticeIds.isNotice(msg._id) && previewKey(msg) in retiredKeys) return
         val id = msg._id?.takeIf { it.isNotBlank() }
         if (id != null) {
             val i = messages.indexOfFirst { it._id == id }
@@ -92,12 +114,35 @@ class OverlayChatStripBuffer(
         }
     }
 
+    /**
+     * Держим в ленте только самые свежие [maxPreviewMessages] карточек (плюс служебные нотисы).
+     * Всё, что вытеснено более свежими сообщениями, СРАЗУ удаляется из буфера и помечается
+     * «ушедшим» — чтобы ушедшая карточка не всплывала снова при закрытии/дубле.
+     */
+    fun enforceStripWindow(): Boolean {
+        val regular = messages
+            .filter { !OverlayStripNoticeIds.isNotice(it._id) }
+            .sortedBy { OverlayChatTime.effectiveInstant(it, receivedAt) }
+        if (regular.size <= maxPreviewMessages) return false
+        val evicted = regular.dropLast(maxPreviewMessages)
+        if (evicted.isEmpty()) return false
+        val evictedKeys = evicted.map { previewKey(it) }.toSet()
+        messages.removeAll { !OverlayStripNoticeIds.isNotice(it._id) && previewKey(it) in evictedKeys }
+        evicted.forEach { m ->
+            retire(previewKey(m))
+            receivedAt.remove(m.stableKey())
+            m._id?.takeIf { it.isNotBlank() }?.let { receivedAt.remove(it) }
+        }
+        return true
+    }
+
     fun visibleForPreview(): List<ChatMessage> {
         val ttlCutoff = Instant.now().minus(messageTtlSeconds, ChronoUnit.SECONDS)
         val sessionCutoff = visibleSince
         return messages
             .filter {
                 if (OverlayStripNoticeIds.isNotice(it._id)) return@filter true
+                if (previewKey(it) in retiredKeys) return@filter false
                 if (sessionCutoff == null) return@filter false
                 val t = OverlayChatTime.effectiveInstant(it, receivedAt)
                 !t.isBefore(ttlCutoff) && !t.isBefore(sessionCutoff)
@@ -163,6 +208,8 @@ class OverlayChatStripBuffer(
         }
         removedKeys.forEach { receivedAt.remove(it) }
         receivedAt.remove(messageKey)
+        // Закрытая карточка ушла из ленты навсегда — не воскрешаем её поздними дублями.
+        retire(messageKey)
     }
 
     /** Удалить серверную карточку и optimistic-дубль (overlay-pending- / pending-) с тем же текстом. */
@@ -224,5 +271,7 @@ class OverlayChatStripBuffer(
         const val DEFAULT_BUFFER_CAP = 80
         /** Должно совпадать с лимитом в [CombatOverlayService] для ожидаемого числа карточек в ленте. */
         const val DEFAULT_MAX_PREVIEW = 3
+        /** Сколько ключей «ушедших» карточек помним, чтобы не воскрешать их дублями. */
+        private const val RETIRED_KEYS_CAP = 300
     }
 }

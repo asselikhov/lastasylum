@@ -79,6 +79,15 @@ import kotlinx.coroutines.delay
 
 private fun overlayStripInteractiveRegionKey(messageKey: String, kind: String): String =
     "$messageKey:$kind"
+
+/**
+ * Временная метка карточки для сортировки ленты (старые сверху, свежее снизу).
+ * И присутствующие, и уходящие карточки сортируются единообразно по времени,
+ * поэтому вытесняемая старая карточка анимируется именно сверху, без «прыжков» вниз.
+ */
+private fun overlayStripSortMillis(msg: ChatMessage): Long =
+    runCatching { java.time.Instant.parse(msg.createdAt).toEpochMilli() }.getOrNull()
+        ?: 0L
 private const val STRIP_EXIT_ANIM_MS = 120L
 private const val STRIP_ENTER_ANIM_MS = 100
 private const val STRIP_CARD_ESTIMATE_DP = 120
@@ -162,8 +171,9 @@ fun OverlayChatStrip(
             keep.removeAll { keyOf(it) !in currentKeys || keyOf(it) in dismissedKeys }
             removed.forEach { m -> leaving.remove(keyOf(m)) }
         }
-        val orderIndex = latestMessages.mapIndexed { index, msg -> keyOf(msg) to index }.toMap()
-        keep.sortBy { orderIndex[keyOf(it)] ?: Int.MAX_VALUE }
+        // Старые сверху, свежее снизу. Уходящие карточки сохраняют своё временное место,
+        // поэтому вытесняемая самая старая карточка плавно закрывается именно сверху.
+        keep.sortWith(compareBy({ overlayStripSortMillis(it) }, { keyOf(it) }))
         if (keep.size > OverlayChatStripBuffer.DEFAULT_MAX_PREVIEW) {
             val overflow = keep.size - OverlayChatStripBuffer.DEFAULT_MAX_PREVIEW
             val trimmed = keep.take(overflow)

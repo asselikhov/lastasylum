@@ -274,9 +274,9 @@ class CombatOverlayService : Service() {
     private val raidShareReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, intent: Intent?) {
             if (intent?.action != com.lastasylum.alliance.game.RaidShareBridge.ACTION_SHARE_TARGET) return
-            handleRaidShareBroadcast(
-                intent.getStringExtra(com.lastasylum.alliance.game.RaidShareBridge.EXTRA_PAYLOAD),
-            )
+            val payload = intent.getStringExtra(com.lastasylum.alliance.game.RaidShareBridge.EXTRA_PAYLOAD)
+            Log.i("RaidShareDiag", "recv action=${intent.action} payloadLen=${payload?.length ?: -1} payload=${payload?.take(120)}")
+            handleRaidShareBroadcast(payload)
         }
     }
     private val overlayPresenceCoordinator by lazy {
@@ -4832,6 +4832,8 @@ class CombatOverlayService : Service() {
     }
 
     private fun stripPreviewForUi(): List<ChatMessage> {
+        // Вытеснить и навсегда убрать карточки, которые уже не помещаются в ленту (не более 3).
+        stripBuffer.enforceStripWindow()
         val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
         return stripBuffer.visibleForPreview()
             .filter { !OverlayStripDismissTracker.isDismissed(it) }
@@ -5279,24 +5281,40 @@ class CombatOverlayService : Service() {
     }
 
     private fun handleRaidShareBroadcast(payload: String?) {
-        val target = com.lastasylum.alliance.game.RaidShareTarget.fromJson(payload) ?: return
+        val target = com.lastasylum.alliance.game.RaidShareTarget.fromJson(payload)
+        if (target == null) {
+            Log.i("RaidShareDiag", "parse failed payload=${payload?.take(120)}")
+            return
+        }
         // seq в игре (_G.__sr_seq) сбрасывается в 0 при каждом перезапуске игры, тогда как
         // lastRaidShareSeq в живом сервисе хранит старое (большое) значение. Поэтому небольшой
         // откат назад трактуем как устаревшую/переставленную доставку и отбрасываем, а крупный
         // откат — это новая игровая сессия: принимаем и сбрасываем базовую линию.
         val backJump = lastRaidShareSeq - target.seq
-        if (backJump in 1..RAID_SHARE_SEQ_REORDER_WINDOW) return
+        Log.i("RaidShareDiag", "handle seq=${target.seq} open=${target.open} last=$lastRaidShareSeq backJump=$backJump")
+        if (backJump in 1..RAID_SHARE_SEQ_REORDER_WINDOW) {
+            Log.i("RaidShareDiag", "REJECT reorder seq=${target.seq} backJump=$backJump window=$RAID_SHARE_SEQ_REORDER_WINDOW")
+            return
+        }
         if (backJump > RAID_SHARE_SEQ_REORDER_WINDOW) lastRaidShareSeq = 0L
         val deliver = Runnable {
-            val mgr = windowManager ?: systemWindowManager() ?: return@Runnable
-            if (!isOverlayPanelUserEnabled()) return@Runnable
+            val mgr = windowManager ?: systemWindowManager()
+            if (mgr == null) {
+                Log.i("RaidShareDiag", "no WindowManager (windowManager=null, systemWindowManager=null)")
+                return@Runnable
+            }
+            val enabled = isOverlayPanelUserEnabled()
+            Log.i("RaidShareDiag", "deliver open=${target.open} enabled=$enabled mgr=${mgr.javaClass.simpleName}")
+            if (!enabled) return@Runnable
             if (target.open) {
                 lastRaidShareSeq = target.seq
                 mainHandler.removeCallbacks(raidShareHideRunnable)
                 raidShareShownAtMs = android.os.SystemClock.uptimeMillis()
+                Log.i("RaidShareDiag", "calling show() seq=${target.seq}")
                 overlayRaidSharePanel.show(mgr, target)
             } else {
                 lastRaidShareSeq = target.seq
+                Log.i("RaidShareDiag", "calling scheduleHide() seq=${target.seq}")
                 scheduleRaidShareHide()
             }
         }

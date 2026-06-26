@@ -337,4 +337,79 @@ class OverlayChatStripBufferTest {
         assertTrue(buffer.visibleForPreview().isEmpty())
         org.junit.Assert.assertFalse(buffer.containsMessageId("gone-id"))
     }
+
+    private fun stripMsg(id: String, secondsAgo: Long): ChatMessage =
+        ChatMessage(
+            _id = id,
+            allianceId = "a",
+            roomId = "raid",
+            senderId = "u-$id",
+            senderUsername = id,
+            senderRole = "R2",
+            text = id,
+            createdAt = Instant.now().minusSeconds(secondsAgo).toString(),
+        )
+
+    @Test
+    fun enforceStripWindow_keepsNewestThree_andEvictsOldest() {
+        val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600, maxPreviewMessages = 3)
+        buffer.resetVisibleSession()
+        listOf(
+            stripMsg("m1", 40),
+            stripMsg("m2", 30),
+            stripMsg("m3", 20),
+            stripMsg("m4", 10),
+        ).forEach { m ->
+            buffer.upsert(m)
+            buffer.touchReceivedNow(m)
+        }
+        buffer.enforceStripWindow()
+        val visible = buffer.visibleForPreview().map { it._id }
+        assertEquals(listOf("m2", "m3", "m4"), visible)
+        org.junit.Assert.assertFalse(buffer.containsMessageId("m1"))
+    }
+
+    @Test
+    fun evictedCard_doesNotResurface_afterNewerRemoved() {
+        val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600, maxPreviewMessages = 3)
+        buffer.resetVisibleSession()
+        listOf(
+            stripMsg("m1", 40),
+            stripMsg("m2", 30),
+            stripMsg("m3", 20),
+            stripMsg("m4", 10),
+        ).forEach { m ->
+            buffer.upsert(m)
+            buffer.touchReceivedNow(m)
+        }
+        buffer.enforceStripWindow()
+        // Закрываем самую свежую — освобождается слот, но ушедшая m1 не должна вернуться.
+        buffer.removeMessageWithKey("m4")
+        buffer.enforceStripWindow()
+        val visible = buffer.visibleForPreview().map { it._id }
+        assertEquals(listOf("m2", "m3"), visible)
+        org.junit.Assert.assertFalse(visible.contains("m1"))
+    }
+
+    @Test
+    fun retiredCard_isNotReaddedByLateDuplicate() {
+        val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600, maxPreviewMessages = 3)
+        buffer.resetVisibleSession()
+        listOf(
+            stripMsg("m1", 40),
+            stripMsg("m2", 30),
+            stripMsg("m3", 20),
+            stripMsg("m4", 10),
+        ).forEach { m ->
+            buffer.upsert(m)
+            buffer.touchReceivedNow(m)
+        }
+        buffer.enforceStripWindow()
+        // Поздний дубль вытесненной карточки из сокета/пуша — игнорируется.
+        val dup = stripMsg("m1", 40)
+        buffer.upsert(dup)
+        buffer.touchReceivedNow(dup)
+        org.junit.Assert.assertFalse(buffer.containsMessageId("m1"))
+        assertEquals(listOf("m2", "m3", "m4"), buffer.visibleForPreview().map { it._id })
+    }
 }
