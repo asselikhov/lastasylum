@@ -1303,7 +1303,7 @@ const SHARE_HOOK_LUA = [
   "return ok and y or nil end",
   "local function enrich(pt,p)",
   "local dn=nil local cat=nil local cfgrow=nil",
-  "local function srdump(t) local s='' if type(t)=='table' then local n=0 for k,v in pairs(t) do s=s..tostring(k)..'='..tostring(v)..';' n=n+1 if n>80 then break end end end return s end",
+  "local function srdump(t) local s='' if type(t)=='table' then local n=0 for k,v in pairs(t) do local vv=tostring(v) if #vv>40 then vv=string.sub(vv,1,40) end s=s..tostring(k)..'='..vv..';' n=n+1 if n>80 then break end end end return (string.gsub(s,'[^%w%._=; -]',' ')) end",
   "if pt.name then dn=pt.name cat='player'",
   "elseif pt.truckName then dn=pt.truckName cat='truck'",
   "elseif pt.nameKey then local nk=tostring(pt.nameKey)",
