@@ -1534,6 +1534,12 @@ function logLibStatusOnce() {
     installActionCatchHook();
     installDoStringHook();
     installRequireLuaHook();
+    // Install the Unity main-thread queue drain at startup (not lazily on first fly).
+    // runLua() pushes Lua work (share-panel hook install, autohelp) onto
+    // mainThreadFlyQueue, which is ONLY drained by this ExecuteTasks hook. If a game
+    // restart shares before any fly, the drain was never installed and the share hook
+    // never armed ("В рейд" never appeared) even though liveLuaEnv was captured.
+    installMainThreadFlyDrain();
     return;
   }
   const path = il2CppPathFromMaps();
