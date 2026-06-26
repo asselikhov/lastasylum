@@ -54,8 +54,8 @@ class OverlayRaidSharePanel(
                 color = com.lastasylum.alliance.game.RaidCommandStyle.STORM.colorArgb.toInt(),
             ),
             Command(
-                // В чекбоксе допускается сокращение «Подкр.», в сообщении — полное «Подкрепление».
-                chipLabel = context.getString(R.string.overlay_raid_cmd_reinf),
+                // Полная подпись «Подкрепление» — кнопка обнимает текст с равными отступами.
+                chipLabel = context.getString(R.string.overlay_cmd_column_reinf),
                 messageLabel = context.getString(com.lastasylum.alliance.game.RaidCommandStyle.REINFORCE.fullLabelRes),
                 color = com.lastasylum.alliance.game.RaidCommandStyle.REINFORCE.colorArgb.toInt(),
             ),
@@ -231,6 +231,8 @@ class OverlayRaidSharePanel(
 
         val chipRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
+            // Кнопки по размеру текста — группой по центру.
+            gravity = Gravity.CENTER_HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -245,9 +247,13 @@ class OverlayRaidSharePanel(
                 maxLines = 1
                 setSingleLine(true)
                 includeFontPadding = false
-                setPadding(dp(2), dp(8), dp(2), dp(8))
-                val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                if (index > 0) lp.leftMargin = dp(5)
+                // Равные отступы со всех сторон: кнопка обнимает текст симметрично.
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                val lp = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                )
+                if (index > 0) lp.leftMargin = dp(8)
                 layoutParams = lp
                 setOnClickListener {
                     if (index in selected) {
