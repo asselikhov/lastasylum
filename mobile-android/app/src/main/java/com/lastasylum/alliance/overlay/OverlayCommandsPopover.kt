@@ -818,9 +818,6 @@ class OverlayCommandsPopover(
             setPadding(dp(12), dp(10), dp(12), dp(4))
         }
 
-        val accentDot = View(context)
-        val categoryTitle = labelText("", 13.5f, Color.parseColor("#FFF4F7FF"), bold = true)
-        val categoryHint = labelText("", 10.5f, Color.parseColor("#7A90A4B8"))
         val optionsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.START
@@ -1406,24 +1403,12 @@ class OverlayCommandsPopover(
             )
         }
 
-        val reactionHintRow = labelText(
-            context.getString(R.string.overlay_reactions_pick_hint),
-            10.5f,
-            Color.parseColor("#7A90A4B8"),
-        ).apply {
-            setPadding(0, 0, 0, dp(2))
-        }
-
         rebuildReactionTiles = fun() {
             val isTextTab = selectedReactionSubcategory == OverlayReactionCategory.TEXT
             updateStickerPackPickerVisibility()
             reactionGridScroll?.visibility = if (isTextTab) View.GONE else View.VISIBLE
             reactionGridScroll?.post { invalidateReactionBurstAnchor() }
             reactionTextPanel.visibility = if (isTextTab) View.VISIBLE else View.GONE
-            reactionHintRow.visibility = if (isTextTab) View.GONE else View.VISIBLE
-            if (!isTextTab) {
-                reactionHintRow.text = context.getString(R.string.overlay_reactions_pick_hint)
-            }
             if (isTextTab) {
                 reactionTabEmpty.visibility = View.GONE
                 stopReactionPreviewKeepAlive()
@@ -1486,7 +1471,6 @@ class OverlayCommandsPopover(
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.START
             visibility = View.GONE
-            addView(reactionHintRow)
             addView(
                 reactionSubTabsRow,
                 LinearLayout.LayoutParams(
@@ -1596,14 +1580,6 @@ class OverlayCommandsPopover(
             selectedCategoryIndex = index.coerceIn(0, categories.lastIndex)
             val cat = categories[selectedCategoryIndex]
             refreshTabs()
-            accentDot.background = roundedRect(fillColor = cat.accentColor, cornerDp = 3)
-            categoryTitle.text = context.getString(cat.titleRes)
-            if (cat.hintRes != null) {
-                categoryHint.visibility = View.VISIBLE
-                categoryHint.text = context.getString(cat.hintRes)
-            } else {
-                categoryHint.visibility = View.GONE
-            }
             rebuildOptionsForCategory(cat)
             if (cat.isTarget) {
                 stopHeartPreviewPulse()
@@ -1612,7 +1588,6 @@ class OverlayCommandsPopover(
                 reactionRow?.visibility = View.GONE
                 reactionStickerPackPicker.dismissPicker()
                 reactionStickerPackPicker.root.visibility = View.GONE
-                categoryHint.visibility = View.GONE
                 refreshTargetSubTabs()
                 invalidateReactionBurstAnchor()
             } else if (cat.isReactions) {
@@ -1630,8 +1605,6 @@ class OverlayCommandsPopover(
                 gameEventPushHost.visibility = View.VISIBLE
                 reactionStickerPackPicker.dismissPicker()
                 reactionStickerPackPicker.root.visibility = View.GONE
-                categoryHint.visibility = View.VISIBLE
-                categoryHint.text = context.getString(R.string.overlay_cmd_push_hint)
                 invalidateReactionBurstAnchor()
             } else {
                 stopHeartPreviewPulse()
@@ -1665,11 +1638,7 @@ class OverlayCommandsPopover(
         }
 
         titleRow.addView(
-            accentDot,
-            LinearLayout.LayoutParams(dp(3), dp(16)).apply { marginEnd = dp(8) },
-        )
-        titleRow.addView(
-            categoryTitle,
+            View(context),
             LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1684,13 +1653,6 @@ class OverlayCommandsPopover(
             ).apply { marginStart = dp(6) },
         )
         bodyColumn.addView(titleRow)
-        bodyColumn.addView(
-            categoryHint,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(2) },
-        )
         bodyColumn.addView(
             optionsRow,
             LinearLayout.LayoutParams(
