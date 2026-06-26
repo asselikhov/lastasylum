@@ -614,6 +614,8 @@ class OverlayCommandsPopover(
             setHintTextColor(Color.parseColor("#558899AA"))
             inputType = InputType.TYPE_CLASS_NUMBER or
                 if (signed) InputType.TYPE_NUMBER_FLAG_SIGNED else 0
+            isSingleLine = true
+            maxLines = 1
             background = fieldBackground()
             setPadding(dp(10), dp(7), dp(10), dp(7))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
@@ -892,7 +894,13 @@ class OverlayCommandsPopover(
         }
         val targetSearchContent = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            addView(targetCoordsRow)
+            addView(
+                targetCoordsRow,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
             addView(
                 targetSearchButton,
                 LinearLayout.LayoutParams(
