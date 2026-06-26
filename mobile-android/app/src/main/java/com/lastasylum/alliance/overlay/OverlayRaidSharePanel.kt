@@ -86,16 +86,20 @@ class OverlayRaidSharePanel(
             val view = root ?: buildView().also { root = it }
             bindTarget(target)
             syncChips()
+            Log.i("RaidShareDiag", "panel.show attached=$attached canDraw=${canDrawOverlays()} seq=${target.seq}")
             if (!attached) {
-                runCatching { windowManager.addView(view, buildParams().also { layoutParams = it }) }
+                // Позиционируем по финальному Y ещё ДО addView: иначе панель сначала
+                // появляется на стартовой координате, затем прыгает на место — это и есть «моргание».
+                val params = buildParams().also { layoutParams = it }
+                params.y = computePanelY(target.dialogTopPx, measurePanelHeight(view))
+                runCatching { windowManager.addView(view, params) }
                     .onSuccess {
                         attached = true
                         attachedWindowManager = windowManager
-                        applyVerticalPosition(target.dialogTopPx)
-                        logDebug("show ok seq=${target.seq}")
+                        Log.i("RaidShareDiag", "panel addView OK seq=${target.seq} y=${params.y}")
                     }
                     .onFailure { e ->
-                        Log.w(TAG, "show addView failed seq=${target.seq}", e)
+                        Log.w("RaidShareDiag", "panel addView FAILED seq=${target.seq}: $e", e)
                     }
             } else if (attachedWindowManager != windowManager) {
                 val oldMgr = attachedWindowManager
@@ -129,6 +133,10 @@ class OverlayRaidSharePanel(
         if (Looper.myLooper() == mainHandler.looper) block() else mainHandler.post(block)
     }
 
+    private fun canDrawOverlays(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+            android.provider.Settings.canDrawOverlays(context)
+
     private fun buildParams(): WindowManager.LayoutParams {
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -149,33 +157,39 @@ class OverlayRaidSharePanel(
         }
     }
 
+    /** Явный замер высоты панели до первого layout-прохода (нужна сразу для позиционирования). */
+    private fun measurePanelHeight(view: View): Int {
+        view.measure(
+            View.MeasureSpec.makeMeasureSpec(dp(300), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+        )
+        return view.measuredHeight.takeIf { it > 0 } ?: view.height
+    }
+
+    /** Финальный Y панели над игровым окном выбора канала (с небольшим отступом). */
+    private fun computePanelY(dialogTopPx: Int?, panelH: Int): Int {
+        val minTop = dp(OverlayHudLayout.chatStripTopOffsetDp() + 8)
+        val gap = dp(12)
+        val screenH = context.resources.displayMetrics.heightPixels
+        // Верх игрового диалога выбора канала: точное значение из игры используем
+        // только если оно правдоподобно (диалог не может быть в верхней четверти экрана),
+        // иначе берём долю высоты экрана — диалог имеет фиксированную позицию.
+        val dialogTop = dialogTopPx?.takeIf { it > screenH * DIALOG_TOP_MIN_FRACTION }
+            ?: (screenH * DIALOG_TOP_FRACTION).toInt()
+        return if (panelH > 0) {
+            (dialogTop - panelH - gap).coerceAtLeast(minTop)
+        } else {
+            dp(OverlayHudLayout.chatStripTopOffsetDp() + 88)
+        }
+    }
+
     /** Разместить панель над игровым окном выбора канала с небольшим отступом. */
     private fun applyVerticalPosition(dialogTopPx: Int?) {
         val view = root ?: return
         val wm = attachedWindowManager ?: return
         val params = layoutParams ?: return
-        val minTop = dp(OverlayHudLayout.chatStripTopOffsetDp() + 8)
-        val gap = dp(12)
         val place = Runnable {
-            // Явный замер: высота панели нужна сразу, до первого layout-прохода.
-            val panelH = run {
-                view.measure(
-                    View.MeasureSpec.makeMeasureSpec(dp(300), View.MeasureSpec.EXACTLY),
-                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-                )
-                view.measuredHeight.takeIf { it > 0 } ?: view.height
-            }
-            val screenH = context.resources.displayMetrics.heightPixels
-            // Верх игрового диалога выбора канала: точное значение из игры используем
-            // только если оно правдоподобно (диалог не может быть в верхней четверти экрана),
-            // иначе берём долю высоты экрана — диалог имеет фиксированную позицию.
-            val dialogTop = dialogTopPx?.takeIf { it > screenH * DIALOG_TOP_MIN_FRACTION }
-                ?: (screenH * DIALOG_TOP_FRACTION).toInt()
-            params.y = if (panelH > 0) {
-                (dialogTop - panelH - gap).coerceAtLeast(minTop)
-            } else {
-                dp(OverlayHudLayout.chatStripTopOffsetDp() + 88)
-            }
+            params.y = computePanelY(dialogTopPx, measurePanelHeight(view))
             runCatching { wm.updateViewLayout(view, params) }
         }
         if (attached) place.run() else view.post(place)
