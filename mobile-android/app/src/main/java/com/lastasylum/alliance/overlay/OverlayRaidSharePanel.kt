@@ -69,6 +69,7 @@ class OverlayRaidSharePanel(
     private var infoView: TextView? = null
     private var coordsView: TextView? = null
     private var statsView: TextView? = null
+    private var chipRow: LinearLayout? = null
     private val chipViews = mutableListOf<TextView>()
     private val selected = mutableSetOf<Int>()
     private var target: RaidShareTarget? = null
@@ -268,6 +269,7 @@ class OverlayRaidSharePanel(
             chipViews.add(chip)
             chipRow.addView(chip)
         }
+        this.chipRow = chipRow
         container.addView(chipRow)
 
         val send = TextView(context).apply {
@@ -294,6 +296,8 @@ class OverlayRaidSharePanel(
     }
 
     private fun bindTarget(t: RaidShareTarget) {
+        // У конвоев и сундуков команды «Атака»/«Штурм»/«Подкрепление» неприменимы — скрываем ряд.
+        chipRow?.visibility = if (t.isChest || t.isTruck) View.GONE else View.VISIBLE
         infoView?.text = buildInfoText(t)
         coordsView?.text = buildString {
             append("[")
