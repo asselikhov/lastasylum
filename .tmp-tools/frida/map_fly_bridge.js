@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '3';
+const BRIDGE_VERSION = '4';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -137,12 +137,16 @@ const AUTOHELP_FILE = '/data/data/com.phs.global/files/squadrelay_autohelp.json'
 const AUTOHELP_SDCARD = '/sdcard/Download/squadrelay_autohelp.json';
 const AUTOHELP_MIN_INTERVAL_MS = 5000;
 const AUTOHELP_MAX_INTERVAL_MS = 600000;
-// When auto-help is enabled we poll help availability on this fast fixed cadence so the
-// in-game "Help" is pressed almost immediately once it becomes available (UnionHelpAllC2S is
-// gated on IsHaveCanHelpData, so polling does not spam — it sends once per help window).
-const AUTOHELP_POLL_MS = 2000;
-// Gate on the locally-cached help list (no extra network round-trip), then send
-// UnionHelpAllC2S only when the game says there is help available.
+// Light availability check cadence. Safe to be responsive because the actual "help all"
+// request is EDGE-triggered in Lua (sent once when help appears, see AUTOHELP_LUA), so a
+// short poll never floods the server — it just presses the button right when it shows up.
+const AUTOHELP_POLL_MS = 1500;
+// Edge-triggered auto-help: press "help all" exactly once on the rising edge of help
+// availability ("button appeared"), re-arm when it clears. This avoids the previous behaviour
+// of re-sending UnionHelpAllC2S every poll while help was pending — which, during login (when
+// offline-accumulated help is already present), flooded the server and dropped the connection.
+// Also dumps the help object's fields/methods once to a file (readable via `run-as cat`) so a
+// future build can hook the real data-change event instead of polling at all.
 const AUTOHELP_LUA = [
   'pcall(function()',
   "  local D = rawget(_G, 'Data')",
@@ -150,10 +154,32 @@ const AUTOHELP_LUA = [
   '  local ad = D.AllianceData',
   '  if not ad or not ad.help then return end',
   '  local h = ad.help',
+  '  if rawget(_G, "__sr_help_dumped") ~= true then',
+  '    _G.__sr_help_dumped = true',
+  '    pcall(function()',
+  "      local out = io.open('/data/data/com.phs.global/files/squadrelay_help_dump.txt', 'w')",
+  '      if out then',
+  "        out:write('help type=' .. type(h) .. '\\n')",
+  '        local seen = {}',
+  "        if type(h) == 'table' then for k, v in pairs(h) do out:write('F ' .. tostring(k) .. ' ' .. type(v) .. '\\n') seen[k] = true end end",
+  '        local mt = getmetatable(h)',
+  "        if mt and type(mt.__index) == 'table' then for k, v in pairs(mt.__index) do if not seen[k] then out:write('M ' .. tostring(k) .. ' ' .. type(v) .. '\\n') end end end",
+  "        for k, v in pairs(ad) do out:write('AD ' .. tostring(k) .. ' ' .. type(v) .. '\\n') end",
+  '        out:close()',
+  '      end',
+  '    end)',
+  '  end',
   '  local ok, can = pcall(function() return h:IsHaveCanHelpData() end)',
-  '  if not ok or not can then return end',
-  "  local sm = package.loaded['Logic.Proto.Send.union_help']",
-  '  if sm and sm.UnionHelpAllC2S then sm.UnionHelpAllC2S() end',
+  '  if not ok then return end',
+  '  if can then',
+  '    if rawget(_G, "__sr_help_armed") ~= true then',
+  '      _G.__sr_help_armed = true',
+  "      local sm = package.loaded['Logic.Proto.Send.union_help']",
+  '      if sm and sm.UnionHelpAllC2S then sm.UnionHelpAllC2S() end',
+  '    end',
+  '  else',
+  '    _G.__sr_help_armed = false',
+  '  end',
   'end)',
 ].join('\n');
 
@@ -1610,11 +1636,10 @@ function tickAutoHelp() {
   if (!autoHelpEnabled) return;
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  // Poll at the user's configured interval, NOT a fast 2s cadence: polling AllianceData /
-  // UnionHelpAllC2S every couple seconds during login overloads the game's main thread and
-  // the server drops the connection (heartbeat timeout → "connection timed out", can't enter).
-  // The interval cadence is what kept logins stable.
-  if (now - autoHelpLastRun < autoHelpIntervalMs) return;
+  // Responsive poll is safe now: AUTOHELP_LUA is edge-triggered, so the network "help all"
+  // request fires at most once per help-availability window (no per-poll flood that previously
+  // broke login). The user-configured interval no longer gates cadence (kept for back-compat).
+  if (now - autoHelpLastRun < AUTOHELP_POLL_MS) return;
   autoHelpLastRun = now;
   try {
     runLua(AUTOHELP_LUA);

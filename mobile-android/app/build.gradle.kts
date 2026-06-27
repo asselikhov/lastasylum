@@ -108,7 +108,7 @@ val squadRelayVersionName = "0.1.0"
 val squadRelayMapBridgeGameVersion = "1.0.81"
 /** Map bridge logic version expected by this app build; bump together with BRIDGE_VERSION in
  * .tmp-tools/frida/map_fly_bridge.js so an installed patch with an older bridge shows as outdated. */
-val squadRelayMapBridgeVersion = "3"
+val squadRelayMapBridgeVersion = "4"
 val squadRelayVersionCode = System.getenv("SQUADRELAY_VERSION_CODE")?.trim()?.toIntOrNull()
     ?.coerceAtLeast(1)
     ?: gitCommitCount()
