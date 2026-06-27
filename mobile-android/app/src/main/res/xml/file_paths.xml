@@ -2,4 +2,5 @@
 <paths>
     <cache-path name="apk_updates" path="apk_updates/" />
     <cache-path name="overlay_chat_picks" path="overlay_chat_picks/" />
+    <cache-path name="game_patch" path="game_patch/" />
 </paths>
