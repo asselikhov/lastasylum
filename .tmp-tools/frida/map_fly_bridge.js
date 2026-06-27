@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '7';
+const BRIDGE_VERSION = '8';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -137,63 +137,28 @@ const AUTOHELP_FILE = '/data/data/com.phs.global/files/squadrelay_autohelp.json'
 const AUTOHELP_SDCARD = '/sdcard/Download/squadrelay_autohelp.json';
 const AUTOHELP_MIN_INTERVAL_MS = 5000;
 const AUTOHELP_MAX_INTERVAL_MS = 600000;
-// Light availability check cadence. Safe to be responsive because the actual "help all"
-// request is EDGE-triggered in Lua (sent once when help appears, see AUTOHELP_LUA), so a
-// short poll never floods the server — it just presses the button right when it shows up.
-const AUTOHELP_POLL_MS = 1500;
 // Startup delay (ms) measured from when the game's Lua VM is first captured. We run NO auto-help
-// Lua at all until this elapses. CRITICAL: it's not just the network "help all" send that breaks
-// login — running ANY auto-help runLua (DoString on the Unity main thread) every poll DURING the
-// login / post-login alliance-sync window corrupts the game's own union message handling
-// (union.lua funcReceive throws, then "Socket连接断开" → the game drops the connection and gets
-// stuck on the loading screen). Earlier builds only delayed the SEND while still polling, so the
-// disconnect just moved later. By suppressing the whole tick for ~3 min the session is fully
-// loaded and the socket stable (verified: pressing "help all" on a settled connection works
-// exactly like tapping the in-game Help button). After this window, help is pressed instantly on
-// the rising edge (see AUTOHELP_LUA). For a mid-session toggle the VM was captured long ago, so
-// auto-help starts almost immediately.
-const AUTOHELP_STARTUP_DELAY_MS = 180000;
+// Lua at all until this elapses. Running an auto-help runLua (DoString on the Unity main thread)
+// during the login / post-login alliance-sync window can corrupt the game's union message handling
+// (union.lua funcReceive throws → "Socket连接断开" → connection drops, stuck on loading). So we skip
+// the fragile login window. The send itself is now a single lightweight network call (no heavy Lua
+// iteration), so a short delay is enough; alliance help requests fill up within ~1 min, so 3 min
+// (the old value) meant auto-help always arrived after every request was already maxed. For a
+// mid-session toggle the VM was captured long ago, so auto-help starts almost immediately.
+const AUTOHELP_STARTUP_DELAY_MS = 30000;
 
-// Edge-triggered auto-help: press "help all" exactly once on the rising edge of help
-// availability ("button appeared"), re-arm when it clears. This avoids re-sending
-// UnionHelpAllC2S every poll while help is pending. The whole tick only starts running after
-// AUTOHELP_STARTUP_DELAY_MS (gated in JS, see tickAutoHelp), so the first press always lands on a
-// fully-loaded, stable session.
-// Also dumps the help object's fields/methods once to a file (readable via `run-as cat`) so a
-// future build can hook the real data-change event instead of polling at all.
+// Auto-help = exactly what tapping the in-game "Помощь" (help all) button does. Captured live: the
+// real button sends `UnionHelpAllC2S` (plus `GetUnionHelpListC2S` to refresh the panel list). We
+// just resend `UnionHelpAllC2S` every configured interval (see tickAutoHelp), like a player tapping
+// the button. We intentionally do NOT gate on the help object's IsHaveCanHelpData(): that local
+// flag is unreliable / stale (it reflected the player's OWN already-maxed requests, not the pending
+// help from alliance mates that the button actually acts on). The server is the source of truth and
+// a "help all" with nothing to help is a harmless no-op (verified).
 const AUTOHELP_LUA = [
   'pcall(function()',
-  "  local D = rawget(_G, 'Data')",
-  '  if not D then return end',
-  '  local ad = D.AllianceData',
-  '  if not ad or not ad.help then return end',
-  '  local h = ad.help',
-  '  if rawget(_G, "__sr_help_dumped") ~= true then',
-  '    _G.__sr_help_dumped = true',
-  '    pcall(function()',
-  "      local out = io.open('/data/data/com.phs.global/files/squadrelay_help_dump.txt', 'w')",
-  '      if out then',
-  "        out:write('help type=' .. type(h) .. '\\n')",
-  '        local seen = {}',
-  "        if type(h) == 'table' then for k, v in pairs(h) do out:write('F ' .. tostring(k) .. ' ' .. type(v) .. '\\n') seen[k] = true end end",
-  '        local mt = getmetatable(h)',
-  "        if mt and type(mt.__index) == 'table' then for k, v in pairs(mt.__index) do if not seen[k] then out:write('M ' .. tostring(k) .. ' ' .. type(v) .. '\\n') end end end",
-  "        for k, v in pairs(ad) do out:write('AD ' .. tostring(k) .. ' ' .. type(v) .. '\\n') end",
-  '        out:close()',
-  '      end',
-  '    end)',
-  '  end',
-  '  local ok, can = pcall(function() return h:IsHaveCanHelpData() end)',
-  '  if not ok then return end',
-  '  if can then',
-  '    if rawget(_G, "__sr_help_armed") ~= true then',
-  '      _G.__sr_help_armed = true',
-  "      local sm = package.loaded['Logic.Proto.Send.union_help']",
-  '      if sm and sm.UnionHelpAllC2S then sm.UnionHelpAllC2S() end',
-  '    end',
-  '  else',
-  '    _G.__sr_help_armed = false',
-  '  end',
+  "  local sm = package.loaded['Logic.Proto.Send.union_help']",
+  '  if not sm or not sm.UnionHelpAllC2S then return end',
+  '  sm.UnionHelpAllC2S()',
   'end)',
 ].join('\n');
 
@@ -1658,8 +1623,8 @@ function tickAutoHelp() {
   // screen), so this skips the whole fragile login window. Mid-session toggles pass instantly
   // because the VM was captured long ago.
   if (liveLuaEnvCapturedMs === 0 || now - liveLuaEnvCapturedMs < AUTOHELP_STARTUP_DELAY_MS) return;
-  // Edge-triggered send (see AUTOHELP_LUA) makes a short poll safe once we're past the gate.
-  if (now - autoHelpLastRun < AUTOHELP_POLL_MS) return;
+  // Resend "help all" every configured interval, like a player periodically tapping the button.
+  if (now - autoHelpLastRun < autoHelpIntervalMs) return;
   autoHelpLastRun = now;
   try {
     runLua(AUTOHELP_LUA);
