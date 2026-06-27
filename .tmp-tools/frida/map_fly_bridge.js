@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '4';
+const BRIDGE_VERSION = '5';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -141,10 +141,18 @@ const AUTOHELP_MAX_INTERVAL_MS = 600000;
 // request is EDGE-triggered in Lua (sent once when help appears, see AUTOHELP_LUA), so a
 // short poll never floods the server — it just presses the button right when it shows up.
 const AUTOHELP_POLL_MS = 1500;
+// Startup grace: number of auto-help ticks (each AUTOHELP_POLL_MS apart) to skip AFTER the
+// alliance help data first appears, before we are allowed to press "help all". This guarantees
+// we never fire during login / the post-login data-sync burst — sending UnionHelpAllC2S then made
+// the server reply with a flood of union messages that dropped the socket ("Socket连接断开" →
+// connection-timeout, game stuck loading). ~40 ticks * 1500ms = ~60s, by which the connection is
+// stable and "help all" behaves exactly like tapping the in-game Help button.
+const AUTOHELP_STARTUP_GRACE_TICKS = 40;
+
 // Edge-triggered auto-help: press "help all" exactly once on the rising edge of help
-// availability ("button appeared"), re-arm when it clears. This avoids the previous behaviour
-// of re-sending UnionHelpAllC2S every poll while help was pending — which, during login (when
-// offline-accumulated help is already present), flooded the server and dropped the connection.
+// availability ("button appeared"), re-arm when it clears. This avoids re-sending
+// UnionHelpAllC2S every poll while help is pending. Combined with the startup grace above, the
+// first press only happens once the session is fully loaded and the socket is stable.
 // Also dumps the help object's fields/methods once to a file (readable via `run-as cat`) so a
 // future build can hook the real data-change event instead of polling at all.
 const AUTOHELP_LUA = [
@@ -169,6 +177,9 @@ const AUTOHELP_LUA = [
   '      end',
   '    end)',
   '  end',
+  '  local cnt = (rawget(_G, "__sr_help_ticks") or 0) + 1',
+  '  _G.__sr_help_ticks = cnt',
+  '  if cnt < ' + AUTOHELP_STARTUP_GRACE_TICKS + ' then return end',
   '  local ok, can = pcall(function() return h:IsHaveCanHelpData() end)',
   '  if not ok then return end',
   '  if can then',
