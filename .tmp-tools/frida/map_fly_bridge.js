@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '5';
+const BRIDGE_VERSION = '6';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -141,18 +141,24 @@ const AUTOHELP_MAX_INTERVAL_MS = 600000;
 // request is EDGE-triggered in Lua (sent once when help appears, see AUTOHELP_LUA), so a
 // short poll never floods the server — it just presses the button right when it shows up.
 const AUTOHELP_POLL_MS = 1500;
-// Startup grace: number of auto-help ticks (each AUTOHELP_POLL_MS apart) to skip AFTER the
-// alliance help data first appears, before we are allowed to press "help all". This guarantees
-// we never fire during login / the post-login data-sync burst — sending UnionHelpAllC2S then made
-// the server reply with a flood of union messages that dropped the socket ("Socket连接断开" →
-// connection-timeout, game stuck loading). ~40 ticks * 1500ms = ~60s, by which the connection is
-// stable and "help all" behaves exactly like tapping the in-game Help button.
-const AUTOHELP_STARTUP_GRACE_TICKS = 40;
+// Startup delay (ms) measured from when the game's Lua VM is first captured. We run NO auto-help
+// Lua at all until this elapses. CRITICAL: it's not just the network "help all" send that breaks
+// login — running ANY auto-help runLua (DoString on the Unity main thread) every poll DURING the
+// login / post-login alliance-sync window corrupts the game's own union message handling
+// (union.lua funcReceive throws, then "Socket连接断开" → the game drops the connection and gets
+// stuck on the loading screen). Earlier builds only delayed the SEND while still polling, so the
+// disconnect just moved later. By suppressing the whole tick for ~3 min the session is fully
+// loaded and the socket stable (verified: pressing "help all" on a settled connection works
+// exactly like tapping the in-game Help button). After this window, help is pressed instantly on
+// the rising edge (see AUTOHELP_LUA). For a mid-session toggle the VM was captured long ago, so
+// auto-help starts almost immediately.
+const AUTOHELP_STARTUP_DELAY_MS = 180000;
 
 // Edge-triggered auto-help: press "help all" exactly once on the rising edge of help
 // availability ("button appeared"), re-arm when it clears. This avoids re-sending
-// UnionHelpAllC2S every poll while help is pending. Combined with the startup grace above, the
-// first press only happens once the session is fully loaded and the socket is stable.
+// UnionHelpAllC2S every poll while help is pending. The whole tick only starts running after
+// AUTOHELP_STARTUP_DELAY_MS (gated in JS, see tickAutoHelp), so the first press always lands on a
+// fully-loaded, stable session.
 // Also dumps the help object's fields/methods once to a file (readable via `run-as cat`) so a
 // future build can hook the real data-change event instead of polling at all.
 const AUTOHELP_LUA = [
@@ -177,9 +183,6 @@ const AUTOHELP_LUA = [
   '      end',
   '    end)',
   '  end',
-  '  local cnt = (rawget(_G, "__sr_help_ticks") or 0) + 1',
-  '  _G.__sr_help_ticks = cnt',
-  '  if cnt < ' + AUTOHELP_STARTUP_GRACE_TICKS + ' then return end',
   '  local ok, can = pcall(function() return h:IsHaveCanHelpData() end)',
   '  if not ok then return end',
   '  if can then',
@@ -219,6 +222,7 @@ let actionSeen = {};
 let actionCatchUntil = 0;
 let actionBaselineReady = false;
 let liveLuaEnv = ptr(0);
+let liveLuaEnvCapturedMs = 0;
 let doStringLogUntil = 0;
 let cachedAppFrame = ptr(0);
 let mainThreadFlyQueue = [];
@@ -1647,9 +1651,14 @@ function tickAutoHelp() {
   if (!autoHelpEnabled) return;
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  // Responsive poll is safe now: AUTOHELP_LUA is edge-triggered, so the network "help all"
-  // request fires at most once per help-availability window (no per-poll flood that previously
-  // broke login). The user-configured interval no longer gates cadence (kept for back-compat).
+  // HARD startup gate: do not run ANY auto-help Lua until the session is fully loaded and the
+  // socket is stable. Running runLua (a main-thread DoString) during the login / alliance-sync
+  // window corrupts the game's union message handling and drops the connection (game stuck
+  // loading). liveLuaEnvCapturedMs is set as soon as the Lua VM is captured (still on the loading
+  // screen), so this skips the whole fragile login window. Mid-session toggles pass instantly
+  // because the VM was captured long ago.
+  if (liveLuaEnvCapturedMs === 0 || now - liveLuaEnvCapturedMs < AUTOHELP_STARTUP_DELAY_MS) return;
+  // Edge-triggered send (see AUTOHELP_LUA) makes a short poll safe once we're past the gate.
   if (now - autoHelpLastRun < AUTOHELP_POLL_MS) return;
   autoHelpLastRun = now;
   try {
@@ -2002,6 +2011,9 @@ setImmediate(function () {
   mapsDiagOnce();
   setInterval(function () {
     logLibStatusOnce();
+    if (liveLuaEnvCapturedMs === 0 && liveLuaEnv && !liveLuaEnv.isNull()) {
+      liveLuaEnvCapturedMs = Date.now();
+    }
     pollTriggerFile();
     pollProbeFile();
     pollAutoHelpConfig();
