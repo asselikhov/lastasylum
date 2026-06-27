@@ -224,15 +224,14 @@ if ($splits.Count -eq 0) {
     if (-not (Test-Path $unsigned)) { throw 'APKEditor merge failed' }
 }
 
-# --- Sign ---
+# --- Sign (uber-apk-signer --overwrite keeps the original filename in place) ---
 Write-Host 'Signing universal APK'
 $signDir = Join-Path $WorkRoot 'signed'
 Ensure-Dir $signDir
 Copy-Item $unsigned $signDir -Force
 & java -jar $UberSignerJar -a $signDir --allowResign --overwrite --ks $Keystore --ksAlias $KsAlias --ksPass $KsPass --ksKeyPass $KsKeyPass | Out-Host
 
-$signed = Get-ChildItem $signDir -Filter '*-aligned-debugSigned.apk' -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $signed) { $signed = Get-ChildItem $signDir -Filter '*.apk' | Where-Object { $_.Name -ne 'universal-unsigned.apk' } | Select-Object -First 1 }
+$signed = Get-ChildItem $signDir -Filter '*.apk' | Select-Object -First 1
 if (-not $signed) { throw 'Signing produced no APK' }
 
 Ensure-Dir (Split-Path $OutApk -Parent)
