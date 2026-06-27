@@ -224,6 +224,9 @@
     <string name="settings_section_overlay">Оверлей</string>
     <string name="settings_section_notifications">Уведомления</string>
     <string name="settings_section_map_patch">Автопереход по координатам</string>
+    <string name="settings_tab_overlay">Оверлей</string>
+    <string name="settings_tab_automation">Автоматизация</string>
+    <string name="settings_tab_notifications">Уведомления</string>
     <string name="map_patch_status_ready">Патч установлен — автопереход работает (игра %1$s)</string>
     <string name="map_patch_status_not_installed">Патч не установлен — только открытие карты без полёта к точке</string>
     <string name="map_patch_status_outdated">Игра %1$s, патч для %2$s — нужен новый патч</string>
@@ -234,7 +237,7 @@
     <string name="map_patch_test_fly_toast">Команда отправлена — смотрите карту в игре</string>
     <string name="map_patch_test_fly_disabled">Сначала установите патч для версии %1$s</string>
     <string name="game_patch_button">Установить патч</string>
-    <string name="game_patch_button_update">Обновить патч</string>
+    <string name="game_patch_button_update">Патч игры</string>
     <string name="game_patch_button_ready">Патч установлен</string>
     <string name="game_patch_preparing">Скачивание патча…</string>
     <string name="game_patch_preparing_progress">Скачивание… %1$d%%</string>

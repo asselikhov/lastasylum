@@ -7,6 +7,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -29,13 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Layers
-import androidx.compose.material.icons.outlined.NearMe
-import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.SportsEsports
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,7 +59,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -92,6 +88,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
+private enum class SettingsTab { OVERLAY, AUTOMATION, NOTIFICATIONS }
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OverlayControlScreen() {
@@ -101,6 +99,7 @@ fun OverlayControlScreen() {
     val prefs = remember(appContext) { appContainer.userSettingsPreferences }
     val haptics = LocalHapticFeedback.current
 
+    var selectedTab by remember { mutableStateOf(SettingsTab.OVERLAY) }
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
     var overlayEnabled by remember { mutableStateOf(prefs.isOverlayPanelEnabled()) }
     var autoHelpEnabled by remember { mutableStateOf(prefs.isAutoHelpEnabled()) }
@@ -241,311 +240,399 @@ fun OverlayControlScreen() {
         }
 
         item {
-            SettingsCard(
-                icon = Icons.Outlined.Layers,
-                title = stringResource(R.string.settings_section_overlay),
-            ) {
-                SettingsToggleRow(
-                    title = stringResource(R.string.overlay_switch_panel),
-                    subtitle = null,
-                    checked = overlayEnabled,
-                    onCheckedChange = { on ->
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        if (on) {
-                            overlayEnabled = true
-                            prefs.setOverlayPanelEnabled(true)
-                            when {
-                                !overlayOk() -> {
-                                    overlayEnabled = false
-                                    prefs.setOverlayPanelEnabled(false)
-                                    OverlayPermissions.openOverlayPermissionSettings(context)
-                                }
-                                !usageOk() -> {
-                                    overlayEnabled = false
-                                    prefs.setOverlayPanelEnabled(false)
-                                    OverlayPermissions.openUsageAccessSettings(context)
-                                }
-                                else -> Unit
-                            }
-                            if (overlayEnabled && !CombatOverlayService.setEnabled(context, true)) {
-                                overlayEnabled = false
-                                prefs.setOverlayPanelEnabled(false)
-                            }
-                        } else {
-                            overlayEnabled = false
-                            prefs.setOverlayPanelEnabled(false)
-                            CombatOverlayService.setEnabled(context, false)
-                        }
-                    },
-                )
-            }
+            SettingsTabBar(
+                selected = selectedTab,
+                onSelect = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    selectedTab = it
+                },
+            )
         }
 
-        item {
-            SettingsCard(
-                icon = Icons.Outlined.SportsEsports,
-                title = stringResource(R.string.settings_section_game_filter),
-                accent = PremiumColors.accentCyan,
-            ) {
-                OutlinedTextField(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = SquadRelayDimens.listRowHorizontalPadding),
-                    value = targetPkg,
-                    onValueChange = { targetPkg = it },
-                    singleLine = false,
-                    minLines = 1,
-                    maxLines = 4,
-                    label = { Text(stringResource(R.string.overlay_package_field_label)) },
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                    shape = MaterialTheme.shapes.medium,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                    ),
-                )
-                if (undetectedGamePackages.isNotEmpty()) {
-                    FlowRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(
-                                horizontal = SquadRelayDimens.listRowHorizontalPadding,
-                                vertical = SquadRelayDimens.itemGap,
+        when (selectedTab) {
+            SettingsTab.OVERLAY -> {
+                item {
+                    SettingsPlainCard {
+                        SettingsToggleRow(
+                            title = stringResource(R.string.overlay_switch_panel),
+                            subtitle = null,
+                            checked = overlayEnabled,
+                            onCheckedChange = { on ->
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                if (on) {
+                                    overlayEnabled = true
+                                    prefs.setOverlayPanelEnabled(true)
+                                    when {
+                                        !overlayOk() -> {
+                                            overlayEnabled = false
+                                            prefs.setOverlayPanelEnabled(false)
+                                            OverlayPermissions.openOverlayPermissionSettings(context)
+                                        }
+                                        !usageOk() -> {
+                                            overlayEnabled = false
+                                            prefs.setOverlayPanelEnabled(false)
+                                            OverlayPermissions.openUsageAccessSettings(context)
+                                        }
+                                        else -> Unit
+                                    }
+                                    if (overlayEnabled && !CombatOverlayService.setEnabled(context, true)) {
+                                        overlayEnabled = false
+                                        prefs.setOverlayPanelEnabled(false)
+                                    }
+                                } else {
+                                    overlayEnabled = false
+                                    prefs.setOverlayPanelEnabled(false)
+                                    CombatOverlayService.setEnabled(context, false)
+                                }
+                            },
+                        )
+                    }
+                }
+
+                item {
+                    SettingsPlainCard {
+                        OutlinedTextField(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = SquadRelayDimens.listRowHorizontalPadding),
+                            value = targetPkg,
+                            onValueChange = { targetPkg = it },
+                            singleLine = false,
+                            minLines = 1,
+                            maxLines = 4,
+                            label = { Text(stringResource(R.string.overlay_package_field_label)) },
+                            textStyle = MaterialTheme.typography.bodyMedium,
+                            shape = MaterialTheme.shapes.medium,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
                             ),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        undetectedGamePackages.forEach { detected ->
-                            FilterChip(
-                                selected = false,
-                                onClick = {
-                                    targetPkg = OverlayGamePackageSuggestions.appendToCsv(
-                                        targetPkg,
-                                        detected.packageName,
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        text = stringResource(
-                                            R.string.overlay_game_detected_add,
-                                            detected.label,
-                                        ),
-                                        style = MaterialTheme.typography.labelMedium,
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(
-                                        alpha = 0.35f,
+                        )
+                        if (undetectedGamePackages.isNotEmpty()) {
+                            FlowRow(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                                        vertical = SquadRelayDimens.itemGap,
                                     ),
-                                ),
-                            )
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                undetectedGamePackages.forEach { detected ->
+                                    FilterChip(
+                                        selected = false,
+                                        onClick = {
+                                            targetPkg = OverlayGamePackageSuggestions.appendToCsv(
+                                                targetPkg,
+                                                detected.packageName,
+                                            )
+                                        },
+                                        label = {
+                                            Text(
+                                                text = stringResource(
+                                                    R.string.overlay_game_detected_add,
+                                                    detected.label,
+                                                ),
+                                                style = MaterialTheme.typography.labelMedium,
+                                            )
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(
+                                                alpha = 0.35f,
+                                            ),
+                                        ),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-            }
-        }
 
-        item {
-            SettingsCard(
-                icon = Icons.Outlined.NearMe,
-                title = stringResource(R.string.settings_section_map_patch),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = SquadRelayDimens.listRowHorizontalPadding),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    PatchStatusPill(mapPatchStatus.state)
+                item {
+                    SettingsPlainCard {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = SquadRelayDimens.listRowHorizontalPadding),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            PatchStatusPill(mapPatchStatus.state)
 
-                    val patchActionable = mapPatchStatus.state ==
-                        GameMapPatchStatus.State.PATCH_NOT_INSTALLED ||
-                        mapPatchStatus.state == GameMapPatchStatus.State.PATCH_OUTDATED
-                    val ready = mapPatchStatus.state == GameMapPatchStatus.State.PATCH_READY
-                    val success = PremiumColors.liveIndicator
+                            val patchActionable = mapPatchStatus.state ==
+                                GameMapPatchStatus.State.PATCH_NOT_INSTALLED ||
+                                mapPatchStatus.state == GameMapPatchStatus.State.PATCH_OUTDATED
+                            val ready = mapPatchStatus.state == GameMapPatchStatus.State.PATCH_READY
+                            val success = PremiumColors.liveIndicator
 
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            if (patchInProgress) return@Button
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            scope.launch {
-                                patchInProgress = true
-                                patchProgress = -1f
-                                when (
-                                    val result = GamePatchInstaller.prepareLatestPatch(context) { p ->
-                                        patchProgress = p
-                                    }
-                                ) {
-                                    is GamePatchInstaller.Prepare.Ready -> {
-                                        if (GamePatchInstaller.isStockGameInstalled(appContext)) {
-                                            preparedPatchApk = result.apk
-                                            awaitingGameUninstall = true
-                                            Toast.makeText(
-                                                context,
-                                                R.string.game_patch_uninstall_prompt,
-                                                Toast.LENGTH_LONG,
-                                            ).show()
-                                            GamePatchInstaller.requestUninstallStockGame(context)
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                R.string.game_patch_install_starting,
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                            GamePatchInstaller.installPrepared(context, result.apk)
+                            Button(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                onClick = {
+                                    if (patchInProgress) return@Button
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    scope.launch {
+                                        patchInProgress = true
+                                        patchProgress = -1f
+                                        when (
+                                            val result = GamePatchInstaller.prepareLatestPatch(context) { p ->
+                                                patchProgress = p
+                                            }
+                                        ) {
+                                            is GamePatchInstaller.Prepare.Ready -> {
+                                                if (GamePatchInstaller.isStockGameInstalled(appContext)) {
+                                                    preparedPatchApk = result.apk
+                                                    awaitingGameUninstall = true
+                                                    Toast.makeText(
+                                                        context,
+                                                        R.string.game_patch_uninstall_prompt,
+                                                        Toast.LENGTH_LONG,
+                                                    ).show()
+                                                    GamePatchInstaller.requestUninstallStockGame(context)
+                                                } else {
+                                                    Toast.makeText(
+                                                        context,
+                                                        R.string.game_patch_install_starting,
+                                                        Toast.LENGTH_SHORT,
+                                                    ).show()
+                                                    GamePatchInstaller.installPrepared(context, result.apk)
+                                                }
+                                            }
+                                            GamePatchInstaller.Prepare.Unavailable ->
+                                                Toast.makeText(
+                                                    context,
+                                                    R.string.game_patch_unavailable,
+                                                    Toast.LENGTH_SHORT,
+                                                ).show()
+                                            is GamePatchInstaller.Prepare.Failed ->
+                                                Toast.makeText(
+                                                    context,
+                                                    result.messageRes,
+                                                    Toast.LENGTH_LONG,
+                                                ).show()
                                         }
+                                        patchInProgress = false
+                                        patchProgress = -1f
                                     }
-                                    GamePatchInstaller.Prepare.Unavailable ->
-                                        Toast.makeText(
-                                            context,
-                                            R.string.game_patch_unavailable,
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
-                                    is GamePatchInstaller.Prepare.Failed ->
-                                        Toast.makeText(
-                                            context,
-                                            result.messageRes,
-                                            Toast.LENGTH_LONG,
-                                        ).show()
-                                }
-                                patchInProgress = false
-                                patchProgress = -1f
-                            }
-                        },
-                        enabled = patchActionable && !patchInProgress,
-                        colors = if (ready) {
-                            ButtonDefaults.buttonColors(
-                                disabledContainerColor = success.copy(alpha = 0.18f),
-                                disabledContentColor = success,
-                            )
-                        } else {
-                            ButtonDefaults.buttonColors()
-                        },
-                    ) {
-                        when {
-                            patchInProgress -> {
-                                if (patchProgress in 0f..1f) {
-                                    CircularProgressIndicator(
-                                        progress = { patchProgress },
-                                        modifier = Modifier.size(16.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        stringResource(
-                                            R.string.game_patch_preparing_progress,
-                                            (patchProgress * 100f).toInt().coerceIn(0, 100),
-                                        ),
+                                },
+                                enabled = patchActionable && !patchInProgress,
+                                colors = if (ready) {
+                                    ButtonDefaults.buttonColors(
+                                        disabledContainerColor = success.copy(alpha = 0.18f),
+                                        disabledContentColor = success,
                                     )
                                 } else {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(stringResource(R.string.game_patch_preparing))
+                                    ButtonDefaults.buttonColors()
+                                },
+                            ) {
+                                when {
+                                    patchInProgress -> {
+                                        if (patchProgress in 0f..1f) {
+                                            CircularProgressIndicator(
+                                                progress = { patchProgress },
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp,
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                stringResource(
+                                                    R.string.game_patch_preparing_progress,
+                                                    (patchProgress * 100f).toInt().coerceIn(0, 100),
+                                                ),
+                                            )
+                                        } else {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp,
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(stringResource(R.string.game_patch_preparing))
+                                        }
+                                    }
+                                    ready -> {
+                                        Icon(
+                                            imageVector = Icons.Filled.CheckCircle,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(stringResource(R.string.game_patch_button_ready))
+                                    }
+                                    mapPatchStatus.state == GameMapPatchStatus.State.PATCH_OUTDATED -> {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Refresh,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(stringResource(R.string.game_patch_button_update))
+                                    }
+                                    else -> {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Download,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(stringResource(R.string.game_patch_button))
+                                    }
                                 }
-                            }
-                            ready -> {
-                                Icon(
-                                    imageVector = Icons.Filled.CheckCircle,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(stringResource(R.string.game_patch_button_ready))
-                            }
-                            mapPatchStatus.state == GameMapPatchStatus.State.PATCH_OUTDATED -> {
-                                Icon(
-                                    imageVector = Icons.Outlined.Refresh,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(stringResource(R.string.game_patch_button_update))
-                            }
-                            else -> {
-                                Icon(
-                                    imageVector = Icons.Outlined.Download,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(stringResource(R.string.game_patch_button))
                             }
                         }
                     }
                 }
             }
-        }
 
-        item {
-            SettingsCard(
-                icon = Icons.Outlined.Bolt,
-                title = stringResource(R.string.settings_section_auto_help),
-                accent = PremiumColors.accentCyan,
-            ) {
-                SettingsToggleRow(
-                    title = stringResource(R.string.auto_help_switch_title),
-                    subtitle = null,
-                    checked = autoHelpEnabled,
-                    onCheckedChange = { on ->
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        autoHelpEnabled = on
-                        prefs.setAutoHelpEnabled(on)
-                        // Авто-помощь теперь событийная (нажимает при появлении кнопки), интервал
-                        // не используется — передаём сохранённое значение лишь для совместимости API.
-                        GameAutoHelpBridge.write(context, on, autoHelpIntervalSec)
-                    },
-                )
-            }
-        }
-
-        item {
-            SettingsCard(
-                icon = Icons.Outlined.Notifications,
-                title = stringResource(R.string.settings_section_notifications),
-            ) {
-                if (postNotifDenied) {
-                    Column(
-                        modifier = Modifier.padding(
-                            horizontal = SquadRelayDimens.listRowHorizontalPadding,
-                            vertical = SquadRelayDimens.listRowVerticalPadding,
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.overlay_post_notifications_denied),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                        TextButton(
-                            onClick = {
-                                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                                }
-                                context.startActivity(intent)
+            SettingsTab.AUTOMATION -> {
+                item {
+                    SettingsPlainCard {
+                        SettingsToggleRow(
+                            title = stringResource(R.string.auto_help_switch_title),
+                            subtitle = null,
+                            checked = autoHelpEnabled,
+                            onCheckedChange = { on ->
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                autoHelpEnabled = on
+                                prefs.setAutoHelpEnabled(on)
+                                // Авто-помощь теперь событийная (нажимает при появлении кнопки), интервал
+                                // не используется — передаём сохранённое значение лишь для совместимости API.
+                                GameAutoHelpBridge.write(context, on, autoHelpIntervalSec)
                             },
-                        ) {
-                            Text(stringResource(R.string.overlay_post_notifications_open_settings))
-                        }
+                        )
                     }
                 }
-                SettingsNavigationRow(
-                    title = stringResource(R.string.settings_game_events_push_section),
-                    subtitle = null,
-                    onClick = { showGameEventsDialog = true },
-                    trailing = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            }
+
+            SettingsTab.NOTIFICATIONS -> {
+                item {
+                    SettingsPlainCard {
+                        if (postNotifDenied) {
+                            Column(
+                                modifier = Modifier.padding(
+                                    horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                                    vertical = SquadRelayDimens.listRowVerticalPadding,
+                                ),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.overlay_post_notifications_denied),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                                TextButton(
+                                    onClick = {
+                                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                        }
+                                        context.startActivity(intent)
+                                    },
+                                ) {
+                                    Text(stringResource(R.string.overlay_post_notifications_open_settings))
+                                }
+                            }
+                        }
+                        SettingsNavigationRow(
+                            title = stringResource(R.string.settings_game_events_push_section),
+                            subtitle = null,
+                            onClick = { showGameEventsDialog = true },
+                            trailing = {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
                         )
-                    },
-                )
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun SettingsTabBar(
+    selected: SettingsTab,
+    onSelect: (SettingsTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tabs = listOf(
+        SettingsTab.OVERLAY to R.string.settings_tab_overlay,
+        SettingsTab.AUTOMATION to R.string.settings_tab_automation,
+        SettingsTab.NOTIFICATIONS to R.string.settings_tab_notifications,
+    )
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = CircleShape,
+        color = SquadRelaySurfaces.panelColor(0.48f),
+        border = SquadRelaySurfaces.panelBorder(alpha = 0.15f),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            tabs.forEach { (tab, labelRes) ->
+                val isSelected = tab == selected
+                val background by animateColorAsState(
+                    targetValue = if (isSelected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        Color.Transparent
+                    },
+                    label = "settingsTabBg",
+                )
+                val foreground by animateColorAsState(
+                    targetValue = if (isSelected) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    label = "settingsTabFg",
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(CircleShape)
+                        .background(background)
+                        .clickable { onSelect(tab) }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(labelRes),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = foreground,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsPlainCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = SquadRelaySurfaces.panelColor(0.48f),
+        border = SquadRelaySurfaces.panelBorder(alpha = 0.15f),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            content = content,
+        )
     }
 }
 
@@ -588,62 +675,6 @@ private fun PatchStatusPill(state: GameMapPatchStatus.State) {
                 fontWeight = FontWeight.Medium,
                 color = color,
             )
-        }
-    }
-}
-
-@Composable
-private fun SettingsCard(
-    icon: ImageVector,
-    title: String,
-    modifier: Modifier = Modifier,
-    accent: Color = MaterialTheme.colorScheme.primary,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = SquadRelaySurfaces.panelColor(0.48f),
-        border = SquadRelaySurfaces.panelBorder(alpha = 0.15f),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        horizontal = SquadRelayDimens.listRowHorizontalPadding,
-                        vertical = 2.dp,
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(11.dp))
-                        .background(accent.copy(alpha = 0.14f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = accent,
-                        modifier = Modifier.size(19.dp),
-                    )
-                }
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            content()
         }
     }
 }
