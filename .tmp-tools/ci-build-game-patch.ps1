@@ -15,7 +15,7 @@ param(
     [Parameter(Mandatory = $true)][string]$KsPass,
     [Parameter(Mandatory = $true)][string]$KsKeyPass,
     [string]$FridaVersion = '17.15.1',
-    [string]$BridgeVersion = '6',
+    [string]$BridgeVersion = '7',
     [string]$ApktoolVersion = '2.11.1',
     [string]$UberSignerVersion = '1.3.0',
     [string]$ApkEditorVersion = '1.4.3'
@@ -77,6 +77,29 @@ function Inject-MapBridgeMeta([string]$ManifestPath, [string]$Version, [string]$
 "@
     $patched = $text -replace '(<application\b[^>]*>)', "`$1`r`n$meta"
     if ($patched -eq $text) { throw 'Failed to inject map bridge meta-data' }
+    Write-Utf8NoBom $ManifestPath $patched
+}
+
+# Объявляем MapFlyReceiver в манифесте игры (manifest-declared, exported). Рантайм-регистрации
+# (в onCreate) недостаточно: при ЗАКРЫТОЙ игре её процесс не живёт, рантайм-ресивера нет и
+# broadcast переключения авто-помощи теряется. Manifest-declared exported ресивер позволяет
+# системе поднять процесс игры и доставить broadcast даже когда игра закрыта (вместе с
+# FLAG_INCLUDE_STOPPED_PACKAGES со стороны приложения). Ресивер запишет приватный файл, который
+# мост читает при следующем запуске игры.
+function Inject-MapFlyReceiver([string]$ManifestPath) {
+    if (-not (Test-Path $ManifestPath)) { throw "Manifest not found: $ManifestPath" }
+    $text = Get-Content $ManifestPath -Raw
+    # Уже объявлен (например, base.apk снят с устройства с предыдущим патчем) — ничего не делаем.
+    if ($text -match 'com\.lastasylum\.alliance\.game\.MapFlyReceiver') { return }
+    $receiver = @"
+        <receiver android:name="com.lastasylum.alliance.game.MapFlyReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.lastasylum.alliance.action.MAP_FLY"/>
+            </intent-filter>
+        </receiver>
+"@
+    $patched = $text -replace '(</application>)', "$receiver`r`n`$1"
+    if ($patched -eq $text) { throw 'Failed to inject MapFlyReceiver declaration' }
     Write-Utf8NoBom $ManifestPath $patched
 }
 
@@ -212,6 +235,7 @@ Get-ChildItem $MapBridgeSmaliRoot -Recurse -Filter '*.smali' | ForEach-Object {
 Write-Host 'Copied map bridge smali classes'
 
 Inject-MapBridgeMeta (Join-Path $BaseWork 'AndroidManifest.xml') $GameVersion $BridgeVersion
+Inject-MapFlyReceiver (Join-Path $BaseWork 'AndroidManifest.xml')
 
 $patchedBase = Join-Path $WorkRoot 'base-patched.apk'
 Write-Host 'Building patched base.apk'

@@ -14,7 +14,9 @@ import com.lastasylum.alliance.data.settings.UserSettingsPreferences
  * request the in-game "Помощь" button sends — gated on whether there is anything to help.
  *
  * The game can't read SquadRelay's files under scoped storage, so a broadcast (not a shared
- * file) is the delivery channel.
+ * file) is the delivery channel. The receiver is declared in the patched game's manifest
+ * (exported) and the broadcast carries FLAG_INCLUDE_STOPPED_PACKAGES, so toggling auto-help
+ * works even when the game is closed: the system wakes the game to deliver the broadcast.
  */
 object GameAutoHelpBridge {
     private const val TAG = "GameAutoHelpBridge"
@@ -50,7 +52,12 @@ object GameAutoHelpBridge {
             }
             val intent = Intent(GameMapFlyBridge.ACTION_MAP_FLY).apply {
                 setPackage(trimmed)
-                addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+                // FLAG_INCLUDE_STOPPED_PACKAGES: доставить broadcast даже когда игра ЗАКРЫТА
+                // (процесс не запущен). Система поднимет manifest-объявленный MapFlyReceiver,
+                // тот запишет приватный файл, и мост подхватит новое значение при следующем
+                // запуске игры. Без этого флага переключатель авто-помощи срабатывал только
+                // при уже запущенной игре.
+                addFlags(Intent.FLAG_RECEIVER_FOREGROUND or Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
                 putExtra(EXTRA_AUTO_HELP, true)
                 putExtra(EXTRA_AH_ENABLED, enabled)
                 putExtra(EXTRA_AH_INTERVAL, clamped)
