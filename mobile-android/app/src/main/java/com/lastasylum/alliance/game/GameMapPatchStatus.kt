@@ -47,7 +47,10 @@ object GameMapPatchStatus {
             val meta = installed.applicationInfo?.metaData
             val bridgePresent = meta?.getString(META_MAP_BRIDGE) == "1" ||
                 meta?.getInt(META_MAP_BRIDGE, 0) == 1
-            val bridgeVersion = meta?.getString(META_MAP_BRIDGE_VERSION)?.trim()?.ifEmpty { null }
+            // apktool/aapt encodes a pure-integer android:value (e.g. "2") as an int, so getString
+            // returns null; fall back to getInt before deciding the bridge is outdated.
+            val bridgeVersion = (meta?.getString(META_MAP_BRIDGE_VERSION)?.trim()?.ifEmpty { null })
+                ?: meta?.getInt(META_MAP_BRIDGE_VERSION, -1)?.takeIf { it >= 0 }?.toString()
             val patchFor = meta?.getString(META_MAP_BRIDGE_GAME_VERSION)?.trim()?.ifEmpty { null }
             val state = evaluate(
                 patchBridgePresent = bridgePresent,
