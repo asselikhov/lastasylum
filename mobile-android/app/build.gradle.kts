@@ -114,7 +114,7 @@ val squadRelayVersionCode = System.getenv("SQUADRELAY_VERSION_CODE")?.trim()?.to
     ?: gitCommitCount()
 
 /** Публичный бэкенд (Render). И prod, и dev по умолчанию — чтобы телефон работал без LAN. */
-val squadRelayPublicBackendUrl = "https://lastasylum-backend.onrender.com/"
+val squadRelayPublicBackendUrl = "https://lastasylum-backend-jbaa.onrender.com/"
 
 android {
     namespace = "com.lastasylum.alliance"
