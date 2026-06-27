@@ -15,7 +15,12 @@ import android.os.Handler
 import android.text.Editable
 import android.text.InputFilter
 import android.text.InputType
+import android.text.Spannable
+import android.text.SpannableStringBuilder
 import android.text.TextWatcher
+import android.text.style.ForegroundColorSpan
+import android.text.style.ImageSpan
+import android.text.style.StyleSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -47,6 +52,9 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.game.GameMapNavigator
+import com.lastasylum.alliance.game.OverlayBookmarkStore
+import com.lastasylum.alliance.game.OverlayBookmarkTag
+import com.lastasylum.alliance.game.RaidShareTarget
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +80,7 @@ class OverlayCommandsPopover(
     private val emitOverlayReactionReply: (targetUserId: String, reactionId: String, replyToLogId: String) -> Unit =
         { _, _, _ -> },
     private val emitOverlayReactionBroadcast: (reactionId: String) -> Unit = {},
+    private val reshareBookmark: (target: com.lastasylum.alliance.game.RaidShareTarget) -> Unit = {},
 ) {
     private var hudReactionAnchor: () -> OverlayReactionAnchorRect? = { null }
 
@@ -592,15 +601,6 @@ class OverlayCommandsPopover(
         val isTarget: Boolean = false,
     )
 
-    /** Bookmark categories for the "Цель → Закладки" tab (target list wiring deferred). */
-    private enum class OverlayTargetBookmark(val labelRes: Int) {
-        ENEMIES(R.string.overlay_bookmark_enemies),
-        FRIENDS(R.string.overlay_bookmark_friends),
-        MOBS(R.string.overlay_bookmark_mobs),
-        CHESTS(R.string.overlay_bookmark_chests),
-        CITIES(R.string.overlay_bookmark_cities),
-    }
-
     /** Compact numeric field (label + EditText) reused by the Цель → Поиск coordinate block. */
     private fun coordFieldView(
         hint: String,
@@ -665,6 +665,192 @@ class OverlayCommandsPopover(
             background = optionChipBackground(selected)
             isClickable = true
         }
+
+    /**
+     * ScrollView с ограничением высоты: когда [maxHeightPx] > 0, контент выше лимита
+     * прокручивается (как лента реакций). Используется для списка закладок свыше 5 записей.
+     */
+    private inner class MaxHeightScrollView(ctx: Context) : ScrollView(ctx) {
+        var maxHeightPx: Int = 0
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            val spec = if (maxHeightPx > 0) {
+                MeasureSpec.makeMeasureSpec(maxHeightPx, MeasureSpec.AT_MOST)
+            } else {
+                heightMeasureSpec
+            }
+            super.onMeasure(widthMeasureSpec, spec)
+        }
+    }
+
+    /** Карточка цели в табе «Закладки»: координаты + строка-инфо (как при шаринге); тап — меню действий. */
+    private fun buildBookmarkCardView(
+        target: RaidShareTarget,
+        tag: OverlayBookmarkTag,
+        onChanged: () -> Unit,
+    ): View {
+        val coords = TextView(context).apply {
+            text = buildString {
+                append("[")
+                if (target.serverNumber != null) append("S:").append(target.serverNumber).append(" ")
+                append("X:").append(target.x).append(" Y:").append(target.y)
+                append("]")
+            }
+            setTextColor(Color.parseColor("#FF7DD3FC"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+        }
+        // Одна инфо-строка: Ур.N + имя/[тег]Ник (+ грейд/звёзды сундука) + мощь/поверженные
+        // с игровыми иконками через пробел (как в карточке «В рейд»).
+        val meta = TextView(context).apply {
+            text = buildBookmarkInfoSpannable(target)
+            setTextColor(Color.parseColor("#FFE2E8F0"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(2), 0, 0)
+        }
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = rippleOn(
+                GradientDrawable().apply {
+                    cornerRadius = dp(10).toFloat()
+                    setColor(Color.parseColor("#18FFFFFF"))
+                    setStroke(dp(1), Color.parseColor("#22507090"))
+                },
+            )
+            isClickable = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(8) }
+            addView(coords)
+            addView(meta)
+            setOnClickListener { showBookmarkActions(this, target, tag, onChanged) }
+        }
+    }
+
+    /** Инфо-строка карточки закладки: уровень, имя/[тег]Ник, цветной грейд/звёзды сундука, мощь/поверженные. */
+    private fun buildBookmarkInfoSpannable(target: RaidShareTarget): CharSequence {
+        val builder = SpannableStringBuilder()
+        fun sep() { if (builder.isNotEmpty()) builder.append(' ') }
+        target.levelPrefix()?.let { sep(); builder.append(it) }
+        sep(); builder.append(target.titleLine())
+        target.metaPartsForOverlay().forEach { part -> sep(); builder.append(part) }
+        // Цвет грейда/звёзд сундука — как при шаринге.
+        val badge = target.chestGradeStars()
+        val gradeColor = bookmarkGradeColor(target.grade)
+        if (badge != null && gradeColor != null) {
+            val start = builder.toString().indexOf(badge)
+            if (start >= 0) {
+                builder.setSpan(ForegroundColorSpan(gradeColor), start, start + badge.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                builder.setSpan(StyleSpan(Typeface.BOLD), start, start + badge.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        // Только мощь с иконкой — на той же строке, через реальный пробел после имени
+        // (одиночный пробел под иконкой «съедается» ImageSpan, поэтому добавляем отдельный).
+        // Поверженные в закладках не показываем — экономим место.
+        target.powerLabel()?.let { label ->
+            if (builder.isNotEmpty()) builder.append(' ')
+            appendBookmarkStatIcon(builder, label, target.powerIcon, R.drawable.ic_overlay_game_power)
+        }
+        return builder
+    }
+
+    private fun bookmarkGradeColor(grade: Int?): Int? = when (grade) {
+        3 -> Color.parseColor("#FF60A5FA")
+        4 -> Color.parseColor("#FFC084FC")
+        5 -> Color.parseColor("#FFFBBF24")
+        else -> null
+    }
+
+    private fun appendBookmarkStatIcon(
+        builder: SpannableStringBuilder,
+        label: String,
+        gameSprite: String?,
+        fallbackDrawable: Int,
+    ) {
+        val key = gameSprite?.lowercase().orEmpty()
+        val drawableRes = when {
+            key.contains("zhanli") || key.contains("power") || key.contains("shili") -> R.drawable.ic_overlay_game_power
+            key.contains("jisha") || key.contains("kill") -> R.drawable.ic_overlay_game_kills
+            else -> fallbackDrawable
+        }
+        val drawable = context.getDrawable(drawableRes) ?: return
+        val h = dp(15)
+        val iw = drawable.intrinsicWidth.takeIf { it > 0 } ?: h
+        val ih = drawable.intrinsicHeight.takeIf { it > 0 } ?: h
+        val w = (h * iw / ih).coerceAtLeast(1)
+        drawable.setBounds(0, 0, w, h)
+        val start = builder.length
+        builder.append(' ')
+        builder.setSpan(ImageSpan(drawable, ImageSpan.ALIGN_BOTTOM), start, start + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        builder.append('\u200A')
+        builder.append(label)
+    }
+
+    /** Меню действий по закладке: перелёт / отправить в «Рейд» / удалить. */
+    private fun showBookmarkActions(
+        anchor: View,
+        target: RaidShareTarget,
+        tag: OverlayBookmarkTag,
+        onChanged: () -> Unit,
+    ) {
+        val popupContext = OverlayTickerUi.themedFabContext(context)
+        val labels = listOf(
+            context.getString(R.string.overlay_bookmark_action_fly),
+            context.getString(R.string.overlay_bookmark_action_reshare),
+            context.getString(R.string.overlay_bookmark_action_delete),
+        )
+        val adapter = object : android.widget.ArrayAdapter<String>(
+            popupContext,
+            android.R.layout.simple_list_item_1,
+            labels,
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val row = (convertView as? TextView) ?: TextView(popupContext).apply {
+                    setPadding(dp(14), dp(11), dp(14), dp(11))
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                }
+                row.text = getItem(position)
+                val delete = position == 2
+                row.setTextColor(Color.parseColor(if (delete) "#FFFF8A8A" else "#FFE8F4FF"))
+                row.typeface = Typeface.DEFAULT
+                return row
+            }
+        }
+        val popup = android.widget.ListPopupWindow(popupContext).apply {
+            anchorView = anchor
+            setAdapter(adapter)
+            width = anchor.width.coerceAtLeast(dp(200))
+            isModal = true
+            inputMethodMode = android.widget.ListPopupWindow.INPUT_METHOD_NOT_NEEDED
+            setBackgroundDrawable(
+                roundedRect(
+                    fillColor = Color.parseColor("#F0141C28"),
+                    strokeColor = Color.parseColor("#3D5A7CAA"),
+                    cornerDp = 10,
+                ),
+            )
+            setOnItemClickListener { _, _, position, _ ->
+                dismiss()
+                when (position) {
+                    0 -> {
+                        val server = target.serverNumber ?: DEFAULT_COORD_SERVER
+                        GameMapNavigator.open(context, target.x, target.y, server)
+                        hide()
+                    }
+                    1 -> reshareBookmark(target)
+                    2 -> {
+                        OverlayBookmarkStore.remove(context, tag, target)
+                        onChanged()
+                    }
+                }
+            }
+        }
+        anchor.post {
+            if (!anchor.isAttachedToWindow) return@post
+            runCatching { popup.show() }
+        }
+    }
 
     private fun categoryIconTab(
         category: CommandCategory,
@@ -828,7 +1014,7 @@ class OverlayCommandsPopover(
 
         // ---- Цель (Target) section: Поиск / Закладки sub-tabs --------------------------------
         var selectedTargetTab = 0 // 0 = Поиск, 1 = Закладки
-        var selectedBookmark = OverlayTargetBookmark.ENEMIES
+        var selectedBookmark = OverlayBookmarkTag.ENEMIES
 
         val targetSearchTabChip = choiceChip(context.getString(R.string.overlay_target_tab_search), true)
         val targetBookmarksTabChip = choiceChip(context.getString(R.string.overlay_target_tab_bookmarks), false)
@@ -950,6 +1136,18 @@ class OverlayCommandsPopover(
             orientation = LinearLayout.VERTICAL
             addView(bookmarkEmpty)
         }
+        // Список закладок свыше 5 записей прокручивается внутри ограниченной по высоте области.
+        val bookmarkListScroll = MaxHeightScrollView(context).apply {
+            isFillViewport = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(
+                bookmarkListContainer,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
         val targetBookmarksContent = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
@@ -961,7 +1159,7 @@ class OverlayCommandsPopover(
                 ),
             )
             addView(
-                bookmarkListContainer,
+                bookmarkListScroll,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -997,13 +1195,31 @@ class OverlayCommandsPopover(
 
         fun refreshBookmarkList() {
             bookmarkSelectorLabel.text = context.getString(selectedBookmark.labelRes)
-            // Target list wiring deferred — show empty state for the selected tag for now.
-            bookmarkEmpty.visibility = View.VISIBLE
+            bookmarkListContainer.removeAllViews()
+            val items = OverlayBookmarkStore.list(context, selectedBookmark)
+            if (items.isEmpty()) {
+                bookmarkListScroll.maxHeightPx = 0
+                bookmarkEmpty.visibility = View.VISIBLE
+                bookmarkListContainer.addView(bookmarkEmpty)
+                return
+            }
+            // Высота примерно 5 карточек; свыше — включается прокрутка. Иначе высота по содержимому.
+            bookmarkListScroll.maxHeightPx = if (items.size > BOOKMARK_VISIBLE_LIMIT) {
+                dp(BOOKMARK_CARD_HEIGHT_DP * BOOKMARK_VISIBLE_LIMIT)
+            } else {
+                0
+            }
+            bookmarkListScroll.scrollTo(0, 0)
+            items.forEach { t ->
+                bookmarkListContainer.addView(
+                    buildBookmarkCardView(t, selectedBookmark) { refreshBookmarkList() },
+                )
+            }
         }
 
         fun openBookmarkPicker() {
             val popupContext = OverlayTickerUi.themedFabContext(context)
-            val entries = OverlayTargetBookmark.entries
+            val entries = OverlayBookmarkTag.entries
             val titles = entries.map { context.getString(it.labelRes) }
             val adapter = object : android.widget.ArrayAdapter<String>(
                 popupContext,
@@ -2004,6 +2220,10 @@ class OverlayCommandsPopover(
         private const val MAX_COORD_SERVER = 9999
         /** Delay suppress release after coord dialog closes so game gate does not tear down HUD. */
         private const val POPOVER_SUPPRESS_RELEASE_DELAY_MS = 500L
+        /** Сколько карточек закладок видно без прокрутки; свыше — включается скролл. */
+        private const val BOOKMARK_VISIBLE_LIMIT = 5
+        /** Примерная высота одной карточки закладки в dp (для расчёта высоты области скролла). */
+        private const val BOOKMARK_CARD_HEIGHT_DP = 60
         /** Р РµР¶Рµ Р±СѓРґРёС‚СЊ Lottie-РїСЂРµРІСЊСЋ вЂ” РЅР° РіР»Р°РІРЅРѕРј РїРѕС‚РѕРєРµ С‚РѕР»СЊРєРѕ РґРѕ [MAX_REACTION_LOTTIE_PREVIEWS_PLAYING] С€С‚СѓРє. */
         const val REACTION_PREVIEW_KEEP_ALIVE_MS = 8_000L
     }

@@ -252,6 +252,7 @@ class CombatOverlayService : Service() {
             emitOverlayReactionBroadcast = { reactionId ->
                 AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReactionBroadcast(reactionId)
             },
+            reshareBookmark = { target -> reshareBookmarkToRaid(target) },
         ).also {
             it.setHudReactionAnchorProvider { hudReactionBurstAnchor() }
             it.setSafeTopMinYProvider { overlayReactionSafeTopMinY() }
@@ -277,6 +278,27 @@ class CombatOverlayService : Service() {
             val payload = intent.getStringExtra(com.lastasylum.alliance.game.RaidShareBridge.EXTRA_PAYLOAD)
             Log.i("RaidShareDiag", "recv action=${intent.action} payloadLen=${payload?.length ?: -1} payload=${payload?.take(120)}")
             handleRaidShareBroadcast(payload)
+        }
+    }
+    private val overlayBookmarkPanel by lazy {
+        OverlayBookmarkPanel(
+            context = this,
+            mainHandler = mainHandler,
+            dp = { dp(it) },
+            onAdd = { tag, target -> onBookmarkAdd(tag, target) },
+        )
+    }
+    private var bookmarkReceiverRegistered = false
+    private var lastBookmarkSeq = 0L
+    private var bookmarkShownAtMs = 0L
+    private val bookmarkHideRunnable = Runnable {
+        (windowManager ?: systemWindowManager())?.let { overlayBookmarkPanel.hide(it) }
+    }
+    private val bookmarkReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            if (intent?.action != com.lastasylum.alliance.game.BookmarkBridge.ACTION_BOOKMARK_TARGET) return
+            val payload = intent.getStringExtra(com.lastasylum.alliance.game.BookmarkBridge.EXTRA_PAYLOAD)
+            handleBookmarkBroadcast(payload)
         }
     }
     private val overlayPresenceCoordinator by lazy {
@@ -1367,6 +1389,7 @@ class CombatOverlayService : Service() {
         GameForegroundGate.primeTotalTimeForegroundWatch(this, targets)
         registerScreenOnReceiver()
         registerRaidShareReceiver()
+        registerBookmarkReceiver()
         startOverlayFcmTokenRegistration()
         serviceScope.launch {
             ensureOverlayRaidRoomReadyForSend()
@@ -4558,6 +4581,9 @@ class CombatOverlayService : Service() {
         unregisterRaidShareReceiver()
         mainHandler.removeCallbacks(raidShareHideRunnable)
         runCatching { (windowManager ?: systemWindowManager())?.let { overlayRaidSharePanel.hide(it) } }
+        unregisterBookmarkReceiver()
+        mainHandler.removeCallbacks(bookmarkHideRunnable)
+        runCatching { (windowManager ?: systemWindowManager())?.let { overlayBookmarkPanel.hide(it) } }
         unregisterVoiceMicPermissionReceiver()
         if (AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
             AppContainer.from(this).authRepository.hasSession()
@@ -5097,7 +5123,11 @@ class CombatOverlayService : Service() {
                 .orEmpty()
             if (teamId.isEmpty()) return@launch
             ForumOutboxResumeScheduler.schedule(this@CombatOverlayService, uid)
-            container.forumRepository.syncTopics(uid, teamId, bypassCache = true)
+            // Троттлим reconnect-перезапрос тем: при дёрганом сокете иначе получаем
+            // непрерывный поток GET /forum/topics (см. ForumReconnectResyncGate).
+            if (com.lastasylum.alliance.data.teams.forum.ForumReconnectResyncGate.shouldResync(teamId)) {
+                container.forumRepository.syncTopics(uid, teamId, bypassCache = true)
+            }
             persistOverlayForumStashToRoom(uid, teamId, container)
             mainHandler.post { overlayForumRehydrateAction?.invoke() }
         }
@@ -5280,6 +5310,96 @@ class CombatOverlayService : Service() {
         raidShareReceiverRegistered = false
     }
 
+    private fun registerBookmarkReceiver() {
+        if (bookmarkReceiverRegistered) return
+        val filter = IntentFilter(com.lastasylum.alliance.game.BookmarkBridge.ACTION_BOOKMARK_TARGET)
+        runCatching {
+            ContextCompat.registerReceiver(
+                this,
+                bookmarkReceiver,
+                filter,
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            bookmarkReceiverRegistered = true
+        }.onFailure { e -> Log.w(TAG, "registerBookmarkReceiver failed", e) }
+    }
+
+    private fun unregisterBookmarkReceiver() {
+        if (!bookmarkReceiverRegistered) return
+        runCatching { unregisterReceiver(bookmarkReceiver) }
+        bookmarkReceiverRegistered = false
+    }
+
+    /** Открытие/закрытие игрового окна «Добавить тег» → показать/скрыть панель «В закладки». */
+    private fun handleBookmarkBroadcast(payload: String?) {
+        val target = com.lastasylum.alliance.game.RaidShareTarget.fromJson(payload) ?: return
+        // seq в игре сбрасывается при перезапуске — крупный откат назад трактуем как новую сессию.
+        val backJump = lastBookmarkSeq - target.seq
+        if (backJump in 1..RAID_SHARE_SEQ_REORDER_WINDOW) return
+        if (backJump > RAID_SHARE_SEQ_REORDER_WINDOW) lastBookmarkSeq = 0L
+        val deliver = Runnable {
+            val mgr = windowManager ?: systemWindowManager() ?: return@Runnable
+            if (!isOverlayPanelUserEnabled()) return@Runnable
+            if (target.open) {
+                lastBookmarkSeq = target.seq
+                mainHandler.removeCallbacks(bookmarkHideRunnable)
+                bookmarkShownAtMs = android.os.SystemClock.uptimeMillis()
+                overlayBookmarkPanel.show(mgr, target)
+            } else {
+                lastBookmarkSeq = target.seq
+                scheduleBookmarkHide()
+            }
+        }
+        if (Looper.myLooper() == mainHandler.looper) deliver.run() else mainHandler.post(deliver)
+    }
+
+    private fun scheduleBookmarkHide() {
+        mainHandler.removeCallbacks(bookmarkHideRunnable)
+        val elapsed = android.os.SystemClock.uptimeMillis() - bookmarkShownAtMs
+        val delay = (RAID_SHARE_MIN_VISIBLE_MS - elapsed).coerceAtLeast(0L)
+        if (delay == 0L) bookmarkHideRunnable.run() else mainHandler.postDelayed(bookmarkHideRunnable, delay)
+    }
+
+    /** Кнопка «Добавить» на панели «В закладки»: сохранить локально + тост + скрыть панель. */
+    private fun onBookmarkAdd(
+        tag: com.lastasylum.alliance.game.OverlayBookmarkTag,
+        target: com.lastasylum.alliance.game.RaidShareTarget,
+    ) {
+        val added = com.lastasylum.alliance.game.OverlayBookmarkStore.add(this, tag, target)
+        val tagName = getString(tag.labelRes)
+        val msg = if (added) {
+            getString(R.string.overlay_bookmark_added, tagName)
+        } else {
+            getString(R.string.overlay_bookmark_exists, tagName)
+        }
+        // Закрываем игровое окно «Добавить тег» так же, как при шаринге (мост закроет и его).
+        com.lastasylum.alliance.game.GameShareCloseBridge.close(this)
+        mainHandler.post {
+            runCatching { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
+            (windowManager ?: systemWindowManager())?.let { overlayBookmarkPanel.hide(it) }
+        }
+    }
+
+    /** Пере-шаринг цели из закладок в комнату «Рейд» (без закрытия игровых окон). */
+    private fun reshareBookmarkToRaid(target: com.lastasylum.alliance.game.RaidShareTarget) {
+        val text = buildRaidShareText(null, target)
+        mainHandler.post { postOptimisticOverlayRaidQuickCommand(text) }
+        serviceScope.launch {
+            warmupOverlayRaidForQuickCommands()
+            val result = sendOverlayRaidQuickCommandHttp(text = text)
+            withContext(Dispatchers.Main) {
+                val msg = if (result.isSuccess) {
+                    getString(R.string.overlay_raid_share_sent)
+                } else if (result.exceptionOrNull()?.message == "no_raid") {
+                    getString(R.string.overlay_raid_share_no_raid)
+                } else {
+                    getString(R.string.overlay_raid_share_failed)
+                }
+                runCatching { Toast.makeText(this@CombatOverlayService, msg, Toast.LENGTH_SHORT).show() }
+            }
+        }
+    }
+
     private fun handleRaidShareBroadcast(payload: String?) {
         val target = com.lastasylum.alliance.game.RaidShareTarget.fromJson(payload)
         if (target == null) {
@@ -5339,12 +5459,12 @@ class CombatOverlayService : Service() {
         }.getOrDefault(true)
 
     /**
-     * Сообщение для комнаты «Рейд» в три строки:
+     * Сообщение для комнаты «Рейд» в две строки:
      *   `{команда} [#:сервер X Y]`
-     *   `Ур.N [тег] Ник (+ грейд/владелец)`
-     *   `⚡Мощь ⚔Поверженные`
+     *   `Ур.N [тег] Ник / Сундук (+ грейд/владелец) ⚡Мощь ⚔Поверженные`
+     * «Сундук» остаётся на второй строке (как заголовок цели); мощь/поверженные идут на
+     * второй строке сразу после никнейма (маркеры заменяются рендерером на реальные иконки).
      * Координаты на первой строке остаются кликабельными (парсер ищет блок `[#:.. X.. Y..]`).
-     * Третья строка опускается, если у цели нет мощи/поверженных.
      */
     private fun buildRaidShareText(commandLabel: String?, target: com.lastasylum.alliance.game.RaidShareTarget): String {
         val coords = com.lastasylum.alliance.game.MapCoordinate(
@@ -5356,13 +5476,12 @@ class CombatOverlayService : Service() {
         val action = commandLabel?.trim()?.takeIf { it.isNotEmpty() }
         // Строка 1: [команда] координаты (кликабельны для перелёта).
         val line1 = listOfNotNull(action, coords).joinToString(" ")
-        // Строка 2: Ур.N [тег] Ник (+ грейд/звёзды/владелец сундука/конвоя).
-        val line2 = (listOfNotNull(target.levelPrefix(), target.titleLine()) +
-            target.metaPartsForOverlay()).joinToString(" ")
-        // Строка 3: [иконка]Мощь [иконка]Поверженные — отдельной строкой
-        // (маркеры заменяются рендерером на реальные иконки). Пустая, если данных нет.
-        val line3 = buildString {
+        // Строка 2: Ур.N [тег] Ник / Сундук (+ грейд/звёзды/владелец) и мощь/поверженные после ника.
+        val head = listOfNotNull(target.levelPrefix(), target.titleLine()) + target.metaPartsForOverlay()
+        val line2 = buildString {
+            append(head.joinToString(" "))
             target.powerLabel()?.let {
+                if (isNotEmpty()) append(' ')
                 append(com.lastasylum.alliance.game.RaidShareGlyphs.POWER).append(it)
             }
             target.killsLabel()?.let {
@@ -5370,7 +5489,7 @@ class CombatOverlayService : Service() {
                 append(com.lastasylum.alliance.game.RaidShareGlyphs.KILLS).append(it)
             }
         }
-        return listOf(line1, line2, line3).filter { it.isNotEmpty() }.joinToString("\n")
+        return listOf(line1, line2).filter { it.isNotEmpty() }.joinToString("\n")
     }
 
     private fun onRaidShareSend(commandLabel: String?, target: com.lastasylum.alliance.game.RaidShareTarget) {

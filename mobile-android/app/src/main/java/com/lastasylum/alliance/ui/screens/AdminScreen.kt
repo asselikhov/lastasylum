@@ -28,7 +28,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.PersonOff
 import androidx.compose.material.icons.outlined.Route
-import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -60,7 +59,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.admin.AdminTeamMemberDto
 import com.lastasylum.alliance.data.admin.AdminUserOnServerDto
@@ -71,7 +69,6 @@ import com.lastasylum.alliance.ui.util.formatServerLabel
 import com.lastasylum.alliance.ui.util.teamTagWithServerPrefix
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.ui.admin.AdminPlayersSegment
-import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.admin.AdminRoute
 import com.lastasylum.alliance.ui.admin.AdminUiState
 import com.lastasylum.alliance.ui.admin.routeRefreshing
@@ -150,7 +147,6 @@ fun AdminScreen(
         is AdminRoute.ForumTopicViewer -> route.topicTitle
         AdminRoute.Players -> stringResource(R.string.admin_hub_players)
         AdminRoute.ChatRouting -> stringResource(R.string.admin_hub_chat_routing)
-        AdminRoute.LatencyDebug -> "Delivery latency"
     }
     val showBack = state.route != AdminRoute.Hub
 
@@ -173,7 +169,6 @@ fun AdminScreen(
                 is AdminRoute.ForumTopicViewer -> null
                 AdminRoute.Players -> onRefreshPlayers
                 AdminRoute.ChatRouting -> onRefreshAlliances
-                AdminRoute.LatencyDebug -> null
             },
             refreshing = state.routeRefreshing(),
         )
@@ -253,13 +248,6 @@ fun AdminScreen(
                 },
                 onLoadMore = onLoadMorePlayers,
             )
-            AdminRoute.LatencyDebug -> {
-                if (BuildConfig.DEBUG) {
-                    DeliveryLatencyDebugScreen(
-                        tracker = AppContainer.from(context).deliveryLatencyTracker,
-                    )
-                }
-            }
         }
     }
 
@@ -443,15 +431,23 @@ private fun AdminTopBar(
             modifier = Modifier.weight(1f),
         )
         if (onRefresh != null) {
-            if (refreshing) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .padding(end = 12.dp)
-                        .size(22.dp),
-                    strokeWidth = 2.dp,
-                )
-            } else {
-                TextButton(onClick = onRefresh, modifier = Modifier.padding(end = 4.dp)) {
+            // Кнопка «Обновить» всегда видима; во время загрузки она просто
+            // заблокирована и рядом крутится маленький индикатор — так не выглядит
+            // как «залипший» спиннер без действия.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (refreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+                TextButton(
+                    onClick = onRefresh,
+                    enabled = !refreshing,
+                    modifier = Modifier.padding(end = 4.dp),
+                ) {
                     Text(stringResource(R.string.admin_refresh))
                 }
             }
@@ -506,16 +502,6 @@ private fun AdminHubContent(
                 subtitle = stringResource(R.string.admin_hub_chat_routing_sub),
                 onClick = { onOpenRoute(AdminRoute.ChatRouting) },
             )
-        }
-        if (BuildConfig.DEBUG) {
-            item {
-                AdminHubTile(
-                    icon = { Icon(Icons.AutoMirrored.Outlined.Chat, null, tint = MaterialTheme.colorScheme.primary) },
-                    title = "Delivery latency",
-                    subtitle = "p50/p95 span snapshot (debug)",
-                    onClick = { onOpenRoute(AdminRoute.LatencyDebug) },
-                )
-            }
         }
         item {
             AdminHubTile(

@@ -20,6 +20,29 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 /**
+ * Защита от «шторма» сетевых перезапросов тем форума при дёрганом форум-сокете.
+ *
+ * Каждый reconnect форум-сокета триггерит `syncTopics(bypassCache=true)` сразу из двух
+ * слушателей (оверлей + nav-host). Если сокет переподключается раз в ~2с (сервер закрывает
+ * соединение сразу после connect → backoff сбрасывается на connect), это превращается в
+ * непрерывный поток GET /forum/topics. Гейт пропускает reconnect-перезапрос не чаще раза
+ * в [MIN_INTERVAL_MS] на команду — обычные пользовательские обновления его не используют.
+ */
+object ForumReconnectResyncGate {
+    private const val MIN_INTERVAL_MS = 15_000L
+    private val lastResyncAtMsByTeam = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    fun shouldResync(teamId: String, nowMs: Long = System.currentTimeMillis()): Boolean {
+        val key = teamId.trim()
+        if (key.isEmpty()) return false
+        val last = lastResyncAtMsByTeam[key]
+        if (last != null && nowMs - last < MIN_INTERVAL_MS) return false
+        lastResyncAtMsByTeam[key] = nowMs
+        return true
+    }
+}
+
+/**
  * Single forum I/O facade: Room + disk + TeamsRepository HTTP + latency.
  */
 class ForumRepository(

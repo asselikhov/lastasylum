@@ -23,6 +23,114 @@ const SHARE_CLOSE_FILE = '/data/data/com.phs.global/files/squadrelay_share_close
 const SHARE_ACTION = 'com.lastasylum.alliance.action.SHARE_TARGET';
 const SHARE_APP_PKG = 'com.lastasylum.alliance';
 
+// Закладки: хук игрового окна «Добавить тег» (Logic.UI.Panel.Collect.SearchCollectPanel).
+// При открытии окна пишем payload цели (та же форма, что у шаринга) в приватный файл игры;
+// JS читает его и шлёт broadcast BOOKMARK_TARGET в SquadRelay, который показывает свою
+// панель-полоску над игровым окном. Сохранение в закладки делает уже сторона приложения.
+const BOOKMARK_FILE = '/data/data/com.phs.global/files/squadrelay_bookmark.json';
+const BOOKMARK_OK_FILE = '/data/data/com.phs.global/files/squadrelay_bookmark_hook.ok';
+const BOOKMARK_ACTION = 'com.lastasylum.alliance.action.BOOKMARK_TARGET';
+const BOOKMARK_HOOK_LUA = [
+  'pcall(function()',
+  "pcall(function() require('Logic.UI.Panel.Collect.SearchCollectPanel') end)",
+  'local pl=package.loaded',
+  "local pcls=pl['Logic.UI.Panel.Collect.SearchCollectPanel']",
+  'if not pcls then return end',
+  'local idx=(getmetatable(pcls) or {}).__index or pcls',
+  "local F='/data/data/com.phs.global/files/squadrelay_bookmark.json'",
+  "local OK='/data/data/com.phs.global/files/squadrelay_bookmark_hook.ok'",
+  "local function esc(s) return (string.gsub(tostring(s),'\"',\"'\")) end",
+  "local function wr(t) local f=io.open(F,'w') if f then f:write(t) f:close() end end",
+  // paramTable[2] = { point={x,y,sid}, unitData={...} } — цель, по которой открыли окно тегов.
+  'local function bmpt(self) local d=self and self.paramTable and self.paramTable[2] if type(d)~=\'table\' then return nil end local pt=d.point if type(pt)~=\'table\' or pt.x==nil or pt.y==nil then return nil end return d,pt end',
+  // Верх игрового окна в px от верха экрана — для позиции нашей панели-полоски.
+  'local function calcTop(self)',
+  'local ok,y=pcall(function()',
+  'local go=self.gameObject if not go then return nil end',
+  'local roots=CS.UIRoot.list if not roots or roots.Count<1 then return nil end',
+  'local manual=roots[0].manualHeight local sh=CS.UnityEngine.Screen.height',
+  'local py=go.transform.position.y',
+  'if manual and manual>0 and py then return math.floor((1-py/manual)*sh) end return nil end)',
+  'return ok and y or nil end',
+  "local function full(t) local s='' if type(t)=='table' then local n=0 for k,v in pairs(t) do local tv=type(v) local vv if tv=='table' then vv='{t}' elseif tv=='function' then vv='fn' elseif tv=='userdata' then vv='ud' else vv=tostring(v) end if #vv>60 then vv=string.sub(vv,1,60) end s=s..tostring(k)..'='..vv..';' n=n+1 if n>120 then break end end end return (string.gsub(s,'[\\r\\n\"]',' ')) end",
+  // Имя/тип/мощь/киллы из unitData окна тегов. Город игрока — всё прямо тут; сундук/босс/моб/
+  // ресурс/мехагород — через тип + Config (мирроринг enrich шеринга). Иначе — best-effort.
+  'local function enrich(ud,p)',
+  "if type(ud)~='table' then return end",
+  'local C=_G.Config',
+  'local cat=nil local name=nil',
+  "local function addpow(v) v=tonumber(v) if v and v>0 then p[#p+1]='\"power\":'..string.format('%.0f',v) p[#p+1]='\"powerIcon\":\"pic_zhanli\"' end end",
+  "local function cfgName(tb,id) if not (tb and id) then return nil end local row=C and C[tb] and C[tb][id] if type(row)=='table' then return row.name or row.name2,row end return nil end",
+  // Короткое имя альянса по unionId (сундуки/тайники не несут occupierUnionShortName).
+  // Сначала своё объединение, затем кандидаты-геттеры мирового менеджера; via= для диагностики.
+  "local function usn(uid) uid=tonumber(uid) if not uid or uid==0 then return nil,'noid' end local res=nil local via=''",
+  "pcall(function() local ad=_G.Data and _G.Data.AllianceData if ad then local oid=ad.unionId or ad.id or ad.unionDbId if oid and tonumber(oid)==uid then res=ad.shortName or ad.alias or ad.simpleName via='own' end end end)",
+  "if res and tostring(res)~='' then return res,via end",
+  "local gm=_G.GlobalMapCtrlManager local wmm=gm and gm.GetWorldManager and gm:GetWorldManager()",
+  "if wmm then local cands={'GetUnionSimpleInfoById','GetUnionSimpleInfo','GetUnionInfoById','GetUnionInfo','GetUnionShortNameById','GetUnionShortName','GetUnionDataById','GetUnionData'} for _,m in ipairs(cands) do if not (res and tostring(res)~='') then pcall(function() local f=wmm[m] if type(f)=='function' then local r=f(wmm,uid) if type(r)=='table' then res=r.shortName or r.unionShortName or r.alias or r.simpleName elseif type(r)=='string' then res=r end if res and tostring(res)~='' then via=m end end end) end end end",
+  "if res and tostring(res)~='' then return res,via end return nil,'miss' end",
+  // 1) Город игрока
+  "if ud.playerName or ud.playerId then cat='player'",
+  "local nick=ud.playerName and tostring(ud.playerName) or ''",
+  "local tag=ud.playerUnionShortName and tostring(ud.playerUnionShortName) or ''",
+  "if tag~='' then name='['..tag..'] '..nick else name=nick end",
+  "if ud.playerUnionShortName then p[#p+1]='\"union\":\"'..esc(ud.playerUnionShortName)..'\"' end",
+  "if ud.playerPower and ud.playerPower>0 then p[#p+1]='\"power\":'..string.format('%.0f',ud.playerPower) p[#p+1]='\"powerIcon\":\"pic_zhanli\"' end",
+  "if ud.killEnemyCount and ud.killEnemyCount>0 then p[#p+1]='\"kills\":'..string.format('%.0f',ud.killEnemyCount) p[#p+1]='\"killsIcon\":\"pic_jisha\"' end",
+  // 2) Сундук / тайник (secret base) — рендерится как «Сундук» + грейд/звёзды/владелец.
+  'elseif ud.taskId then',
+  "p[#p+1]='\"secretTaskId\":'..tostring(ud.taskId)",
+  "if ud.occupierName and tostring(ud.occupierName)~='' then p[#p+1]='\"playerName\":\"'..esc(ud.occupierName)..'\"' end",
+  "local usnv=nil local usnvia='none' if ud.occupierUnionShortName and tostring(ud.occupierUnionShortName)~='' then usnv=ud.occupierUnionShortName usnvia='unit' else usnv,usnvia=usn(ud.occupierUnionId) end",
+  "if usnv and tostring(usnv)~='' then p[#p+1]='\"union\":\"'..esc(usnv)..'\"' end",
+  // Дискавери: поля своего альянса + какие union-методы есть у мирового менеджера.
+  "local adump='' pcall(function() local ad=_G.Data and _G.Data.AllianceData if ad then adump='AD[' for _,k in ipairs({'unionId','id','unionDbId','shortName','alias','simpleName','name'}) do local v=ad[k] if v~=nil then adump=adump..k..'='..tostring(v)..';' end end adump=adump..']' end end)",
+  "local wmeth='' pcall(function() local gm=_G.GlobalMapCtrlManager local wmm=gm and gm.GetWorldManager and gm:GetWorldManager() if type(wmm)=='table' then for k,v in pairs(wmm) do local ks=tostring(k) if type(v)=='function' and (string.find(ks,'nion') or string.find(ks,'NION')) then wmeth=wmeth..ks..',' end end end end)",
+  "p[#p+1]='\"udiag\":\"uid='..tostring(ud.occupierUnionId)..' via='..esc(tostring(usnvia))..' '..esc(adump)..' WM{'..esc(wmeth)..'}\"'",
+  "local st=C and C.SecretTask and C.SecretTask[ud.taskId]",
+  "if type(st)=='table' then if st.quality then p[#p+1]='\"grade\":'..tostring(st.quality) end if st.secretLevel then p[#p+1]='\"stars\":'..tostring(st.secretLevel) end end",
+  // 3) Ресурс
+  "elseif ud.resourceId then cat='ResourceInfo' local n,row=cfgName('ResourceInfo',ud.resourceId) name=n if row then addpow(row.recAbility) end",
+  // 4) Босс/ралли
+  "elseif ud.rallyId then cat='SlgRallyInfo' name=cfgName('SlgRallyInfo',ud.rallyId) addpow(ud.ability)",
+  // 5) Монстр
+  "elseif ud.monsterId then cat='SlgMonsterInfo' name=cfgName('SlgMonsterInfo',ud.monsterId) addpow(ud.ability)",
+  // 6) Мехагород
+  "elseif ud.mechaCityCfg or ud.mechaCityProtoInfo then cat='MechCity' if type(ud.mechaCityCfg)=='table' then name=ud.mechaCityCfg.name or ud.mechaCityCfg.name2 end",
+  'end',
+  "if name and tostring(name)~='' then p[#p+1]='\"name\":\"'..esc(name)..'\"' end",
+  "if cat then p[#p+1]='\"cat\":\"'..esc(cat)..'\"' end",
+  "if ud.level and ud.level>0 then p[#p+1]='\"lv\":'..tostring(ud.level) end",
+  "p[#p+1]='\"diag\":\"'..esc(full(ud))..'\"'",
+  'end',
+  'local function publish(self,open)',
+  'local d,pt=bmpt(self) if not d then return end',
+  '_G.__bm_seq=(_G.__bm_seq or 0)+1 local seq=_G.__bm_seq',
+  "if not open then wr('{\"seq\":'..seq..',\"open\":false}') return end",
+  'local p={}',
+  "p[#p+1]='\"seq\":'..seq p[#p+1]='\"open\":true'",
+  "p[#p+1]='\"x\":'..tostring(pt.x or 0) p[#p+1]='\"y\":'..tostring(pt.y or 0) p[#p+1]='\"sid\":'..tostring(pt.sid or 0)",
+  "p[#p+1]='\"shareType\":1'",
+  'enrich(d.unitData,p)',
+  "if type(d.unitData)=='table' and d.unitData.taskId then p[#p+1]='\"pdiag\":\"'..esc(full(d))..'\"' end",
+  "local top=calcTop(self) if top and top>0 then p[#p+1]='\"dialogTopPx\":'..tostring(top) end",
+  "wr('{'..table.concat(p,',')..'}')",
+  'end',
+  'if not _G.__bm_inst2 then',
+  '_G.__bm_seq=_G.__bm_seq or 0',
+  'local oe=idx.OnEnter idx.__bm_oe=oe',
+  'idx.OnEnter=function(self,...) local r=oe(self,...) pcall(function() if bmpt(self) then _G.__bm_panel=self publish(self,true) end end) return r end',
+  'local ox=idx.OnExit idx.__bm_ox=ox',
+  'idx.OnExit=function(self,...) pcall(function() if bmpt(self) then _G.__bm_panel=nil publish(self,false) end end) return ox(self,...) end',
+  '_G.__bm_inst2=true',
+  'end',
+  // Дискавери методов закрытия окна тега: пишем имена методов класса с lose/Close/Exit/Back.
+  "local dm='' pcall(function() for k,v in pairs(idx) do local ks=tostring(k) if type(v)=='function' and (string.find(ks,'lose') or string.find(ks,'Exit') or string.find(ks,'Back') or string.find(ks,'efab')) then dm=dm..ks..',' end end end) local gm2=io.open('/data/data/com.phs.global/files/squadrelay_bm_methods.txt','w') if gm2 then gm2:write(dm) gm2:close() end",
+  "local g=io.open(OK,'w') if g then g:write('ok') g:close() end",
+  'pcall(function() local sp=_G.__bm_panel if sp then publish(sp,true) end end)',
+  'end)',
+].join(' ');
+
 // Auto-help: SquadRelay writes a persistent config file; this script periodically
 // calls the alliance "help all" network action (same as tapping the in-game Help
 // button) while there is something to help with.
@@ -1579,6 +1687,12 @@ const SHARE_HOOK_LUA = [
   "local function enrich(pt,p)",
   "local dn=nil local cat=nil local cfgrow=nil",
   "local function srdump(t) local s='' if type(t)=='table' then local n=0 for k,v in pairs(t) do local vv=tostring(v) if #vv>40 then vv=string.sub(vv,1,40) end s=s..tostring(k)..'='..vv..';' n=n+1 if n>80 then break end end end return (string.gsub(s,'[^%w%._=; -]',' ')) end",
+  "local function usn(uid) uid=tonumber(uid) if not uid or uid==0 then return nil end local res=nil",
+  "pcall(function() local ad=_G.Data and _G.Data.AllianceData if ad then local oid=ad.unionId or ad.id or ad.unionDbId if oid and tonumber(oid)==uid then res=ad.shortName or ad.alias or ad.simpleName end end end)",
+  "if res and tostring(res)~='' then return res end",
+  "local gm=_G.GlobalMapCtrlManager local wmm=gm and gm.GetWorldManager and gm:GetWorldManager()",
+  "if wmm then local cands={'GetUnionSimpleInfoById','GetUnionSimpleInfo','GetUnionInfoById','GetUnionInfo','GetUnionShortNameById','GetUnionShortName','GetUnionDataById','GetUnionData'} for _,m in ipairs(cands) do if not (res and tostring(res)~='') then pcall(function() local f=wmm[m] if type(f)=='function' then local r=f(wmm,uid) if type(r)=='table' then res=r.shortName or r.unionShortName or r.alias or r.simpleName elseif type(r)=='string' then res=r end end end) end end end",
+  "if res and tostring(res)~='' then return res end return nil end",
   "if pt.name then dn=pt.name cat='player'",
   "elseif pt.truckName then dn=pt.truckName cat='truck'",
   "elseif pt.nameKey then local nk=tostring(pt.nameKey)",
@@ -1605,7 +1719,8 @@ const SHARE_HOOK_LUA = [
   "if u.level and not pt.lv then p[#p+1]='\"lv\":'..tostring(u.level) end",
   "if u.playerPower and u.playerPower>0 then p[#p+1]='\"power\":'..tostring(u.playerPower) p[#p+1]='\"powerIcon\":\"pic_zhanli\"' end",
   "if u.killEnemyCount and u.killEnemyCount>0 then p[#p+1]='\"kills\":'..tostring(u.killEnemyCount) p[#p+1]='\"killsIcon\":\"pic_jisha\"' end",
-  "if u.playerUnionShortName then p[#p+1]='\"union\":\"'..esc(u.playerUnionShortName)..'\"' end",
+  "local uun=nil if u.playerUnionShortName and tostring(u.playerUnionShortName)~='' then uun=u.playerUnionShortName elseif u.occupierUnionShortName and tostring(u.occupierUnionShortName)~='' then uun=u.occupierUnionShortName elseif u.occupierUnionId then uun=usn(u.occupierUnionId) end",
+  "if uun and tostring(uun)~='' then p[#p+1]='\"union\":\"'..esc(uun)..'\"' end",
   "if cat and cat~='player' then local dg=srdump(u) local dc=srdump(cfgrow) if dg~='' or dc~='' then p[#p+1]='\"diag\":\"u{'..esc(dg)..'} cfg{'..esc(dc)..'}\"' end end",
   "end end",
   "end",
@@ -1664,13 +1779,24 @@ const SHARE_CLOSE_LUA = [
   'pcall(function()',
   "local prefab='UI/UIModules/Chat/ChatSharePanel.prefab'",
   'local wm=WinsManager and WinsManager.instance',
-  'if not wm then return end',
+  'if wm then',
   'local win=wm:GetWin(prefab)',
-  'if not win then return end',
+  'if win then',
   'local lp=win._luaInstance',
   'if lp and lp.OnCloseHandler then pcall(function() lp:OnCloseHandler() end) end',
   'pcall(function() wm:CloseWin(prefab,true) end)',
   'pcall(function() wm:RealyCloseWin(prefab,true) end)',
+  'end end',
+  // Также закрываем игровое окно «Добавить тег» (SearchCollectPanel), если оно открыто:
+  // вызываем это из onBookmarkAdd тем же каналом share-close.
+  'pcall(function() local sp=_G.__bm_panel if sp then',
+  'if sp.OnCloseHandler then pcall(function() sp:OnCloseHandler() end) end',
+  'if sp.CloseSelf then pcall(function() sp:CloseSelf() end) end',
+  'if sp.Close then pcall(function() sp:Close() end) end',
+  'if sp.OnClose then pcall(function() sp:OnClose() end) end',
+  'if sp.OnClickClose then pcall(function() sp:OnClickClose() end) end',
+  'if sp.OnBtnCloseClick then pcall(function() sp:OnBtnCloseClick() end) end',
+  '_G.__bm_panel=nil end end)',
   'end)',
 ].join(' ');
 
@@ -1735,6 +1861,67 @@ function sendShareBroadcast(payload) {
   }
 }
 
+let bookmarkHookOk = false;
+let lastBookmarkInstallAt = 0;
+let lastBookmarkText = '';
+
+function maybeInstallBookmarkHook() {
+  if (bookmarkHookOk) return;
+  const ok = readFileUtf8(BOOKMARK_OK_FILE);
+  if (ok && ok.indexOf('ok') >= 0) {
+    bookmarkHookOk = true;
+    log('bookmark hook installed (confirmed)');
+    return;
+  }
+  if (!liveLuaEnv || liveLuaEnv.isNull()) return;
+  const now = Date.now();
+  if (now - lastBookmarkInstallAt < 100) return;
+  lastBookmarkInstallAt = now;
+  runLua(BOOKMARK_HOOK_LUA);
+}
+
+function sendBookmarkBroadcast(payload) {
+  if (typeof Java === 'undefined' || !Java.available) {
+    log('bookmark broadcast skipped: Java bridge unavailable');
+    return;
+  }
+  try {
+    Java.perform(function () {
+      const ActivityThread = Java.use('android.app.ActivityThread');
+      const app = ActivityThread.currentApplication();
+      if (app === null) {
+        log('bookmark broadcast skipped: no currentApplication');
+        return;
+      }
+      const ctx = app.getApplicationContext();
+      const Intent = Java.use('android.content.Intent');
+      const intent = Intent.$new(BOOKMARK_ACTION);
+      intent.setPackage(SHARE_APP_PKG);
+      intent.putExtra.overload('java.lang.String', 'java.lang.String').call(intent, 'payload', payload);
+      intent.addFlags(0x10000000); // FLAG_RECEIVER_FOREGROUND
+      ctx.sendBroadcast(intent);
+      log('bookmark broadcast -> ' + SHARE_APP_PKG);
+    });
+  } catch (e) {
+    log('bookmark broadcast failed: ' + e);
+  }
+}
+
+function pollBookmarkFile() {
+  try {
+    const text = readFileUtf8(BOOKMARK_FILE);
+    if (!text || !text.trim() || text === lastBookmarkText) return;
+    lastBookmarkText = text;
+    log('bookmark payload: ' + text.trim());
+    sendBookmarkBroadcast(text.trim());
+  } catch (e) {
+    const msg = String(e);
+    if (!msg.includes('No such file') && !msg.includes('not found')) {
+      log('bookmark poll error: ' + e);
+    }
+  }
+}
+
 function pollShareFile() {
   try {
     const text = readFileUtf8(SHARE_FILE);
@@ -1760,8 +1947,12 @@ setImmediate(function () {
   writeFileEmpty(SHARE_FILE);
   writeFileEmpty(SHARE_OK_FILE);
   writeFileEmpty(SHARE_CLOSE_FILE);
+  writeFileEmpty(BOOKMARK_FILE);
+  writeFileEmpty(BOOKMARK_OK_FILE);
   shareHookOk = false;
   lastShareText = '';
+  bookmarkHookOk = false;
+  lastBookmarkText = '';
   mapsDiagOnce();
   setInterval(function () {
     logLibStatusOnce();
@@ -1772,12 +1963,16 @@ setImmediate(function () {
     maybeInstallShareHook();
     pollShareFile();
     pollShareCloseFile();
+    maybeInstallBookmarkHook();
+    pollBookmarkFile();
     if (libBase() && pendingFlies.length) scheduleDrainPendingFlies();
   }, 400);
   setInterval(function () {
     maybeInstallShareHook();
     pollShareFile();
     pollShareCloseFile();
+    maybeInstallBookmarkHook();
+    pollBookmarkFile();
   }, 100);
 });
 

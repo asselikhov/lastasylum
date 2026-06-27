@@ -830,6 +830,14 @@
     <string name="overlay_bookmark_mobs">Мобы</string>
     <string name="overlay_bookmark_chests">Сундуки</string>
     <string name="overlay_bookmark_cities">Города</string>
+    <string name="overlay_bookmark_add">Добавить</string>
+    <string name="overlay_bookmark_panel_title">В закладки</string>
+    <string name="overlay_bookmark_added">Добавлено в «%1$s»</string>
+    <string name="overlay_bookmark_exists">Уже в закладках «%1$s»</string>
+    <string name="overlay_bookmark_removed">Удалено из закладок</string>
+    <string name="overlay_bookmark_action_fly">Перелёт к цели</string>
+    <string name="overlay_bookmark_action_reshare">Отправить в «Рейд»</string>
+    <string name="overlay_bookmark_action_delete">Удалить из закладок</string>
     <string name="overlay_game_event_pick_hint">Выберите событие</string>
     <string name="game_event_section_hq">[ШТАБ]</string>
     <string name="game_event_section_pve">[PvE]</string>

@@ -319,29 +319,11 @@ class OverlayRaidSharePanel(
             append("X:").append(t.x).append(" Y:").append(t.y)
             append("]")
         }
-        val stats = buildStatsText(t)
+        // Мощь/поверженные теперь встроены в строку с ником (buildInfoText) — отдельная строка не нужна.
         statsView?.apply {
-            if (stats.isNullOrEmpty()) {
-                text = ""
-                visibility = View.GONE
-            } else {
-                text = stats
-                visibility = View.VISIBLE
-            }
+            text = ""
+            visibility = View.GONE
         }
-    }
-
-    /** Третья строка карточки: Мощь/Поверженные с игровыми иконками, либо null если данных нет. */
-    private fun buildStatsText(t: RaidShareTarget): CharSequence? {
-        val builder = SpannableStringBuilder()
-        t.powerLabel()?.let { label ->
-            appendStatWithIcon(builder, label, t.powerIcon, R.drawable.ic_overlay_game_power)
-        }
-        t.killsLabel()?.let { label ->
-            if (builder.isNotEmpty()) builder.append("  ")
-            appendStatWithIcon(builder, label, t.killsIcon, R.drawable.ic_overlay_game_kills)
-        }
-        return builder.takeIf { it.isNotEmpty() }
     }
 
     private fun buildInfoText(t: RaidShareTarget): CharSequence {
@@ -370,6 +352,16 @@ class OverlayRaidSharePanel(
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                 )
             }
+        }
+        // Мощь/поверженные — на этой же строке сразу после ника. Перед иконкой добавляем
+        // реальный пробел: одиночный пробел под иконкой «съедается» ImageSpan.
+        t.powerLabel()?.let { label ->
+            if (builder.isNotEmpty()) builder.append(' ')
+            appendStatWithIcon(builder, label, t.powerIcon, R.drawable.ic_overlay_game_power)
+        }
+        t.killsLabel()?.let { label ->
+            if (builder.isNotEmpty()) builder.append(' ')
+            appendStatWithIcon(builder, label, t.killsIcon, R.drawable.ic_overlay_game_kills)
         }
         return builder
     }

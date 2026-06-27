@@ -322,7 +322,11 @@ fun TeamForumNavHost(
                 val app = AppContainer.from(context.applicationContext)
                 scope.launch(Dispatchers.IO) {
                     ForumOutboxResumeScheduler.schedule(context, uid)
-                    app.forumRepository.syncTopics(uid, teamId, bypassCache = true)
+                    // Троттлим reconnect-перезапрос тем (см. ForumReconnectResyncGate),
+                    // чтобы дёрганый форум-сокет не вызывал шторм GET /forum/topics.
+                    if (com.lastasylum.alliance.data.teams.forum.ForumReconnectResyncGate.shouldResync(teamId)) {
+                        app.forumRepository.syncTopics(uid, teamId, bypassCache = true)
+                    }
                     ForumMessageStash.drainAllForTeam(teamId).forEach { (topicId, messages) ->
                         messages.forEach { message ->
                             runCatching {

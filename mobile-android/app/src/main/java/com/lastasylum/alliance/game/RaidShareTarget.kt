@@ -147,6 +147,32 @@ data class RaidShareTarget(
         return out.takeIf { it.isNotBlank() }
     }
 
+    /** Сериализация для локального хранилища закладок (та же форма, что парсит [fromJson]). */
+    fun toJson(): String = JSONObject().apply {
+        put("seq", seq)
+        put("open", open)
+        put("x", x)
+        put("y", y)
+        serverNumber?.let { put("sid", it) }
+        put("shareType", shareType)
+        name?.let { put("name", it) }
+        playerName?.let { put("playerName", it) }
+        union?.let { put("union", it) }
+        cat?.let { put("cat", it) }
+        lv?.let { put("lv", it) }
+        power?.let { put("power", it) }
+        kills?.let { put("kills", it) }
+        powerIcon?.let { put("powerIcon", it) }
+        killsIcon?.let { put("killsIcon", it) }
+        secretTaskId?.let { put("secretTaskId", it) }
+        grade?.let { put("grade", it) }
+        stars?.let { put("stars", it) }
+        qualityType?.let { put("qualityType", it) }
+    }.toString()
+
+    /** Стабильный ключ цели для дедупликации в закладках: сервер + координаты. */
+    fun bookmarkKey(): String = "${serverNumber ?: 0}:$x:$y"
+
     companion object {
         /** Компактная запись больших чисел: 54901923 → «54.9M», 63068 → «63.1K». */
         private fun compact(n: Long): String = when {

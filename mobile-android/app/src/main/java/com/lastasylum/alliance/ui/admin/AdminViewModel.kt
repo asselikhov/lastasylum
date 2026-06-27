@@ -59,7 +59,6 @@ sealed interface AdminRoute {
         val topicId: String,
         val topicTitle: String,
     ) : AdminRoute
-    data object LatencyDebug : AdminRoute
 }
 
 data class AdminUiState(
@@ -142,7 +141,6 @@ fun AdminUiState.routeRefreshing(): Boolean = when (route) {
     }
     is AdminRoute.ChatRoomViewer -> chatRoomMessagesLoading
     is AdminRoute.ForumTopicViewer -> forumTopicMessagesLoading
-    AdminRoute.LatencyDebug -> false
 }
 
 /** Unified player row for admin lists and edit sheet. */
@@ -575,7 +573,15 @@ class AdminViewModel(
             )
             adminRepository.clearAllChatMessages()
                 .onSuccess { result ->
-                    CombatOverlayService.resolveChatViewModel()?.applyChatHistoryClearedFromServer()
+                    val chatVm = CombatOverlayService.resolveChatViewModel()
+                    if (chatVm != null) {
+                        chatVm.applyChatHistoryClearedFromServer()
+                    } else {
+                        // Живого ChatViewModel нет (админ не открывал чат в этой сессии) —
+                        // чистим локальный кэш чата напрямую, чтобы сообщения исчезли сразу,
+                        // не дожидаясь переоткрытия вкладки «Чат».
+                        wipeLocalChatHistoryStandalone()
+                    }
                     _state.value = _state.value.copy(
                         clearAllChatHistoryLoading = false,
                         chatRoomMessages = emptyList(),
@@ -593,6 +599,33 @@ class AdminViewModel(
                         actionError = e.toUserMessageRu(res),
                     )
                 }
+        }
+    }
+
+    /**
+     * Прямая очистка локального кэша чата на устройстве админа без участия ChatViewModel.
+     * Использует те же зависимости из [AppContainer], что и обычная сверка после
+     * серверного [chat:history:cleared], плюс фиксирует ack-вотермарк, чтобы при
+     * следующем открытии чата сверка не сработала повторно.
+     */
+    private suspend fun wipeLocalChatHistoryStandalone() {
+        val container = com.lastasylum.alliance.di.AppContainer.from(getApplication())
+        val uid = com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
+            .sub(container.tokenStore.getAccessToken())?.trim().orEmpty()
+        if (uid.isEmpty()) return
+        runCatching {
+            com.lastasylum.alliance.data.chat.ChatHistoryWipe.wipeAllLocalChatData(
+                userId = uid,
+                messageStore = container.messageStore,
+                chatOutbox = container.chatOutbox,
+                launchDiskCache = container.launchDiskCache,
+                chatRoomPreferences = container.chatRoomPreferences,
+            )
+        }
+        runCatching {
+            container.chatRepository.getChatSyncState().getOrNull()
+                ?.historyClearedAt?.trim()?.takeIf { it.isNotEmpty() }
+                ?.let { container.chatRoomPreferences.setAcknowledgedHistoryClearedAt(it) }
         }
     }
 

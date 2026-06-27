@@ -87,6 +87,13 @@ class TeamForumSocketManager {
         openSocket(base, token, tid, subscribedTopicId)
     }
 
+    /**
+     * Сбрасываем backoff только когда соединение продержалось стабильно [STABLE_RESET_MS].
+     * Иначе сервер, закрывающий сокет сразу после connect, держит петлю переподключений на
+     * минимальной задержке (~1с) — это и есть источник «шторма» перезапросов тем форума.
+     */
+    private val markConnectionStableRunnable = Runnable { reconnectAttempt = 0 }
+
     private val _connectionState = MutableStateFlow(TeamForumSocketState.Disconnected)
     val connectionState: StateFlow<TeamForumSocketState> = _connectionState.asStateFlow()
 
@@ -359,12 +366,17 @@ class TeamForumSocketManager {
     fun disconnect() {
         intentionalDisconnect = true
         cancelReconnect()
+        cancelStabilityTimer()
         disconnectSocket()
     }
 
     private fun cancelReconnect() {
         mainHandler.removeCallbacks(reconnectRunnable)
         reconnectScheduled = false
+    }
+
+    private fun cancelStabilityTimer() {
+        mainHandler.removeCallbacks(markConnectionStableRunnable)
     }
 
     private fun dispatchMain(block: () -> Unit) {
@@ -423,11 +435,15 @@ class TeamForumSocketManager {
                 .build()
             socket = IO.socket("$baseUrl/team-forum", options).apply {
                 on(Socket.EVENT_CONNECT) {
-                    reconnectAttempt = 0
                     emitState(TeamForumSocketState.Connected)
                     emitTeamAndTopicJoin(teamId, this@TeamForumSocketManager.subscribedTopicId)
+                    // Сбрасываем backoff только после периода стабильности, чтобы
+                    // connect→немедленный disconnect не удерживал петлю на минимальной задержке.
+                    mainHandler.removeCallbacks(markConnectionStableRunnable)
+                    mainHandler.postDelayed(markConnectionStableRunnable, STABLE_RESET_MS)
                 }
                 on(Socket.EVENT_DISCONNECT) {
+                    mainHandler.removeCallbacks(markConnectionStableRunnable)
                     if (!intentionalDisconnect) {
                         scheduleReconnect()
                     } else {
@@ -435,6 +451,7 @@ class TeamForumSocketManager {
                     }
                 }
                 on(Socket.EVENT_CONNECT_ERROR) {
+                    mainHandler.removeCallbacks(markConnectionStableRunnable)
                     if (!intentionalDisconnect) {
                         scheduleReconnect()
                     }
@@ -616,6 +633,7 @@ class TeamForumSocketManager {
 
     private companion object {
         private const val TAG = "TeamForumSocket"
+        private const val STABLE_RESET_MS = 8_000L
     }
 }
 
