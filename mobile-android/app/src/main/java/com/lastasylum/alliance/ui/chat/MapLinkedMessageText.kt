@@ -136,7 +136,18 @@ fun MapLinkedMessageText(
             }
             val after = coordRange.last + 1
             if (after < text.length) {
-                appendRich(text.substring(after))
+                val afterText = text.substring(after)
+                val nl = afterText.indexOf('\n')
+                if (nl >= 0) {
+                    // Остаток строки 1 + перевод строки — обычным размером.
+                    appendRich(afterText.substring(0, nl + 1))
+                    // Строка 2 (описание цели) — мельче первой строки.
+                    withStyle(SpanStyle(fontSize = SECOND_LINE_FONT_SCALE)) {
+                        appendRich(afterText.substring(nl + 1))
+                    }
+                } else {
+                    appendRich(afterText)
+                }
             }
         }
     }
@@ -188,6 +199,9 @@ fun MapLinkedMessageText(
 private const val MAP_COORD_LINK_TAG = "map_coord"
 private const val INLINE_POWER = "raid_icon_power"
 private const val INLINE_KILLS = "raid_icon_kills"
+
+/** Вторая строка рейд-сообщения (описание цели) — мельче первой (em — относительно строки 1). */
+private val SECOND_LINE_FONT_SCALE = 0.85.em
 
 /** Инлайновая иконка статистики рейда (Мощь/Поверженные) размером со строку текста. */
 private fun raidStatInlineIcon(drawableRes: Int): InlineTextContent =

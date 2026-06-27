@@ -228,7 +228,8 @@ class OverlayRaidSharePanel(
         }
         infoView = TextView(context).apply {
             setTextColor(infoColor)
-            textSize = 13f
+            // Вторая строка (описание цели) — мельче первой строки с координатами.
+            textSize = 11f
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(2), 0, 0)
         }
