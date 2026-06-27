@@ -37,6 +37,13 @@ JWT_REFRESH_EXPIRES_IN=30d
 # Sideloaded APK (optional): app calls GET /mobile/android-update. If ANDROID_APK_VERSION_CODE is greater than the installed app’s versionCode and ANDROID_APK_DOWNLOAD_URL is set, the client shows an update prompt and opens the URL in the browser.
 ANDROID_APK_VERSION_CODE=2
 ANDROID_APK_DOWNLOAD_URL=
+
+# Game patch (optional): app calls GET /mobile/game-patch (JWT). Backend reads the latest release of the
+# private repo GITHUB_PATCH_REPO ("owner/repo") — its patches.json index + patched APK asset — using
+# GITHUB_TOKEN (fine-grained PAT, that repo only, Contents: read) and returns a short-lived signed
+# download URL. The token never reaches the client.
+GITHUB_PATCH_REPO=
+GITHUB_TOKEN=
 ```
 
 ### Chat image uploads (Cloudflare R2)
@@ -77,6 +84,7 @@ npm run start:dev
 - `POST /users/me/push-token` - register FCM device token (JWT)
 - `DELETE /users/me/push-tokens` - clear all FCM tokens for the user (JWT)
 - `POST /users/me/presence` - update presence heartbeat (`status` string, JWT)
+- `GET /mobile/game-patch` - latest patched game APK info: signed download URL + sha256 (JWT)
 
 ## Chat rooms (per player team)
 

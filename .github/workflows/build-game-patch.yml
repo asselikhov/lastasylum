@@ -1,0 +1,102 @@
+name: Build game patch
+
+# Manually-triggered build of the patched game APK (single universal APK) published to the
+# private patch repo's release. The operator first uploads the stock split set (base.apk +
+# split_*.apk pulled from a device) as assets of a release tagged "stock-<gameVersion>" in the
+# patch repo; this workflow merges, patches, signs, and publishes "game-<gameVersion>".
+on:
+  workflow_dispatch:
+    inputs:
+      game_version:
+        description: "Installed game versionName, e.g. 1.2.3"
+        required: true
+      package:
+        description: "Game package name"
+        required: false
+        default: "com.phs.global"
+      bridge_version:
+        description: "Map bridge version (bump when the bridge changes)"
+        required: false
+        default: "1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Private repo (owner/repo) that stores stock-* and game-* releases.
+      PATCH_REPO: ${{ secrets.GAME_PATCH_REPO }}
+      # PAT with read (stock assets) + write (releases) on PATCH_REPO.
+      GH_TOKEN: ${{ secrets.GAME_PATCH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: .tmp-tools/package-lock.json
+
+      - name: Install frida-compile toolchain
+        working-directory: .tmp-tools
+        run: npm ci
+
+      - name: Download stock split set
+        run: |
+          mkdir -p stock
+          gh release download "stock-${{ github.event.inputs.game_version }}" \
+            --repo "$PATCH_REPO" --dir stock --pattern '*.apk'
+          ls -la stock
+
+      - name: Decode signing keystore
+        run: |
+          echo "${{ secrets.PATCH_SIGNING_KEYSTORE_BASE64 }}" | base64 -d > patch.keystore
+          test -s patch.keystore
+
+      - name: Build patched universal APK
+        id: build
+        shell: pwsh
+        run: |
+          ./.tmp-tools/ci-build-game-patch.ps1 `
+            -Package "${{ github.event.inputs.package }}" `
+            -GameVersion "${{ github.event.inputs.game_version }}" `
+            -InputDir "stock" `
+            -OutApk "out/phs-global-${{ github.event.inputs.game_version }}-patched.apk" `
+            -Keystore "patch.keystore" `
+            -KsAlias "${{ secrets.PATCH_KEY_ALIAS }}" `
+            -KsPass "${{ secrets.PATCH_KEYSTORE_PASSWORD }}" `
+            -KsKeyPass "${{ secrets.PATCH_KEY_PASSWORD }}" `
+            -BridgeVersion "${{ github.event.inputs.bridge_version }}"
+
+      - name: Write patches.json index
+        run: |
+          VER="${{ github.event.inputs.game_version }}"
+          ASSET="phs-global-${VER}-patched.apk"
+          cat > out/patches.json <<EOF
+          {
+            "supported": {
+              "gameVersion": "${VER}",
+              "tag": "game-${VER}",
+              "asset": "${ASSET}",
+              "sha256": "${{ steps.build.outputs.sha256 }}",
+              "sizeBytes": ${{ steps.build.outputs.size }},
+              "bridgeVersion": "${{ github.event.inputs.bridge_version }}"
+            }
+          }
+          EOF
+          cat out/patches.json
+
+      - name: Publish release
+        run: |
+          VER="${{ github.event.inputs.game_version }}"
+          TAG="game-${VER}"
+          gh release view "$TAG" --repo "$PATCH_REPO" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$PATCH_REPO" \
+                 --title "Game patch $VER" \
+                 --notes "Patched universal APK for game $VER (sha256 ${{ steps.build.outputs.sha256 }})"
+          gh release upload "$TAG" --repo "$PATCH_REPO" \
+            "out/phs-global-${VER}-patched.apk" out/patches.json --clobber

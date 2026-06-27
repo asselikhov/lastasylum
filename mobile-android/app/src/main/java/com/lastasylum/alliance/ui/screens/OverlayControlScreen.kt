@@ -15,9 +15,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -34,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +54,7 @@ import com.lastasylum.alliance.game.GameAutoHelpBridge
 import com.lastasylum.alliance.game.GameDeepLinkNavigator
 import com.lastasylum.alliance.game.GameMapNavigator
 import com.lastasylum.alliance.game.GameMapPatchStatus
+import com.lastasylum.alliance.game.GamePatchInstaller
 import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.GameForegroundGate
@@ -61,6 +66,8 @@ import com.lastasylum.alliance.ui.util.AppBuildInfo
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.io.File
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -90,6 +97,10 @@ fun OverlayControlScreen() {
             ),
         )
     }
+    val scope = rememberCoroutineScope()
+    var patchInProgress by remember { mutableStateOf(false) }
+    var preparedPatchApk by remember { mutableStateOf<File?>(null) }
+    var awaitingGameUninstall by remember { mutableStateOf(false) }
     val undetectedGamePackages = remember(detectedGamePackages) {
         detectedGamePackages.filter { !it.alreadyInFilter }
     }
@@ -157,6 +168,19 @@ fun OverlayControlScreen() {
                 refreshOverlayRuntime()
                 refreshGameEventsSummary()
                 refreshMapPatchStatus()
+                val pendingApk = preparedPatchApk
+                if (awaitingGameUninstall && pendingApk != null &&
+                    !GamePatchInstaller.isStockGameInstalled(appContext)
+                ) {
+                    awaitingGameUninstall = false
+                    preparedPatchApk = null
+                    Toast.makeText(
+                        context,
+                        R.string.game_patch_install_starting,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    GamePatchInstaller.installPrepared(context, pendingApk)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -396,6 +420,79 @@ fun OverlayControlScreen() {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                     )
+                    val patchActionable = mapPatchStatus.state ==
+                        GameMapPatchStatus.State.PATCH_NOT_INSTALLED ||
+                        mapPatchStatus.state == GameMapPatchStatus.State.PATCH_OUTDATED
+                    val patchButtonLabel = when (mapPatchStatus.state) {
+                        GameMapPatchStatus.State.PATCH_OUTDATED ->
+                            stringResource(R.string.game_patch_button_update)
+                        GameMapPatchStatus.State.PATCH_READY ->
+                            stringResource(R.string.game_patch_button_ready)
+                        else -> stringResource(R.string.game_patch_button)
+                    }
+                    if (awaitingGameUninstall) {
+                        Text(
+                            text = stringResource(R.string.game_patch_uninstall_prompt),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            if (patchInProgress) return@Button
+                            scope.launch {
+                                patchInProgress = true
+                                when (val result =
+                                    GamePatchInstaller.prepareLatestPatch(context)) {
+                                    is GamePatchInstaller.Prepare.Ready -> {
+                                        if (GamePatchInstaller.isStockGameInstalled(appContext)) {
+                                            preparedPatchApk = result.apk
+                                            awaitingGameUninstall = true
+                                            Toast.makeText(
+                                                context,
+                                                R.string.game_patch_uninstall_prompt,
+                                                Toast.LENGTH_LONG,
+                                            ).show()
+                                            GamePatchInstaller.requestUninstallStockGame(context)
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                R.string.game_patch_install_starting,
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                            GamePatchInstaller.installPrepared(context, result.apk)
+                                        }
+                                    }
+                                    GamePatchInstaller.Prepare.Unavailable ->
+                                        Toast.makeText(
+                                            context,
+                                            R.string.game_patch_unavailable,
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    is GamePatchInstaller.Prepare.Failed ->
+                                        Toast.makeText(
+                                            context,
+                                            result.messageRes,
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                }
+                                patchInProgress = false
+                            }
+                        },
+                        enabled = patchActionable && !patchInProgress,
+                    ) {
+                        if (patchInProgress) {
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(end = 4.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Text(stringResource(R.string.game_patch_preparing))
+                        } else {
+                            Text(patchButtonLabel)
+                        }
+                    }
                     TextButton(
                         onClick = {
                             if (!mapPatchStatus.isAutoFlyAvailable) {
