@@ -15,7 +15,7 @@ param(
     [Parameter(Mandatory = $true)][string]$KsPass,
     [Parameter(Mandatory = $true)][string]$KsKeyPass,
     [string]$FridaVersion = '17.15.1',
-    [string]$BridgeVersion = '8',
+    [string]$BridgeVersion = '9',
     [string]$ApktoolVersion = '2.11.1',
     [string]$UberSignerVersion = '1.3.0',
     [string]$ApkEditorVersion = '1.4.3'

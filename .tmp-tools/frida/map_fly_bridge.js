@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '8';
+const BRIDGE_VERSION = '9';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -130,37 +130,76 @@ const BOOKMARK_HOOK_LUA = [
   'end)',
 ].join(' ');
 
-// Auto-help: SquadRelay writes a persistent config file; this script periodically
-// calls the alliance "help all" network action (same as tapping the in-game Help
-// button) while there is something to help with.
+// Auto-help: SquadRelay writes a persistent config file; this script installs an EVENT-DRIVEN
+// hook in the game so "help all" is sent the instant an alliance help request appears (same as
+// tapping the in-game "Помощь" button right when it pops up), not on a fixed poll.
 const AUTOHELP_FILE = '/data/data/com.phs.global/files/squadrelay_autohelp.json';
 const AUTOHELP_SDCARD = '/sdcard/Download/squadrelay_autohelp.json';
 const AUTOHELP_MIN_INTERVAL_MS = 5000;
 const AUTOHELP_MAX_INTERVAL_MS = 600000;
 // Startup delay (ms) measured from when the game's Lua VM is first captured. We run NO auto-help
-// Lua at all until this elapses. Running an auto-help runLua (DoString on the Unity main thread)
-// during the login / post-login alliance-sync window can corrupt the game's union message handling
+// Lua at all until this elapses. Running a runLua (DoString on the Unity main thread) during the
+// login / post-login alliance-sync window can corrupt the game's union message handling
 // (union.lua funcReceive throws → "Socket连接断开" → connection drops, stuck on loading). So we skip
-// the fragile login window. The send itself is now a single lightweight network call (no heavy Lua
-// iteration), so a short delay is enough; alliance help requests fill up within ~1 min, so 3 min
-// (the old value) meant auto-help always arrived after every request was already maxed. For a
-// mid-session toggle the VM was captured long ago, so auto-help starts almost immediately.
+// the fragile login window, then install the event hook once. For a mid-session toggle the VM was
+// captured long ago, so auto-help starts almost immediately.
 const AUTOHELP_STARTUP_DELAY_MS = 30000;
 
-// Auto-help = exactly what tapping the in-game "Помощь" (help all) button does. Captured live: the
-// real button sends `UnionHelpAllC2S` (plus `GetUnionHelpListC2S` to refresh the panel list). We
-// just resend `UnionHelpAllC2S` every configured interval (see tickAutoHelp), like a player tapping
-// the button. We intentionally do NOT gate on the help object's IsHaveCanHelpData(): that local
-// flag is unreliable / stale (it reflected the player's OWN already-maxed requests, not the pending
-// help from alliance mates that the button actually acts on). The server is the source of truth and
-// a "help all" with nothing to help is a harmless no-op (verified).
-const AUTOHELP_LUA = [
+// Event-driven auto-help. Captured live: tapping the real "Помощь" button sends `UnionHelpAllC2S`
+// (plus `GetUnionHelpListC2S` to refresh the list). Instead of polling, we wrap the alliance help
+// data-update methods (AddDataOne / Refresh*) on the help object's class metatable. The game calls
+// these whenever the server pushes a help update (i.e. exactly when the in-game help button would
+// appear / change), so our wrapper fires `UnionHelpAllC2S` in the same instant — verified live:
+// after GetUnionHelpListC2S the wrapper emitted UnionHelpAllC2S we never called directly.
+// Safeguards:
+//  - os.time() debounce (3s) prevents a tight loop (our send → server refresh → wrapper → send).
+//  - _G.__sr_help_enabled gates sending so the in-app toggle can disable it without re-patching.
+//  - on first wrap we send GetUnionHelpListC2S once to catch requests already pending at login.
+// We intentionally do NOT gate on the help object's IsHaveCanHelpData(): that local flag reflected
+// the player's OWN already-maxed requests and was false even when help was actually available.
+// A "help all" with nothing to help is a harmless server-side no-op (verified).
+const AUTOHELP_INSTALL_LUA = [
   'pcall(function()',
+  '  _G.__sr_help_enabled = true',
+  "  local D = rawget(_G, 'Data')",
+  '  local ad = D and D.AllianceData',
+  '  local h = ad and ad.help',
+  '  if not h then return end',
+  '  local mt = getmetatable(h)',
+  '  local idx = mt and mt.__index',
+  "  if type(idx) ~= 'table' then return end",
   "  local sm = package.loaded['Logic.Proto.Send.union_help']",
   '  if not sm or not sm.UnionHelpAllC2S then return end',
-  '  sm.UnionHelpAllC2S()',
+  "  if rawget(_G, '__sr_send_help') == nil then",
+  '    _G.__sr_help_last = 0',
+  '    _G.__sr_send_help = function()',
+  '      if not _G.__sr_help_enabled then return end',
+  '      local now = os.time()',
+  '      if now - (_G.__sr_help_last or 0) < 3 then return end',
+  '      _G.__sr_help_last = now',
+  '      pcall(function() sm.UnionHelpAllC2S() end)',
+  '    end',
+  '  end',
+  "  local names = {'AddDataOne', 'RefreshDataMore', 'RefreshAllData', 'RefreshDataOne'}",
+  '  local newly = false',
+  '  for i = 1, #names do',
+  '    local n = names[i]',
+  "    if type(idx[n]) == 'function' and not rawget(idx, '__sr_w_' .. n) then",
+  '      local orig = idx[n]',
+  "      rawset(idx, '__sr_w_' .. n, true)",
+  '      idx[n] = function(...)',
+  '        local function after(...) pcall(_G.__sr_send_help) return ... end',
+  '        return after(orig(...))',
+  '      end',
+  '      newly = true',
+  '    end',
+  '  end',
+  '  if newly and sm.GetUnionHelpListC2S then pcall(function() sm.GetUnionHelpListC2S() end) end',
   'end)',
 ].join('\n');
+
+// Toggle off: stop the wrappers from sending (they stay installed but become no-ops).
+const AUTOHELP_DISABLE_LUA = 'pcall(function() _G.__sr_help_enabled = false end)';
 
 const RVA = {
   LuaManager_FormatKXY: 0x2518350,
@@ -196,6 +235,7 @@ let autoHelpEnabled = false;
 let autoHelpIntervalMs = 30000;
 let autoHelpLastRun = 0;
 let lastAutoHelpCfg = '';
+let autoHelpAppliedEnabled = null;
 
 function readFileUtf8(path, maxLen) {
   const limit = maxLen || 4096;
@@ -1613,7 +1653,6 @@ function pollAutoHelpConfig() {
 }
 
 function tickAutoHelp() {
-  if (!autoHelpEnabled) return;
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
   // HARD startup gate: do not run ANY auto-help Lua until the session is fully loaded and the
@@ -1623,13 +1662,27 @@ function tickAutoHelp() {
   // screen), so this skips the whole fragile login window. Mid-session toggles pass instantly
   // because the VM was captured long ago.
   if (liveLuaEnvCapturedMs === 0 || now - liveLuaEnvCapturedMs < AUTOHELP_STARTUP_DELAY_MS) return;
-  // Resend "help all" every configured interval, like a player periodically tapping the button.
-  if (now - autoHelpLastRun < autoHelpIntervalMs) return;
-  autoHelpLastRun = now;
-  try {
-    runLua(AUTOHELP_LUA);
-  } catch (e) {
-    log('autohelp tick error: ' + e);
+  if (autoHelpEnabled) {
+    // (Re)install/maintain the event hook every interval. After the first successful wrap this is a
+    // near no-op (the real work is event-driven inside the game, not here). Re-running also
+    // re-wraps if the help class metatable was ever reloaded.
+    if (now - autoHelpLastRun < autoHelpIntervalMs) return;
+    autoHelpLastRun = now;
+    autoHelpAppliedEnabled = true;
+    try {
+      runLua(AUTOHELP_INSTALL_LUA);
+    } catch (e) {
+      log('autohelp install error: ' + e);
+    }
+  } else {
+    // Disabled: tell the already-installed wrappers to stop sending (run once per off-transition).
+    if (autoHelpAppliedEnabled === false) return;
+    autoHelpAppliedEnabled = false;
+    try {
+      runLua(AUTOHELP_DISABLE_LUA);
+    } catch (e) {
+      log('autohelp disable error: ' + e);
+    }
   }
 }
 
