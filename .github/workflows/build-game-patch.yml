@@ -93,10 +93,29 @@ jobs:
       - name: Publish release
         run: |
           VER="${{ github.event.inputs.game_version }}"
+          BRIDGE="${{ github.event.inputs.bridge_version }}"
+          SHA="${{ steps.build.outputs.sha256 }}"
+          SIZE="${{ steps.build.outputs.size }}"
           TAG="game-${VER}"
-          gh release view "$TAG" --repo "$PATCH_REPO" >/dev/null 2>&1 \
-            || gh release create "$TAG" --repo "$PATCH_REPO" \
-                 --title "Game patch $VER" \
-                 --notes "Patched universal APK for game $VER (sha256 ${{ steps.build.outputs.sha256 }})"
+          TITLE="Game patch ${VER} · bridge v${BRIDGE}"
+          BUILT="$(date -u '+%Y-%m-%d %H:%M UTC')"
+          NOTES=$(cat <<EOF
+          Patched universal APK for game **${VER}**.
+
+          - Bridge (patch) version: **v${BRIDGE}**
+          - Game version: ${VER}
+          - SHA256: \`${SHA}\`
+          - Size: ${SIZE} bytes
+          - Built: ${BUILT}
+          EOF
+          )
+          # Создаём релиз, если его ещё нет; иначе — обновляем заголовок/заметки.
+          # --clobber у upload перезаписывает только ассеты, поэтому заголовок и текст
+          # обновляем явно через edit, иначе версия моста на странице релиза «застревает».
+          if gh release view "$TAG" --repo "$PATCH_REPO" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$PATCH_REPO" --title "$TITLE" --notes "$NOTES"
+          else
+            gh release create "$TAG" --repo "$PATCH_REPO" --title "$TITLE" --notes "$NOTES"
+          fi
           gh release upload "$TAG" --repo "$PATCH_REPO" \
             "out/phs-global-${VER}-patched.apk" out/patches.json --clobber
