@@ -1,7 +1,8 @@
 # CI build of the patched game APK as a single universal APK (no device / no adb).
-# Merges the provided split set with APKEditor, injects the Frida gadget + map bridge
-# (same logic as patch-frida-gadget.ps1), signs with a fixed keystore, and prints sha256.
-# Designed to run under PowerShell Core (pwsh) on a Linux GitHub Actions runner.
+# Patches only base.apk (proven path from patch-frida-gadget.ps1), then merges the patched
+# base with the stock splits into one universal APK via APKEditor and signs it with a fixed
+# keystore. Avoids decoding the multi-hundred-MB asset split. Runs under PowerShell Core (pwsh)
+# on a Linux GitHub Actions runner.
 [CmdletBinding()]
 param(
     [string]$Package = 'com.phs.global',
@@ -21,11 +22,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$Root = Split-Path $PSScriptRoot -Parent
 $TmpTools = $PSScriptRoot
 $ToolsDir = Join-Path $TmpTools 'ci-tools'
 $WorkRoot = Join-Path $TmpTools 'ci-work'
-$WorkDir = Join-Path $WorkRoot 'decoded'
+$BaseWork = Join-Path $WorkRoot 'base-decoded'
 $HookScript = Join-Path $TmpTools 'frida/map_fly_bridge.js'
 $MapBridgeSmaliRoot = Join-Path $TmpTools 'frida-patch/map-bridge-smali'
 
@@ -161,24 +161,14 @@ if (-not (Test-Path $GadgetSo)) {
 }
 if (-not (Test-Path $GadgetSo)) { throw 'frida-gadget.so missing' }
 
-# --- Merge split set into a single universal APK ---
-$splitApks = @(Get-ChildItem $InputDir -Filter '*.apk' -ErrorAction SilentlyContinue)
-if ($splitApks.Count -eq 0) { throw "No .apk files in $InputDir" }
-$mergedApk = Join-Path $WorkRoot 'merged.apk'
-if ($splitApks.Count -eq 1) {
-    Write-Host 'Single APK provided - using as-is (no merge).'
-    Copy-Item $splitApks[0].FullName $mergedApk -Force
-} else {
-    Write-Host "Merging $($splitApks.Count) splits into universal APK via APKEditor"
-    & java -jar $ApkEditorJar m -i $InputDir -o $mergedApk -f
-    if (-not (Test-Path $mergedApk)) { throw 'APKEditor merge failed' }
-}
+$baseApk = Join-Path $InputDir 'base.apk'
+if (-not (Test-Path $baseApk)) { throw "base.apk not found in $InputDir" }
 
-# --- Decode, inject gadget + bridge ---
-Write-Host 'Decoding merged APK'
-& java -jar $ApktoolJar d $mergedApk -o $WorkDir -f | Out-Null
+# --- Decode + patch base.apk only (small; asset splits are left untouched) ---
+Write-Host 'Decoding base.apk'
+& java -jar $ApktoolJar d $baseApk -o $BaseWork -f | Out-Null
 
-$libDir = Join-Path $WorkDir 'lib/arm64-v8a'
+$libDir = Join-Path $BaseWork 'lib/arm64-v8a'
 Ensure-Dir $libDir
 Copy-Item $GadgetSo (Join-Path $libDir 'libfrida-gadget.so') -Force
 
@@ -200,36 +190,49 @@ $gadgetConfig = @'
 '@
 Write-Utf8NoBom (Join-Path $libDir 'libfrida-gadget.config.so') $gadgetConfig.TrimEnd()
 
-# --- Patch the Application smali and add bridge classes ---
-$smali = Get-ChildItem $WorkDir -Recurse -Filter 'SdkMultiDexApplication.smali' | Select-Object -First 1 -ExpandProperty FullName
-if (-not $smali) { throw 'SdkMultiDexApplication.smali not found in decoded APK' }
+$smali = Get-ChildItem $BaseWork -Recurse -Filter 'SdkMultiDexApplication.smali' | Select-Object -First 1 -ExpandProperty FullName
+if (-not $smali) { throw 'SdkMultiDexApplication.smali not found in base.apk' }
 Inject-GadgetSmali $smali
 
-$bridgeDst = Join-Path $WorkDir 'smali/com/lastasylum/alliance/game'
+$bridgeDst = Join-Path $BaseWork 'smali/com/lastasylum/alliance/game'
 Ensure-Dir $bridgeDst
 Get-ChildItem $MapBridgeSmaliRoot -Recurse -Filter '*.smali' | ForEach-Object {
     Copy-Item $_.FullName (Join-Path $bridgeDst $_.Name) -Force
 }
 Write-Host 'Copied map bridge smali classes'
 
-Inject-MapBridgeMeta (Join-Path $WorkDir 'AndroidManifest.xml') $GameVersion $BridgeVersion
+Inject-MapBridgeMeta (Join-Path $BaseWork 'AndroidManifest.xml') $GameVersion $BridgeVersion
 
-# --- Build + sign ---
+$patchedBase = Join-Path $WorkRoot 'base-patched.apk'
+Write-Host 'Building patched base.apk'
+& java -jar $ApktoolJar b $BaseWork -o $patchedBase | Out-Null
+if (-not (Test-Path $patchedBase)) { throw 'apktool build of base failed' }
+
+# --- Merge patched base with stock splits into a universal APK ---
+$splits = @(Get-ChildItem $InputDir -Filter '*.apk' | Where-Object { $_.Name -ne 'base.apk' })
 $unsigned = Join-Path $WorkRoot 'universal-unsigned.apk'
-if (Test-Path $unsigned) { Remove-Item $unsigned -Force }
-Write-Host 'Building patched universal APK'
-& java -jar $ApktoolJar b $WorkDir -o $unsigned | Out-Null
-if (-not (Test-Path $unsigned)) { throw 'apktool build failed' }
+if ($splits.Count -eq 0) {
+    Write-Host 'No extra splits - patched base is already universal.'
+    Copy-Item $patchedBase $unsigned -Force
+} else {
+    Write-Host "Merging patched base + $($splits.Count) stock split(s) via APKEditor"
+    $mergeIn = Join-Path $WorkRoot 'merge-in'
+    Ensure-Dir $mergeIn
+    Copy-Item $patchedBase (Join-Path $mergeIn 'base.apk') -Force
+    foreach ($s in $splits) { Copy-Item $s.FullName (Join-Path $mergeIn $s.Name) -Force }
+    & java -Xmx4g -jar $ApkEditorJar m -i $mergeIn -o $unsigned -f
+    if (-not (Test-Path $unsigned)) { throw 'APKEditor merge failed' }
+}
 
+# --- Sign ---
 Write-Host 'Signing universal APK'
 $signDir = Join-Path $WorkRoot 'signed'
-if (Test-Path $signDir) { Remove-Item $signDir -Recurse -Force }
 Ensure-Dir $signDir
 Copy-Item $unsigned $signDir -Force
 & java -jar $UberSignerJar -a $signDir --allowResign --overwrite --ks $Keystore --ksAlias $KsAlias --ksPass $KsPass --ksKeyPass $KsKeyPass | Out-Host
 
 $signed = Get-ChildItem $signDir -Filter '*-aligned-debugSigned.apk' -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $signed) { $signed = Get-ChildItem $signDir -Filter '*.apk' | Select-Object -First 1 }
+if (-not $signed) { $signed = Get-ChildItem $signDir -Filter '*.apk' | Where-Object { $_.Name -ne 'universal-unsigned.apk' } | Select-Object -First 1 }
 if (-not $signed) { throw 'Signing produced no APK' }
 
 Ensure-Dir (Split-Path $OutApk -Parent)
@@ -241,7 +244,6 @@ Write-Host "PATCH_OUT=$OutApk"
 Write-Host "PATCH_SHA256=$sha"
 Write-Host "PATCH_SIZE=$size"
 
-# Emit machine-readable outputs for the workflow (GITHUB_OUTPUT).
 if ($env:GITHUB_OUTPUT) {
     Add-Content -Path $env:GITHUB_OUTPUT -Value "sha256=$sha"
     Add-Content -Path $env:GITHUB_OUTPUT -Value "size=$size"
