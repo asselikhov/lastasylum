@@ -8,6 +8,8 @@
 // This file is bundled with frida-compile before being embedded in the APK.
 import Java from 'frida-java-bridge';
 
+// Bump on bridge logic changes; logged at startup to confirm the deployed build.
+const BRIDGE_VERSION = '2';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -116,18 +118,15 @@ const BOOKMARK_HOOK_LUA = [
   "local top=calcTop(self) if top and top>0 then p[#p+1]='\"dialogTopPx\":'..tostring(top) end",
   "wr('{'..table.concat(p,',')..'}')",
   'end',
-  'if not _G.__bm_inst2 then',
+  // Per-idx guard (see share hook): re-arms after a Lua state reset / class reload.
+  "if rawget(idx,'__bm_oe')==nil then",
   '_G.__bm_seq=_G.__bm_seq or 0',
-  'local oe=idx.OnEnter idx.__bm_oe=oe',
-  'idx.OnEnter=function(self,...) local r=oe(self,...) pcall(function() if bmpt(self) then _G.__bm_panel=self publish(self,true) end end) return r end',
-  'local ox=idx.OnExit idx.__bm_ox=ox',
-  'idx.OnExit=function(self,...) pcall(function() if bmpt(self) then _G.__bm_panel=nil publish(self,false) end end) return ox(self,...) end',
-  '_G.__bm_inst2=true',
+  'local oe=idx.OnEnter idx.__bm_oe=oe or false',
+  'idx.OnEnter=function(self,...) local r if oe then r=oe(self,...) end pcall(function() if bmpt(self) then _G.__bm_panel=self publish(self,true) end end) return r end',
+  'local ox=idx.OnExit idx.__bm_ox=ox or false',
+  'idx.OnExit=function(self,...) pcall(function() if bmpt(self) then _G.__bm_panel=nil publish(self,false) end end) if ox then return ox(self,...) end end',
   'end',
-  // Дискавери методов закрытия окна тега: пишем имена методов класса с lose/Close/Exit/Back.
-  "local dm='' pcall(function() for k,v in pairs(idx) do local ks=tostring(k) if type(v)=='function' and (string.find(ks,'lose') or string.find(ks,'Exit') or string.find(ks,'Back') or string.find(ks,'efab')) then dm=dm..ks..',' end end end) local gm2=io.open('/data/data/com.phs.global/files/squadrelay_bm_methods.txt','w') if gm2 then gm2:write(dm) gm2:close() end",
   "local g=io.open(OK,'w') if g then g:write('ok') g:close() end",
-  'pcall(function() local sp=_G.__bm_panel if sp then publish(sp,true) end end)',
   'end)',
 ].join(' ');
 
@@ -1748,30 +1747,25 @@ const SHARE_HOOK_LUA = [
   "wr('{'..table.concat(p2,',')..'}')",
   "end end",
   "end",
-  "local function syncOpenShareIfVisible()",
-  "pcall(function()",
-  "local wm=WinsManager and WinsManager.instance",
-  "if not wm then return end",
-  "local win=wm:GetWin(PREFAB)",
-  "if not win or not win._luaInstance then return end",
-  "local pt=win._luaInstance.paramTable",
-  "if isShare(pt) then publish(pt,true) end",
-  "end) end",
-  "if not _G.__sr_share_inst then",
+  // Per-idx guard (NOT a global): the game can recreate its Lua state at any time,
+  // wiping globals and replacing this class table; re-running then re-wraps the new
+  // idx. GetWin-based visibility sync is impossible here because the share Win is
+  // pooled — GetWin keeps returning it with paramTable.shareType set even when the
+  // panel is closed. So rely purely on OnEnter/OnExit, and re-publish the live open
+  // panel (tracked via _G.__sr_sharePanel, which resets on state reset).
+  "if rawget(idx,'__sr_oe')==nil then",
   "_G.__sr_seq=_G.__sr_seq or 0",
-  "local oe=idx.OnEnter idx.__sr_oe=oe",
-  "idx.OnEnter=function(self,...) local r=oe(self,...) pcall(function()",
+  "local oe=idx.OnEnter idx.__sr_oe=oe or false",
+  "idx.OnEnter=function(self,...) local r if oe then r=oe(self,...) end pcall(function()",
   "local pt=self.paramTable",
   "if isShare(pt) then _G.__sr_sharePanel=self publish(pt,true) end",
   "end) return r end",
-  "local ox=idx.OnExit idx.__sr_ox=ox",
+  "local ox=idx.OnExit idx.__sr_ox=ox or false",
   "idx.OnExit=function(self,...) pcall(function()",
   "if isShare(self.paramTable) then _G.__sr_sharePanel=nil _G.__sr_seq=(_G.__sr_seq or 0)+1 wr('{\"seq\":'.._G.__sr_seq..',\"open\":false}') end",
-  "end) return ox(self,...) end",
-  "_G.__sr_share_inst=true",
+  "end) if ox then return ox(self,...) end end",
   "end",
   "local g=io.open(OK,'w') if g then g:write('ok') g:close() end",
-  "syncOpenShareIfVisible()",
   "end)",
 ].join(' ');
 
@@ -1805,18 +1799,23 @@ let lastShareInstallAt = 0;
 let lastShareText = '';
 
 function maybeInstallShareHook() {
-  if (shareHookOk) return;
-  const ok = readFileUtf8(SHARE_OK_FILE);
-  if (ok && ok.indexOf('ok') >= 0) {
-    shareHookOk = true;
-    log('share hook installed (confirmed)');
-    return;
-  }
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (now - lastShareInstallAt < 100) return;
+  // Re-arm continuously: the game recreates its Lua state at runtime, wiping the
+  // OnEnter/OnExit wrappers. The per-idx guard in SHARE_HOOK_LUA makes re-runs
+  // idempotent within a state and re-installs on the fresh idx after a reset.
+  // Fast retry (100ms) until first confirmed install, then steady re-arm (2s).
+  const interval = shareHookOk ? 2000 : 100;
+  if (now - lastShareInstallAt < interval) return;
   lastShareInstallAt = now;
   runLua(SHARE_HOOK_LUA);
+  if (!shareHookOk) {
+    const ok = readFileUtf8(SHARE_OK_FILE);
+    if (ok && ok.indexOf('ok') >= 0) {
+      shareHookOk = true;
+      log('share hook armed (re-arming every 2s)');
+    }
+  }
 }
 
 function pollShareCloseFile() {
@@ -1866,18 +1865,20 @@ let lastBookmarkInstallAt = 0;
 let lastBookmarkText = '';
 
 function maybeInstallBookmarkHook() {
-  if (bookmarkHookOk) return;
-  const ok = readFileUtf8(BOOKMARK_OK_FILE);
-  if (ok && ok.indexOf('ok') >= 0) {
-    bookmarkHookOk = true;
-    log('bookmark hook installed (confirmed)');
-    return;
-  }
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (now - lastBookmarkInstallAt < 100) return;
+  // Re-arm continuously (see maybeInstallShareHook): survives Lua state resets.
+  const interval = bookmarkHookOk ? 2000 : 100;
+  if (now - lastBookmarkInstallAt < interval) return;
   lastBookmarkInstallAt = now;
   runLua(BOOKMARK_HOOK_LUA);
+  if (!bookmarkHookOk) {
+    const ok = readFileUtf8(BOOKMARK_OK_FILE);
+    if (ok && ok.indexOf('ok') >= 0) {
+      bookmarkHookOk = true;
+      log('bookmark hook armed (re-arming every 2s)');
+    }
+  }
 }
 
 function sendBookmarkBroadcast(payload) {
@@ -1942,7 +1943,7 @@ setImmediate(function () {
   try {
     proc = readFileUtf8('/proc/self/cmdline', 256).replace(/\0/g, ' ').trim();
   } catch (e) {}
-  log('bridge started pid=' + Process.id + ' proc=' + proc);
+  log('bridge started v' + BRIDGE_VERSION + ' pid=' + Process.id + ' proc=' + proc);
   clearTriggerFiles();
   writeFileEmpty(SHARE_FILE);
   writeFileEmpty(SHARE_OK_FILE);

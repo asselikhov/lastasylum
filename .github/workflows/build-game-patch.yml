@@ -17,7 +17,7 @@ on:
       bridge_version:
         description: "Map bridge version (bump when the bridge changes)"
         required: false
-        default: "1"
+        default: "2"
 
 jobs:
   build:
