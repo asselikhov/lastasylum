@@ -1593,7 +1593,8 @@ function pollAutoHelpConfig() {
         if (ms > AUTOHELP_MAX_INTERVAL_MS) ms = AUTOHELP_MAX_INTERVAL_MS;
         autoHelpIntervalMs = ms;
       }
-      autoHelpLastRun = 0;
+      // Delay the first help-poll by one full interval so it never fires during login/loading.
+      autoHelpLastRun = Date.now();
       log('autohelp config: enabled=' + autoHelpEnabled + ' interval=' + autoHelpIntervalMs + 'ms');
       return;
     } catch (e) {
@@ -1609,9 +1610,11 @@ function tickAutoHelp() {
   if (!autoHelpEnabled) return;
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  // Poll on the fast cadence (not the user's configured interval) so help is pressed right
-  // when it appears; IsHaveCanHelpData keeps it from sending when there is nothing to help.
-  if (now - autoHelpLastRun < AUTOHELP_POLL_MS) return;
+  // Poll at the user's configured interval, NOT a fast 2s cadence: polling AllianceData /
+  // UnionHelpAllC2S every couple seconds during login overloads the game's main thread and
+  // the server drops the connection (heartbeat timeout → "connection timed out", can't enter).
+  // The interval cadence is what kept logins stable.
+  if (now - autoHelpLastRun < autoHelpIntervalMs) return;
   autoHelpLastRun = now;
   try {
     runLua(AUTOHELP_LUA);
