@@ -36,6 +36,7 @@ object GameMapPatchStatus {
 
     fun read(context: Context, gamePackages: Iterable<String>): Status {
         val supported = BuildConfig.MAP_BRIDGE_GAME_VERSION.trim()
+        val expectedBridge = BuildConfig.MAP_BRIDGE_VERSION.trim()
         for (pkg in gamePackages) {
             val trimmed = pkg.trim()
             if (trimmed.isEmpty()) continue
@@ -53,6 +54,8 @@ object GameMapPatchStatus {
                 gameVersionName = gameVersion,
                 patchForGameVersion = patchFor,
                 supportedGameVersion = supported,
+                installedBridgeVersion = bridgeVersion,
+                expectedBridgeVersion = expectedBridge,
             )
             return Status(
                 state = state,
@@ -78,19 +81,27 @@ object GameMapPatchStatus {
         gameVersionName: String?,
         patchForGameVersion: String?,
         supportedGameVersion: String,
+        installedBridgeVersion: String? = null,
+        expectedBridgeVersion: String = "",
     ): State {
         if (!patchBridgePresent) return State.PATCH_NOT_INSTALLED
         val gameVersion = gameVersionName?.trim().orEmpty()
         val patchFor = patchForGameVersion?.trim().orEmpty().takeIf { it != "unknown" }.orEmpty()
         val supported = supportedGameVersion.trim()
-        if (gameVersion.isNotEmpty() && supported.isNotEmpty() && gameVersion == supported) {
-            return State.PATCH_READY
-        }
         if (patchFor.isNotEmpty() && gameVersion.isNotEmpty() && gameVersion != patchFor) {
             return State.PATCH_OUTDATED
         }
         if (patchFor.isNotEmpty() && supported.isNotEmpty() && patchFor != supported) {
             return State.PATCH_OUTDATED
+        }
+        // Bridge logic bump: a patch built for the right game version but with an older bridge
+        // must still be re-applied so fixes (e.g. share/bookmark hooks) reach the device.
+        val expectedBridge = expectedBridgeVersion.trim()
+        if (expectedBridge.isNotEmpty() && installedBridgeVersion?.trim().orEmpty() != expectedBridge) {
+            return State.PATCH_OUTDATED
+        }
+        if (gameVersion.isNotEmpty() && supported.isNotEmpty() && gameVersion == supported) {
+            return State.PATCH_READY
         }
         return State.PATCH_READY
     }

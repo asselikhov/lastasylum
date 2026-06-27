@@ -55,4 +55,34 @@ class GameMapPatchStatusTest {
             ),
         )
     }
+
+    @Test
+    fun evaluate_outdated_whenBridgeVersionOlder() {
+        assertEquals(
+            GameMapPatchStatus.State.PATCH_OUTDATED,
+            GameMapPatchStatus.evaluate(
+                patchBridgePresent = true,
+                gameVersionName = "1.0.81",
+                patchForGameVersion = "1.0.81",
+                supportedGameVersion = "1.0.81",
+                installedBridgeVersion = "1",
+                expectedBridgeVersion = "2",
+            ),
+        )
+    }
+
+    @Test
+    fun evaluate_ready_whenBridgeVersionMatches() {
+        assertEquals(
+            GameMapPatchStatus.State.PATCH_READY,
+            GameMapPatchStatus.evaluate(
+                patchBridgePresent = true,
+                gameVersionName = "1.0.81",
+                patchForGameVersion = "1.0.81",
+                supportedGameVersion = "1.0.81",
+                installedBridgeVersion = "2",
+                expectedBridgeVersion = "2",
+            ),
+        )
+    }
 }
