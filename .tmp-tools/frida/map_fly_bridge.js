@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '2';
+const BRIDGE_VERSION = '3';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -137,6 +137,10 @@ const AUTOHELP_FILE = '/data/data/com.phs.global/files/squadrelay_autohelp.json'
 const AUTOHELP_SDCARD = '/sdcard/Download/squadrelay_autohelp.json';
 const AUTOHELP_MIN_INTERVAL_MS = 5000;
 const AUTOHELP_MAX_INTERVAL_MS = 600000;
+// When auto-help is enabled we poll help availability on this fast fixed cadence so the
+// in-game "Help" is pressed almost immediately once it becomes available (UnionHelpAllC2S is
+// gated on IsHaveCanHelpData, so polling does not spam — it sends once per help window).
+const AUTOHELP_POLL_MS = 2000;
 // Gate on the locally-cached help list (no extra network round-trip), then send
 // UnionHelpAllC2S only when the game says there is help available.
 const AUTOHELP_LUA = [
@@ -1605,7 +1609,9 @@ function tickAutoHelp() {
   if (!autoHelpEnabled) return;
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (now - autoHelpLastRun < autoHelpIntervalMs) return;
+  // Poll on the fast cadence (not the user's configured interval) so help is pressed right
+  // when it appears; IsHaveCanHelpData keeps it from sending when there is nothing to help.
+  if (now - autoHelpLastRun < AUTOHELP_POLL_MS) return;
   autoHelpLastRun = now;
   try {
     runLua(AUTOHELP_LUA);
