@@ -55,8 +55,18 @@ function Inject-MapBridgeMeta([string]$ManifestPath, [string]$Version, [string]$
     if ($text -notmatch 'android:debuggable="true"') {
         $text = $text -replace '(<application\b)', '$1 android:debuggable="true"'
     }
-    if ($text -match 'com\.lastasylum\.alliance\.map_bridge_game_version') {
-        $text = $text -replace 'android:name="com\.lastasylum\.alliance\.map_bridge_game_version" android:value="[^"]*"', "android:name=`"com.lastasylum.alliance.map_bridge_game_version`" android:value=`"$Version`""
+    # Стоковый base.apk нередко уже содержит наши meta-data: сплиты снимаются с устройства,
+    # где стоял предыдущий патч. Тогда нужно ОБНОВИТЬ значения всех трёх тегов (особенно
+    # map_bridge_version — иначе он «застревает» на старой версии и приложение вечно просит
+    # обновление). Inject только тех тегов, которых нет.
+    $hadAny = $text -match 'com\.lastasylum\.alliance\.map_bridge'
+    if ($text -match 'android:name="com\.lastasylum\.alliance\.map_bridge_version"') {
+        $text = $text -replace 'android:name="com\.lastasylum\.alliance\.map_bridge_version"\s+android:value="[^"]*"', "android:name=`"com.lastasylum.alliance.map_bridge_version`" android:value=`"$Bridge`""
+    }
+    if ($text -match 'android:name="com\.lastasylum\.alliance\.map_bridge_game_version"') {
+        $text = $text -replace 'android:name="com\.lastasylum\.alliance\.map_bridge_game_version"\s+android:value="[^"]*"', "android:name=`"com.lastasylum.alliance.map_bridge_game_version`" android:value=`"$Version`""
+    }
+    if ($hadAny) {
         Write-Utf8NoBom $ManifestPath $text
         return
     }
