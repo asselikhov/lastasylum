@@ -39,8 +39,16 @@ object GamePatchInstaller {
         data class Failed(val messageRes: Int) : Prepare
     }
 
-    /** Fetch descriptor, download the APK and verify its sha256. Runs off the main thread. */
-    suspend fun prepareLatestPatch(context: Context): Prepare = withContext(Dispatchers.IO) {
+    /**
+     * Fetch descriptor, download the APK and verify its sha256. Runs off the main thread.
+     *
+     * [onProgress] reports download completion in `0f..1f`, or a negative value when the total
+     * size is unknown (indeterminate). Always invoked off the main thread.
+     */
+    suspend fun prepareLatestPatch(
+        context: Context,
+        onProgress: (Float) -> Unit = {},
+    ): Prepare = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
         val token = AppContainer.from(appContext).tokenStore.getAccessToken()
             ?: return@withContext Prepare.Failed(R.string.game_patch_error_auth)
@@ -52,7 +60,7 @@ object GamePatchInstaller {
             return@withContext Prepare.Unavailable
         }
 
-        val apk = runCatching { download(appContext, url) }.getOrNull()
+        val apk = runCatching { download(appContext, url, onProgress) }.getOrNull()
             ?: return@withContext Prepare.Failed(R.string.game_patch_error_download)
         if (apk.length() <= 0L) {
             apk.delete()
@@ -84,7 +92,11 @@ object GamePatchInstaller {
         }
     }
 
-    private fun download(context: Context, url: String): File {
+    private fun download(
+        context: Context,
+        url: String,
+        onProgress: (Float) -> Unit = {},
+    ): File {
         val dir = File(context.cacheDir, CACHE_DIR).apply { mkdirs() }
         val outFile = File(dir, "game-patched.apk")
         if (outFile.exists()) outFile.delete()
@@ -93,7 +105,28 @@ object GamePatchInstaller {
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("download failed: ${response.code}")
             val body = response.body ?: error("empty body")
-            outFile.outputStream().use { out -> body.byteStream().copyTo(out) }
+            val total = body.contentLength()
+            onProgress(if (total > 0L) 0f else -1f)
+            body.byteStream().use { input ->
+                outFile.outputStream().use { out ->
+                    val buffer = ByteArray(64 * 1024)
+                    var downloaded = 0L
+                    var lastReported = -1
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        out.write(buffer, 0, read)
+                        if (total > 0L) {
+                            downloaded += read
+                            val pct = ((downloaded * 100L) / total).toInt()
+                            if (pct != lastReported) {
+                                lastReported = pct
+                                onProgress(pct / 100f)
+                            }
+                        }
+                    }
+                }
+            }
         }
         return outFile
     }

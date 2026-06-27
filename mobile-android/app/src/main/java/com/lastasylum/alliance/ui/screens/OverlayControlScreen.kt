@@ -5,21 +5,39 @@ import android.content.Intent
 import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.NearMe
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.SportsEsports
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -34,13 +52,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,19 +77,17 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.game.GameAutoHelpBridge
 import com.lastasylum.alliance.game.GameDeepLinkNavigator
-import com.lastasylum.alliance.game.GameMapNavigator
 import com.lastasylum.alliance.game.GameMapPatchStatus
 import com.lastasylum.alliance.game.GamePatchInstaller
-import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.GameForegroundGate
 import com.lastasylum.alliance.overlay.OverlayGamePackageSuggestions
 import com.lastasylum.alliance.overlay.OverlayPermissions
 import com.lastasylum.alliance.ui.components.SettingsNavigationRow
 import com.lastasylum.alliance.ui.components.SettingsToggleRow
-import com.lastasylum.alliance.ui.util.AppBuildInfo
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
+import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -76,7 +99,7 @@ fun OverlayControlScreen() {
     val appContext = context.applicationContext
     val appContainer = remember(appContext) { AppContainer.from(appContext) }
     val prefs = remember(appContext) { appContainer.userSettingsPreferences }
-    val totalGameEvents = remember { GameEventCatalog.all.size }
+    val haptics = LocalHapticFeedback.current
 
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
     var overlayEnabled by remember { mutableStateOf(prefs.isOverlayPanelEnabled()) }
@@ -86,9 +109,6 @@ fun OverlayControlScreen() {
         mutableStateOf<List<OverlayGamePackageSuggestions.DetectedGamePackage>>(emptyList())
     }
     var showGameEventsDialog by remember { mutableStateOf(false) }
-    var enabledGameEventsCount by remember {
-        mutableIntStateOf(countEnabledGameEventPushes(prefs))
-    }
     var mapPatchStatus by remember {
         mutableStateOf(
             GameMapPatchStatus.read(
@@ -99,6 +119,7 @@ fun OverlayControlScreen() {
     }
     val scope = rememberCoroutineScope()
     var patchInProgress by remember { mutableStateOf(false) }
+    var patchProgress by remember { mutableFloatStateOf(-1f) }
     var preparedPatchApk by remember { mutableStateOf<File?>(null) }
     var awaitingGameUninstall by remember { mutableStateOf(false) }
     val undetectedGamePackages = remember(detectedGamePackages) {
@@ -110,36 +131,12 @@ fun OverlayControlScreen() {
             Manifest.permission.POST_NOTIFICATIONS,
         ) != android.content.pm.PackageManager.PERMISSION_GRANTED
 
-    fun refreshGameEventsSummary() {
-        enabledGameEventsCount = countEnabledGameEventPushes(prefs)
-    }
-
     fun refreshMapPatchStatus() {
         mapPatchStatus = GameMapPatchStatus.read(
             appContext,
             GameDeepLinkNavigator.targetPackages(appContext),
         )
     }
-
-    @Composable
-    fun mapPatchStatusText(status: GameMapPatchStatus.Status): String =
-        when (status.state) {
-            GameMapPatchStatus.State.PATCH_READY ->
-                stringResource(
-                    R.string.map_patch_status_ready,
-                    status.gameVersionName ?: status.supportedGameVersion,
-                )
-            GameMapPatchStatus.State.PATCH_NOT_INSTALLED ->
-                stringResource(R.string.map_patch_status_not_installed)
-            GameMapPatchStatus.State.PATCH_OUTDATED ->
-                stringResource(
-                    R.string.map_patch_status_outdated,
-                    status.gameVersionName.orEmpty().ifBlank { "?" },
-                    status.patchForGameVersion ?: status.supportedGameVersion,
-                )
-            GameMapPatchStatus.State.GAME_NOT_FOUND ->
-                stringResource(R.string.map_patch_status_game_not_found)
-        }
 
     fun overlayOk(): Boolean = OverlayPermissions.canDrawOverlays(context)
 
@@ -156,7 +153,6 @@ fun OverlayControlScreen() {
     LaunchedEffect(Unit) {
         appContainer.usersRepository.getMyProfile().getOrNull()?.let { profile ->
             prefs.applyGameEventPushEnabledFromServer(profile.gameEventPushEnabled)
-            refreshGameEventsSummary()
         }
     }
 
@@ -166,7 +162,6 @@ fun OverlayControlScreen() {
             if (event == Lifecycle.Event.ON_RESUME) {
                 overlayEnabled = prefs.isOverlayPanelEnabled()
                 refreshOverlayRuntime()
-                refreshGameEventsSummary()
                 refreshMapPatchStatus()
                 val pendingApk = preparedPatchApk
                 if (awaitingGameUninstall && pendingApk != null &&
@@ -216,11 +211,7 @@ fun OverlayControlScreen() {
     if (showGameEventsDialog) {
         GameEventPushSettingsDialog(
             prefs = prefs,
-            onDismiss = {
-                showGameEventsDialog = false
-                refreshGameEventsSummary()
-            },
-            onEnabledCountChanged = ::refreshGameEventsSummary,
+            onDismiss = { showGameEventsDialog = false },
         )
     }
 
@@ -235,42 +226,31 @@ fun OverlayControlScreen() {
             top = SquadRelayDimens.screenTopPadding,
             bottom = SquadRelayDimens.bottomNavigationBarHeight + SquadRelayDimens.sectionGap,
         ),
-        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
     ) {
         item {
-            Column(
+            Text(
+                text = stringResource(R.string.settings_screen_title),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.headerSubtitleGap),
-            ) {
-                Text(
-                    text = stringResource(R.string.settings_screen_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = stringResource(R.string.settings_screen_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = AppBuildInfo.authStyleBuildFooter(context),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                )
-            }
+                    .padding(start = 2.dp, top = 2.dp, bottom = 2.dp),
+            )
         }
 
         item {
-            SettingsSectionLabel(stringResource(R.string.settings_section_overlay))
-            SettingsPanelCard {
+            SettingsCard(
+                icon = Icons.Outlined.Layers,
+                title = stringResource(R.string.settings_section_overlay),
+            ) {
                 SettingsToggleRow(
                     title = stringResource(R.string.overlay_switch_panel),
-                    subtitle = stringResource(R.string.overlay_switch_panel_subtitle),
+                    subtitle = null,
                     checked = overlayEnabled,
                     onCheckedChange = { on ->
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         if (on) {
                             overlayEnabled = true
                             prefs.setOverlayPanelEnabled(true)
@@ -302,15 +282,15 @@ fun OverlayControlScreen() {
         }
 
         item {
-            SettingsSectionLabel(stringResource(R.string.settings_section_game_filter))
-            SettingsPanelCard {
+            SettingsCard(
+                icon = Icons.Outlined.SportsEsports,
+                title = stringResource(R.string.settings_section_game_filter),
+                accent = PremiumColors.accentCyan,
+            ) {
                 OutlinedTextField(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(
-                            horizontal = SquadRelayDimens.listRowHorizontalPadding,
-                            vertical = SquadRelayDimens.listRowVerticalPadding,
-                        ),
+                        .padding(horizontal = SquadRelayDimens.listRowHorizontalPadding),
                     value = targetPkg,
                     onValueChange = { targetPkg = it },
                     singleLine = false,
@@ -325,16 +305,6 @@ fun OverlayControlScreen() {
                     ),
                 )
                 if (undetectedGamePackages.isNotEmpty()) {
-                    Text(
-                        text = stringResource(R.string.overlay_game_detected_title),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(
-                            start = SquadRelayDimens.listRowHorizontalPadding,
-                            end = SquadRelayDimens.listRowHorizontalPadding,
-                            top = SquadRelayDimens.itemGap,
-                        ),
-                    )
                     FlowRow(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -372,78 +342,41 @@ fun OverlayControlScreen() {
                         }
                     }
                 }
-                Text(
-                    text = stringResource(R.string.overlay_game_clone_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                    modifier = Modifier.padding(
-                        start = SquadRelayDimens.listRowHorizontalPadding,
-                        end = SquadRelayDimens.listRowHorizontalPadding,
-                        top = SquadRelayDimens.itemGap,
-                        bottom = SquadRelayDimens.listRowVerticalPadding,
-                    ),
-                )
             }
         }
 
         item {
-            SettingsSectionLabel(stringResource(R.string.settings_section_map_patch))
-            SettingsPanelCard {
+            SettingsCard(
+                icon = Icons.Outlined.NearMe,
+                title = stringResource(R.string.settings_section_map_patch),
+            ) {
                 Column(
-                    modifier = Modifier.padding(
-                        horizontal = SquadRelayDimens.listRowHorizontalPadding,
-                        vertical = SquadRelayDimens.listRowVerticalPadding,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = SquadRelayDimens.listRowHorizontalPadding),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text(
-                        text = mapPatchStatusText(mapPatchStatus),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = when (mapPatchStatus.state) {
-                            GameMapPatchStatus.State.PATCH_READY ->
-                                MaterialTheme.colorScheme.primary
-                            GameMapPatchStatus.State.PATCH_OUTDATED ->
-                                MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.onSurface
-                        },
-                    )
-                    Text(
-                        text = stringResource(
-                            R.string.map_patch_supported_version,
-                            mapPatchStatus.supportedGameVersion,
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = stringResource(R.string.map_patch_install_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                    )
+                    PatchStatusPill(mapPatchStatus.state)
+
                     val patchActionable = mapPatchStatus.state ==
                         GameMapPatchStatus.State.PATCH_NOT_INSTALLED ||
                         mapPatchStatus.state == GameMapPatchStatus.State.PATCH_OUTDATED
-                    val patchButtonLabel = when (mapPatchStatus.state) {
-                        GameMapPatchStatus.State.PATCH_OUTDATED ->
-                            stringResource(R.string.game_patch_button_update)
-                        GameMapPatchStatus.State.PATCH_READY ->
-                            stringResource(R.string.game_patch_button_ready)
-                        else -> stringResource(R.string.game_patch_button)
-                    }
-                    if (awaitingGameUninstall) {
-                        Text(
-                            text = stringResource(R.string.game_patch_uninstall_prompt),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
+                    val ready = mapPatchStatus.state == GameMapPatchStatus.State.PATCH_READY
+                    val success = PremiumColors.liveIndicator
+
                     Button(
+                        modifier = Modifier.fillMaxWidth(),
                         onClick = {
                             if (patchInProgress) return@Button
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             scope.launch {
                                 patchInProgress = true
-                                when (val result =
-                                    GamePatchInstaller.prepareLatestPatch(context)) {
+                                patchProgress = -1f
+                                when (
+                                    val result = GamePatchInstaller.prepareLatestPatch(context) { p ->
+                                        patchProgress = p
+                                    }
+                                ) {
                                     is GamePatchInstaller.Prepare.Ready -> {
                                         if (GamePatchInstaller.isStockGameInstalled(appContext)) {
                                             preparedPatchApk = result.apk
@@ -477,79 +410,94 @@ fun OverlayControlScreen() {
                                         ).show()
                                 }
                                 patchInProgress = false
+                                patchProgress = -1f
                             }
                         },
                         enabled = patchActionable && !patchInProgress,
-                    ) {
-                        if (patchInProgress) {
-                            CircularProgressIndicator(
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .padding(end = 4.dp),
-                                strokeWidth = 2.dp,
+                        colors = if (ready) {
+                            ButtonDefaults.buttonColors(
+                                disabledContainerColor = success.copy(alpha = 0.18f),
+                                disabledContentColor = success,
                             )
-                            Text(stringResource(R.string.game_patch_preparing))
                         } else {
-                            Text(patchButtonLabel)
-                        }
-                    }
-                    TextButton(
-                        onClick = {
-                            if (!mapPatchStatus.isAutoFlyAvailable) {
-                                Toast.makeText(
-                                    context,
-                                    context.getString(
-                                        R.string.map_patch_test_fly_disabled,
-                                        mapPatchStatus.supportedGameVersion,
-                                    ),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                                return@TextButton
-                            }
-                            GameMapNavigator.open(
-                                context = context,
-                                x = 505,
-                                y = 495,
-                                serverNumber = 109,
-                            )
-                            Toast.makeText(
-                                context,
-                                R.string.map_patch_test_fly_toast,
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                            ButtonDefaults.buttonColors()
                         },
-                        enabled = mapPatchStatus.state != GameMapPatchStatus.State.GAME_NOT_FOUND,
                     ) {
-                        Text(stringResource(R.string.map_patch_test_fly))
+                        when {
+                            patchInProgress -> {
+                                if (patchProgress in 0f..1f) {
+                                    CircularProgressIndicator(
+                                        progress = { patchProgress },
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        stringResource(
+                                            R.string.game_patch_preparing_progress,
+                                            (patchProgress * 100f).toInt().coerceIn(0, 100),
+                                        ),
+                                    )
+                                } else {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(stringResource(R.string.game_patch_preparing))
+                                }
+                            }
+                            ready -> {
+                                Icon(
+                                    imageVector = Icons.Filled.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.game_patch_button_ready))
+                            }
+                            mapPatchStatus.state == GameMapPatchStatus.State.PATCH_OUTDATED -> {
+                                Icon(
+                                    imageVector = Icons.Outlined.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.game_patch_button_update))
+                            }
+                            else -> {
+                                Icon(
+                                    imageVector = Icons.Outlined.Download,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.game_patch_button))
+                            }
+                        }
                     }
                 }
             }
         }
 
         item {
-            SettingsSectionLabel(stringResource(R.string.settings_section_auto_help))
-            SettingsPanelCard {
+            SettingsCard(
+                icon = Icons.Outlined.Bolt,
+                title = stringResource(R.string.settings_section_auto_help),
+                accent = PremiumColors.accentCyan,
+            ) {
                 SettingsToggleRow(
                     title = stringResource(R.string.auto_help_switch_title),
-                    subtitle = stringResource(R.string.auto_help_switch_subtitle),
+                    subtitle = null,
                     checked = autoHelpEnabled,
                     onCheckedChange = { on ->
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         autoHelpEnabled = on
                         prefs.setAutoHelpEnabled(on)
                         GameAutoHelpBridge.write(context, on, autoHelpIntervalSec)
                     },
                 )
                 if (autoHelpEnabled) {
-                    Text(
-                        text = stringResource(R.string.auto_help_interval_label),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(
-                            start = SquadRelayDimens.listRowHorizontalPadding,
-                            end = SquadRelayDimens.listRowHorizontalPadding,
-                            top = SquadRelayDimens.itemGap,
-                        ),
-                    )
                     FlowRow(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -581,23 +529,14 @@ fun OverlayControlScreen() {
                         }
                     }
                 }
-                Text(
-                    text = stringResource(R.string.auto_help_requires_patch_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                    modifier = Modifier.padding(
-                        start = SquadRelayDimens.listRowHorizontalPadding,
-                        end = SquadRelayDimens.listRowHorizontalPadding,
-                        top = SquadRelayDimens.itemGap,
-                        bottom = SquadRelayDimens.listRowVerticalPadding,
-                    ),
-                )
             }
         }
 
         item {
-            SettingsSectionLabel(stringResource(R.string.settings_section_notifications))
-            SettingsPanelCard {
+            SettingsCard(
+                icon = Icons.Outlined.Notifications,
+                title = stringResource(R.string.settings_section_notifications),
+            ) {
                 if (postNotifDenied) {
                     Column(
                         modifier = Modifier.padding(
@@ -625,11 +564,7 @@ fun OverlayControlScreen() {
                 }
                 SettingsNavigationRow(
                     title = stringResource(R.string.settings_game_events_push_section),
-                    subtitle = stringResource(
-                        R.string.settings_game_events_summary,
-                        enabledGameEventsCount,
-                        totalGameEvents,
-                    ),
+                    subtitle = null,
                     onClick = { showGameEventsDialog = true },
                     trailing = {
                         Icon(
@@ -645,24 +580,55 @@ fun OverlayControlScreen() {
 }
 
 @Composable
-private fun SettingsSectionLabel(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(
-            start = SquadRelayDimens.listRowHorizontalPadding,
-            end = SquadRelayDimens.listRowHorizontalPadding,
-            top = SquadRelayDimens.sectionGap,
-            bottom = SquadRelayDimens.sectionTitlePaddingVertical,
-        ),
-    )
+private fun PatchStatusPill(state: GameMapPatchStatus.State) {
+    val target = when (state) {
+        GameMapPatchStatus.State.PATCH_READY -> PremiumColors.liveIndicator
+        GameMapPatchStatus.State.PATCH_OUTDATED -> MaterialTheme.colorScheme.error
+        GameMapPatchStatus.State.PATCH_NOT_INSTALLED -> MaterialTheme.colorScheme.primary
+        GameMapPatchStatus.State.GAME_NOT_FOUND -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val color by animateColorAsState(targetValue = target, label = "patchStatusColor")
+    val label = when (state) {
+        GameMapPatchStatus.State.PATCH_READY -> stringResource(R.string.map_patch_badge_ready)
+        GameMapPatchStatus.State.PATCH_OUTDATED ->
+            stringResource(R.string.map_patch_badge_outdated)
+        GameMapPatchStatus.State.PATCH_NOT_INSTALLED ->
+            stringResource(R.string.map_patch_badge_not_installed)
+        GameMapPatchStatus.State.GAME_NOT_FOUND ->
+            stringResource(R.string.map_patch_badge_game_not_found)
+    }
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = color.copy(alpha = 0.12f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(color),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = color,
+            )
+        }
+    }
 }
 
 @Composable
-private fun SettingsPanelCard(
+private fun SettingsCard(
+    icon: ImageVector,
+    title: String,
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
+    accent: Color = MaterialTheme.colorScheme.primary,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -673,8 +639,41 @@ private fun SettingsPanelCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp),
-            content = { content() },
-        )
+                .padding(top = 12.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                        vertical = 2.dp,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(accent.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            content()
+        }
     }
 }

@@ -237,6 +237,11 @@
     <string name="game_patch_button_update">Обновить патч</string>
     <string name="game_patch_button_ready">Патч установлен</string>
     <string name="game_patch_preparing">Скачивание патча…</string>
+    <string name="game_patch_preparing_progress">Скачивание… %1$d%%</string>
+    <string name="map_patch_badge_ready">Установлен</string>
+    <string name="map_patch_badge_not_installed">Не установлен</string>
+    <string name="map_patch_badge_outdated">Нужно обновить</string>
+    <string name="map_patch_badge_game_not_found">Игра не найдена</string>
     <string name="game_patch_account_warning">Важно: привяжите игровой аккаунт перед установкой — после патча нужно войти заново.</string>
     <string name="game_patch_uninstall_prompt">Удалите установленную игру — установка патча продолжится автоматически.</string>
     <string name="game_patch_install_starting">Запуск установки патча…</string>
