@@ -494,41 +494,11 @@ fun OverlayControlScreen() {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         autoHelpEnabled = on
                         prefs.setAutoHelpEnabled(on)
+                        // Авто-помощь теперь событийная (нажимает при появлении кнопки), интервал
+                        // не используется — передаём сохранённое значение лишь для совместимости API.
                         GameAutoHelpBridge.write(context, on, autoHelpIntervalSec)
                     },
                 )
-                if (autoHelpEnabled) {
-                    FlowRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(
-                                horizontal = SquadRelayDimens.listRowHorizontalPadding,
-                                vertical = SquadRelayDimens.itemGap,
-                            ),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        listOf(15, 30, 60).forEach { sec ->
-                            FilterChip(
-                                selected = autoHelpIntervalSec == sec,
-                                onClick = {
-                                    autoHelpIntervalSec = sec
-                                    prefs.setAutoHelpIntervalSec(sec)
-                                    GameAutoHelpBridge.write(context, autoHelpEnabled, sec)
-                                },
-                                label = {
-                                    Text(
-                                        text = stringResource(
-                                            R.string.auto_help_interval_seconds,
-                                            sec,
-                                        ),
-                                        style = MaterialTheme.typography.labelMedium,
-                                    )
-                                },
-                            )
-                        }
-                    }
-                }
             }
         }
 
