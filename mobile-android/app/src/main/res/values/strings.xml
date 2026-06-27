@@ -254,7 +254,7 @@
     <string name="game_patch_error_download">Не удалось скачать патч, попробуйте позже</string>
     <string name="game_patch_error_integrity">Файл патча повреждён — попробуйте позже</string>
     <string name="settings_section_auto_help">Авто-помощь альянсу</string>
-    <string name="auto_help_switch_title">Авто-помощь соальянсникам</string>
+    <string name="auto_help_switch_title">Авто-помощь соалийцам</string>
     <string name="auto_help_switch_subtitle">Пока включено, периодически нажимает «Помочь всем» в игре</string>
     <string name="auto_help_interval_label">Как часто помогать</string>
     <string name="auto_help_interval_seconds">%1$d с</string>

@@ -38,8 +38,16 @@ object GameAutoHelpBridge {
         for (pkg in GameDeepLinkNavigator.targetPackages(appContext)) {
             val trimmed = pkg.trim()
             if (trimmed.isEmpty() || !isInstalled(appContext, trimmed)) continue
+            // Шлём конфиг ЛЮБОЙ пропатченной игре, даже если версия моста устарела
+            // (PATCH_OUTDATED): встроенный ресивер и мост всё равно читают файл, поэтому
+            // переключатель обязан срабатывать и во время рассинхрона версий. Пропускаем
+            // только когда моста в игре нет вовсе (не установлен / игра не найдена).
             val status = GameMapPatchStatus.read(appContext, listOf(trimmed))
-            if (status.state != GameMapPatchStatus.State.PATCH_READY) continue
+            if (status.state != GameMapPatchStatus.State.PATCH_READY &&
+                status.state != GameMapPatchStatus.State.PATCH_OUTDATED
+            ) {
+                continue
+            }
             val intent = Intent(GameMapFlyBridge.ACTION_MAP_FLY).apply {
                 setPackage(trimmed)
                 addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
