@@ -6,12 +6,12 @@ import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material.icons.outlined.GpsFixed
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.HeadsetMic
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.RocketLaunch
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Tune
@@ -32,7 +32,7 @@ object OverlayHudIcons {
     val team: ImageVector = Icons.Outlined.Groups
     val notifications: ImageVector = Icons.Outlined.Notifications
     val voice: ImageVector = Icons.Outlined.HeadsetMic
-    val quickCommands: ImageVector = Icons.Outlined.GpsFixed
+    val quickCommands: ImageVector = Icons.Outlined.RocketLaunch
     val settings: ImageVector = Icons.Outlined.Tune
     val volumeOn: ImageVector = Icons.AutoMirrored.Outlined.VolumeUp
     val volumeOff: ImageVector = Icons.AutoMirrored.Outlined.VolumeOff
