@@ -65,22 +65,6 @@ function gameEventPushSenderFromMessage(message: unknown): {
   };
 }
 
-function chatMessagePushPreview(message: unknown): {
-  senderLabel: string;
-  body: string;
-} {
-  const m = message as {
-    senderUsername?: string;
-    text?: string;
-  };
-  const sender = (m.senderUsername ?? '').trim();
-  const text = (m.text ?? '').trim();
-  return {
-    senderLabel: sender || 'Чат',
-    body: text.slice(0, 120) || 'Новое сообщение',
-  };
-}
-
 /** Must match overlay reaction ids in Android OverlayQuickReactions.kt */
 const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
   'heart',
@@ -740,30 +724,15 @@ export class ChatGateway {
         );
       }
     })();
+    // Push only for "Push" section quick commands (game events carry gameEventId) and only to
+    // offline allies (notifyGameEventAlert filters out online/ingame-overlay users). Regular
+    // chat / "В рейд" messages (no gameEventId) intentionally do NOT trigger FCM push.
     if (
       eventId &&
       input.messageAllianceId &&
       input.messageAllianceId !== GLOBAL_CHAT_ALLIANCE_ID
     ) {
       void this.sendGameEventPushAfterMessage(input, eventId, roomId, senderUserId);
-    } else if (
-      input.messageAllianceId &&
-      input.messageAllianceId !== GLOBAL_CHAT_ALLIANCE_ID
-    ) {
-      const preview = chatMessagePushPreview(input.message);
-      void this.pushNotifications
-        .notifyAllianceChatMessage({
-          allianceId: input.messageAllianceId,
-          excludeUserId: senderUserId,
-          title: preview.senderLabel || 'Новое сообщение',
-          body: preview.body,
-          data: {
-            roomId,
-            messageId: input.messageId ?? '',
-            type: 'chat_message',
-          },
-        })
-        .catch(() => undefined);
     }
   }
 

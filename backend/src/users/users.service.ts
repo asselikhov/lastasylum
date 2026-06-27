@@ -762,6 +762,12 @@ export class UsersService implements OnModuleInit {
   static readonly OVERLAY_INGAME_LIST_STALE_MS = 60_000;
   /** Push: shorter ingame exclusion so offline users still get FCM after brief overlay session. */
   static readonly GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS = 20_000;
+  /**
+   * Push ("Push" section game events) goes to OFFLINE allies only. A user counts as online when
+   * they have a recent presence heartbeat (ingame/online). The window must exceed the client
+   * heartbeat interval (45s) so online users between pings are still treated as online.
+   */
+  static readonly PUSH_ONLINE_PRESENCE_WINDOW_MS = 90_000;
 
   /** Fresh overlay «ingame» ping (same window as list/broadcast). */
   async isOverlayIngameNow(userId: string): Promise<boolean> {
@@ -1014,13 +1020,12 @@ export class UsersService implements OnModuleInit {
         }>
       >()
       .exec();
-    const staleBeforeMs =
-      Date.now() - UsersService.GAME_EVENT_PUSH_INGAME_EXCLUDE_STALE_MS;
+    const onlineBeforeMs =
+      Date.now() - UsersService.PUSH_ONLINE_PRESENCE_WINDOW_MS;
     const out: string[] = [];
-    let excludedOverlayIngame = 0;
+    let excludedOnline = 0;
     let excludedOptOut = 0;
     for (const u of users) {
-      const userId = u._id.toString();
       if (
         !buildGameEventPushEnabledMap({
           gameEventPushEnabled: u.gameEventPushEnabled,
@@ -1031,21 +1036,23 @@ export class UsersService implements OnModuleInit {
         continue;
       }
       const lastAt = u.lastPresenceAt;
-      const ingameNow =
-        (u.presenceStatus ?? '').trim().toLowerCase() === 'ingame' &&
+      const status = (u.presenceStatus ?? '').trim().toLowerCase();
+      // Offline-only: skip anyone online right now (in-game overlay or main app online).
+      const onlineNow =
+        (status === 'ingame' || status === 'online') &&
         lastAt instanceof Date &&
-        lastAt.getTime() >= staleBeforeMs;
-      if (ingameNow) {
-        excludedOverlayIngame++;
+        lastAt.getTime() >= onlineBeforeMs;
+      if (onlineNow) {
+        excludedOnline++;
         continue;
       }
       const arr = u.pushFcmTokens;
       if (Array.isArray(arr)) out.push(...arr);
     }
-    if (excludedOverlayIngame > 0 || excludedOptOut > 0 || out.length === 0) {
+    if (excludedOnline > 0 || excludedOptOut > 0 || out.length === 0) {
       this.logger.warn(
         `FCM game event ${eventId}: tokens=${out.length} candidates=${users.length} ` +
-          `excluded overlay-ingame=${excludedOverlayIngame} opt-out=${excludedOptOut} ` +
+          `excluded online=${excludedOnline} opt-out=${excludedOptOut} ` +
           `(allianceId=${allianceId})`,
       );
     }

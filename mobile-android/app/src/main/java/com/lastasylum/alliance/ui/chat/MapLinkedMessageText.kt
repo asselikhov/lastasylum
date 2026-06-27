@@ -209,7 +209,8 @@ private fun raidStatInlineIcon(drawableRes: Int): InlineTextContent =
         Placeholder(
             width = 1.25.em,
             height = 1.05.em,
-            placeholderVerticalAlign = PlaceholderVerticalAlign.Center,
+            // По центру высоты текста (как в оверлей-окне «В рейд»), а не по центру всей строки.
+            placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
         ),
     ) {
         Image(
