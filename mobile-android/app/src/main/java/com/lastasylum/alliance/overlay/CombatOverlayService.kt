@@ -310,6 +310,14 @@ class CombatOverlayService : Service() {
             handleAssaultJoinBroadcast(payload)
         }
     }
+    private var allianceRosterReceiverRegistered = false
+    private val allianceRosterReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            if (intent?.action != com.lastasylum.alliance.game.AllianceRosterBridge.ACTION_ALLIANCE_ROSTER) return
+            val payload = intent.getStringExtra(com.lastasylum.alliance.game.AllianceRosterBridge.EXTRA_PAYLOAD)
+            handleAllianceRosterBroadcast(payload)
+        }
+    }
     private val overlayPresenceCoordinator by lazy {
         OverlayPresenceCoordinator(
             scope = serviceScope,
@@ -1400,6 +1408,7 @@ class CombatOverlayService : Service() {
         registerRaidShareReceiver()
         registerBookmarkReceiver()
         registerAssaultJoinReceiver()
+        registerAllianceRosterReceiver()
         startOverlayFcmTokenRegistration()
         serviceScope.launch {
             ensureOverlayRaidRoomReadyForSend()
@@ -4619,6 +4628,7 @@ class CombatOverlayService : Service() {
         mainHandler.removeCallbacks(bookmarkHideRunnable)
         runCatching { (windowManager ?: systemWindowManager())?.let { overlayBookmarkPanel.hide(it) } }
         unregisterAssaultJoinReceiver()
+        unregisterAllianceRosterReceiver()
         unregisterVoiceMicPermissionReceiver()
         if (AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
             AppContainer.from(this).authRepository.hasSession()
@@ -5383,6 +5393,38 @@ class CombatOverlayService : Service() {
         if (!assaultJoinReceiverRegistered) return
         runCatching { unregisterReceiver(assaultJoinReceiver) }
         assaultJoinReceiverRegistered = false
+    }
+
+    private fun registerAllianceRosterReceiver() {
+        if (allianceRosterReceiverRegistered) return
+        val filter = IntentFilter(com.lastasylum.alliance.game.AllianceRosterBridge.ACTION_ALLIANCE_ROSTER)
+        runCatching {
+            ContextCompat.registerReceiver(
+                this,
+                allianceRosterReceiver,
+                filter,
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            allianceRosterReceiverRegistered = true
+        }.onFailure { e -> Log.w(TAG, "registerAllianceRosterReceiver failed", e) }
+    }
+
+    private fun unregisterAllianceRosterReceiver() {
+        if (!allianceRosterReceiverRegistered) return
+        runCatching { unregisterReceiver(allianceRosterReceiver) }
+        allianceRosterReceiverRegistered = false
+    }
+
+    /** Ростер альянса из игрового моста: кэшируем в память и в настройки для выбора соалийцев. */
+    private fun handleAllianceRosterBroadcast(payload: String?) {
+        val raw = payload?.trim().orEmpty()
+        if (raw.isEmpty()) return
+        val members = AllianceRosterCache.parse(raw)
+        if (members.isEmpty()) return
+        AllianceRosterCache.update(members)
+        runCatching {
+            AppContainer.from(this).userSettingsPreferences.setAllianceRosterJson(raw)
+        }
     }
 
     /** Запись авто-вступления из игрового моста: сохраняем человекочитаемую строку в лог. */

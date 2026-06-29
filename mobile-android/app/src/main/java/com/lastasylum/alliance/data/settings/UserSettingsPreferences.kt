@@ -332,6 +332,13 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().remove(KEY_AUTO_ASSAULT_JOIN_LOG).apply()
     }
 
+    /** Сырой JSON-ростер альянса из игрового моста ([{id,name,power,level,rank}]). */
+    fun getAllianceRosterJson(): String? = prefs.getString(KEY_ALLIANCE_ROSTER_JSON, null)
+
+    fun setAllianceRosterJson(json: String) {
+        prefs.edit().putString(KEY_ALLIANCE_ROSTER_JSON, json).apply()
+    }
+
     /** Индексы отрядов 0…2 (в игре teamIndex), CSV «0,1,2». */
     fun getAutoAssaultSquads(): Set<Int> = parseCsvInts(prefs.getString(KEY_AUTO_ASSAULT_SQUADS, "0,1,2"))
         .filter { it in AUTO_ASSAULT_SQUAD_MIN..AUTO_ASSAULT_SQUAD_MAX }
@@ -725,6 +732,7 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_AUTO_ASSAULT_COOLDOWN_SEC = "auto_assault_cooldown_sec"
         private const val KEY_AUTO_ASSAULT_MAX_CONCURRENT = "auto_assault_max_concurrent"
         private const val KEY_AUTO_ASSAULT_JOIN_LOG = "auto_assault_join_log"
+        private const val KEY_ALLIANCE_ROSTER_JSON = "alliance_roster_json"
         const val AUTO_ASSAULT_TYPE_MONSTER = "monster"
         const val AUTO_ASSAULT_TYPE_PLAYER = "player"
         const val AUTO_ASSAULT_TYPE_CITY = "city"

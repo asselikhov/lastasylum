@@ -5,7 +5,7 @@ import android.content.Intent
 import android.util.Log
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
-import com.lastasylum.alliance.overlay.OverlayTeamContextCache
+import com.lastasylum.alliance.overlay.AllianceRosterCache
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -56,7 +56,7 @@ object GameAutoAssaultBridge {
 
     private fun buildConfigJson(prefs: UserSettingsPreferences): JSONObject {
         val allowedIds = prefs.getAutoAssaultAllowedMemberIds()
-        val allowedNames = resolveAllowedCreatorNames(allowedIds)
+        val allowedNames = resolveAllowedCreatorNames(prefs, allowedIds)
         val selectedSquads = prefs.getAutoAssaultSquads()
         val squads = JSONArray()
         for (idx in UserSettingsPreferences.AUTO_ASSAULT_SQUAD_MIN..UserSettingsPreferences.AUTO_ASSAULT_SQUAD_MAX) {
@@ -89,11 +89,12 @@ object GameAutoAssaultBridge {
             .put("allowedUserIds", ids)
     }
 
-    /** Игровые ники создателей штурма: username из ростера отряда. */
-    private fun resolveAllowedCreatorNames(allowedIds: Set<String>): List<String> {
+    /** Игровые ники создателей штурма: username из игрового ростера альянса (по playerId). */
+    private fun resolveAllowedCreatorNames(prefs: UserSettingsPreferences, allowedIds: Set<String>): List<String> {
         if (allowedIds.isEmpty()) return emptyList()
-        val team = OverlayTeamContextCache.peekCachedTeam() ?: return emptyList()
-        return team.members
+        val roster = AllianceRosterCache.peek().takeIf { it.isNotEmpty() }
+            ?: AllianceRosterCache.parse(prefs.getAllianceRosterJson())
+        return roster
             .filter { allowedIds.contains(it.userId) }
             .map { it.username.trim() }
             .filter { it.isNotEmpty() }

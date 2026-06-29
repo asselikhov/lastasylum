@@ -64,21 +64,18 @@ private val OverlaySheetStroke = Color(0x3D4A62AA)
 private val OverlayMuted = Color(0xFF9AB0C4D8)
 private val OverlayCyan = Color(0xFF38BDF8)
 
+/**
+ * Список соалийцев для авто-штурма берём из ИГРОВОГО ростера альянса (его шлёт патч-мост),
+ * а не из команды приложения: ники здесь совпадают с создателями штурмов в игре.
+ * Память [AllianceRosterCache] — мгновенно; фолбэк — сохранённый JSON из настроек.
+ */
 internal suspend fun loadOverlayAssaultTeamMembers(context: Context): List<PlayerTeamMemberDto> =
     withContext(Dispatchers.IO) {
-        val team = OverlayTeamContextCache.peekCachedTeam()
-        if (team != null) {
-            return@withContext team.members.sortedBy { it.username.lowercase() }
-        }
-        val container = AppContainer.from(context)
-        val uid = OverlayTeamContextCache.peekForPanel()?.currentUserId?.trim().orEmpty()
-            .ifEmpty {
-                container.usersRepository.peekMyProfile()?.id?.trim().orEmpty()
-            }
-        if (uid.isEmpty()) return@withContext emptyList()
-        OverlayTeamContextCache.hydrateFromDisk(uid, container.usersRepository, container.launchDiskCache)
-        OverlayTeamContextCache.peekCachedTeam()?.members?.sortedBy { it.username.lowercase() }
-            ?: emptyList()
+        AllianceRosterCache.peek().takeIf { it.isNotEmpty() }?.let { return@withContext it }
+        val json = AppContainer.from(context).userSettingsPreferences.getAllianceRosterJson()
+        val parsed = AllianceRosterCache.parse(json)
+        if (parsed.isNotEmpty()) AllianceRosterCache.update(parsed)
+        parsed
     }
 
 @Composable

@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '12';
+const BRIDGE_VERSION = '13';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -211,6 +211,31 @@ const AUTOASSAULT_SCAN_INTERVAL_MS = 1500;
 const AUTOASSAULT_JOIN_ENABLED = true;
 const AUTOASSAULT_MATCH_FILE = '/data/data/com.phs.global/files/squadrelay_autoassault_match.json';
 const ASSAULT_JOIN_ACTION = 'com.lastasylum.alliance.action.ASSAULT_JOIN';
+// Ростер альянса (игра → приложение): мост периодически читает memberDic и шлёт
+// broadcast со списком соалийцев [{id,name,power,level,rank}] в SquadRelay, чтобы
+// в настройках штурма показывать актуальный список из игры, а не из приложения.
+const ALLIANCE_ROSTER_FILE = '/data/data/com.phs.global/files/squadrelay_alliance_roster.json';
+const ALLIANCE_ROSTER_FILE_LUA = "'" + ALLIANCE_ROSTER_FILE + "'";
+const ALLIANCE_ROSTER_ACTION = 'com.lastasylum.alliance.action.ALLIANCE_ROSTER';
+const ALLIANCE_ROSTER_SCAN_INTERVAL_MS = 45000;
+const ALLIANCE_ROSTER_LUA = [
+  'pcall(function()',
+  '  local ad = _G.Data and _G.Data.AllianceData',
+  '  local md = ad and ad.member and ad.member.memberDic',
+  '  if type(md) ~= "table" then return end',
+  '  local q = string.char(34)',
+  '  local out = {}',
+  '  for pid, m in pairs(md) do',
+  '    local p = m and m.profile',
+  '    if type(p) == "table" and p.name then',
+  '      local nm = tostring(p.name):gsub(q, string.char(39)):gsub(string.char(92), " ")',
+  '      out[#out + 1] = "{"..q.."id"..q..":"..q..tostring(p.id or pid)..q..","..q.."name"..q..":"..q..nm..q..","..q.."power"..q..":"..tostring(math.floor(tonumber(p.battlePower) or 0))..","..q.."level"..q..":"..tostring(math.floor(tonumber(p.level) or 0))..","..q.."rank"..q..":"..tostring(math.floor(tonumber(m.rank) or 0)).."}"',
+  '    end',
+  '  end',
+  '  local s = "[" .. table.concat(out, ",") .. "]"',
+  '  local f = io.open(' + ALLIANCE_ROSTER_FILE_LUA + ', "w") if f then f:write(s) f:close() end',
+  'end)',
+].join('\n');
 // Кэш реальных составов марша (team) по teamIndex, снятый с настоящих вступлений.
 // Хранится как Lua-чанк "return {...}" (легко сериализовать/загрузить через load()).
 const JOIN_CACHE_FILE = '/data/data/com.phs.global/files/squadrelay_teamcache.lua';
@@ -428,7 +453,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '    if cfg.joinEnabled and war.id and type(war.targetPoint) == "table" then',
   '      local team = (_G.__sr_aa_build_team and _G.__sr_aa_build_team(pickedIdx)) or nil',
   '      if type(team) == "table" then',
-  '        local data = { warId = war.id, teamIndex = pickedIdx, target = war.targetPoint, targetPlayerId = tonumber(_G.__sr_my_pid) or 0, team = team }',
+  '        local data = { warId = war.id, teamIndex = pickedIdx, target = war.targetPoint, targetPlayerId = tonumber(war.playerId) or 0, team = team }',
   '        pcall(function() sm.JoinUnionRallyC2S(data) end)',
   '        local endt = os.time() + 120',
   '        if war.rallyEndTime then endt = math.floor(tonumber(war.rallyEndTime)/1000) + 120 end',
@@ -491,6 +516,8 @@ let lastAutoAssaultCfg = '';
 let autoAssaultLastTick = 0;
 let autoAssaultCfgPushed = false;
 let lastAutoAssaultMatchText = '';
+let allianceRosterLastTick = 0;
+let lastAllianceRosterText = '';
 
 function readFileUtf8(path, maxLen) {
   const limit = maxLen || 4096;
@@ -2129,6 +2156,55 @@ function sendAssaultJoinBroadcast(payload) {
   }
 }
 
+// Периодически снимает ростер альянса из игры и шлёт его в приложение (game → app),
+// только при изменении содержимого, чтобы не спамить broadcast'ами.
+function tickAllianceRoster() {
+  if (!liveLuaEnv || liveLuaEnv.isNull()) return;
+  const now = Date.now();
+  if (liveLuaEnvCapturedMs === 0 || now - liveLuaEnvCapturedMs < AUTOASSAULT_STARTUP_DELAY_MS) return;
+  if (now - allianceRosterLastTick < ALLIANCE_ROSTER_SCAN_INTERVAL_MS) return;
+  allianceRosterLastTick = now;
+  try {
+    runLua(ALLIANCE_ROSTER_LUA);
+  } catch (e) {
+    log('alliance roster scan error: ' + e);
+    return;
+  }
+  try {
+    const text = readFileUtf8(ALLIANCE_ROSTER_FILE);
+    if (!text || !text.trim() || text.trim() === '[]') return;
+    if (text === lastAllianceRosterText) return;
+    lastAllianceRosterText = text;
+    sendAllianceRosterBroadcast(text.trim());
+  } catch (e) {
+    const msg = String(e);
+    if (!msg.includes('No such file') && !msg.includes('not found')) {
+      log('alliance roster poll error: ' + e);
+    }
+  }
+}
+
+function sendAllianceRosterBroadcast(payload) {
+  if (typeof Java === 'undefined' || !Java.available) return;
+  try {
+    Java.perform(function () {
+      const ActivityThread = Java.use('android.app.ActivityThread');
+      const app = ActivityThread.currentApplication();
+      if (app === null) return;
+      const ctx = app.getApplicationContext();
+      const Intent = Java.use('android.content.Intent');
+      const intent = Intent.$new(ALLIANCE_ROSTER_ACTION);
+      intent.setPackage(SHARE_APP_PKG);
+      intent.putExtra.overload('java.lang.String', 'java.lang.String').call(intent, 'payload', payload);
+      intent.addFlags(0x10000000); // FLAG_RECEIVER_FOREGROUND
+      ctx.sendBroadcast(intent);
+      log('alliance-roster broadcast -> ' + SHARE_APP_PKG + ' (' + payload.length + 'b)');
+    });
+  } catch (e) {
+    log('alliance-roster broadcast failed: ' + e);
+  }
+}
+
 function logIl2cppExportsOnce() {
   if (logIl2cppExportsOnce.done) return;
   logIl2cppExportsOnce.done = true;
@@ -2481,6 +2557,7 @@ setImmediate(function () {
     pollAutoAssaultConfig();
     tickAutoHelp();
     tickAutoAssault();
+    tickAllianceRoster();
     maybeInstallShareHook();
     pollShareFile();
     pollShareCloseFile();
