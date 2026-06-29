@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.PersonAdd
@@ -343,7 +342,13 @@ fun OverlayTeamOnlinePanel(
     }
 
     if (showAllianceMembers) {
-        OverlayAllianceMembersSheet(onDismissRequest = { showAllianceMembers = false })
+        OverlayAllianceMembersSheet(
+            onDismissRequest = { showAllianceMembers = false },
+            onCloseAllOverlays = {
+                showAllianceMembers = false
+                onClose()
+            },
+        )
     }
 
     val openMemberActions: (OverlayOnlineMemberUiModel) -> Unit = { actionSheetMember = it }
@@ -371,24 +376,21 @@ fun OverlayTeamOnlinePanel(
         onMemberClick = openMemberActions,
         onMemberLongClick = openMemberActions,
         topBar = {
-            val pollIntervalSec = controller.currentPollIntervalMs() / 1_000
-            val realtimeLabel = when (presenceSocketState) {
-                TeamPresenceSocketState.Connected ->
-                    stringResource(R.string.overlay_online_realtime_live)
-                else ->
-                    stringResource(
-                        R.string.overlay_online_realtime_poll,
-                        pollIntervalSec,
-                    )
-            }
             OverlayHudPanelHeader(
                 title = stringResource(R.string.overlay_online_title),
-                subtitle = stringResource(
-                    R.string.overlay_online_summary_ingame,
-                    uiState.ingameCount,
-                ) + " · $realtimeLabel",
                 onClose = onClose,
                 titleTrailing = {
+                    if (team != null && isLeader) {
+                        OverlayOnlineLeaderToolbarActions(
+                            pendingJoinRequests = joinRequestCount,
+                            membersBusy = leaderUi.membersBusy,
+                            onAddMember = {
+                                leaderUi.addNameDraft = ""
+                                leaderUi.showAddMember = true
+                            },
+                            onOpenInbox = openJoinInbox,
+                        )
+                    }
                     IconButton(
                         onClick = { showAllianceMembers = true },
                         modifier = Modifier.size(40.dp),
@@ -403,27 +405,6 @@ fun OverlayTeamOnlinePanel(
                         )
                     }
                 },
-                subtitleTrailing = if (team != null && isLeader) {
-                    {
-                        OverlayOnlineLeaderToolbarActions(
-                            pendingJoinRequests = joinRequestCount,
-                            membersBusy = leaderUi.membersBusy,
-                            editNameBusy = leaderUi.editNameBusy,
-                            onAddMember = {
-                                leaderUi.addNameDraft = ""
-                                leaderUi.showAddMember = true
-                            },
-                            onEditTeam = {
-                                leaderUi.editTeamNameDraft = team.displayName.trim()
-                                leaderUi.editTeamTagDraft = team.tag.trim()
-                                leaderUi.showEditTeam = true
-                            },
-                            onOpenInbox = openJoinInbox,
-                        )
-                    }
-                } else {
-                    null
-                },
             )
         },
     )
@@ -433,9 +414,7 @@ fun OverlayTeamOnlinePanel(
 private fun RowScope.OverlayOnlineLeaderToolbarActions(
     pendingJoinRequests: Int,
     membersBusy: Boolean,
-    editNameBusy: Boolean,
     onAddMember: () -> Unit,
-    onEditTeam: () -> Unit,
     onOpenInbox: () -> Unit,
 ) {
     val tokens = OverlayOnlineMemberTokens
@@ -447,18 +426,6 @@ private fun RowScope.OverlayOnlineLeaderToolbarActions(
         Icon(
             imageVector = Icons.Outlined.PersonAdd,
             contentDescription = stringResource(R.string.team_cd_add_member),
-            tint = tokens.borderLive,
-            modifier = Modifier.size(20.dp),
-        )
-    }
-    IconButton(
-        onClick = onEditTeam,
-        enabled = !membersBusy && !editNameBusy,
-        modifier = Modifier.size(40.dp),
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Edit,
-            contentDescription = stringResource(R.string.team_cd_edit_team_name),
             tint = tokens.borderLive,
             modifier = Modifier.size(20.dp),
         )

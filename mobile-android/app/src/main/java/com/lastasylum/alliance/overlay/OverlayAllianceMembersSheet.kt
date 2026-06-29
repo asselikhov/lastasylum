@@ -59,18 +59,17 @@ import kotlin.math.roundToInt
 
 private object AllianceTableTokens {
     val colApp = 30.dp
-    val colName = 118.dp
+    val colName = 152.dp
     val colPower = 70.dp
     val colLevel = 38.dp
     val colCastle = 44.dp
     val colRank = 42.dp
     val colKills = 62.dp
-    val colCoords = 84.dp
     val colSeen = 52.dp
     val rowPaddingH = 8.dp
 
     val total = colApp + colName + colPower + colLevel + colCastle +
-        colRank + colKills + colCoords + colSeen + rowPaddingH * 2
+        colRank + colKills + colSeen + rowPaddingH * 2
 
     val headerFill = Color(0xFF101722)
     val rowEven = Color(0xFF141C28)
@@ -87,7 +86,10 @@ private object AllianceTableTokens {
  * Тап по координатам — перелёт к соалийцу на карте, у каждого участника бейдж наличия приложения.
  */
 @Composable
-fun OverlayAllianceMembersSheet(onDismissRequest: () -> Unit) {
+fun OverlayAllianceMembersSheet(
+    onDismissRequest: () -> Unit,
+    onCloseAllOverlays: () -> Unit = onDismissRequest,
+) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val tokens = OverlayOnlineMemberTokens
@@ -245,7 +247,7 @@ fun OverlayAllianceMembersSheet(onDismissRequest: () -> Unit) {
                                     even = index % 2 == 0,
                                     hasApp = appNames.contains(m.name.lowercase()),
                                     onFly = {
-                                        onDismissRequest()
+                                        onCloseAllOverlays()
                                         GameMapNavigator.open(
                                             context = context,
                                             x = m.x,
@@ -280,7 +282,6 @@ private fun AllianceTableHeader() {
         HeaderCell(stringResource(R.string.overlay_alliance_col_castle), AllianceTableTokens.colCastle, TextAlign.End)
         HeaderCell(stringResource(R.string.overlay_alliance_col_rank), AllianceTableTokens.colRank, TextAlign.End)
         HeaderCell(stringResource(R.string.overlay_alliance_col_kills), AllianceTableTokens.colKills, TextAlign.End)
-        HeaderCell(stringResource(R.string.overlay_alliance_col_coords), AllianceTableTokens.colCoords, TextAlign.Center)
         HeaderCell(stringResource(R.string.overlay_alliance_col_seen), AllianceTableTokens.colSeen, TextAlign.End)
     }
 }
@@ -321,55 +322,50 @@ private fun AllianceMemberRow(
             ) {
                 AppBadgeDot(hasApp = hasApp, size = 10.dp)
             }
-            Text(
-                text = member.name,
-                fontFamily = tokens.InterFamily,
-                fontWeight = FontWeight.Medium,
-                fontSize = 13.sp,
-                color = tokens.titleColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Column(
                 modifier = Modifier.width(AllianceTableTokens.colName),
-            )
-            ValueCell(formatCompact(member.power), AllianceTableTokens.colPower, TextAlign.End, strong = true)
-            ValueCell(member.level.takeIf { it > 0 }?.toString() ?: "—", AllianceTableTokens.colLevel, TextAlign.End)
-            ValueCell(member.castle.takeIf { it > 0 }?.toString() ?: "—", AllianceTableTokens.colCastle, TextAlign.End)
-            ValueCell(member.rank.takeIf { it > 0 }?.toString() ?: "—", AllianceTableTokens.colRank, TextAlign.End)
-            ValueCell(formatCompact(member.kills), AllianceTableTokens.colKills, TextAlign.End)
-            Box(
-                modifier = Modifier.width(AllianceTableTokens.colCoords),
-                contentAlignment = Alignment.Center,
+                verticalArrangement = Arrangement.spacedBy(1.dp),
             ) {
+                Text(
+                    text = member.name,
+                    fontFamily = tokens.InterFamily,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp,
+                    color = tokens.titleColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 if (member.hasCoords) {
-                    Box(
+                    Text(
+                        text = formatCoords(member),
+                        fontFamily = tokens.InterFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 10.sp,
+                        color = AllianceTableTokens.coordText,
+                        maxLines = 1,
                         modifier = Modifier
-                            .background(AllianceTableTokens.coordFill, RoundedCornerShape(8.dp))
-                            .border(1.dp, tokens.borderLive, RoundedCornerShape(8.dp))
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
                                 onClick = onFly,
                             )
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            text = "${member.x}:${member.y}",
-                            fontFamily = tokens.InterFamily,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 11.sp,
-                            color = AllianceTableTokens.coordText,
-                            maxLines = 1,
-                        )
-                    }
+                            .background(AllianceTableTokens.coordFill, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
                 } else {
                     Text(
                         text = "—",
                         fontFamily = tokens.InterFamily,
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         color = tokens.mutedColor,
                     )
                 }
             }
+            ValueCell(formatCompact(member.power), AllianceTableTokens.colPower, TextAlign.End, strong = true)
+            ValueCell(member.level.takeIf { it > 0 }?.toString() ?: "—", AllianceTableTokens.colLevel, TextAlign.End)
+            ValueCell(member.castle.takeIf { it > 0 }?.toString() ?: "—", AllianceTableTokens.colCastle, TextAlign.End)
+            ValueCell(member.rank.takeIf { it > 0 }?.toString() ?: "—", AllianceTableTokens.colRank, TextAlign.End)
+            ValueCell(formatCompact(member.kills), AllianceTableTokens.colKills, TextAlign.End)
             ValueCell(formatLastSeen(member.logoutMs), AllianceTableTokens.colSeen, TextAlign.End)
         }
         Box(
@@ -415,6 +411,11 @@ private fun AppBadgeDot(hasApp: Boolean, size: androidx.compose.ui.unit.Dp) {
                 .border(1.dp, AllianceTableTokens.appOff, CircleShape),
         )
     }
+}
+
+private fun formatCoords(member: AllianceMember): String {
+    val sPart = member.sid.takeIf { it > 0 }?.let { "S:$it " } ?: ""
+    return "${sPart}X:${member.x} Y:${member.y}"
 }
 
 private fun formatCompact(value: Long): String {
