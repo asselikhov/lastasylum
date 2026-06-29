@@ -74,6 +74,7 @@ fun Context.toastUpdateCheckFailed() {
 suspend fun downloadAppUpdateApk(
     context: Context,
     downloadUrl: String,
+    onProgress: (Float) -> Unit = {},
 ): Result<File> = withContext(Dispatchers.IO) {
     runCatching {
         val appContext = context.applicationContext
@@ -83,6 +84,7 @@ suspend fun downloadAppUpdateApk(
             ?: "SquadRelay-update.apk"
         val dir = File(appContext.cacheDir, "apk_updates").apply { mkdirs() }
         val outFile = File(dir, safeName.replace(Regex("[^\\w.\\-]+"), "_"))
+        if (outFile.exists()) outFile.delete()
         val client = OkHttpClient.Builder().build()
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
@@ -90,7 +92,28 @@ suspend fun downloadAppUpdateApk(
                 error(appContext.getString(R.string.chat_apk_download_failed))
             }
             val body = response.body ?: error(appContext.getString(R.string.chat_apk_download_failed))
-            outFile.outputStream().use { out -> body.byteStream().copyTo(out) }
+            val total = body.contentLength()
+            onProgress(if (total > 0L) 0f else -1f)
+            body.byteStream().use { input ->
+                outFile.outputStream().use { out ->
+                    val buffer = ByteArray(64 * 1024)
+                    var downloaded = 0L
+                    var lastReported = -1
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        out.write(buffer, 0, read)
+                        if (total > 0L) {
+                            downloaded += read
+                            val pct = ((downloaded * 100L) / total).toInt()
+                            if (pct != lastReported) {
+                                lastReported = pct
+                                onProgress(pct / 100f)
+                            }
+                        }
+                    }
+                }
+            }
         }
         if (outFile.length() <= 0L) {
             error(appContext.getString(R.string.chat_apk_download_failed))

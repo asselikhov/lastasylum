@@ -69,6 +69,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.game.GameAutoHelpBridge
@@ -84,6 +85,10 @@ import com.lastasylum.alliance.ui.components.SettingsToggleRow
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
+import com.lastasylum.alliance.update.AppUpdateCheckResult
+import com.lastasylum.alliance.update.checkAppUpdate
+import com.lastasylum.alliance.update.downloadAppUpdateApk
+import com.lastasylum.alliance.update.installDownloadedApk
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -515,6 +520,10 @@ fun OverlayControlScreen() {
                         }
                     }
                 }
+
+                item {
+                    AppVersionUpdateCard()
+                }
             }
 
             SettingsTab.AUTOMATION -> {
@@ -685,6 +694,229 @@ private fun PatchStatusPill(state: GameMapPatchStatus.State) {
             stringResource(R.string.map_patch_badge_not_installed)
         GameMapPatchStatus.State.GAME_NOT_FOUND ->
             stringResource(R.string.map_patch_badge_game_not_found)
+    }
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = color.copy(alpha = 0.12f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(color),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = color,
+            )
+        }
+    }
+}
+
+private enum class AppUpdateUiState { CHECKING, UP_TO_DATE, AVAILABLE, FAILED }
+
+@Composable
+private fun AppVersionUpdateCard() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var uiState by remember { mutableStateOf(AppUpdateUiState.CHECKING) }
+    var downloadUrl by remember { mutableStateOf<String?>(null) }
+    var downloading by remember { mutableStateOf(false) }
+    var progress by remember { mutableFloatStateOf(-1f) }
+
+    suspend fun runCheck() {
+        uiState = AppUpdateUiState.CHECKING
+        when (val result = checkAppUpdate()) {
+            is AppUpdateCheckResult.Available -> {
+                downloadUrl = result.downloadUrl
+                uiState = AppUpdateUiState.AVAILABLE
+            }
+            AppUpdateCheckResult.UpToDate -> {
+                downloadUrl = null
+                uiState = AppUpdateUiState.UP_TO_DATE
+            }
+            AppUpdateCheckResult.Failed -> {
+                downloadUrl = null
+                uiState = AppUpdateUiState.FAILED
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) { runCheck() }
+
+    SettingsPlainCard {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = SquadRelayDimens.listRowHorizontalPadding),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_app_version_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.settings_app_version_value,
+                        BuildConfig.VERSION_NAME,
+                        BuildConfig.VERSION_CODE,
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            AppUpdateStatusPill(uiState)
+
+            val success = PremiumColors.liveIndicator
+            val upToDate = uiState == AppUpdateUiState.UP_TO_DATE
+
+            Button(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                shape = RoundedCornerShape(14.dp),
+                onClick = {
+                    if (downloading) return@Button
+                    when (uiState) {
+                        AppUpdateUiState.AVAILABLE -> {
+                            val url = downloadUrl?.trim().orEmpty()
+                            if (url.isEmpty()) return@Button
+                            scope.launch {
+                                downloading = true
+                                progress = -1f
+                                val result = downloadAppUpdateApk(context, url) { p ->
+                                    progress = p
+                                }
+                                downloading = false
+                                progress = -1f
+                                val apk = result.getOrNull()
+                                if (apk == null) {
+                                    Toast.makeText(
+                                        context,
+                                        R.string.chat_apk_download_failed,
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        R.string.app_update_install_starting,
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                    context.installDownloadedApk(apk)
+                                }
+                            }
+                        }
+                        AppUpdateUiState.FAILED -> scope.launch { runCheck() }
+                        else -> Unit
+                    }
+                },
+                enabled = !downloading &&
+                    (uiState == AppUpdateUiState.AVAILABLE || uiState == AppUpdateUiState.FAILED),
+                colors = if (upToDate) {
+                    ButtonDefaults.buttonColors(
+                        disabledContainerColor = success.copy(alpha = 0.18f),
+                        disabledContentColor = success,
+                    )
+                } else {
+                    ButtonDefaults.buttonColors()
+                },
+            ) {
+                when {
+                    downloading -> {
+                        if (progress in 0f..1f) {
+                            CircularProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                stringResource(
+                                    R.string.app_update_downloading_progress,
+                                    (progress * 100f).toInt().coerceIn(0, 100),
+                                ),
+                            )
+                        } else {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.app_update_downloading))
+                        }
+                    }
+                    uiState == AppUpdateUiState.CHECKING -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.app_update_checking))
+                    }
+                    upToDate -> {
+                        Icon(
+                            imageVector = Icons.Filled.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.app_update_button_up_to_date))
+                    }
+                    uiState == AppUpdateUiState.AVAILABLE -> {
+                        Icon(
+                            imageVector = Icons.Outlined.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.app_update_button_update))
+                    }
+                    else -> {
+                        Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.app_update_button_retry))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppUpdateStatusPill(state: AppUpdateUiState) {
+    val target = when (state) {
+        AppUpdateUiState.UP_TO_DATE -> PremiumColors.liveIndicator
+        AppUpdateUiState.AVAILABLE -> MaterialTheme.colorScheme.primary
+        AppUpdateUiState.FAILED -> MaterialTheme.colorScheme.error
+        AppUpdateUiState.CHECKING -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val color by animateColorAsState(targetValue = target, label = "appUpdateStatusColor")
+    val label = when (state) {
+        AppUpdateUiState.UP_TO_DATE -> stringResource(R.string.app_update_badge_up_to_date)
+        AppUpdateUiState.AVAILABLE -> stringResource(R.string.app_update_badge_available)
+        AppUpdateUiState.FAILED -> stringResource(R.string.app_update_badge_failed)
+        AppUpdateUiState.CHECKING -> stringResource(R.string.app_update_badge_checking)
     }
     Surface(
         shape = MaterialTheme.shapes.small,
