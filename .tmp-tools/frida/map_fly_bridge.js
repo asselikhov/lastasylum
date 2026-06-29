@@ -245,7 +245,10 @@ const ALLIANCE_ROSTER_LUA = [
   '      local cx = (type(cc) == "table" and tonumber(cc.x)) or 0',
   '      local cy = (type(cc) == "table" and tonumber(cc.y)) or 0',
   '      local cs = (type(cc) == "table" and tonumber(cc.sid)) or (tonumber(p.serverId) or 0)',
-  '      out[#out + 1] = "{"..q.."id"..q..":"..q..tostring(p.id or pid)..q..","..q.."name"..q..":"..q..nm..q..","..q.."power"..q..":"..tostring(math.floor(tonumber(p.battlePower) or 0))..","..q.."level"..q..":"..tostring(math.floor(tonumber(p.level) or 0))..","..q.."castle"..q..":"..tostring(math.floor(tonumber(m.castleLevel) or 0))..","..q.."rank"..q..":"..tostring(math.floor(tonumber(m.rank) or 0))..","..q.."kills"..q..":"..tostring(math.floor(tonumber(m.killNum) or 0))..","..q.."x"..q..":"..tostring(math.floor(cx))..","..q.."y"..q..":"..tostring(math.floor(cy))..","..q.."sid"..q..":"..tostring(math.floor(cs))..","..q.."logout"..q..":"..tostring(math.floor(tonumber(m.logoutTime) or 0)).."}"',
+  // «Поверженные» лежат не в member-записи (m.killNum часто пустой), а в профиле игрока —
+  // перебираем известные имена поля (как killEnemyCount в шаринге «В рейд»).
+  '      local kn = tonumber(p.killEnemyCount) or tonumber(p.killNum) or tonumber(p.kill) or tonumber(p.killCount) or tonumber(m.killEnemyCount) or tonumber(m.killNum) or 0',
+  '      out[#out + 1] = "{"..q.."id"..q..":"..q..tostring(p.id or pid)..q..","..q.."name"..q..":"..q..nm..q..","..q.."power"..q..":"..tostring(math.floor(tonumber(p.battlePower) or 0))..","..q.."level"..q..":"..tostring(math.floor(tonumber(p.level) or 0))..","..q.."castle"..q..":"..tostring(math.floor(tonumber(m.castleLevel) or 0))..","..q.."rank"..q..":"..tostring(math.floor(tonumber(m.rank) or 0))..","..q.."kills"..q..":"..tostring(math.floor(kn))..","..q.."x"..q..":"..tostring(math.floor(cx))..","..q.."y"..q..":"..tostring(math.floor(cy))..","..q.."sid"..q..":"..tostring(math.floor(cs))..","..q.."logout"..q..":"..tostring(math.floor(tonumber(m.logoutTime) or 0)).."}"',
   '    end',
   '  end',
   '  local s = "[" .. table.concat(out, ",") .. "]"',
