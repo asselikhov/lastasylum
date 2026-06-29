@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '18';
+const BRIDGE_VERSION = '19';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -306,11 +306,29 @@ const INSTALL_JOIN_CACHE_LUA = [
   '    local f = io.open(' + JOIN_CACHE_FILE_LUA + ', "w") if f then f:write(s) f:close() end',
   '  end',
   '  _G.__sr_aa_build_team = function(idx)',
+  // 1) Если есть кэш реального вступления для этого индекса — используем его (точный формат).
   '    local src = _G.__sr_team_cache and _G.__sr_team_cache[idx]',
-  '    if type(src) ~= "table" or type(src.units) ~= "table" or #src.units == 0 then return nil end',
-  '    local units = {}',
-  '    for i = 1, #src.units do local u = src.units[i] units[i] = {heroId = u.heroId, slotId = u.slotId, heroSource = u.heroSource} end',
-  '    return {wingManId = src.wingManId or idx, units = units}',
+  '    if type(src) == "table" and type(src.units) == "table" and #src.units > 0 then',
+  '      local units = {}',
+  '      for i = 1, #src.units do local u = src.units[i] units[i] = {heroId = u.heroId, slotId = u.slotId, heroSource = u.heroSource} end',
+  '      return {wingManId = src.wingManId or idx, units = units}',
+  '    end',
+  // 2) Иначе собираем состав из ГОТОВОГО пресета отряда (как настроено в игре), без ручных
+  //    вступлений: TroopManager.GetAllTroopInfos() -> troop с index/wingManId/heroIds.
+  '    local TM = package.loaded["AbyssEmpire.Logic.Troop.TroopManager"]',
+  '    if type(TM) == "table" and type(TM.GetAllTroopInfos) == "function" then',
+  '      local okp, all = pcall(TM.GetAllTroopInfos, TM)',
+  '      if okp and type(all) == "table" then',
+  '        for _, troop in pairs(all) do',
+  '          if type(troop) == "table" and tonumber(troop.index) == idx and type(troop.heroIds) == "table" and #troop.heroIds > 0 then',
+  '            local units = {}',
+  '            for i = 1, #troop.heroIds do units[i] = {heroId = troop.heroIds[i], slotId = i - 1, heroSource = 0} end',
+  '            return {wingManId = troop.wingManId or idx, units = units}',
+  '          end',
+  '        end',
+  '      end',
+  '    end',
+  '    return nil',
   '  end',
   '  if not TOP.__sr_dsm_orig then',
   '    TOP.__sr_dsm_orig = TOP.DoSendMsg',
@@ -463,16 +481,17 @@ const AUTOASSAULT_SCAN_LUA = [
   '    if pickedIdx == nil then goto continue end',
   '    local matchJson = string.format(\'{"creator":"%s","type":"%s","power":%d,"level":%d,"dist":%d,"squad":%d,"id":"%s","time":%d}\', tostring(war.playerName or ""):gsub(\'"\',"\'"), ttype, math.floor(pow), math.floor(lv), math.floor(dist), pickedIdx, tostring(war.id or ""), os.time())',
   '    local f = io.open(' + AUTOASSAULT_MATCH_FILE_LUA + ', "w") if f then f:write(matchJson) f:close() end',
-  // Реальное вступление. JoinUnionRallyC2S(data, clientData), где data — таблица:
-  //   { warId=war.id, teamIndex=pickedIdx (0-based), target=war.targetPoint,
-  //     targetPlayerId=<id цели>, team={ wingManId=<id>, units=<состав войск> } }
-  // target берётся из war.targetPoint ({x,y,pid,sid}); team (состав войск) —
-  // самая сложная часть, синтез состава пока не реализован. Поэтому при включённом
-  // cfg.joinEnabled собираем data и шлём ТОЛЬКО если удалось получить team-объект.
-  '    if cfg.joinEnabled and war.id and type(war.targetPoint) == "table" then',
+  // Реальное вступление. JoinUnionRallyC2S(data), где data — таблица:
+  //   { warId=war.id, teamIndex=pickedIdx (0-based), target=war.rallyPoint,
+  //     targetPlayerId=<id создателя ралли>, team={ wingManId=<id>, units=<состав> } }
+  // ВАЖНО (подтверждено перехватом реального пакета DoSendMsg): target — это
+  // war.rallyPoint (точка СБОРА штурма {sid,x,y,pid}), НЕ war.targetPoint (враг);
+  // targetPlayerId — это war.playerId (создатель ралли). team собирается из пресета
+  // отряда (см. _G.__sr_aa_build_team). Шлём только если удалось получить team-объект.
+  '    if cfg.joinEnabled and war.id and type(war.rallyPoint) == "table" then',
   '      local team = (_G.__sr_aa_build_team and _G.__sr_aa_build_team(pickedIdx)) or nil',
   '      if type(team) == "table" then',
-  '        local data = { warId = war.id, teamIndex = pickedIdx, target = war.targetPoint, targetPlayerId = tonumber(war.playerId) or 0, team = team }',
+  '        local data = { warId = war.id, teamIndex = pickedIdx, target = war.rallyPoint, targetPlayerId = tonumber(war.playerId) or 0, team = team }',
   '        pcall(function() sm.JoinUnionRallyC2S(data) end)',
   '        local endt = os.time() + 120',
   '        if war.rallyEndTime then endt = math.floor(tonumber(war.rallyEndTime)/1000) + 120 end',
