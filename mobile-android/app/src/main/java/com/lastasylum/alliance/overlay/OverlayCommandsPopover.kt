@@ -680,6 +680,46 @@ class OverlayCommandsPopover(
             isClickable = true
         }
 
+    /** Фон секции-карточки во вкладке «Штурм»: мягкая подложка с тонкой рамкой. */
+    private fun assaultCardBackground(): GradientDrawable =
+        roundedRect(
+            fillColor = Color.parseColor("#22182A44"),
+            strokeColor = Color.parseColor("#2C44608A"),
+            cornerDp = 12,
+        )
+
+    /** Заголовок секции: компактный, разрядка, приглушённый акцент. */
+    private fun assaultSectionTitle(text: String): TextView =
+        labelText(text, 10.5f, Color.parseColor("#FF8AA6C8"), bold = true).apply {
+            letterSpacing = 0.06f
+        }
+
+    /** Компактное поле «подпись сверху + ввод снизу» для числовых настроек штурма. */
+    private fun assaultCompactField(label: String, edit: EditText): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(labelText(label, 9.5f, Color.parseColor("#FF8FA6C0")))
+            addView(
+                edit,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(4) },
+            )
+        }
+
+    /** Ряд из двух колонок равной ширины (вторая может отсутствовать — тогда пустой спейсер). */
+    private fun assaultTwoCol(left: View, right: View?): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(left, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(
+                right ?: View(context),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { marginStart = dp(8) },
+            )
+        }
+
     /**
      * ScrollView с ограничением высоты: когда [maxHeightPx] > 0, контент выше лимита
      * прокручивается (как лента реакций). Используется для списка закладок свыше 5 записей.
@@ -1228,10 +1268,13 @@ class OverlayCommandsPopover(
                 setText(initial)
                 hint = hintText
                 inputType = InputType.TYPE_CLASS_NUMBER
+                isSingleLine = true
+                maxLines = 1
+                gravity = Gravity.CENTER
                 setTextColor(Color.parseColor("#FFF8FAFF"))
                 setHintTextColor(Color.parseColor("#6A8098B0"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                setPadding(dp(10), dp(8), dp(10), dp(8))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                setPadding(dp(10), dp(7), dp(10), dp(7))
                 background = fieldBackground()
                 filters = arrayOf(InputFilter.LengthFilter(12))
             }
@@ -1239,7 +1282,7 @@ class OverlayCommandsPopover(
         val assaultPowerMinEdits = Array(3) { idx ->
             assaultNumField(
                 assaultPrefs.getAutoAssaultSquadPowerMin(idx).toString(),
-                context.getString(R.string.overlay_assault_power_hint_example),
+                context.getString(R.string.overlay_assault_power_min_hint),
             )
         }
         val assaultPowerMaxEdits = Array(3) { idx ->
@@ -1254,11 +1297,11 @@ class OverlayCommandsPopover(
         )
         val assaultLevelMinEdit = assaultNumField(
             assaultPrefs.getAutoAssaultTargetLevelMin().takeIf { it > 0 }?.toString() ?: "",
-            context.getString(R.string.overlay_assault_level_min_hint),
+            "0",
         )
         val assaultLevelMaxEdit = assaultNumField(
             assaultPrefs.getAutoAssaultTargetLevelMax().takeIf { it > 0 }?.toString() ?: "",
-            context.getString(R.string.overlay_assault_level_max_hint),
+            "0",
         )
         val assaultMinRemainingEdit = assaultNumField(
             assaultPrefs.getAutoAssaultMinRemainingSec().toString(),
@@ -1310,149 +1353,75 @@ class OverlayCommandsPopover(
             )
         }
 
-        fun assaultLabeledRow(labelRes: Int, field: EditText): LinearLayout =
+        // Конструктор секции-карточки: подложка, отступы, вертикальный стек строк с зазорами.
+        fun assaultCard(vararg rows: Pair<View, Int>): LinearLayout =
             LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(
-                    labelText(
-                        context.getString(labelRes),
-                        11.5f,
-                        Color.parseColor("#9AB0C4D8"),
-                    ),
-                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.4f),
-                )
-                addView(
-                    field,
-                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
-                )
+                orientation = LinearLayout.VERTICAL
+                background = assaultCardBackground()
+                setPadding(dp(12), dp(11), dp(12), dp(12))
+                rows.forEachIndexed { i, (view, topDp) ->
+                    addView(
+                        view,
+                        LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        ).apply { if (i > 0) topMargin = dp(topDp) },
+                    )
+                }
             }
+        fun assaultNote(text: String): TextView =
+            labelText(text, 9f, Color.parseColor("#FF6E8498"))
 
+        // ---- Карточка-переключатель ----
         val assaultSwitch = SwitchCompat(context).apply {
             isChecked = assaultEnabled
             thumbTintList = ColorStateList.valueOf(Color.WHITE)
             trackTintList = ColorStateList.valueOf(Color.parseColor("#5538BDF8"))
         }
-        val assaultSwitchRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(
-                labelText(
-                    context.getString(R.string.overlay_assault_enabled),
-                    13f,
-                    Color.parseColor("#FFF4F7FF"),
-                    bold = true,
-                ),
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
-            )
-            addView(assaultSwitch)
-        }
         assaultSwitch.setOnCheckedChangeListener { _, on ->
             assaultEnabled = on
             persistAssaultSettings()
         }
-
-        val assaultSquadChips = (0 until 3).map { idx ->
-            choiceChip(
-                context.getString(R.string.overlay_assault_squad_label, idx + 1),
-                assaultSquads.contains(idx),
-            )
-        }
-        val assaultSquadsRow = LinearLayout(context).apply {
+        val assaultSwitchCard = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.START
-            addView(
-                labelText(
-                    context.getString(R.string.overlay_assault_squads),
-                    11.5f,
-                    Color.parseColor("#9AB0C4D8"),
-                ),
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { marginEnd = dp(8) },
-            )
-            assaultSquadChips.forEachIndexed { idx, chip ->
+            gravity = Gravity.CENTER_VERTICAL
+            background = assaultCardBackground()
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            val textCol = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
                 addView(
-                    chip,
+                    labelText(
+                        context.getString(R.string.overlay_assault_enabled),
+                        13.5f,
+                        Color.parseColor("#FFF4F7FF"),
+                        bold = true,
+                    ),
+                )
+                addView(
+                    labelText(
+                        context.getString(R.string.overlay_assault_enabled_sub),
+                        9.5f,
+                        Color.parseColor("#FF8093A8"),
+                    ),
                     LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { if (idx > 0) marginStart = dp(6) },
-                )
-                chip.setOnClickListener {
-                    if (assaultSquads.contains(idx)) assaultSquads.remove(idx) else assaultSquads.add(idx)
-                    if (assaultSquads.isEmpty()) assaultSquads.add(idx)
-                    val selected = assaultSquads.contains(idx)
-                    chip.background = optionChipBackground(selected)
-                    chip.setTextColor(Color.parseColor(if (selected) "#FFE8F4FF" else "#9AB0C4D8"))
-                    chip.typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-                    persistAssaultSettings()
-                }
-            }
-        }
-
-        val assaultPowerTitle = labelText(
-            context.getString(R.string.overlay_assault_power_title),
-            11.5f,
-            Color.parseColor("#9AB0C4D8"),
-        )
-        val assaultPowerRows = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            for (idx in 0 until 3) {
-                val row = LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    addView(
-                        labelText(
-                            context.getString(R.string.overlay_assault_squad_label, idx + 1),
-                            11f,
-                            Color.parseColor("#C8DCE8F4"),
-                        ),
-                        LinearLayout.LayoutParams(dp(28), LinearLayout.LayoutParams.WRAP_CONTENT),
-                    )
-                    addView(
-                        assaultPowerMinEdits[idx],
-                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
-                    )
-                    addView(
-                        assaultPowerMaxEdits[idx],
-                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                            .apply { marginStart = dp(6) },
-                    )
-                }
-                addView(
-                    row,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { if (idx > 0) topMargin = dp(6) },
+                    ).apply { topMargin = dp(2) },
                 )
             }
+            addView(textCol, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(assaultSwitch)
         }
 
-        val assaultDistanceRow = assaultLabeledRow(R.string.overlay_assault_max_distance, assaultDistanceEdit)
-
-        // ---- Тип цели: монстры / игроки / города (multi-select) ----
+        // ---- Тип цели (чипы) ----
         val assaultTypeOrder = listOf(
             UserSettingsPreferences.AUTO_ASSAULT_TYPE_MONSTER to R.string.overlay_assault_type_monster,
             UserSettingsPreferences.AUTO_ASSAULT_TYPE_PLAYER to R.string.overlay_assault_type_player,
             UserSettingsPreferences.AUTO_ASSAULT_TYPE_CITY to R.string.overlay_assault_type_city,
         )
-        val assaultTypesRow = LinearLayout(context).apply {
+        val assaultTypesChips = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.START
-            addView(
-                labelText(
-                    context.getString(R.string.overlay_assault_types_title),
-                    11.5f,
-                    Color.parseColor("#9AB0C4D8"),
-                ),
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { marginEnd = dp(8) },
-            )
             assaultTypeOrder.forEachIndexed { i, (typeKey, labelRes) ->
                 val chip = choiceChip(context.getString(labelRes), assaultTypes.contains(typeKey))
                 addView(
@@ -1474,30 +1443,95 @@ class OverlayCommandsPopover(
             }
         }
 
-        val assaultLevelTitle = labelText(
-            context.getString(R.string.overlay_assault_level_title),
-            11.5f,
-            Color.parseColor("#9AB0C4D8"),
-        )
-        val assaultLevelRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(
-                assaultLevelMinEdit,
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
-            )
-            addView(
-                assaultLevelMaxEdit,
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    .apply { marginStart = dp(6) },
+        // ---- Отряды (чипы) ----
+        val assaultSquadChips = (0 until 3).map { idx ->
+            choiceChip(
+                context.getString(R.string.overlay_assault_squad_label, idx + 1),
+                assaultSquads.contains(idx),
             )
         }
+        val assaultSquadsChips = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START
+            assaultSquadChips.forEachIndexed { idx, chip ->
+                addView(
+                    chip,
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        .apply { if (idx > 0) marginStart = dp(6) },
+                )
+                chip.setOnClickListener {
+                    if (assaultSquads.contains(idx)) assaultSquads.remove(idx) else assaultSquads.add(idx)
+                    if (assaultSquads.isEmpty()) assaultSquads.add(idx)
+                    val selected = assaultSquads.contains(idx)
+                    chip.background = optionChipBackground(selected)
+                    chip.setTextColor(Color.parseColor(if (selected) "#FFE8F4FF" else "#9AB0C4D8"))
+                    chip.typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    persistAssaultSettings()
+                }
+            }
+        }
 
-        val assaultMinRemainingRow = assaultLabeledRow(R.string.overlay_assault_min_remaining, assaultMinRemainingEdit)
-        val assaultCooldownRow = assaultLabeledRow(R.string.overlay_assault_cooldown, assaultCooldownEdit)
-        val assaultMaxConcurrentRow = assaultLabeledRow(R.string.overlay_assault_max_concurrent, assaultMaxConcurrentEdit)
-        val assaultDurationRow = assaultLabeledRow(R.string.overlay_assault_duration, assaultDurationEdit)
+        // ---- Мощь цели по отрядам (Отряд N: мин | макс) ----
+        val assaultPowerRows = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            for (idx in 0 until 3) {
+                val row = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(
+                        labelText(
+                            context.getString(R.string.overlay_assault_squad_label, idx + 1),
+                            11f,
+                            Color.parseColor("#FFC8DCE8"),
+                            bold = true,
+                        ).apply { gravity = Gravity.CENTER },
+                        LinearLayout.LayoutParams(dp(22), LinearLayout.LayoutParams.WRAP_CONTENT),
+                    )
+                    addView(
+                        assaultPowerMinEdits[idx],
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                            .apply { marginStart = dp(6) },
+                    )
+                    addView(
+                        assaultPowerMaxEdits[idx],
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                            .apply { marginStart = dp(6) },
+                    )
+                }
+                addView(
+                    row,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { if (idx > 0) topMargin = dp(6) },
+                )
+            }
+        }
 
+        // ---- Компактные числовые поля (подпись сверху) ----
+        val assaultLevelFromField = assaultCompactField(
+            context.getString(R.string.overlay_assault_f_level_from), assaultLevelMinEdit,
+        )
+        val assaultLevelToField = assaultCompactField(
+            context.getString(R.string.overlay_assault_f_level_to), assaultLevelMaxEdit,
+        )
+        val assaultDistanceField = assaultCompactField(
+            context.getString(R.string.overlay_assault_f_distance), assaultDistanceEdit,
+        )
+        val assaultTimeField = assaultCompactField(
+            context.getString(R.string.overlay_assault_f_time), assaultMinRemainingEdit,
+        )
+        val assaultCooldownField = assaultCompactField(
+            context.getString(R.string.overlay_assault_f_cooldown), assaultCooldownEdit,
+        )
+        val assaultLimitField = assaultCompactField(
+            context.getString(R.string.overlay_assault_f_limit), assaultMaxConcurrentEdit,
+        )
+        val assaultAutoOffField = assaultCompactField(
+            context.getString(R.string.overlay_assault_f_autooff), assaultDurationEdit,
+        )
+
+        // ---- Соалийцы (открывается отдельным окном) ----
         val assaultAlliesLabel = labelText(
             assaultAlliesLabel(),
             12.5f,
@@ -1506,12 +1540,16 @@ class OverlayCommandsPopover(
         )
         val assaultAlliesButton = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            minimumHeight = dp(36)
-            setPadding(dp(14), dp(8), dp(14), dp(8))
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(40)
+            setPadding(dp(14), dp(9), dp(12), dp(9))
             background = rippleOn(fieldBackground())
             isClickable = true
-            addView(assaultAlliesLabel)
+            addView(
+                assaultAlliesLabel,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            addView(labelText("\u203A", 18f, Color.parseColor("#FF7DD3FC"), bold = true))
         }
 
         // ---- Лог последних авто-вступлений ----
@@ -1525,16 +1563,16 @@ class OverlayCommandsPopover(
                 assaultLogContainer.addView(
                     labelText(
                         context.getString(R.string.overlay_assault_log_empty),
-                        11f,
+                        10.5f,
                         Color.parseColor("#7A90A4B8"),
-                    ).apply { setPadding(0, dp(6), 0, dp(6)) },
+                    ).apply { setPadding(0, dp(4), 0, dp(4)) },
                 )
                 return
             }
-            entries.forEach { entry ->
+            entries.forEachIndexed { i, entry ->
                 assaultLogContainer.addView(
-                    labelText(entry, 11f, Color.parseColor("#C8DCE8F4")).apply {
-                        setPadding(0, dp(3), 0, dp(3))
+                    labelText(entry, 11f, Color.parseColor("#FFC8DCE8")).apply {
+                        setPadding(0, dp(if (i == 0) 0 else 5), 0, dp(5))
                     },
                 )
             }
@@ -1544,20 +1582,16 @@ class OverlayCommandsPopover(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(
-                labelText(
-                    context.getString(R.string.overlay_assault_log_title),
-                    11.5f,
-                    Color.parseColor("#9AB0C4D8"),
-                ),
+                assaultSectionTitle(context.getString(R.string.overlay_assault_log_title)),
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
             )
             addView(
                 labelText(
                     context.getString(R.string.overlay_assault_log_clear),
-                    11f,
+                    10.5f,
                     Color.parseColor("#FF7DD3FC"),
                 ).apply {
-                    setPadding(dp(8), dp(4), dp(4), dp(4))
+                    setPadding(dp(8), dp(2), dp(2), dp(2))
                     isClickable = true
                     setOnClickListener {
                         assaultPrefs.clearAutoAssaultJoinLog()
@@ -1567,36 +1601,57 @@ class OverlayCommandsPopover(
             )
         }
 
+        // ---- Сборка карточек ----
+        val assaultFilterCard = assaultCard(
+            assaultSectionTitle(context.getString(R.string.overlay_assault_card_filter)) to 0,
+            assaultNote(context.getString(R.string.overlay_assault_types_title)) to 8,
+            assaultTypesChips to 6,
+            assaultTwoCol(assaultLevelFromField, assaultLevelToField) to 10,
+            assaultDistanceField to 10,
+        )
+        val assaultSquadsCard = assaultCard(
+            assaultSectionTitle(context.getString(R.string.overlay_assault_card_squads)) to 0,
+            assaultSquadsChips to 8,
+            assaultNote(context.getString(R.string.overlay_assault_power_title)) to 10,
+            assaultPowerRows to 6,
+            assaultNote(context.getString(R.string.overlay_assault_power_hint_example)) to 6,
+        )
+        val assaultTimingCard = assaultCard(
+            assaultSectionTitle(context.getString(R.string.overlay_assault_card_timing)) to 0,
+            assaultTwoCol(assaultTimeField, assaultCooldownField) to 8,
+            assaultTwoCol(assaultLimitField, assaultAutoOffField) to 10,
+            assaultNote(context.getString(R.string.overlay_assault_note_zero)) to 6,
+        )
+        val assaultAlliesCard = assaultCard(
+            assaultSectionTitle(context.getString(R.string.overlay_assault_card_allies)) to 0,
+            assaultAlliesButton to 8,
+        )
+        val assaultLogCard = assaultCard(
+            assaultLogHeader to 0,
+            assaultLogContainer to 6,
+        )
+
         val assaultInner = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            addView(assaultSwitchRow)
-            fun spaced(v: View, top: Int = 10) = addView(
+            addView(assaultSwitchCard)
+            fun card(v: View) = addView(
                 v,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(top) },
+                ).apply { topMargin = dp(10) },
             )
-            spaced(assaultTypesRow)
-            spaced(assaultSquadsRow)
-            spaced(assaultPowerTitle)
-            spaced(assaultPowerRows, 6)
-            spaced(assaultLevelTitle)
-            spaced(assaultLevelRow, 6)
-            spaced(assaultDistanceRow)
-            spaced(assaultMinRemainingRow, 8)
-            spaced(assaultCooldownRow, 8)
-            spaced(assaultMaxConcurrentRow, 8)
-            spaced(assaultDurationRow, 8)
-            spaced(assaultAlliesButton)
-            spaced(assaultLogHeader)
-            spaced(assaultLogContainer, 2)
+            card(assaultFilterCard)
+            card(assaultSquadsCard)
+            card(assaultTimingCard)
+            card(assaultAlliesCard)
+            card(assaultLogCard)
         }
         val assaultContent = MaxHeightScrollView(context).apply {
             visibility = View.GONE
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
-            maxHeightPx = dp(320)
+            maxHeightPx = dp(360)
             addView(
                 assaultInner,
                 FrameLayout.LayoutParams(

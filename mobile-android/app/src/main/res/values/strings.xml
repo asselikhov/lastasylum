@@ -887,7 +887,20 @@
     <string name="overlay_assault_cooldown">Кулдаун, с</string>
     <string name="overlay_assault_max_concurrent">Лимит маршей (0 = без огр.)</string>
     <string name="overlay_assault_duration">Авто-выкл через, мин (0 = выкл)</string>
-    <string name="overlay_assault_power_hint_example">напр. 2000000</string>
+    <string name="overlay_assault_power_hint_example">напр. 2 000 000</string>
+    <string name="overlay_assault_card_filter">Фильтр цели</string>
+    <string name="overlay_assault_card_squads">Отряды и мощь</string>
+    <string name="overlay_assault_card_timing">Тайминги и лимиты</string>
+    <string name="overlay_assault_card_allies">Соалийцы</string>
+    <string name="overlay_assault_enabled_sub">Автовступление в штурмы соалийцев</string>
+    <string name="overlay_assault_f_level_from">Уровень от</string>
+    <string name="overlay_assault_f_level_to">Уровень до</string>
+    <string name="overlay_assault_f_distance">Дистанция, кл</string>
+    <string name="overlay_assault_f_time">Время до старта, с</string>
+    <string name="overlay_assault_f_cooldown">Кулдаун, с</string>
+    <string name="overlay_assault_f_limit">Лимит маршей</string>
+    <string name="overlay_assault_f_autooff">Авто-выкл, мин</string>
+    <string name="overlay_assault_note_zero">0 — без ограничения</string>
     <string name="overlay_assault_log_title">Последние вступления</string>
     <string name="overlay_assault_log_empty">Пока нет авто-вступлений</string>
     <string name="overlay_assault_log_clear">Очистить</string>
