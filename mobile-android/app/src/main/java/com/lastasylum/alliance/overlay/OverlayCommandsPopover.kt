@@ -1375,6 +1375,11 @@ class OverlayCommandsPopover(
         // ---- Карточка-переключатель ----
         val assaultSwitch = SwitchCompat(context).apply {
             isChecked = assaultEnabled
+            // Без ON/OFF-подписей: на части тем showText=true, а textOn/textOff = null,
+            // из-за чего SwitchCompat.makeLayout падает с NPE при измерении.
+            showText = false
+            textOn = ""
+            textOff = ""
             thumbTintList = ColorStateList.valueOf(Color.WHITE)
             trackTintList = ColorStateList.valueOf(Color.parseColor("#5538BDF8"))
         }

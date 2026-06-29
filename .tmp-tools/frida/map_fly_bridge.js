@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '14';
+const BRIDGE_VERSION = '15';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -217,7 +217,7 @@ const ASSAULT_JOIN_ACTION = 'com.lastasylum.alliance.action.ASSAULT_JOIN';
 const ALLIANCE_ROSTER_FILE = '/data/data/com.phs.global/files/squadrelay_alliance_roster.json';
 const ALLIANCE_ROSTER_FILE_LUA = "'" + ALLIANCE_ROSTER_FILE + "'";
 const ALLIANCE_ROSTER_ACTION = 'com.lastasylum.alliance.action.ALLIANCE_ROSTER';
-const ALLIANCE_ROSTER_SCAN_INTERVAL_MS = 45000;
+const ALLIANCE_ROSTER_SCAN_INTERVAL_MS = 20000;
 const ALLIANCE_ROSTER_LUA = [
   'pcall(function()',
   '  local ad = _G.Data and _G.Data.AllianceData',
