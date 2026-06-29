@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '11';
+const BRIDGE_VERSION = '12';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -219,6 +219,12 @@ const AUTOASSAULT_SCAN_LUA = [
   '  local ad = _G.Data and _G.Data.AllianceData',
   '  local wars = ad and ad.wars',
   '  if type(wars) ~= "table" then return end',
+  // Присоединяемые штурмы лежат в под-словарях wars.assemblyDic / wars.activityDic
+  // (keyed по id), а не в самом wars (это контейнер под-словарей).
+  '  local function dcount(t) local n=0 if type(t)=="table" then for _ in pairs(t) do n=n+1 end end return n end',
+  '  local dic = wars.assemblyDic',
+  '  if dcount(dic) == 0 then dic = wars.activityDic end',
+  '  if type(dic) ~= "table" then return end',
   '  local sm = package.loaded["Logic.Proto.Send.union_war"]',
   '  if not sm or not sm.JoinUnionRallyC2S then return end',
   '  local C = _G.Config',
@@ -298,7 +304,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '  local lvMin = tonumber(cfg.levelMin) or 0',
   '  local lvMax = tonumber(cfg.levelMax) or 0',
   '  local maxConc = tonumber(cfg.maxConcurrent) or 0',
-  '  for _, war in pairs(wars) do',
+  '  for _, war in pairs(dic) do',
   '    if type(war) ~= "table" or not war.isRally then goto continue end',
   '    if maxConc > 0 and activeJoins() >= maxConc then break end',
   '    if war.id and _G.__sr_aa_active[tostring(war.id)] then goto continue end',
@@ -337,11 +343,21 @@ const AUTOASSAULT_SCAN_LUA = [
   '    if pickedIdx == nil then goto continue end',
   '    local matchJson = string.format(\'{"creator":"%s","type":"%s","power":%d,"level":%d,"dist":%d,"squad":%d,"id":"%s","time":%d}\', tostring(war.playerName or ""):gsub(\'"\',"\'"), ttype, math.floor(pow), math.floor(lv), math.floor(dist), pickedIdx, tostring(war.id or ""), os.time())',
   '    local f = io.open(' + AUTOASSAULT_MATCH_FILE_LUA + ', "w") if f then f:write(matchJson) f:close() end',
-  '    if cfg.joinEnabled and war.id then',
-  '      pcall(function() sm.JoinUnionRallyC2S(war.id, pickedIdx + 1) end)',
-  '      local endt = os.time() + 120',
-  '      if war.rallyEndTime then endt = math.floor(tonumber(war.rallyEndTime)/1000) + 120 end',
-  '      _G.__sr_aa_active[tostring(war.id)] = endt',
+  // Реальное вступление. JoinUnionRallyC2S(data, clientData), где data — таблица:
+  //   { warId=war.id, teamIndex=pickedIdx (0-based), target=war.targetPoint,
+  //     targetPlayerId=<id цели>, team={ wingManId=<id>, units=<состав войск> } }
+  // target берётся из war.targetPoint ({x,y,pid,sid}); team (состав войск) —
+  // самая сложная часть, синтез состава пока не реализован. Поэтому при включённом
+  // cfg.joinEnabled собираем data и шлём ТОЛЬКО если удалось получить team-объект.
+  '    if cfg.joinEnabled and war.id and type(war.targetPoint) == "table" then',
+  '      local team = (_G.__sr_aa_build_team and _G.__sr_aa_build_team(pickedIdx)) or nil',
+  '      if type(team) == "table" then',
+  '        local data = { warId = war.id, teamIndex = pickedIdx, target = war.targetPoint, targetPlayerId = tonumber(war.targetPoint.pid) or 0, team = team }',
+  '        pcall(function() sm.JoinUnionRallyC2S(data) end)',
+  '        local endt = os.time() + 120',
+  '        if war.rallyEndTime then endt = math.floor(tonumber(war.rallyEndTime)/1000) + 120 end',
+  '        _G.__sr_aa_active[tostring(war.id)] = endt',
+  '      end',
   '    end',
   '    ::continue::',
   '  end',
