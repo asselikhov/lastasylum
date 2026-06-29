@@ -95,8 +95,8 @@ object GameAutoAssaultBridge {
         val roster = AllianceRosterCache.peek().takeIf { it.isNotEmpty() }
             ?: AllianceRosterCache.parse(prefs.getAllianceRosterJson())
         return roster
-            .filter { allowedIds.contains(it.userId) }
-            .map { it.username.trim() }
+            .filter { allowedIds.contains(it.id) }
+            .map { it.name.trim() }
             .filter { it.isNotEmpty() }
             .distinct()
     }

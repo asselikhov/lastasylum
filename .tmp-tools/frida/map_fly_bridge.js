@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '13';
+const BRIDGE_VERSION = '14';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -229,7 +229,11 @@ const ALLIANCE_ROSTER_LUA = [
   '    local p = m and m.profile',
   '    if type(p) == "table" and p.name then',
   '      local nm = tostring(p.name):gsub(q, string.char(39)):gsub(string.char(92), " ")',
-  '      out[#out + 1] = "{"..q.."id"..q..":"..q..tostring(p.id or pid)..q..","..q.."name"..q..":"..q..nm..q..","..q.."power"..q..":"..tostring(math.floor(tonumber(p.battlePower) or 0))..","..q.."level"..q..":"..tostring(math.floor(tonumber(p.level) or 0))..","..q.."rank"..q..":"..tostring(math.floor(tonumber(m.rank) or 0)).."}"',
+  '      local cc = m.cityCoords',
+  '      local cx = (type(cc) == "table" and tonumber(cc.x)) or 0',
+  '      local cy = (type(cc) == "table" and tonumber(cc.y)) or 0',
+  '      local cs = (type(cc) == "table" and tonumber(cc.sid)) or (tonumber(p.serverId) or 0)',
+  '      out[#out + 1] = "{"..q.."id"..q..":"..q..tostring(p.id or pid)..q..","..q.."name"..q..":"..q..nm..q..","..q.."power"..q..":"..tostring(math.floor(tonumber(p.battlePower) or 0))..","..q.."level"..q..":"..tostring(math.floor(tonumber(p.level) or 0))..","..q.."castle"..q..":"..tostring(math.floor(tonumber(m.castleLevel) or 0))..","..q.."rank"..q..":"..tostring(math.floor(tonumber(m.rank) or 0))..","..q.."kills"..q..":"..tostring(math.floor(tonumber(m.killNum) or 0))..","..q.."x"..q..":"..tostring(math.floor(cx))..","..q.."y"..q..":"..tostring(math.floor(cy))..","..q.."sid"..q..":"..tostring(math.floor(cs))..","..q.."logout"..q..":"..tostring(math.floor(tonumber(m.logoutTime) or 0)).."}"',
   '    end',
   '  end',
   '  local s = "[" .. table.concat(out, ",") .. "]"',

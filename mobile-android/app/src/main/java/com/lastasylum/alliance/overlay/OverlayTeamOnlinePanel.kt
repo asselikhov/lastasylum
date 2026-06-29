@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material3.Badge
@@ -131,6 +132,7 @@ fun OverlayTeamOnlinePanel(
     }
     val uiState by controller.state.collectAsStateWithLifecycle(lifecycleOwner)
     var actionSheetMember by remember { mutableStateOf<OverlayOnlineMemberUiModel?>(null) }
+    var showAllianceMembers by remember { mutableStateOf(false) }
     var pinnedMemberIds by remember(uiState.team?.id) {
         mutableStateOf(
             uiState.team?.id?.let { appContainer.userSettingsPreferences.getOverlayPinnedMemberIds(it) }
@@ -340,6 +342,10 @@ fun OverlayTeamOnlinePanel(
         }
     }
 
+    if (showAllianceMembers) {
+        OverlayAllianceMembersSheet(onDismissRequest = { showAllianceMembers = false })
+    }
+
     val openMemberActions: (OverlayOnlineMemberUiModel) -> Unit = { actionSheetMember = it }
 
     OverlayOnlinePanelScaffold(
@@ -382,6 +388,21 @@ fun OverlayTeamOnlinePanel(
                     uiState.ingameCount,
                 ) + " · $realtimeLabel",
                 onClose = onClose,
+                titleTrailing = {
+                    IconButton(
+                        onClick = { showAllianceMembers = true },
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Groups,
+                            contentDescription = stringResource(
+                                R.string.overlay_alliance_members_title,
+                            ),
+                            tint = OverlayOnlineMemberTokens.borderLive,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                },
                 subtitleTrailing = if (team != null && isLeader) {
                     {
                         OverlayOnlineLeaderToolbarActions(

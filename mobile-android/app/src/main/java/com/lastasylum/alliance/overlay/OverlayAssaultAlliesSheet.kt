@@ -71,11 +71,15 @@ private val OverlayCyan = Color(0xFF38BDF8)
  */
 internal suspend fun loadOverlayAssaultTeamMembers(context: Context): List<PlayerTeamMemberDto> =
     withContext(Dispatchers.IO) {
-        AllianceRosterCache.peek().takeIf { it.isNotEmpty() }?.let { return@withContext it }
-        val json = AppContainer.from(context).userSettingsPreferences.getAllianceRosterJson()
-        val parsed = AllianceRosterCache.parse(json)
-        if (parsed.isNotEmpty()) AllianceRosterCache.update(parsed)
-        parsed
+        var roster = AllianceRosterCache.peek()
+        if (roster.isEmpty()) {
+            val json = AppContainer.from(context).userSettingsPreferences.getAllianceRosterJson()
+            roster = AllianceRosterCache.parse(json)
+            if (roster.isNotEmpty()) AllianceRosterCache.update(roster)
+        }
+        roster
+            .map { PlayerTeamMemberDto(userId = it.id, username = it.name, isLeader = false) }
+            .sortedBy { it.username.lowercase() }
     }
 
 @Composable
