@@ -195,6 +195,53 @@ fun OverlayAssaultAlliesSheet(
                         )
                     }
                     else -> {
+                        val allUserIds = remember(members) { members.map { it.userId }.toSet() }
+                        val allSelected = allUserIds.isNotEmpty() && selectedIds.containsAll(allUserIds)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = {
+                                        selectedIds = if (allSelected) emptySet() else allUserIds
+                                    },
+                                )
+                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = allSelected,
+                                onCheckedChange = { on ->
+                                    selectedIds = if (on) allUserIds else emptySet()
+                                },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = OverlayCyan,
+                                    uncheckedColor = OverlayMuted,
+                                    checkmarkColor = Color.Black,
+                                ),
+                            )
+                            Text(
+                                text = stringResource(R.string.overlay_assault_allies_select_all),
+                                color = Color.White,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.overlay_assault_allies_selected_count,
+                                    selectedIds.count { allUserIds.contains(it) },
+                                    allUserIds.size,
+                                ),
+                                color = OverlayMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        HorizontalDivider(
+                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
+                            color = OverlaySheetStroke,
+                        )
                         LazyColumn(
                             modifier = Modifier
                                 .weight(1f)

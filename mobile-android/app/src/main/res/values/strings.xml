@@ -874,6 +874,8 @@
     <string name="overlay_assault_allies_empty">Нет данных отряда</string>
     <string name="overlay_assault_allies_confirm_all">Все соалийцы</string>
     <string name="overlay_assault_allies_confirm_count">Сохранить (%1$d)</string>
+    <string name="overlay_assault_allies_select_all">Выбрать всех</string>
+    <string name="overlay_assault_allies_selected_count">%1$d / %2$d</string>
     <string name="overlay_assault_types_title">Тип цели</string>
     <string name="overlay_assault_type_monster">Монстры</string>
     <string name="overlay_assault_type_player">Игроки</string>
