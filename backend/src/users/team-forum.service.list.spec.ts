@@ -182,24 +182,32 @@ describe('TeamForumService listTopics performance', () => {
       service as never,
       'buildPinnedPreviewsForTopics' as never,
     );
-    let readStarted = 0;
-    let pinStarted = 0;
-    (readSpy as jest.SpyInstance).mockImplementation(async () => {
-      readStarted = Date.now();
-      await new Promise((r) => setTimeout(r, 30));
-      return new Map();
+    // Deterministic concurrency check: track how many of the two steps are
+    // in-flight at the same time. With Promise.all both are entered before
+    // either awaits, so peak in-flight reaches 2; sequential execution stays
+    // at 1. This avoids brittle wall-clock thresholds.
+    let inFlight = 0;
+    let peakInFlight = 0;
+    let readStarted = false;
+    let pinStarted = false;
+    const track = async <T>(value: T): Promise<T> => {
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight -= 1;
+      return value;
+    };
+    (readSpy as jest.SpyInstance).mockImplementation(() => {
+      readStarted = true;
+      return track(new Map());
     });
-    (pinSpy as jest.SpyInstance).mockImplementation(async () => {
-      pinStarted = Date.now();
-      await new Promise((r) => setTimeout(r, 30));
-      return new Map([[topicId, { id: messageId, text: 'hello' }]]);
+    (pinSpy as jest.SpyInstance).mockImplementation(() => {
+      pinStarted = true;
+      return track(new Map([[topicId, { id: messageId, text: 'hello' }]]));
     });
-    const startedAt = Date.now();
     await service.listTopics(teamId, userId, { view: 'list' });
-    const elapsed = Date.now() - startedAt;
-    expect(readStarted).toBeGreaterThan(0);
-    expect(pinStarted).toBeGreaterThan(0);
-    expect(Math.abs(readStarted - pinStarted)).toBeLessThan(15);
-    expect(elapsed).toBeLessThan(80);
+    expect(readStarted).toBe(true);
+    expect(pinStarted).toBe(true);
+    expect(peakInFlight).toBe(2);
   });
 });
