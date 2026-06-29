@@ -12,11 +12,14 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.lastasylum.alliance.ui.SquadRelayApp
+import com.lastasylum.alliance.update.installDownloadedApk
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleInstallApkIntent(intent)
         handleIncomingShareIntent(intent)
     }
 
@@ -37,7 +40,25 @@ class MainActivity : ComponentActivity() {
         setContent {
             SquadRelayApp()
         }
+        handleInstallApkIntent(intent)
         handleIncomingShareIntent(intent)
+    }
+
+    /**
+     * Запуск установщика обновления приложения из foreground. Сервис оверлея только скачивает
+     * APK и поднимает эту Activity — запуск установщика из фона блокируется BAL на многих ROM.
+     */
+    private fun handleInstallApkIntent(intent: Intent?) {
+        val path = intent?.getStringExtra(EXTRA_INSTALL_APK_PATH)?.trim().orEmpty()
+        if (path.isEmpty()) return
+        // Снимаем экстру, чтобы установщик не открывался повторно при пересоздании Activity.
+        setIntent(Intent(this, MainActivity::class.java).apply { action = Intent.ACTION_MAIN })
+        val apk = File(path)
+        if (!apk.exists() || apk.length() <= 0L) {
+            Toast.makeText(this, R.string.chat_apk_install_failed, Toast.LENGTH_LONG).show()
+            return
+        }
+        installDownloadedApk(apk)
     }
 
     private fun handleIncomingShareIntent(intent: Intent?) {
@@ -58,6 +79,9 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_START_TAB = "com.lastasylum.alliance.extra.START_TAB"
+
+        /** Абсолютный путь к скачанному APK обновления, который нужно установить из foreground. */
+        const val EXTRA_INSTALL_APK_PATH = "com.lastasylum.alliance.extra.INSTALL_APK_PATH"
     }
 
     private fun hideSystemUi() {

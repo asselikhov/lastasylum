@@ -63,11 +63,18 @@ fun Context.toastUpdateCheckFailed() {
     ).show()
 }
 
-/** Скачивает публичный APK (GitHub Releases и т.п.) и открывает установщик. */
-suspend fun downloadAndInstallAppUpdate(
+/**
+ * Скачивает публичный APK (GitHub Releases и т.п.) в кэш и возвращает файл.
+ *
+ * Установку (запуск системного установщика) намеренно НЕ делаем здесь: запуск Activity
+ * установщика из фонового сервиса блокируется ограничениями Background Activity Launch на
+ * многих прошивках (MIUI/EMUI/ColorOS и т.п.), причём без исключения — окно просто не
+ * появляется. Поэтому установку запускает foreground-[com.lastasylum.alliance.MainActivity].
+ */
+suspend fun downloadAppUpdateApk(
     context: Context,
     downloadUrl: String,
-): Result<Unit> = withContext(Dispatchers.IO) {
+): Result<File> = withContext(Dispatchers.IO) {
     runCatching {
         val appContext = context.applicationContext
         val url = downloadUrl.trim()
@@ -88,31 +95,37 @@ suspend fun downloadAndInstallAppUpdate(
         if (outFile.length() <= 0L) {
             error(appContext.getString(R.string.chat_apk_download_failed))
         }
-        withContext(Dispatchers.Main) {
-            launchApkInstaller(appContext, outFile)
-        }
+        outFile
     }
 }
 
-private fun launchApkInstaller(context: Context, apkFile: File) {
+/**
+ * Открывает системный установщик для уже скачанного APK. Должно вызываться из foreground
+ * (например, Activity), иначе на части прошивок запуск молча блокируется.
+ *
+ * @return false, если запустить установщик не удалось (например, нет разрешения «установка из
+ * этого источника» или фоновый запуск заблокирован).
+ */
+fun Context.installDownloadedApk(apkFile: File): Boolean {
     val uri: Uri = FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.fileprovider",
+        this,
+        "${packageName}.fileprovider",
         apkFile,
     )
     val intent = Intent(Intent.ACTION_VIEW).apply {
         setDataAndType(uri, "application/vnd.android.package-archive")
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        if (context !is android.app.Activity) {
+        if (this@installDownloadedApk !is android.app.Activity) {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
     }
-    runCatching { context.startActivity(intent) }
+    return runCatching { startActivity(intent) }
         .onFailure {
             Toast.makeText(
-                context,
-                context.getString(R.string.chat_apk_install_failed),
+                this,
+                getString(R.string.chat_apk_install_failed),
                 Toast.LENGTH_LONG,
             ).show()
         }
+        .isSuccess
 }

@@ -158,7 +158,8 @@ import com.lastasylum.alliance.ui.OVERLAY_WARMUP_MAX_MS
 import com.lastasylum.alliance.data.teams.forum.ForumOutboxResumeScheduler
 import com.lastasylum.alliance.push.PushTokenRegistrationCoordinator
 import com.lastasylum.alliance.push.GameEventPushStripSuppressor
-import com.lastasylum.alliance.update.downloadAndInstallAppUpdate
+import com.lastasylum.alliance.MainActivity
+import com.lastasylum.alliance.update.downloadAppUpdateApk
 import com.lastasylum.alliance.update.checkAppUpdate
 import com.lastasylum.alliance.update.AppUpdateCheckResult
 import java.time.Instant
@@ -3737,17 +3738,41 @@ class CombatOverlayService : Service() {
         overlayAppUpdateDownloadInFlight = true
         Toast.makeText(this, getString(R.string.overlay_app_update_downloading), Toast.LENGTH_SHORT).show()
         serviceScope.launch {
-            val result = downloadAndInstallAppUpdate(this@CombatOverlayService, url)
+            val result = downloadAppUpdateApk(this@CombatOverlayService, url)
             mainHandler.post {
                 overlayAppUpdateDownloadInFlight = false
-                if (result.isFailure) {
+                val apk = result.getOrNull()
+                if (apk == null) {
                     Toast.makeText(
                         this@CombatOverlayService,
                         getString(R.string.chat_apk_download_failed),
                         Toast.LENGTH_LONG,
                     ).show()
+                } else {
+                    // Установщик запускаем из foreground-Activity: прямой startActivity из фонового
+                    // сервиса блокируется BAL на многих прошивках, и окно установки не появляется.
+                    launchAppUpdateInstallerViaActivity(apk)
                 }
             }
+        }
+    }
+
+    private fun launchAppUpdateInstallerViaActivity(apk: java.io.File) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            )
+            putExtra(MainActivity.EXTRA_INSTALL_APK_PATH, apk.absolutePath)
+        }
+        val launched = runCatching { startActivity(intent) }.isSuccess
+        if (!launched) {
+            Toast.makeText(
+                this,
+                getString(R.string.chat_apk_install_failed),
+                Toast.LENGTH_LONG,
+            ).show()
         }
     }
 
