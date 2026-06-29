@@ -5,6 +5,39 @@ on:
   pull_request:
 
 jobs:
+  bridge-version-sync:
+    # Map bridge logic version must match in two places, or the app shows a wrong
+    # "available patch" version and never flags an outdated installed patch:
+    #   - .tmp-tools/frida/map_fly_bridge.js     -> const BRIDGE_VERSION = '<n>'
+    #   - mobile-android/app/build.gradle.kts    -> val squadRelayMapBridgeVersion = "<n>"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check map bridge version is in sync
+        run: |
+          set -euo pipefail
+          js_file=".tmp-tools/frida/map_fly_bridge.js"
+          gradle_file="mobile-android/app/build.gradle.kts"
+          for f in "$js_file" "$gradle_file"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing file for bridge version check: $f"
+              exit 1
+            fi
+          done
+          js_ver=$( { grep -oE "BRIDGE_VERSION[[:space:]]*=[[:space:]]*'[^']+'" "$js_file" || true; } | head -1 | grep -oE "'[^']+'" | tr -d "'" || true)
+          gradle_ver=$( { grep -oE 'squadRelayMapBridgeVersion[[:space:]]*=[[:space:]]*"[^"]+"' "$gradle_file" || true; } | head -1 | grep -oE '"[^"]+"' | tr -d '"' || true)
+          echo "map_fly_bridge.js BRIDGE_VERSION      = '${js_ver:-<none>}'"
+          echo "build.gradle.kts squadRelayMapBridge  = '${gradle_ver:-<none>}'"
+          if [ -z "$js_ver" ] || [ -z "$gradle_ver" ]; then
+            echo "::error::Could not extract a bridge version from one of the files."
+            exit 1
+          fi
+          if [ "$js_ver" != "$gradle_ver" ]; then
+            echo "::error::Map bridge version mismatch: map_fly_bridge.js='$js_ver' vs build.gradle.kts='$gradle_ver'. Bump squadRelayMapBridgeVersion to match BRIDGE_VERSION."
+            exit 1
+          fi
+          echo "Map bridge version in sync: $js_ver"
+
   backend:
     runs-on: ubuntu-latest
     defaults:
