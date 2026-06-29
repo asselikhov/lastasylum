@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '16';
+const BRIDGE_VERSION = '17';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -2181,7 +2181,10 @@ function tickAllianceRoster() {
     return;
   }
   try {
-    const text = readFileUtf8(ALLIANCE_ROSTER_FILE);
+    // Лимит по умолчанию у readFileUtf8 — 4096 байт. Ростер крупного альянса
+    // (50+ участников) занимает ~8–16 КБ, поэтому читаем с большим запасом,
+    // иначе функция вернёт '' и broadcast молча не уйдёт.
+    const text = readFileUtf8(ALLIANCE_ROSTER_FILE, 512 * 1024);
     if (!text || !text.trim() || text.trim() === '[]') return;
     const changed = text !== lastAllianceRosterText;
     const due = now - allianceRosterLastBroadcastMs >= ALLIANCE_ROSTER_REBROADCAST_MS;

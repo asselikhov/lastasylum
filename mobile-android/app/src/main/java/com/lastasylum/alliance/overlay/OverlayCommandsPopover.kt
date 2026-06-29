@@ -39,7 +39,6 @@ import android.widget.HorizontalScrollView
 import android.widget.Toast
 import androidx.annotation.RawRes
 import androidx.appcompat.content.res.AppCompatResources
-import androidx.appcompat.widget.SwitchCompat
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.graphics.drawable.DrawableCompat
 import com.airbnb.lottie.LottieAnimationView
@@ -1373,18 +1372,44 @@ class OverlayCommandsPopover(
             labelText(text, 9f, Color.parseColor("#FF6E8498"))
 
         // ---- Карточка-переключатель ----
-        val assaultSwitch = SwitchCompat(context).apply {
-            isChecked = assaultEnabled
-            // Без ON/OFF-подписей: на части тем showText=true, а textOn/textOff = null,
-            // из-за чего SwitchCompat.makeLayout падает с NPE при измерении.
-            showText = false
-            textOn = ""
-            textOff = ""
-            thumbTintList = ColorStateList.valueOf(Color.WHITE)
-            trackTintList = ColorStateList.valueOf(Color.parseColor("#5538BDF8"))
+        // Собственный тогл: SwitchCompat в оверлей-контексте без AppCompat-темы
+        // рендерится без thumb/track drawable (видны только тинты), из-за чего
+        // переключателя фактически не видно. Рисуем гарантированно видимый toggle сами.
+        val assaultToggleBg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(13).toFloat()
         }
-        assaultSwitch.setOnCheckedChangeListener { _, on ->
-            assaultEnabled = on
+        val assaultToggleThumb = View(context).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.WHITE)
+            }
+        }
+        val assaultToggleTrack = FrameLayout(context).apply {
+            background = assaultToggleBg
+            isClickable = true
+            addView(
+                assaultToggleThumb,
+                FrameLayout.LayoutParams(dp(20), dp(20)).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    marginStart = dp(3)
+                    marginEnd = dp(3)
+                },
+            )
+        }
+        fun renderAssaultToggle() {
+            assaultToggleBg.setColor(
+                Color.parseColor(if (assaultEnabled) "#FF38BDF8" else "#FF38465A"),
+            )
+            val lp = assaultToggleThumb.layoutParams as FrameLayout.LayoutParams
+            lp.gravity = Gravity.CENTER_VERTICAL or
+                if (assaultEnabled) Gravity.END else Gravity.START
+            assaultToggleThumb.layoutParams = lp
+        }
+        renderAssaultToggle()
+        assaultToggleTrack.setOnClickListener {
+            assaultEnabled = !assaultEnabled
+            renderAssaultToggle()
             persistAssaultSettings()
         }
         val assaultSwitchCard = LinearLayout(context).apply {
@@ -1415,7 +1440,7 @@ class OverlayCommandsPopover(
                 )
             }
             addView(textCol, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(assaultSwitch)
+            addView(assaultToggleTrack, LinearLayout.LayoutParams(dp(46), dp(26)))
         }
 
         // ---- Тип цели (чипы) ----
