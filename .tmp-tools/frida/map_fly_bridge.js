@@ -205,12 +205,88 @@ const AUTOASSAULT_FILE = '/data/data/com.phs.global/files/squadrelay_autoassault
 const AUTOASSAULT_SDCARD = '/sdcard/Download/squadrelay_autoassault.json';
 const AUTOASSAULT_STARTUP_DELAY_MS = 30000;
 const AUTOASSAULT_SCAN_INTERVAL_MS = 1500;
-// JoinUnionRallyC2S args are still validated on-device; scaffold logs matches until confirmed.
-const AUTOASSAULT_JOIN_ENABLED = false;
+// Реальное вступление включено. Доп. защита: авто-вступление шлёт пакет только если
+// для нужного teamIndex есть кэш состава (build_team != nil) — т.е. после хотя бы
+// одного ручного вступления этим отрядом.
+const AUTOASSAULT_JOIN_ENABLED = true;
 const AUTOASSAULT_MATCH_FILE = '/data/data/com.phs.global/files/squadrelay_autoassault_match.json';
 const ASSAULT_JOIN_ACTION = 'com.lastasylum.alliance.action.ASSAULT_JOIN';
+// Кэш реальных составов марша (team) по teamIndex, снятый с настоящих вступлений.
+// Хранится как Lua-чанк "return {...}" (легко сериализовать/загрузить через load()).
+const JOIN_CACHE_FILE = '/data/data/com.phs.global/files/squadrelay_teamcache.lua';
+const JOIN_CACHE_FILE_LUA = "'" + JOIN_CACHE_FILE + "'";
 
 const AUTOASSAULT_MATCH_FILE_LUA = "'" + AUTOASSAULT_MATCH_FILE + "'";
+
+// Устанавливает обёртку на TroopOperateParam:DoSendMsg (родитель RallyJoin), чтобы:
+//  1) кэшировать team (расстановку героев) по teamIndex с РЕАЛЬНЫХ вступлений игрока,
+//  2) запомнить свой playerId (передаётся как targetPlayerId),
+//  3) предоставить _G.__sr_aa_build_team(idx) для авто-вступления (глубокая копия из кэша).
+// Кэш персистится в файл и подгружается при установке (переживает рестарт игры).
+const INSTALL_JOIN_CACHE_LUA = [
+  'pcall(function()',
+  '  local TOP = package.loaded["AbyssEmpire.Logic.Troop.Define.TroopOperateParam"]',
+  '  if type(TOP) ~= "table" then return end',
+  '  _G.__sr_team_cache = _G.__sr_team_cache or {}',
+  '  if not _G.__sr_cache_loaded then',
+  '    _G.__sr_cache_loaded = true',
+  '    local cf = io.open(' + JOIN_CACHE_FILE_LUA + ', "r")',
+  '    if cf then',
+  '      local s = cf:read("*a") cf:close()',
+  '      if s and #s > 0 then',
+  '        local ok, ch = pcall(load, s)',
+  '        if ok and type(ch) == "function" then',
+  '          local d = select(2, pcall(ch))',
+  '          if type(d) == "table" then',
+  '            if type(d.teams) == "table" then for k, v in pairs(d.teams) do _G.__sr_team_cache[tonumber(k) or k] = v end end',
+  '            if d.pid then _G.__sr_my_pid = d.pid end',
+  '          end',
+  '        end',
+  '      end',
+  '    end',
+  '  end',
+  '  local function emitTeam(t)',
+  '    local us = {}',
+  '    if type(t.units) == "table" then',
+  '      for i = 1, #t.units do',
+  '        local u = t.units[i]',
+  '        us[#us + 1] = string.format("{heroId=%s,slotId=%s,heroSource=%s}", tostring(tonumber(u.heroId) or 0), tostring(tonumber(u.slotId) or 0), tostring(tonumber(u.heroSource) or 0))',
+  '      end',
+  '    end',
+  '    return string.format("{wingManId=%s,units={%s}}", tostring(tonumber(t.wingManId) or 0), table.concat(us, ","))',
+  '  end',
+  '  _G.__sr_save_cache = function()',
+  '    local parts = {}',
+  '    for k, v in pairs(_G.__sr_team_cache) do parts[#parts + 1] = string.format("[%s]=%s", tostring(k), emitTeam(v)) end',
+  '    local s = string.format("return {pid=%s,teams={%s}}", tostring(_G.__sr_my_pid or 0), table.concat(parts, ","))',
+  '    local f = io.open(' + JOIN_CACHE_FILE_LUA + ', "w") if f then f:write(s) f:close() end',
+  '  end',
+  '  _G.__sr_aa_build_team = function(idx)',
+  '    local src = _G.__sr_team_cache and _G.__sr_team_cache[idx]',
+  '    if type(src) ~= "table" or type(src.units) ~= "table" or #src.units == 0 then return nil end',
+  '    local units = {}',
+  '    for i = 1, #src.units do local u = src.units[i] units[i] = {heroId = u.heroId, slotId = u.slotId, heroSource = u.heroSource} end',
+  '    return {wingManId = src.wingManId or idx, units = units}',
+  '  end',
+  '  if not TOP.__sr_dsm_orig then',
+  '    TOP.__sr_dsm_orig = TOP.DoSendMsg',
+  '    TOP.DoSendMsg = function(self, protoData)',
+  '      pcall(function()',
+  '        if type(protoData) == "table" and protoData.warId and protoData.teamIndex ~= nil and type(protoData.team) == "table" and type(protoData.team.units) == "table" then',
+  '          local idx = tonumber(protoData.teamIndex)',
+  '          local src = protoData.team',
+  '          local units = {}',
+  '          for i = 1, #src.units do local u = src.units[i] units[i] = {heroId = u.heroId, slotId = u.slotId, heroSource = u.heroSource} end',
+  '          _G.__sr_team_cache[idx] = {wingManId = src.wingManId or idx, units = units}',
+  '          if protoData.targetPlayerId then _G.__sr_my_pid = protoData.targetPlayerId end',
+  '          if _G.__sr_save_cache then pcall(_G.__sr_save_cache) end',
+  '        end',
+  '      end)',
+  '      return TOP.__sr_dsm_orig(self, protoData)',
+  '    end',
+  '  end',
+  'end)',
+].join('\n');
 const AUTOASSAULT_SCAN_LUA = [
   'pcall(function()',
   '  local cfg = _G.__sr_aa_cfg',
@@ -352,7 +428,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '    if cfg.joinEnabled and war.id and type(war.targetPoint) == "table" then',
   '      local team = (_G.__sr_aa_build_team and _G.__sr_aa_build_team(pickedIdx)) or nil',
   '      if type(team) == "table" then',
-  '        local data = { warId = war.id, teamIndex = pickedIdx, target = war.targetPoint, targetPlayerId = tonumber(war.targetPoint.pid) or 0, team = team }',
+  '        local data = { warId = war.id, teamIndex = pickedIdx, target = war.targetPoint, targetPlayerId = tonumber(_G.__sr_my_pid) or 0, team = team }',
   '        pcall(function() sm.JoinUnionRallyC2S(data) end)',
   '        local endt = os.time() + 120',
   '        if war.rallyEndTime then endt = math.floor(tonumber(war.rallyEndTime)/1000) + 120 end',
@@ -390,6 +466,7 @@ let actionCatchUntil = 0;
 let actionBaselineReady = false;
 let liveLuaEnv = ptr(0);
 let liveLuaEnvCapturedMs = 0;
+let joinCacheEnvMs = 0;
 let doStringLogUntil = 0;
 let cachedAppFrame = ptr(0);
 let mainThreadFlyQueue = [];
@@ -1985,6 +2062,18 @@ function tickAutoAssault() {
       autoAssaultCfgPushed = true;
     } catch (e) {
       log('autoassault cfg push error: ' + e);
+    }
+  }
+  // Устанавливаем кэш team по реальным вступлениям независимо от enabled,
+  // чтобы состав успел закэшироваться (в т.ч. при ручных вступлениях игрока).
+  // Переустанавливаем при пересъёме Lua-окружения (рестарт игры обнуляет _G).
+  if (joinCacheEnvMs !== liveLuaEnvCapturedMs) {
+    try {
+      runLua(INSTALL_JOIN_CACHE_LUA);
+      joinCacheEnvMs = liveLuaEnvCapturedMs;
+      log('join team cache installed');
+    } catch (e) {
+      log('join cache install error: ' + e);
     }
   }
   if (!autoAssaultEnabled) return;
