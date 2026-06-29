@@ -65,7 +65,7 @@ describe('TeamForumService.postMessage idempotency', () => {
         },
         {
           provide: getModelToken(TeamForumTopicReadState.name),
-          useValue: {},
+          useValue: { bulkWrite: jest.fn().mockResolvedValue({}) },
         },
         {
           provide: getModelToken(User.name),
@@ -85,6 +85,14 @@ describe('TeamForumService.postMessage idempotency', () => {
             ensureMigrated: jest.fn().mockImplementation((u) => u),
             resolveSenderUsername: jest.fn().mockReturnValue('Alice'),
             resolveSenderServerNumber: jest.fn().mockReturnValue(1),
+            buildChatSenderEnrichmentMaps: jest.fn(async () => ({
+              avatarMap: new Map<string, string>(),
+              displayNameMap: new Map<string, string>(),
+            })),
+            coalesceDisplayName: jest.fn(
+              (stored?: string | null, resolved?: string | null) =>
+                stored?.trim() || resolved?.trim() || 'Союзник',
+            ),
           },
         },
         { provide: UsersService, useValue: {} },

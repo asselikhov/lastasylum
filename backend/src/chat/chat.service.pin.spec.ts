@@ -181,7 +181,14 @@ describe('ChatService pin (team rooms)', () => {
         },
         { provide: ChatAttachmentsService, useValue: chatAttachments },
         { provide: UsersService, useValue: usersService },
-        { provide: GameIdentitiesService, useValue: {} },
+        {
+          provide: GameIdentitiesService,
+          useValue: {
+            buildSenderDisplayNameMap: jest.fn(
+              async (ids: string[]) => new Map(ids.map((id) => [id, 'officer'])),
+            ),
+          },
+        },
         { provide: TeamsService, useValue: teamsService },
         { provide: ChatRoomsService, useValue: chatRoomsService },
         { provide: StickerAccessService, useValue: stickerAccess },

@@ -7,6 +7,7 @@ import { TeamJoinRequest } from './schemas/team-join-request.schema';
 import { User } from './schemas/user.schema';
 import { GameIdentitiesService } from './game-identities.service';
 import { ChatRoomsService } from '../chat/chat-rooms.service';
+import { ChatEligibleUsersCacheService } from '../chat/chat-eligible-users-cache.service';
 
 describe('TeamsService server scoping', () => {
   let teams: TeamsService;
@@ -54,6 +55,7 @@ describe('TeamsService server scoping', () => {
         { provide: getModelToken(TeamJoinRequest.name), useValue: {} },
         { provide: getModelToken(User.name), useValue: userModel },
         { provide: ChatRoomsService, useValue: {} },
+        { provide: ChatEligibleUsersCacheService, useValue: {} },
         { provide: GameIdentitiesService, useValue: gameIdentities },
       ],
     }).compile();

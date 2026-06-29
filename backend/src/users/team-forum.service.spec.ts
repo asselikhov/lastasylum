@@ -11,6 +11,7 @@ import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import { StickerAccessService } from './sticker-access.service';
 import { GameIdentitiesService } from './game-identities.service';
 import { UsersService } from './users.service';
+import { PinAuditService } from './pin-audit.service';
 
 describe('TeamForumService.sumUnreadMessages', () => {
   const teamId = '507f1f77bcf86cd799439011';
@@ -27,7 +28,10 @@ describe('TeamForumService.sumUnreadMessages', () => {
       select: jest.fn().mockReturnValue({
         sort: jest.fn().mockReturnValue({
           limit: jest.fn().mockReturnValue({
-            lean: jest.fn().mockResolvedValue([{ _id: topicA }, { _id: topicB }]),
+            lean: jest.fn().mockResolvedValue([
+              { _id: topicA, lastMessageId: new Types.ObjectId() },
+              { _id: topicB, lastMessageId: new Types.ObjectId() },
+            ]),
           }),
         }),
       }),
@@ -43,6 +47,13 @@ describe('TeamForumService.sumUnreadMessages', () => {
 
   const topicReadStateModel = {
     collection: { name: 'teamforumtopicreadstates' },
+    find: jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue([]),
+        }),
+      }),
+    }),
   };
 
   let service: TeamForumService;
@@ -64,6 +75,7 @@ describe('TeamForumService.sumUnreadMessages', () => {
         { provide: StickerAccessService, useValue: {} },
         { provide: GameIdentitiesService, useValue: {} },
         { provide: UsersService, useValue: {} },
+        { provide: PinAuditService, useValue: { append: jest.fn() } },
       ],
     }).compile();
     service = moduleRef.get(TeamForumService);

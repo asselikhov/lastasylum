@@ -11,6 +11,7 @@ import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import { StickerAccessService } from './sticker-access.service';
 import { GameIdentitiesService } from './game-identities.service';
 import { UsersService } from './users.service';
+import { PinAuditService } from './pin-audit.service';
 
 describe('TeamForumService listTopics performance', () => {
   const teamId = '507f1f77bcf86cd799439011';
@@ -122,8 +123,22 @@ describe('TeamForumService listTopics performance', () => {
         { provide: TeamsService, useValue: teams },
         { provide: TeamNewsAttachmentsService, useValue: {} },
         { provide: StickerAccessService, useValue: {} },
-        { provide: GameIdentitiesService, useValue: {} },
+        {
+          provide: GameIdentitiesService,
+          useValue: {
+            buildSenderDisplayNameMap: jest.fn(async () => new Map<string, string>()),
+            buildChatSenderEnrichmentMaps: jest.fn(async () => ({
+              avatarMap: new Map<string, string>(),
+              displayNameMap: new Map<string, string>(),
+            })),
+            coalesceDisplayName: jest.fn(
+              (stored?: string | null, resolved?: string | null) =>
+                stored?.trim() || resolved?.trim() || 'Союзник',
+            ),
+          },
+        },
         { provide: UsersService, useValue: usersService },
+        { provide: PinAuditService, useValue: { append: jest.fn() } },
       ],
     }).compile();
 
@@ -131,7 +146,7 @@ describe('TeamForumService listTopics performance', () => {
     jest.spyOn(service as never, 'countUnreadForumMessages' as never).mockResolvedValue(new Map() as never);
     jest.spyOn(service as never, 'getLastReadMessageIdsByTopicIds' as never).mockResolvedValue(new Map() as never);
     jest.spyOn(service as never, 'lastMessageSendersByTopicIds' as never).mockResolvedValue(new Map() as never);
-    jest.spyOn(service as never, 'enrichTopicsWithTelegram' as never).mockImplementation((rows) => rows as never);
+    jest.spyOn(service as never, 'enrichTopicsWithAvatars' as never).mockImplementation((rows) => rows as never);
     jest.spyOn(service as never, 'buildPinnedPreviewsForTopics' as never).mockResolvedValue(
       new Map([[topicId, { id: messageId, text: 'hello' }]]) as never,
     );

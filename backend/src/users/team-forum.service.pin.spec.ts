@@ -12,6 +12,7 @@ import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import { StickerAccessService } from './sticker-access.service';
 import { GameIdentitiesService } from './game-identities.service';
 import { UsersService } from './users.service';
+import { PinAuditService } from './pin-audit.service';
 import { PlayerTeamMemberRole } from '../common/enums/player-team-member-role.enum';
 
 describe('TeamForumService pin', () => {
@@ -125,8 +126,24 @@ describe('TeamForumService pin', () => {
         { provide: TeamsService, useValue: teams },
         { provide: TeamNewsAttachmentsService, useValue: {} },
         { provide: StickerAccessService, useValue: stickerAccess },
-        { provide: GameIdentitiesService, useValue: {} },
+        {
+          provide: GameIdentitiesService,
+          useValue: {
+            buildSenderDisplayNameMap: jest.fn(
+              async (ids: string[]) => new Map(ids.map((id) => [id, 'officer'])),
+            ),
+            buildChatSenderEnrichmentMaps: jest.fn(async () => ({
+              avatarMap: new Map<string, string>(),
+              displayNameMap: new Map<string, string>(),
+            })),
+            coalesceDisplayName: jest.fn(
+              (stored?: string | null, resolved?: string | null) =>
+                stored?.trim() || resolved?.trim() || 'Союзник',
+            ),
+          },
+        },
         { provide: UsersService, useValue: usersService },
+        { provide: PinAuditService, useValue: { append: jest.fn() } },
       ],
     }).compile();
 

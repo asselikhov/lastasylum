@@ -6,12 +6,14 @@ import { ChatService } from './chat.service';
 import { Message } from './schemas/message.schema';
 import { ChatRoomReadState } from './schemas/chat-room-read-state.schema';
 import { ChatRoom } from './schemas/chat-room.schema';
+import { ChatSystemMeta } from './schemas/chat-system-meta.schema';
 import { UsersService } from '../users/users.service';
 import { TeamsService } from '../users/teams.service';
 import { GameIdentitiesService } from '../users/game-identities.service';
 import { StickerAccessService } from '../users/sticker-access.service';
 import { ChatRoomsService } from './chat-rooms.service';
 import { ChatAttachmentsService } from './chat-attachments.service';
+import { PinAuditService } from '../users/pin-audit.service';
 
 describe('ChatService.getPeerReadUptoMessageId', () => {
   const userId = '507f1f77bcf86cd799439011';
@@ -27,12 +29,14 @@ describe('ChatService.getPeerReadUptoMessageId', () => {
     { provide: getModelToken(Message.name), useValue: {} },
     { provide: getModelToken(ChatRoomReadState.name), useValue: chatReadStateModel },
     { provide: getModelToken(ChatRoom.name), useValue: {} },
+    { provide: getModelToken(ChatSystemMeta.name), useValue: {} },
     { provide: UsersService, useValue: {} },
     { provide: TeamsService, useValue: {} },
     { provide: GameIdentitiesService, useValue: {} },
     { provide: StickerAccessService, useValue: {} },
     { provide: ChatRoomsService, useValue: {} },
     { provide: ChatAttachmentsService, useValue: {} },
+    { provide: PinAuditService, useValue: {} },
   ];
 
   let service: ChatService;
