@@ -1638,7 +1638,13 @@ class OverlayCommandsPopover(
 
         val assaultInner = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            addView(assaultSwitchCard)
+            addView(
+                assaultSwitchCard,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
             fun card(v: View) = addView(
                 v,
                 LinearLayout.LayoutParams(

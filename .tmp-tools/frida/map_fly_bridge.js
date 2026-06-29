@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '15';
+const BRIDGE_VERSION = '16';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -522,6 +522,12 @@ let autoAssaultCfgPushed = false;
 let lastAutoAssaultMatchText = '';
 let allianceRosterLastTick = 0;
 let lastAllianceRosterText = '';
+let allianceRosterLastBroadcastMs = 0;
+// Принудительно ре-броадкастим ростер не реже, чем раз в это время, даже если он не
+// менялся: приложение получает данные, даже если его оверлей подписался ПОСЛЕ первой
+// (единственной) отправки или было переустановлено. Иначе ростер «висит» в файле игры,
+// но не доходит до приложения, и списки соалийцев/участников остаются пустыми.
+const ALLIANCE_ROSTER_REBROADCAST_MS = 30000;
 
 function readFileUtf8(path, maxLen) {
   const limit = maxLen || 4096;
@@ -2177,8 +2183,11 @@ function tickAllianceRoster() {
   try {
     const text = readFileUtf8(ALLIANCE_ROSTER_FILE);
     if (!text || !text.trim() || text.trim() === '[]') return;
-    if (text === lastAllianceRosterText) return;
+    const changed = text !== lastAllianceRosterText;
+    const due = now - allianceRosterLastBroadcastMs >= ALLIANCE_ROSTER_REBROADCAST_MS;
+    if (!changed && !due) return;
     lastAllianceRosterText = text;
+    allianceRosterLastBroadcastMs = now;
     sendAllianceRosterBroadcast(text.trim());
   } catch (e) {
     const msg = String(e);
