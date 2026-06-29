@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '19';
+const BRIDGE_VERSION = '20';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -1965,8 +1965,13 @@ function pollOpenChatFile() {
         writeFileEmpty(paths[i]);
         return;
       }
-      log('open-chat trigger: pid=' + mid[1]);
-      openPrivateChat(mid[1]);
+      let cname = '';
+      const mname = text.match(/"playerName"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      if (mname) {
+        cname = mname[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      }
+      log('open-chat trigger: pid=' + mid[1] + ' name=' + cname);
+      openPrivateChat(mid[1], cname);
       writeFileEmpty(paths[i]);
       lastOpenChatText = '';
       return;
@@ -1979,22 +1984,22 @@ function pollOpenChatFile() {
   }
 }
 
-// Открыть приватный чат с игроком по id. Конкретный игровой вызов уточняется реверсом
-// (см. squadrelay_chat_re.txt); пока — диагностический дамп chat-модулей + best-effort.
-function openPrivateChat(pid) {
+// Открыть приватный чат (ЛС) с игроком в игре.
+// Реверс (захват реального вызова) подтвердил точку входа на PHS Global v1.0.81:
+//   Logic.Datas.Chat.ChatUtils.OpenChatPanel({channelType=3, privatePlayerId=<id>, privatePlayerName=<name>})
+//   channelType=3 — приватный канал. Выполняется на главном потоке Unity через runLua.
+function openPrivateChat(pid, name) {
+  const numId = String(pid).replace(/[^0-9]/g, '');
+  if (!numId) return;
+  const safeName = String(name || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/[\r\n]/g, ' ');
   const code = [
     'pcall(function()',
-    '  local PID = "' + pid + '"',
-    "  local DUMP = '" + CHAT_RE_DUMP + "'",
-    '  local pl = package.loaded',
-    '  local out = { "PID=" .. PID }',
-    '  for k,_ in pairs(pl) do',
-    '    local lk = string.lower(tostring(k))',
-    '    if string.find(lk, "chat") or string.find(lk, "friend") or string.find(lk, "sixin") then',
-    '      out[#out+1] = "MOD " .. tostring(k)',
-    '    end',
-    '  end',
-    "  local f = io.open(DUMP, 'w') if f then f:write(table.concat(out, '\\n')) f:close() end",
+    '  local CU = package.loaded["Logic.Datas.Chat.ChatUtils"]',
+    '  if not CU or type(CU.OpenChatPanel) ~= "function" then return end',
+    '  CU.OpenChatPanel({ channelType = 3, privatePlayerId = ' + numId + ', privatePlayerName = "' + safeName + '" })',
     'end)',
   ].join('\n');
   runLua(code);

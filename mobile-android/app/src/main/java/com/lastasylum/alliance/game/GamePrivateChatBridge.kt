@@ -14,10 +14,11 @@ import java.io.File
  * (Frida-мост опрашивает оба канала и вызывает in-game открытие приватного чата по playerId).
  */
 object GamePrivateChatBridge {
-    const val ACTION_OPEN_CHAT = "com.lastasylum.alliance.action.OPEN_CHAT"
-
-    const val EXTRA_PLAYER_ID = "playerId"
-    const val EXTRA_PLAYER_NAME = "playerName"
+    // Доставка через тот же broadcast-action, что и map-fly/autoassault: приёмник в игре
+    // пишет приватный файл squadrelay_open_chat.json, который опрашивает Frida-мост.
+    private const val EXTRA_OPEN_CHAT = "openchat"
+    private const val EXTRA_OC_PLAYER_ID = "ocPlayerId"
+    private const val EXTRA_OC_PLAYER_NAME = "ocPlayerName"
 
     private const val TAG = "GamePrivateChatBridge"
     private const val SDCARD_TRIGGER = "/sdcard/Download/squadrelay_open_chat.json"
@@ -52,11 +53,12 @@ object GamePrivateChatBridge {
                 continue
             }
             writeSdcardTrigger(playerId, playerName)
-            val intent = Intent(ACTION_OPEN_CHAT).apply {
+            val intent = Intent(GameMapFlyBridge.ACTION_MAP_FLY).apply {
                 setPackage(trimmed)
-                addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
-                putExtra(EXTRA_PLAYER_ID, playerId)
-                putExtra(EXTRA_PLAYER_NAME, playerName)
+                addFlags(Intent.FLAG_RECEIVER_FOREGROUND or Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
+                putExtra(EXTRA_OPEN_CHAT, true)
+                putExtra(EXTRA_OC_PLAYER_ID, playerId)
+                putExtra(EXTRA_OC_PLAYER_NAME, playerName)
             }
             try {
                 appContext.sendBroadcast(intent)
