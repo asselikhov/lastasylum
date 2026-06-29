@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '21';
+const BRIDGE_VERSION = '22';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -470,12 +470,11 @@ const AUTOASSAULT_SCAN_LUA = [
   '    end',
   '    return 0',
   '  end',
+  // Марш до точки сбора при вступлении в ралли ~60 с (marchDuration из захваченного
+  // пакета), не dist*1.5 сек/клетку — та формула давала сотни секунд на типичной
+  // дистанции и при minRemainingSec=59 отсеивала ВСЕ штурмы дальше ~160 клеток.
   '  local function estJoinMarchSec(war)',
-  '    local rp = war.rallyPoint',
-  '    local cp = castlePt()',
-  '    if type(rp) ~= "table" or not rp.x or not rp.y or not cp then return 15 end',
-  '    local dist = cheb(cp.x, cp.y, rp.x, rp.y)',
-  '    return math.max(15, math.floor(dist * 1.5))',
+  '    return 60',
   '  end',
   // «Время до старта»: проверяем не «сейчас», а момент когда отряд сможет вступить
   // (освободится + дойдёт до точки сбора). Иначе занятый отряд «пропускает» штурм,
@@ -504,7 +503,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '  local function myPlayerId()',
   '    local pd = _G.Data and _G.Data.PlayerData',
   '    if not pd then return nil end',
-  '    return tonumber(pd.playerId or pd.id or pd.uid)',
+  '    return tonumber(pd.playerId or pd.id or pd.uid or pd.roleId)',
   '  end',
   '  local function alreadyInRally(war)',
   '    local pid = myPlayerId()',
