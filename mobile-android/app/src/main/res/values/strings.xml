@@ -248,6 +248,8 @@
     <string name="game_patch_account_warning">Важно: привяжите игровой аккаунт перед установкой — после патча нужно войти заново.</string>
     <string name="game_patch_uninstall_prompt">Удалите установленную игру — установка патча продолжится автоматически.</string>
     <string name="game_patch_install_starting">Запуск установки патча…</string>
+    <string name="game_patch_install_ready_button">Завершить установку патча</string>
+    <string name="game_patch_install_failed">Не удалось открыть установщик. Разрешите установку приложений из этого источника и нажмите «Завершить установку патча».</string>
     <string name="game_patch_unavailable">Патч для вашей версии игры пока недоступен</string>
     <string name="game_patch_error_auth">Войдите в аккаунт SquadRelay, чтобы скачать патч</string>
     <string name="game_patch_error_network">Не удалось получить патч — проверьте соединение</string>

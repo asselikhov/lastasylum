@@ -189,6 +189,24 @@ class UserSettingsPreferences(context: Context) {
             .apply()
     }
 
+    /**
+     * Путь к уже скачанному и проверенному APK патча, установка которого отложена до удаления
+     * сток-игры. Переживает перезапуск процесса (OEM-киллеры фона), чтобы [OverlayControlScreen]
+     * мог доустановить патч при возврате пользователя в приложение.
+     */
+    fun getPendingPatchApkPath(): String? =
+        prefs.getString(KEY_PENDING_PATCH_APK_PATH, null)?.trim()?.ifEmpty { null }
+
+    fun setPendingPatchApkPath(path: String?) {
+        val edit = prefs.edit()
+        if (path.isNullOrBlank()) {
+            edit.remove(KEY_PENDING_PATCH_APK_PATH)
+        } else {
+            edit.putString(KEY_PENDING_PATCH_APK_PATH, path.trim())
+        }
+        edit.apply()
+    }
+
     /** @deprecated Use [isGameEventPushEnabled] for hq_excavation. */
     fun isExcavationPushEnabled(): Boolean = isGameEventPushEnabled("hq_excavation")
 
@@ -465,6 +483,7 @@ class UserSettingsPreferences(context: Context) {
         const val AUTO_HELP_INTERVAL_DEFAULT_SEC = 30
         const val AUTO_HELP_INTERVAL_MIN_SEC = 5
         const val AUTO_HELP_INTERVAL_MAX_SEC = 600
+        private const val KEY_PENDING_PATCH_APK_PATH = "pending_patch_apk_path"
         private const val KEY_EXCAVATION_PUSH = "excavation_push_enabled"
         private const val KEY_GAME_EVENT_PUSH_PREFIX = "game_event_push_"
         private const val KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT = "last_seen_team_news_created_at"

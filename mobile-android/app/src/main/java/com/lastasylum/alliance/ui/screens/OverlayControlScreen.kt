@@ -119,8 +119,27 @@ fun OverlayControlScreen() {
     val scope = rememberCoroutineScope()
     var patchInProgress by remember { mutableStateOf(false) }
     var patchProgress by remember { mutableFloatStateOf(-1f) }
-    var preparedPatchApk by remember { mutableStateOf<File?>(null) }
-    var awaitingGameUninstall by remember { mutableStateOf(false) }
+    // Скачанный APK, установка которого отложена до удаления сток-игры. Источник истины —
+    // prefs, чтобы пережить убийство фонового процесса (OEM-киллеры) во время удаления игры.
+    var pendingPatchApk by remember {
+        mutableStateOf(prefs.getPendingPatchApkPath()?.let { File(it) }?.takeIf { it.exists() })
+    }
+    var autoInstallTriggered by remember { mutableStateOf(false) }
+
+    fun setPendingPatch(apk: File?) {
+        pendingPatchApk = apk
+        prefs.setPendingPatchApkPath(apk?.absolutePath)
+        if (apk == null) autoInstallTriggered = false
+    }
+
+    fun launchPatchInstall(apk: File) {
+        if (GamePatchInstaller.installPrepared(context, apk)) {
+            setPendingPatch(null)
+            Toast.makeText(context, R.string.game_patch_install_starting, Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, R.string.game_patch_install_failed, Toast.LENGTH_LONG).show()
+        }
+    }
     val undetectedGamePackages = remember(detectedGamePackages) {
         detectedGamePackages.filter { !it.alreadyInFilter }
     }
@@ -162,18 +181,15 @@ fun OverlayControlScreen() {
                 overlayEnabled = prefs.isOverlayPanelEnabled()
                 refreshOverlayRuntime()
                 refreshMapPatchStatus()
-                val pendingApk = preparedPatchApk
-                if (awaitingGameUninstall && pendingApk != null &&
+                if (mapPatchStatus.state == GameMapPatchStatus.State.PATCH_READY) {
+                    setPendingPatch(null)
+                }
+                val pendingApk = pendingPatchApk?.takeIf { it.exists() }
+                if (pendingApk != null && !autoInstallTriggered &&
                     !GamePatchInstaller.isStockGameInstalled(appContext)
                 ) {
-                    awaitingGameUninstall = false
-                    preparedPatchApk = null
-                    Toast.makeText(
-                        context,
-                        R.string.game_patch_install_starting,
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    GamePatchInstaller.installPrepared(context, pendingApk)
+                    autoInstallTriggered = true
+                    launchPatchInstall(pendingApk)
                 }
             }
         }
@@ -359,10 +375,15 @@ fun OverlayControlScreen() {
                         ) {
                             PatchStatusPill(mapPatchStatus.state)
 
-                            val patchActionable = mapPatchStatus.state ==
+                            val ready = mapPatchStatus.state == GameMapPatchStatus.State.PATCH_READY
+                            // Патч скачан, но ещё не установлен (например, процесс перезапустился
+                            // после удаления игры) — даём добить установку вручную.
+                            val installPending = !ready &&
+                                pendingPatchApk?.takeIf { it.exists() } != null
+                            val patchActionable = installPending ||
+                                mapPatchStatus.state ==
                                 GameMapPatchStatus.State.PATCH_NOT_INSTALLED ||
                                 mapPatchStatus.state == GameMapPatchStatus.State.PATCH_OUTDATED
-                            val ready = mapPatchStatus.state == GameMapPatchStatus.State.PATCH_READY
                             val success = PremiumColors.liveIndicator
 
                             Button(
@@ -373,6 +394,13 @@ fun OverlayControlScreen() {
                                 onClick = {
                                     if (patchInProgress) return@Button
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    val pending = pendingPatchApk?.takeIf { it.exists() }
+                                    if (pending != null &&
+                                        !GamePatchInstaller.isStockGameInstalled(appContext)
+                                    ) {
+                                        launchPatchInstall(pending)
+                                        return@Button
+                                    }
                                     scope.launch {
                                         patchInProgress = true
                                         patchProgress = -1f
@@ -383,8 +411,7 @@ fun OverlayControlScreen() {
                                         ) {
                                             is GamePatchInstaller.Prepare.Ready -> {
                                                 if (GamePatchInstaller.isStockGameInstalled(appContext)) {
-                                                    preparedPatchApk = result.apk
-                                                    awaitingGameUninstall = true
+                                                    setPendingPatch(result.apk)
                                                     Toast.makeText(
                                                         context,
                                                         R.string.game_patch_uninstall_prompt,
@@ -392,12 +419,8 @@ fun OverlayControlScreen() {
                                                     ).show()
                                                     GamePatchInstaller.requestUninstallStockGame(context)
                                                 } else {
-                                                    Toast.makeText(
-                                                        context,
-                                                        R.string.game_patch_install_starting,
-                                                        Toast.LENGTH_SHORT,
-                                                    ).show()
-                                                    GamePatchInstaller.installPrepared(context, result.apk)
+                                                    setPendingPatch(result.apk)
+                                                    launchPatchInstall(result.apk)
                                                 }
                                             }
                                             GamePatchInstaller.Prepare.Unavailable ->
@@ -459,6 +482,15 @@ fun OverlayControlScreen() {
                                         )
                                         Spacer(Modifier.width(8.dp))
                                         Text(stringResource(R.string.game_patch_button_ready))
+                                    }
+                                    installPending -> {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Download,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(stringResource(R.string.game_patch_install_ready_button))
                                     }
                                     mapPatchStatus.state == GameMapPatchStatus.State.PATCH_OUTDATED -> {
                                         Icon(
