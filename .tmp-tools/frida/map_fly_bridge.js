@@ -9,13 +9,25 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '17';
+const BRIDGE_VERSION = '18';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
 const PROBE_FILE = '/data/data/com.phs.global/files/squadrelay_probe.json';
 const LOG = '/data/data/com.phs.global/files/la_map_fly_bridge.log';
 const LOG_SDCARD = '/sdcard/Download/la_map_fly_bridge.log';
+
+// Открытие личного чата с игроком: приложение пишет триггер {playerId,...}, мост открывает
+// в игре приватный чат с этим игроком (RVA/Lua подбирается по результатам реверса чат-модуля).
+const OPEN_CHAT_FILE = '/data/data/com.phs.global/files/squadrelay_open_chat.json';
+const OPEN_CHAT_SDCARD = '/sdcard/Download/squadrelay_open_chat.json';
+const CHAT_RE_DUMP = '/sdcard/Download/squadrelay_chat_re.txt';
+
+// Канал произвольного Lua для отладки/реверса: приложение/adb пишет Lua-код в файл, мост его
+// выполняет на main-thread (код сам пишет результат через io.open). Срабатывает только при
+// наличии непустого файла; после выполнения файл очищается.
+const EVAL_FILE = '/data/data/com.phs.global/files/squadrelay_eval.lua';
+const EVAL_SDCARD = '/sdcard/Download/squadrelay_eval.lua';
 
 // "В рейд" share bridge: Lua hook writes target payload to a game-private file on
 // share-panel open/close; this script polls it and broadcasts to the SquadRelay app.
@@ -490,6 +502,8 @@ let pendingHijack = null;
 let activeHijack = null;
 let probeObserveUntil = 0;
 let lastProbeText = '';
+let lastOpenChatText = '';
+let lastEvalText = '';
 let actionSeen = {};
 let actionCatchUntil = 0;
 let actionBaselineReady = false;
@@ -1914,6 +1928,79 @@ function pollProbeFile() {
   }
 }
 
+// Триггер открытия личного чата с игроком (app пишет {playerId, playerName}).
+function pollOpenChatFile() {
+  const paths = [OPEN_CHAT_FILE, OPEN_CHAT_SDCARD];
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const text = readFileUtf8(paths[i]);
+      if (!text || !text.trim()) continue;
+      if (text === lastOpenChatText) return;
+      lastOpenChatText = text;
+      const mid = text.match(/"playerId"\s*:\s*"?([0-9]+)"?/);
+      if (!mid) {
+        log('open-chat parse failed: ' + text.trim());
+        writeFileEmpty(paths[i]);
+        return;
+      }
+      log('open-chat trigger: pid=' + mid[1]);
+      openPrivateChat(mid[1]);
+      writeFileEmpty(paths[i]);
+      lastOpenChatText = '';
+      return;
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes('No such file') && !msg.includes('not found')) {
+        log('open-chat poll error: ' + e);
+      }
+    }
+  }
+}
+
+// Открыть приватный чат с игроком по id. Конкретный игровой вызов уточняется реверсом
+// (см. squadrelay_chat_re.txt); пока — диагностический дамп chat-модулей + best-effort.
+function openPrivateChat(pid) {
+  const code = [
+    'pcall(function()',
+    '  local PID = "' + pid + '"',
+    "  local DUMP = '" + CHAT_RE_DUMP + "'",
+    '  local pl = package.loaded',
+    '  local out = { "PID=" .. PID }',
+    '  for k,_ in pairs(pl) do',
+    '    local lk = string.lower(tostring(k))',
+    '    if string.find(lk, "chat") or string.find(lk, "friend") or string.find(lk, "sixin") then',
+    '      out[#out+1] = "MOD " .. tostring(k)',
+    '    end',
+    '  end',
+    "  local f = io.open(DUMP, 'w') if f then f:write(table.concat(out, '\\n')) f:close() end",
+    'end)',
+  ].join('\n');
+  runLua(code);
+}
+
+// Канал произвольного Lua для отладки/реверса: выполняем код из файла (он сам пишет результат).
+function pollEvalFile() {
+  const paths = [EVAL_FILE, EVAL_SDCARD];
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const text = readFileUtf8(paths[i], 256 * 1024);
+      if (!text || !text.trim()) continue;
+      if (text === lastEvalText) return;
+      lastEvalText = text;
+      log('eval run: len=' + text.length);
+      runLua(text);
+      writeFileEmpty(paths[i]);
+      lastEvalText = '';
+      return;
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes('No such file') && !msg.includes('not found')) {
+        log('eval poll error: ' + e);
+      }
+    }
+  }
+}
+
 function pollAutoHelpConfig() {
   const paths = [AUTOHELP_FILE, AUTOHELP_SDCARD];
   for (let i = 0; i < paths.length; i++) {
@@ -2569,6 +2656,8 @@ setImmediate(function () {
     }
     pollTriggerFile();
     pollProbeFile();
+    pollOpenChatFile();
+    pollEvalFile();
     pollAutoHelpConfig();
     pollAutoAssaultConfig();
     tickAutoHelp();
