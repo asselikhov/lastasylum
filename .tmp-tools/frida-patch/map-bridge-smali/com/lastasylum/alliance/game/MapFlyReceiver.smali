@@ -151,7 +151,7 @@
 
     move-result v0
 
-    if-eqz v0, :cond_end
+    if-nez v0, :cond_end
 
     :try_start_0
     new-instance v0, Ljava/io/File;
