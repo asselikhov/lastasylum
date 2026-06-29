@@ -379,6 +379,7 @@ fun OverlayControlScreen() {
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             PatchStatusPill(mapPatchStatus.state)
+                            PatchVersionLine(mapPatchStatus)
 
                             val ready = mapPatchStatus.state == GameMapPatchStatus.State.PATCH_READY
                             // Патч скачан, но ещё не установлен (например, процесс перезапустился
@@ -717,6 +718,39 @@ private fun PatchStatusPill(state: GameMapPatchStatus.State) {
                 color = color,
             )
         }
+    }
+}
+
+@Composable
+private fun PatchVersionLine(status: GameMapPatchStatus.Status) {
+    val installedGame = status.patchForGameVersion
+        ?.takeIf { it.isNotBlank() && it != "unknown" }
+        ?: status.gameVersionName
+    val installedBridge = status.patchBridgeVersion?.takeIf { it.isNotBlank() }
+    val hasInstalled = status.state == GameMapPatchStatus.State.PATCH_READY ||
+        status.state == GameMapPatchStatus.State.PATCH_OUTDATED
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (hasInstalled && (installedGame != null || installedBridge != null)) {
+            Text(
+                text = stringResource(
+                    R.string.settings_patch_version_installed,
+                    installedGame ?: "—",
+                    installedBridge ?: "—",
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Text(
+            text = stringResource(
+                R.string.settings_patch_version_available,
+                status.supportedGameVersion.ifBlank { "—" },
+                BuildConfig.MAP_BRIDGE_VERSION.trim().ifBlank { "—" },
+            ),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
