@@ -302,6 +302,14 @@ class CombatOverlayService : Service() {
             handleBookmarkBroadcast(payload)
         }
     }
+    private var assaultJoinReceiverRegistered = false
+    private val assaultJoinReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            if (intent?.action != com.lastasylum.alliance.game.AssaultJoinBridge.ACTION_ASSAULT_JOIN) return
+            val payload = intent.getStringExtra(com.lastasylum.alliance.game.AssaultJoinBridge.EXTRA_PAYLOAD)
+            handleAssaultJoinBroadcast(payload)
+        }
+    }
     private val overlayPresenceCoordinator by lazy {
         OverlayPresenceCoordinator(
             scope = serviceScope,
@@ -1391,6 +1399,7 @@ class CombatOverlayService : Service() {
         registerScreenOnReceiver()
         registerRaidShareReceiver()
         registerBookmarkReceiver()
+        registerAssaultJoinReceiver()
         startOverlayFcmTokenRegistration()
         serviceScope.launch {
             ensureOverlayRaidRoomReadyForSend()
@@ -4609,6 +4618,7 @@ class CombatOverlayService : Service() {
         unregisterBookmarkReceiver()
         mainHandler.removeCallbacks(bookmarkHideRunnable)
         runCatching { (windowManager ?: systemWindowManager())?.let { overlayBookmarkPanel.hide(it) } }
+        unregisterAssaultJoinReceiver()
         unregisterVoiceMicPermissionReceiver()
         if (AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
             AppContainer.from(this).authRepository.hasSession()
@@ -5353,6 +5363,61 @@ class CombatOverlayService : Service() {
         if (!bookmarkReceiverRegistered) return
         runCatching { unregisterReceiver(bookmarkReceiver) }
         bookmarkReceiverRegistered = false
+    }
+
+    private fun registerAssaultJoinReceiver() {
+        if (assaultJoinReceiverRegistered) return
+        val filter = IntentFilter(com.lastasylum.alliance.game.AssaultJoinBridge.ACTION_ASSAULT_JOIN)
+        runCatching {
+            ContextCompat.registerReceiver(
+                this,
+                assaultJoinReceiver,
+                filter,
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            assaultJoinReceiverRegistered = true
+        }.onFailure { e -> Log.w(TAG, "registerAssaultJoinReceiver failed", e) }
+    }
+
+    private fun unregisterAssaultJoinReceiver() {
+        if (!assaultJoinReceiverRegistered) return
+        runCatching { unregisterReceiver(assaultJoinReceiver) }
+        assaultJoinReceiverRegistered = false
+    }
+
+    /** Запись авто-вступления из игрового моста: сохраняем человекочитаемую строку в лог. */
+    private fun handleAssaultJoinBroadcast(payload: String?) {
+        val raw = payload?.trim().orEmpty()
+        if (raw.isEmpty()) return
+        runCatching {
+            val obj = org.json.JSONObject(raw)
+            val creator = obj.optString("creator").ifEmpty { "?" }
+            val type = when (obj.optString("type")) {
+                "monster" -> "монстр"
+                "player" -> "игрок"
+                "city" -> "город"
+                else -> obj.optString("type", "?")
+            }
+            val power = obj.optLong("power", 0L)
+            val level = obj.optInt("level", 0)
+            val dist = obj.optInt("dist", -1)
+            val squad = obj.optInt("squad", -1)
+            val parts = buildString {
+                append(creator)
+                append(" • ").append(type)
+                if (level > 0) append(" ур.").append(level)
+                if (power > 0) append(" • ").append(formatAssaultPower(power))
+                if (dist >= 0) append(" • ").append(dist).append("кл")
+                if (squad >= 0) append(" • отряд ").append(squad + 1)
+            }
+            AppContainer.from(this).userSettingsPreferences.appendAutoAssaultJoinLog(parts)
+        }
+    }
+
+    private fun formatAssaultPower(power: Long): String = when {
+        power >= 1_000_000 -> String.format("%.1fМ", power / 1_000_000.0)
+        power >= 1_000 -> String.format("%.0fк", power / 1_000.0)
+        else -> power.toString()
     }
 
     /** Открытие/закрытие игрового окна «Добавить тег» → показать/скрыть панель «В закладки». */

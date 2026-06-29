@@ -39,6 +39,7 @@ import android.widget.HorizontalScrollView
 import android.widget.Toast
 import androidx.annotation.RawRes
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.appcompat.widget.SwitchCompat
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.graphics.drawable.DrawableCompat
 import com.airbnb.lottie.LottieAnimationView
@@ -51,6 +52,8 @@ import androidx.savedstate.compose.LocalSavedStateRegistryOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.game.GameAutoAssaultBridge
 import com.lastasylum.alliance.game.GameMapNavigator
 import com.lastasylum.alliance.game.OverlayBookmarkStore
 import com.lastasylum.alliance.game.OverlayBookmarkTag
@@ -97,6 +100,7 @@ class OverlayCommandsPopover(
     private var coordScrim: FrameLayout? = null
     @Volatile
     private var reactionPickScrim: FrameLayout? = null
+    private var assaultPickScrim: FrameLayout? = null
     private var reopenMenuOnReactionsTab = false
     private var reopenReactionSubcategory = OverlayReactionCategory.ANIMATIONS
     private var preselectedReactionUserIds: Set<String> = emptySet()
@@ -126,6 +130,7 @@ class OverlayCommandsPopover(
             (menuScrim?.visibility == View.VISIBLE) ||
             coordScrim != null ||
             reactionPickScrim != null ||
+            assaultPickScrim != null ||
             reactionBurstPresenter.isActive()
 
     /** True while РјРµРЅСЋ/СЂРµР°РєС†РёРё/РєРѕРѕСЂРґРёРЅР°С‚С‹ РѕС‚РєСЂС‹С‚С‹ РёР»Рё РёРґС‘С‚ СЃРјРµРЅР° scrim (РґР»СЏ game gate РЅР° main). */
@@ -144,6 +149,7 @@ class OverlayCommandsPopover(
         stopHeartPreviewPulse()
         reactionBurstPresenter.clear()
         hideReactionPickOnly()
+        hideAssaultPickOnly()
         hideReactionBurstOnly()
         hideCoordOnly()
         clearPreselectedReactionContext()
@@ -170,6 +176,7 @@ class OverlayCommandsPopover(
         stopHeartPreviewPulse()
         reactionBurstPresenter.clear()
         hideReactionPickOnly()
+        hideAssaultPickOnly()
         hideReactionBurstOnly()
         hideCoordOnly()
         clearPreselectedReactionContext()
@@ -201,6 +208,7 @@ class OverlayCommandsPopover(
         reactionRow = null
         menuRevealCategory = null
         hideReactionPickOnly()
+        hideAssaultPickOnly()
         hideReactionBurstOnly()
         hideCoordOnly()
         stopHeartPreviewPulse()
@@ -214,6 +222,12 @@ class OverlayCommandsPopover(
     private fun hideReactionPickOnly() {
         removeShell(reactionPickScrim)
         reactionPickScrim = null
+        releasePopoverSuppressAfterUiClosed()
+    }
+
+    private fun hideAssaultPickOnly() {
+        removeShell(assaultPickScrim)
+        assaultPickScrim = null
         releasePopoverSuppressAfterUiClosed()
     }
 
@@ -922,6 +936,18 @@ class OverlayCommandsPopover(
 
     private fun showMenu(windowManager: WindowManager) {
         ensurePopoverSuppressHeld()
+        scope.launch(Dispatchers.IO) {
+            val container = AppContainer.from(context)
+            val uid = container.usersRepository.peekMyProfile()?.id?.trim().orEmpty()
+            if (uid.isNotEmpty()) {
+                OverlayTeamContextCache.hydrateFromDisk(
+                    uid,
+                    container.usersRepository,
+                    container.launchDiskCache,
+                )
+            }
+        }
+        GameAutoAssaultBridge.sync(context)
         menuScrim?.takeIf { it.isAttachedToWindow }?.let { cached ->
             cached.visibility = View.VISIBLE
             attachedWindowManager = windowManager
@@ -1012,12 +1038,35 @@ class OverlayCommandsPopover(
         }
         val optionChips = mutableListOf<TextView>()
 
-        // ---- Цель (Target) section: Поиск / Закладки sub-tabs --------------------------------
-        var selectedTargetTab = 0 // 0 = Поиск, 1 = Закладки
+        // ---- Цель (Target) section: Поиск / Закладки / Штурм sub-tabs -------------------------
+        var selectedTargetTab = 0 // 0 = Поиск, 1 = Закладки, 2 = Штурм
         var selectedBookmark = OverlayBookmarkTag.ENEMIES
+
+        val assaultPrefs = UserSettingsPreferences(context)
+        var assaultEnabled = assaultPrefs.isAutoAssaultEnabledRaw()
+        var assaultSquads = assaultPrefs.getAutoAssaultSquads().toMutableSet()
+        var assaultAllowedIds = assaultPrefs.getAutoAssaultAllowedMemberIds().toMutableSet()
+        val assaultTypes = assaultPrefs.getAutoAssaultTargetTypes().toMutableSet()
+
+        fun assaultAlliesLabel(): String =
+            if (assaultAllowedIds.isEmpty()) {
+                context.getString(R.string.overlay_assault_allies_all)
+            } else {
+                context.getString(R.string.overlay_assault_allies_count, assaultAllowedIds.size)
+            }
+
+        fun persistAssaultSettings() {
+            assaultPrefs.setAutoAssaultSquads(assaultSquads)
+            assaultPrefs.setAutoAssaultAllowedMemberIds(assaultAllowedIds)
+            assaultPrefs.setAutoAssaultTargetTypes(assaultTypes)
+            // setAutoAssaultEnabled пересчитывает срок авто-выключения по текущей длительности.
+            assaultPrefs.setAutoAssaultEnabled(assaultEnabled)
+            GameAutoAssaultBridge.write(context, assaultPrefs)
+        }
 
         val targetSearchTabChip = choiceChip(context.getString(R.string.overlay_target_tab_search), true)
         val targetBookmarksTabChip = choiceChip(context.getString(R.string.overlay_target_tab_bookmarks), false)
+        val targetAssaultTabChip = choiceChip(context.getString(R.string.overlay_target_tab_assault), false)
         val targetSubTabsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.START
@@ -1026,9 +1075,16 @@ class OverlayCommandsPopover(
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { marginEnd = dp(8) },
+                ).apply { marginEnd = dp(6) },
             )
-            addView(targetBookmarksTabChip)
+            addView(
+                targetBookmarksTabChip,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginEnd = dp(6) },
+            )
+            addView(targetAssaultTabChip)
         }
 
         // Поиск: server / X / Y inputs + a search-icon fly button.
@@ -1167,6 +1223,421 @@ class OverlayCommandsPopover(
             )
         }
 
+        fun assaultNumField(initial: String, hintText: String): EditText =
+            EditText(context).apply {
+                setText(initial)
+                hint = hintText
+                inputType = InputType.TYPE_CLASS_NUMBER
+                setTextColor(Color.parseColor("#FFF8FAFF"))
+                setHintTextColor(Color.parseColor("#6A8098B0"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = fieldBackground()
+                filters = arrayOf(InputFilter.LengthFilter(12))
+            }
+
+        val assaultPowerMinEdits = Array(3) { idx ->
+            assaultNumField(
+                assaultPrefs.getAutoAssaultSquadPowerMin(idx).toString(),
+                context.getString(R.string.overlay_assault_power_hint_example),
+            )
+        }
+        val assaultPowerMaxEdits = Array(3) { idx ->
+            assaultNumField(
+                assaultPrefs.getAutoAssaultSquadPowerMax(idx).toString(),
+                context.getString(R.string.overlay_assault_power_max_hint),
+            )
+        }
+        val assaultDistanceEdit = assaultNumField(
+            assaultPrefs.getAutoAssaultMaxDistance().toString(),
+            "",
+        )
+        val assaultLevelMinEdit = assaultNumField(
+            assaultPrefs.getAutoAssaultTargetLevelMin().takeIf { it > 0 }?.toString() ?: "",
+            context.getString(R.string.overlay_assault_level_min_hint),
+        )
+        val assaultLevelMaxEdit = assaultNumField(
+            assaultPrefs.getAutoAssaultTargetLevelMax().takeIf { it > 0 }?.toString() ?: "",
+            context.getString(R.string.overlay_assault_level_max_hint),
+        )
+        val assaultMinRemainingEdit = assaultNumField(
+            assaultPrefs.getAutoAssaultMinRemainingSec().toString(),
+            "",
+        )
+        val assaultCooldownEdit = assaultNumField(
+            assaultPrefs.getAutoAssaultCooldownSec().toString(),
+            "",
+        )
+        val assaultMaxConcurrentEdit = assaultNumField(
+            assaultPrefs.getAutoAssaultMaxConcurrent().toString(),
+            "",
+        )
+        val assaultDurationEdit = assaultNumField(
+            assaultPrefs.getAutoAssaultDurationMin().toString(),
+            "",
+        )
+
+        fun readAssaultPowerPrefs() {
+            for (idx in 0 until 3) {
+                val min = assaultPowerMinEdits[idx].text?.toString()?.trim()?.toLongOrNull() ?: 0L
+                val max = assaultPowerMaxEdits[idx].text?.toString()?.trim()?.toLongOrNull()
+                    ?: UserSettingsPreferences.AUTO_ASSAULT_POWER_MAX_DEFAULT
+                assaultPrefs.setAutoAssaultSquadPowerMin(idx, min)
+                assaultPrefs.setAutoAssaultSquadPowerMax(idx, max)
+            }
+            val dist = assaultDistanceEdit.text?.toString()?.trim()?.toIntOrNull()
+                ?: UserSettingsPreferences.AUTO_ASSAULT_MAX_DISTANCE_DEFAULT
+            assaultPrefs.setAutoAssaultMaxDistance(dist)
+            assaultPrefs.setAutoAssaultTargetLevelMin(
+                assaultLevelMinEdit.text?.toString()?.trim()?.toIntOrNull() ?: 0,
+            )
+            assaultPrefs.setAutoAssaultTargetLevelMax(
+                assaultLevelMaxEdit.text?.toString()?.trim()?.toIntOrNull() ?: 0,
+            )
+            assaultPrefs.setAutoAssaultMinRemainingSec(
+                assaultMinRemainingEdit.text?.toString()?.trim()?.toIntOrNull()
+                    ?: UserSettingsPreferences.AUTO_ASSAULT_MIN_REMAINING_DEFAULT_SEC,
+            )
+            assaultPrefs.setAutoAssaultCooldownSec(
+                assaultCooldownEdit.text?.toString()?.trim()?.toIntOrNull()
+                    ?: UserSettingsPreferences.AUTO_ASSAULT_COOLDOWN_DEFAULT_SEC,
+            )
+            assaultPrefs.setAutoAssaultMaxConcurrent(
+                assaultMaxConcurrentEdit.text?.toString()?.trim()?.toIntOrNull() ?: 0,
+            )
+            assaultPrefs.setAutoAssaultDurationMin(
+                assaultDurationEdit.text?.toString()?.trim()?.toIntOrNull() ?: 0,
+            )
+        }
+
+        fun assaultLabeledRow(labelRes: Int, field: EditText): LinearLayout =
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(
+                    labelText(
+                        context.getString(labelRes),
+                        11.5f,
+                        Color.parseColor("#9AB0C4D8"),
+                    ),
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.4f),
+                )
+                addView(
+                    field,
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+                )
+            }
+
+        val assaultSwitch = SwitchCompat(context).apply {
+            isChecked = assaultEnabled
+            thumbTintList = ColorStateList.valueOf(Color.WHITE)
+            trackTintList = ColorStateList.valueOf(Color.parseColor("#5538BDF8"))
+        }
+        val assaultSwitchRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(
+                labelText(
+                    context.getString(R.string.overlay_assault_enabled),
+                    13f,
+                    Color.parseColor("#FFF4F7FF"),
+                    bold = true,
+                ),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            addView(assaultSwitch)
+        }
+        assaultSwitch.setOnCheckedChangeListener { _, on ->
+            assaultEnabled = on
+            persistAssaultSettings()
+        }
+
+        val assaultSquadChips = (0 until 3).map { idx ->
+            choiceChip(
+                context.getString(R.string.overlay_assault_squad_label, idx + 1),
+                assaultSquads.contains(idx),
+            )
+        }
+        val assaultSquadsRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START
+            addView(
+                labelText(
+                    context.getString(R.string.overlay_assault_squads),
+                    11.5f,
+                    Color.parseColor("#9AB0C4D8"),
+                ),
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginEnd = dp(8) },
+            )
+            assaultSquadChips.forEachIndexed { idx, chip ->
+                addView(
+                    chip,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { if (idx > 0) marginStart = dp(6) },
+                )
+                chip.setOnClickListener {
+                    if (assaultSquads.contains(idx)) assaultSquads.remove(idx) else assaultSquads.add(idx)
+                    if (assaultSquads.isEmpty()) assaultSquads.add(idx)
+                    val selected = assaultSquads.contains(idx)
+                    chip.background = optionChipBackground(selected)
+                    chip.setTextColor(Color.parseColor(if (selected) "#FFE8F4FF" else "#9AB0C4D8"))
+                    chip.typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    persistAssaultSettings()
+                }
+            }
+        }
+
+        val assaultPowerTitle = labelText(
+            context.getString(R.string.overlay_assault_power_title),
+            11.5f,
+            Color.parseColor("#9AB0C4D8"),
+        )
+        val assaultPowerRows = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            for (idx in 0 until 3) {
+                val row = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(
+                        labelText(
+                            context.getString(R.string.overlay_assault_squad_label, idx + 1),
+                            11f,
+                            Color.parseColor("#C8DCE8F4"),
+                        ),
+                        LinearLayout.LayoutParams(dp(28), LinearLayout.LayoutParams.WRAP_CONTENT),
+                    )
+                    addView(
+                        assaultPowerMinEdits[idx],
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+                    )
+                    addView(
+                        assaultPowerMaxEdits[idx],
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                            .apply { marginStart = dp(6) },
+                    )
+                }
+                addView(
+                    row,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { if (idx > 0) topMargin = dp(6) },
+                )
+            }
+        }
+
+        val assaultDistanceRow = assaultLabeledRow(R.string.overlay_assault_max_distance, assaultDistanceEdit)
+
+        // ---- Тип цели: монстры / игроки / города (multi-select) ----
+        val assaultTypeOrder = listOf(
+            UserSettingsPreferences.AUTO_ASSAULT_TYPE_MONSTER to R.string.overlay_assault_type_monster,
+            UserSettingsPreferences.AUTO_ASSAULT_TYPE_PLAYER to R.string.overlay_assault_type_player,
+            UserSettingsPreferences.AUTO_ASSAULT_TYPE_CITY to R.string.overlay_assault_type_city,
+        )
+        val assaultTypesRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START
+            addView(
+                labelText(
+                    context.getString(R.string.overlay_assault_types_title),
+                    11.5f,
+                    Color.parseColor("#9AB0C4D8"),
+                ),
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginEnd = dp(8) },
+            )
+            assaultTypeOrder.forEachIndexed { i, (typeKey, labelRes) ->
+                val chip = choiceChip(context.getString(labelRes), assaultTypes.contains(typeKey))
+                addView(
+                    chip,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { if (i > 0) marginStart = dp(6) },
+                )
+                chip.setOnClickListener {
+                    if (assaultTypes.contains(typeKey)) assaultTypes.remove(typeKey) else assaultTypes.add(typeKey)
+                    if (assaultTypes.isEmpty()) assaultTypes.add(typeKey)
+                    val sel = assaultTypes.contains(typeKey)
+                    chip.background = optionChipBackground(sel)
+                    chip.setTextColor(Color.parseColor(if (sel) "#FFE8F4FF" else "#9AB0C4D8"))
+                    chip.typeface = if (sel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    persistAssaultSettings()
+                }
+            }
+        }
+
+        val assaultLevelTitle = labelText(
+            context.getString(R.string.overlay_assault_level_title),
+            11.5f,
+            Color.parseColor("#9AB0C4D8"),
+        )
+        val assaultLevelRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(
+                assaultLevelMinEdit,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            addView(
+                assaultLevelMaxEdit,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { marginStart = dp(6) },
+            )
+        }
+
+        val assaultMinRemainingRow = assaultLabeledRow(R.string.overlay_assault_min_remaining, assaultMinRemainingEdit)
+        val assaultCooldownRow = assaultLabeledRow(R.string.overlay_assault_cooldown, assaultCooldownEdit)
+        val assaultMaxConcurrentRow = assaultLabeledRow(R.string.overlay_assault_max_concurrent, assaultMaxConcurrentEdit)
+        val assaultDurationRow = assaultLabeledRow(R.string.overlay_assault_duration, assaultDurationEdit)
+
+        val assaultAlliesLabel = labelText(
+            assaultAlliesLabel(),
+            12.5f,
+            Color.parseColor("#FFF8FAFF"),
+            bold = true,
+        )
+        val assaultAlliesButton = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            minimumHeight = dp(36)
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = rippleOn(fieldBackground())
+            isClickable = true
+            addView(assaultAlliesLabel)
+        }
+
+        // ---- Лог последних авто-вступлений ----
+        val assaultLogContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        fun refreshAssaultLog() {
+            assaultLogContainer.removeAllViews()
+            val entries = assaultPrefs.getAutoAssaultJoinLog()
+            if (entries.isEmpty()) {
+                assaultLogContainer.addView(
+                    labelText(
+                        context.getString(R.string.overlay_assault_log_empty),
+                        11f,
+                        Color.parseColor("#7A90A4B8"),
+                    ).apply { setPadding(0, dp(6), 0, dp(6)) },
+                )
+                return
+            }
+            entries.forEach { entry ->
+                assaultLogContainer.addView(
+                    labelText(entry, 11f, Color.parseColor("#C8DCE8F4")).apply {
+                        setPadding(0, dp(3), 0, dp(3))
+                    },
+                )
+            }
+        }
+        refreshAssaultLog()
+        val assaultLogHeader = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(
+                labelText(
+                    context.getString(R.string.overlay_assault_log_title),
+                    11.5f,
+                    Color.parseColor("#9AB0C4D8"),
+                ),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            addView(
+                labelText(
+                    context.getString(R.string.overlay_assault_log_clear),
+                    11f,
+                    Color.parseColor("#FF7DD3FC"),
+                ).apply {
+                    setPadding(dp(8), dp(4), dp(4), dp(4))
+                    isClickable = true
+                    setOnClickListener {
+                        assaultPrefs.clearAutoAssaultJoinLog()
+                        refreshAssaultLog()
+                    }
+                },
+            )
+        }
+
+        val assaultInner = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(assaultSwitchRow)
+            fun spaced(v: View, top: Int = 10) = addView(
+                v,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(top) },
+            )
+            spaced(assaultTypesRow)
+            spaced(assaultSquadsRow)
+            spaced(assaultPowerTitle)
+            spaced(assaultPowerRows, 6)
+            spaced(assaultLevelTitle)
+            spaced(assaultLevelRow, 6)
+            spaced(assaultDistanceRow)
+            spaced(assaultMinRemainingRow, 8)
+            spaced(assaultCooldownRow, 8)
+            spaced(assaultMaxConcurrentRow, 8)
+            spaced(assaultDurationRow, 8)
+            spaced(assaultAlliesButton)
+            spaced(assaultLogHeader)
+            spaced(assaultLogContainer, 2)
+        }
+        val assaultContent = MaxHeightScrollView(context).apply {
+            visibility = View.GONE
+            isFillViewport = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            maxHeightPx = dp(320)
+            addView(
+                assaultInner,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
+        assaultAlliesButton.setOnClickListener {
+            readAssaultPowerPrefs()
+            persistAssaultSettings()
+            showAssaultAlliesPicker(windowManager, assaultAllowedIds) { picked ->
+                assaultAllowedIds = picked.toMutableSet()
+                assaultAlliesLabel.text = assaultAlliesLabel()
+                persistAssaultSettings()
+            }
+        }
+
+        fun watchAssaultField(edit: EditText) {
+            edit.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    readAssaultPowerPrefs()
+                    persistAssaultSettings()
+                }
+            })
+        }
+        watchAssaultField(assaultDistanceEdit)
+        watchAssaultField(assaultLevelMinEdit)
+        watchAssaultField(assaultLevelMaxEdit)
+        watchAssaultField(assaultMinRemainingEdit)
+        watchAssaultField(assaultCooldownEdit)
+        watchAssaultField(assaultMaxConcurrentEdit)
+        watchAssaultField(assaultDurationEdit)
+        for (idx in 0 until 3) {
+            watchAssaultField(assaultPowerMinEdits[idx])
+            watchAssaultField(assaultPowerMaxEdits[idx])
+        }
+
         val targetHost = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
@@ -1186,6 +1657,13 @@ class OverlayCommandsPopover(
             )
             addView(
                 targetBookmarksContent,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(12) },
+            )
+            addView(
+                assaultContent,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1269,7 +1747,11 @@ class OverlayCommandsPopover(
         bookmarkSelector.setOnClickListener { openBookmarkPicker() }
 
         fun refreshTargetSubTabs() {
-            listOf(targetSearchTabChip to 0, targetBookmarksTabChip to 1).forEach { (chip, idx) ->
+            listOf(
+                targetSearchTabChip to 0,
+                targetBookmarksTabChip to 1,
+                targetAssaultTabChip to 2,
+            ).forEach { (chip, idx) ->
                 val sel = selectedTargetTab == idx
                 chip.background = optionChipBackground(sel)
                 chip.setTextColor(Color.parseColor(if (sel) "#FFE8F4FF" else "#9AB0C4D8"))
@@ -1277,15 +1759,22 @@ class OverlayCommandsPopover(
             }
             targetSearchContent.visibility = if (selectedTargetTab == 0) View.VISIBLE else View.GONE
             targetBookmarksContent.visibility = if (selectedTargetTab == 1) View.VISIBLE else View.GONE
+            assaultContent.visibility = if (selectedTargetTab == 2) View.VISIBLE else View.GONE
         }
 
         fun selectTargetTab(index: Int) {
             selectedTargetTab = index
             if (index == 1) refreshBookmarkList()
+            if (index == 2) {
+                readAssaultPowerPrefs()
+                persistAssaultSettings()
+                refreshAssaultLog()
+            }
             refreshTargetSubTabs()
         }
         targetSearchTabChip.setOnClickListener { selectTargetTab(0) }
         targetBookmarksTabChip.setOnClickListener { selectTargetTab(1) }
+        targetAssaultTabChip.setOnClickListener { selectTargetTab(2) }
 
         targetSearchButton.setOnClickListener {
             val server = editTargetServer.text?.toString()?.trim()?.toIntOrNull()
@@ -2142,6 +2631,7 @@ class OverlayCommandsPopover(
                                 return@OverlayReactionRecipientSheet
                             }
                             hideReactionPickOnly()
+        hideAssaultPickOnly()
                             clearPreselectedReactionContext()
                             Toast.makeText(
                                 context,
@@ -2157,6 +2647,7 @@ class OverlayCommandsPopover(
                                 return@OverlayReactionRecipientSheet
                             }
                             hideReactionPickOnly()
+        hideAssaultPickOnly()
                             clearPreselectedReactionContext()
                             Toast.makeText(
                                 context,
@@ -2191,6 +2682,71 @@ class OverlayCommandsPopover(
         compose.post { compose.requestLayout() }
     }
 
+    private fun showAssaultAlliesPicker(
+        windowManager: WindowManager,
+        initialSelected: Set<String>,
+        onConfirmed: (Set<String>) -> Unit,
+    ) {
+        ensurePopoverSuppressHeld()
+        attachedWindowManager = windowManager
+        val overlayService = context as CombatOverlayService
+        val cardW = minOf(dp(360), context.resources.displayMetrics.widthPixels - dp(16))
+        val composeOwner = overlayService.obtainOverlayPopoverComposeOwner()
+        val composeHost = FrameLayout(context).apply { consumeTouchesInSubtree() }
+        val compose = ComposeView(context)
+        composeHost.addView(
+            compose,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        val scrim = FrameLayout(context).apply {
+            setBackgroundColor(Color.argb(110, 4, 8, 16))
+            setDismissOnOutsideCardTouch(composeHost) { hideAssaultPickOnly() }
+        }
+        scrim.addView(
+            composeHost,
+            FrameLayout.LayoutParams(cardW, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER
+            },
+        )
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            overlayWindowType(),
+            OverlayWindowLayout.popupWindowFlags(),
+            android.graphics.PixelFormat.TRANSLUCENT,
+        ).apply {
+            OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
+        }
+        if (runCatching { windowManager.addView(scrim, params) }.isFailure) {
+            releasePopoverSuppressAfterUiClosed()
+            return
+        }
+        assaultPickScrim = scrim
+        overlayService.attachOverlayComposeTree(scrim, composeHost, compose)
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalLifecycleOwner provides composeOwner,
+                LocalViewModelStoreOwner provides composeOwner,
+                LocalSavedStateRegistryOwner provides composeOwner,
+                LocalOnBackPressedDispatcherOwner provides composeOwner,
+            ) {
+                SquadRelayTheme {
+                    OverlayAssaultAlliesSheet(
+                        initialSelectedUserIds = initialSelected,
+                        onDismiss = { hideAssaultPickOnly() },
+                        onConfirm = { picked ->
+                            onConfirmed(picked)
+                            hideAssaultPickOnly()
+                        },
+                    )
+                }
+            }
+        }
+        compose.post { compose.requestLayout() }
+    }
 
     private fun hideKeyboard(edit: EditText) {
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return

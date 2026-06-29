@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '9';
+const BRIDGE_VERSION = '11';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -201,6 +201,153 @@ const AUTOHELP_INSTALL_LUA = [
 // Toggle off: stop the wrappers from sending (they stay installed but become no-ops).
 const AUTOHELP_DISABLE_LUA = 'pcall(function() _G.__sr_help_enabled = false end)';
 
+const AUTOASSAULT_FILE = '/data/data/com.phs.global/files/squadrelay_autoassault.json';
+const AUTOASSAULT_SDCARD = '/sdcard/Download/squadrelay_autoassault.json';
+const AUTOASSAULT_STARTUP_DELAY_MS = 30000;
+const AUTOASSAULT_SCAN_INTERVAL_MS = 1500;
+// JoinUnionRallyC2S args are still validated on-device; scaffold logs matches until confirmed.
+const AUTOASSAULT_JOIN_ENABLED = false;
+const AUTOASSAULT_MATCH_FILE = '/data/data/com.phs.global/files/squadrelay_autoassault_match.json';
+const ASSAULT_JOIN_ACTION = 'com.lastasylum.alliance.action.ASSAULT_JOIN';
+
+const AUTOASSAULT_MATCH_FILE_LUA = "'" + AUTOASSAULT_MATCH_FILE + "'";
+const AUTOASSAULT_SCAN_LUA = [
+  'pcall(function()',
+  '  local cfg = _G.__sr_aa_cfg',
+  '  if not cfg or not cfg.enabled then return end',
+  '  if cfg.disableAtEpochMs and cfg.disableAtEpochMs > 0 and (os.time()*1000) >= cfg.disableAtEpochMs then return end',
+  '  local ad = _G.Data and _G.Data.AllianceData',
+  '  local wars = ad and ad.wars',
+  '  if type(wars) ~= "table" then return end',
+  '  local sm = package.loaded["Logic.Proto.Send.union_war"]',
+  '  if not sm or not sm.JoinUnionRallyC2S then return end',
+  '  local C = _G.Config',
+  '  local function cheb(ax,ay,bx,by) return math.max(math.abs(ax-bx), math.abs(ay-by)) end',
+  '  local function castlePt()',
+  '    local pd = _G.Data and _G.Data.PlayerData',
+  '    if not pd then return nil end',
+  '    local pt = pd.castlePoint or pd.homePoint or pd.basePoint or pd.point',
+  '    if type(pt) == "table" and pt.x and pt.y then return pt end',
+  '    return nil',
+  '  end',
+  '  local function cfgRow(lairId)',
+  '    return C and C.SlgRallyInfo and C.SlgRallyInfo[lairId]',
+  '  end',
+  '  local function targetPower(row)',
+  '    if type(row) == "table" then return tonumber(row.recAbility) or 0 end',
+  '    return 0',
+  '  end',
+  '  local function targetLevel(row, war)',
+  '    if type(row) == "table" and row.level then return tonumber(row.level) or 0 end',
+  '    if war.targetLevel and tonumber(war.targetLevel) and tonumber(war.targetLevel) > 0 then return tonumber(war.targetLevel) end',
+  '    return 0',
+  '  end',
+  // Классификация типа цели: монстр (есть SlgRallyInfo) / игрок (есть защитник) / город (иначе).
+  '  local function classify(war, row)',
+  '    if type(row) == "table" then return "monster" end',
+  '    local def = war.defenceSide',
+  '    if type(def) == "table" and tonumber(def.maxMember) and tonumber(def.maxMember) > 0 then return "player" end',
+  '    if war.targetPlayerId or war.defencePlayerId then return "player" end',
+  '    return "city"',
+  '  end',
+  '  local function typeAllowed(t)',
+  '    local types = cfg.targetTypes',
+  '    if type(types) ~= "table" or #types == 0 then return true end',
+  '    for i = 1, #types do if tostring(types[i]) == t then return true end end',
+  '    return false',
+  '  end',
+  '  local function allowedName(name)',
+  '    local names = cfg.allowedNames',
+  '    if type(names) ~= "table" or #names == 0 then return true end',
+  '    name = tostring(name or "")',
+  '    for i = 1, #names do if tostring(names[i]) == name then return true end end',
+  '    return false',
+  '  end',
+  '  local function squadOk(pow, idx)',
+  '    local squads = cfg.squads',
+  '    if type(squads) ~= "table" then return false end',
+  '    for i = 1, #squads do',
+  '      local s = squads[i]',
+  '      if type(s) == "table" and tonumber(s.index) == idx then',
+  '        local mn = tonumber(s.powerMin) or 0',
+  '        local mx = tonumber(s.powerMax) or 999999999',
+  '        return pow >= mn and pow <= mx',
+  '      end',
+  '    end',
+  '    return false',
+  '  end',
+  '  local function memberCount(atk)',
+  '    local n = 0',
+  '    local m = atk and atk.member',
+  '    if type(m) == "table" then for _ in pairs(m) do n = n + 1 end end',
+  '    return n',
+  '  end',
+  // Текущее число активных авто-маршей (грубая оценка по нашим вступлениям этой сессии).
+  '  local function activeJoins()',
+  '    local t = _G.__sr_aa_active',
+  '    if type(t) ~= "table" then return 0 end',
+  '    local now = os.time()',
+  '    local n = 0',
+  '    for id, endt in pairs(t) do if endt and endt > now then n = n + 1 else t[id] = nil end end',
+  '    return n',
+  '  end',
+  '  _G.__sr_aa_active = _G.__sr_aa_active or {}',
+  '  local cp = castlePt()',
+  '  local maxD = tonumber(cfg.maxDistance) or 9999',
+  '  local minRem = tonumber(cfg.minRemainingSec) or 0',
+  '  local lvMin = tonumber(cfg.levelMin) or 0',
+  '  local lvMax = tonumber(cfg.levelMax) or 0',
+  '  local maxConc = tonumber(cfg.maxConcurrent) or 0',
+  '  for _, war in pairs(wars) do',
+  '    if type(war) ~= "table" or not war.isRally then goto continue end',
+  '    if maxConc > 0 and activeJoins() >= maxConc then break end',
+  '    if war.id and _G.__sr_aa_active[tostring(war.id)] then goto continue end',
+  '    local atk = war.attackSide',
+  '    local maxM = atk and tonumber(atk.maxMember) or 0',
+  '    local cnt = memberCount(atk)',
+  '    if maxM > 0 and cnt >= maxM then goto continue end',
+  '    if not allowedName(war.playerName) then goto continue end',
+  '    local row = cfgRow(war.targetLairId)',
+  '    local ttype = classify(war, row)',
+  '    if not typeAllowed(ttype) then goto continue end',
+  '    local lv = targetLevel(row, war)',
+  '    if lvMin > 0 and lv > 0 and lv < lvMin then goto continue end',
+  '    if lvMax > 0 and lv > 0 and lv > lvMax then goto continue end',
+  '    local tp = war.targetPoint',
+  '    if type(tp) ~= "table" or not tp.x or not tp.y then goto continue end',
+  '    local dist = cp and cheb(cp.x, cp.y, tp.x, tp.y) or -1',
+  '    if cp and maxD > 0 and dist > maxD then goto continue end',
+  // Осталось времени до отправки штурма (rallyEndTime в мс эпохи).
+  '    if minRem > 0 and war.rallyEndTime then',
+  '      local remSec = (tonumber(war.rallyEndTime) - os.time()*1000) / 1000',
+  '      if remSec < minRem then goto continue end',
+  '    end',
+  '    local pow = targetPower(row)',
+  '    local pickedIdx = nil',
+  '    local squads = cfg.squads',
+  '    if type(squads) == "table" then',
+  '      for i = 1, #squads do',
+  '        local s = squads[i]',
+  '        if type(s) == "table" and squadOk(pow, tonumber(s.index) or -1) then',
+  '          pickedIdx = tonumber(s.index)',
+  '          break',
+  '        end',
+  '      end',
+  '    end',
+  '    if pickedIdx == nil then goto continue end',
+  '    local matchJson = string.format(\'{"creator":"%s","type":"%s","power":%d,"level":%d,"dist":%d,"squad":%d,"id":"%s","time":%d}\', tostring(war.playerName or ""):gsub(\'"\',"\'"), ttype, math.floor(pow), math.floor(lv), math.floor(dist), pickedIdx, tostring(war.id or ""), os.time())',
+  '    local f = io.open(' + AUTOASSAULT_MATCH_FILE_LUA + ', "w") if f then f:write(matchJson) f:close() end',
+  '    if cfg.joinEnabled and war.id then',
+  '      pcall(function() sm.JoinUnionRallyC2S(war.id, pickedIdx + 1) end)',
+  '      local endt = os.time() + 120',
+  '      if war.rallyEndTime then endt = math.floor(tonumber(war.rallyEndTime)/1000) + 120 end',
+  '      _G.__sr_aa_active[tostring(war.id)] = endt',
+  '    end',
+  '    ::continue::',
+  '  end',
+  'end)',
+].join('\n');
+
 const RVA = {
   LuaManager_FormatKXY: 0x2518350,
   LuaManager_SimpleInstrSend: 0x25148d8,
@@ -236,6 +383,21 @@ let autoHelpIntervalMs = 30000;
 let autoHelpLastRun = 0;
 let lastAutoHelpCfg = '';
 let autoHelpAppliedEnabled = null;
+let autoAssaultEnabled = false;
+let autoAssaultMaxDistance = 500;
+let autoAssaultSquads = [];
+let autoAssaultAllowedNames = [];
+let autoAssaultTargetTypes = [];
+let autoAssaultLevelMin = 0;
+let autoAssaultLevelMax = 0;
+let autoAssaultMinRemainingSec = 5;
+let autoAssaultCooldownSec = 3;
+let autoAssaultMaxConcurrent = 0;
+let autoAssaultDisableAtMs = 0;
+let lastAutoAssaultCfg = '';
+let autoAssaultLastTick = 0;
+let autoAssaultCfgPushed = false;
+let lastAutoAssaultMatchText = '';
 
 function readFileUtf8(path, maxLen) {
   const limit = maxLen || 4096;
@@ -1686,6 +1848,182 @@ function tickAutoHelp() {
   }
 }
 
+function luaEscape(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function buildAutoAssaultCfgLua() {
+  const squadParts = autoAssaultSquads.map(function (s) {
+    return '{index=' + s.index + ',powerMin=' + s.powerMin + ',powerMax=' + s.powerMax + '}';
+  });
+  const nameParts = autoAssaultAllowedNames.map(function (n) {
+    return '"' + luaEscape(n) + '"';
+  });
+  const typeParts = autoAssaultTargetTypes.map(function (t) {
+    return '"' + luaEscape(t) + '"';
+  });
+  return (
+    'pcall(function() _G.__sr_aa_cfg={enabled=' +
+    (autoAssaultEnabled ? 'true' : 'false') +
+    ',maxDistance=' +
+    autoAssaultMaxDistance +
+    ',minRemainingSec=' +
+    autoAssaultMinRemainingSec +
+    ',levelMin=' +
+    autoAssaultLevelMin +
+    ',levelMax=' +
+    autoAssaultLevelMax +
+    ',maxConcurrent=' +
+    autoAssaultMaxConcurrent +
+    ',disableAtEpochMs=' +
+    autoAssaultDisableAtMs +
+    ',joinEnabled=' +
+    (AUTOASSAULT_JOIN_ENABLED ? 'true' : 'false') +
+    ',targetTypes={' +
+    typeParts.join(',') +
+    '},allowedNames={' +
+    nameParts.join(',') +
+    '},squads={' +
+    squadParts.join(',') +
+    '}} end)'
+  );
+}
+
+function pollAutoAssaultConfig() {
+  const paths = [AUTOASSAULT_FILE, AUTOASSAULT_SDCARD];
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const text = readFileUtf8(paths[i]);
+      if (!text || !text.trim()) continue;
+      if (text === lastAutoAssaultCfg) return;
+      lastAutoAssaultCfg = text;
+      autoAssaultCfgPushed = false;
+      let cfg;
+      try {
+        cfg = JSON.parse(text);
+      } catch (e) {
+        log('autoassault config parse failed: ' + e);
+        return;
+      }
+      autoAssaultEnabled = !!cfg.enabled;
+      autoAssaultMaxDistance = parseInt(cfg.maxDistance, 10) || 500;
+      autoAssaultMinRemainingSec = parseInt(cfg.minRemainingSec, 10);
+      if (isNaN(autoAssaultMinRemainingSec)) autoAssaultMinRemainingSec = 5;
+      autoAssaultCooldownSec = parseInt(cfg.cooldownSec, 10) || 3;
+      autoAssaultLevelMin = parseInt(cfg.levelMin, 10) || 0;
+      autoAssaultLevelMax = parseInt(cfg.levelMax, 10) || 0;
+      autoAssaultMaxConcurrent = parseInt(cfg.maxConcurrent, 10) || 0;
+      autoAssaultDisableAtMs = parseInt(cfg.disableAtEpochMs, 10) || 0;
+      autoAssaultTargetTypes = [];
+      if (cfg.targetTypes && cfg.targetTypes.length) {
+        for (let t = 0; t < cfg.targetTypes.length; t++) {
+          if (cfg.targetTypes[t]) autoAssaultTargetTypes.push(String(cfg.targetTypes[t]));
+        }
+      }
+      autoAssaultSquads = [];
+      if (cfg.squads && cfg.squads.length) {
+        for (let j = 0; j < cfg.squads.length; j++) {
+          const s = cfg.squads[j];
+          if (!s) continue;
+          autoAssaultSquads.push({
+            index: parseInt(s.index, 10) || 0,
+            powerMin: parseInt(s.powerMin, 10) || 0,
+            powerMax: parseInt(s.powerMax, 10) || 999999999,
+          });
+        }
+      }
+      autoAssaultAllowedNames = [];
+      if (cfg.allowedNames && cfg.allowedNames.length) {
+        for (let k = 0; k < cfg.allowedNames.length; k++) {
+          const n = cfg.allowedNames[k];
+          if (n && String(n).trim()) autoAssaultAllowedNames.push(String(n).trim());
+        }
+      }
+      log(
+        'autoassault config: enabled=' +
+          autoAssaultEnabled +
+          ' maxDist=' +
+          autoAssaultMaxDistance +
+          ' squads=' +
+          autoAssaultSquads.length +
+          ' names=' +
+          autoAssaultAllowedNames.length,
+      );
+      return;
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes('No such file') && !msg.includes('not found')) {
+        log('autoassault config poll error: ' + e);
+      }
+    }
+  }
+}
+
+function tickAutoAssault() {
+  if (!liveLuaEnv || liveLuaEnv.isNull()) return;
+  const now = Date.now();
+  if (liveLuaEnvCapturedMs === 0 || now - liveLuaEnvCapturedMs < AUTOASSAULT_STARTUP_DELAY_MS) return;
+  if (!autoAssaultCfgPushed) {
+    try {
+      runLua(buildAutoAssaultCfgLua());
+      autoAssaultCfgPushed = true;
+    } catch (e) {
+      log('autoassault cfg push error: ' + e);
+    }
+  }
+  if (!autoAssaultEnabled) return;
+  if (autoAssaultDisableAtMs > 0 && Date.now() >= autoAssaultDisableAtMs) return;
+  const cooldownMs = Math.max(autoAssaultCooldownSec * 1000, AUTOASSAULT_SCAN_INTERVAL_MS);
+  if (now - autoAssaultLastTick < cooldownMs) return;
+  autoAssaultLastTick = now;
+  try {
+    runLua(AUTOASSAULT_SCAN_LUA);
+  } catch (e) {
+    log('autoassault scan error: ' + e);
+  }
+  pollAutoAssaultMatch();
+}
+
+// Lua writes the latest matched rally to a file; read it and forward to the SquadRelay app
+// (so the overlay shows a "recent auto-joins" log). Pure read of the game-private file.
+function pollAutoAssaultMatch() {
+  try {
+    const text = readFileUtf8(AUTOASSAULT_MATCH_FILE);
+    if (!text || !text.trim() || text === lastAutoAssaultMatchText) return;
+    lastAutoAssaultMatchText = text;
+    log('autoassault match: ' + text.trim());
+    sendAssaultJoinBroadcast(text.trim());
+    writeFileEmpty(AUTOASSAULT_MATCH_FILE);
+    lastAutoAssaultMatchText = '';
+  } catch (e) {
+    const msg = String(e);
+    if (!msg.includes('No such file') && !msg.includes('not found')) {
+      log('autoassault match poll error: ' + e);
+    }
+  }
+}
+
+function sendAssaultJoinBroadcast(payload) {
+  if (typeof Java === 'undefined' || !Java.available) return;
+  try {
+    Java.perform(function () {
+      const ActivityThread = Java.use('android.app.ActivityThread');
+      const app = ActivityThread.currentApplication();
+      if (app === null) return;
+      const ctx = app.getApplicationContext();
+      const Intent = Java.use('android.content.Intent');
+      const intent = Intent.$new(ASSAULT_JOIN_ACTION);
+      intent.setPackage(SHARE_APP_PKG);
+      intent.putExtra.overload('java.lang.String', 'java.lang.String').call(intent, 'payload', payload);
+      intent.addFlags(0x10000000); // FLAG_RECEIVER_FOREGROUND
+      ctx.sendBroadcast(intent);
+      log('assault-join broadcast -> ' + SHARE_APP_PKG);
+    });
+  } catch (e) {
+    log('assault-join broadcast failed: ' + e);
+  }
+}
+
 function logIl2cppExportsOnce() {
   if (logIl2cppExportsOnce.done) return;
   logIl2cppExportsOnce.done = true;
@@ -2035,7 +2373,9 @@ setImmediate(function () {
     pollTriggerFile();
     pollProbeFile();
     pollAutoHelpConfig();
+    pollAutoAssaultConfig();
     tickAutoHelp();
+    tickAutoAssault();
     maybeInstallShareHook();
     pollShareFile();
     pollShareCloseFile();

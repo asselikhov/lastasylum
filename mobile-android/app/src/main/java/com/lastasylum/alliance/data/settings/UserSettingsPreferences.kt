@@ -190,6 +190,226 @@ class UserSettingsPreferences(context: Context) {
     }
 
     /**
+     * Авто-штурм: вступление в ралли соалийцев по правилам из оверлея.
+     * Учитывает авто-выключение по таймеру: если срок истёк — считаем выключенным.
+     */
+    fun isAutoAssaultEnabled(): Boolean {
+        if (!prefs.getBoolean(KEY_AUTO_ASSAULT_ENABLED, false)) return false
+        val disableAt = prefs.getLong(KEY_AUTO_ASSAULT_DISABLE_AT, 0L)
+        if (disableAt in 1 until System.currentTimeMillis()) {
+            prefs.edit().putBoolean(KEY_AUTO_ASSAULT_ENABLED, false).apply()
+            return false
+        }
+        return true
+    }
+
+    /** Сырое сохранённое значение без учёта истечения таймера (для отображения переключателя). */
+    fun isAutoAssaultEnabledRaw(): Boolean = prefs.getBoolean(KEY_AUTO_ASSAULT_ENABLED, false)
+
+    fun setAutoAssaultEnabled(value: Boolean) {
+        val edit = prefs.edit().putBoolean(KEY_AUTO_ASSAULT_ENABLED, value)
+        if (value) {
+            val durationMin = getAutoAssaultDurationMin()
+            if (durationMin > 0) {
+                edit.putLong(
+                    KEY_AUTO_ASSAULT_DISABLE_AT,
+                    System.currentTimeMillis() + durationMin * 60_000L,
+                )
+            } else {
+                edit.putLong(KEY_AUTO_ASSAULT_DISABLE_AT, 0L)
+            }
+        } else {
+            edit.putLong(KEY_AUTO_ASSAULT_DISABLE_AT, 0L)
+        }
+        edit.apply()
+    }
+
+    /** Эпоха (мс), когда авто-штурм должен сам выключиться (0 = бессрочно). */
+    fun getAutoAssaultDisableAtMs(): Long = prefs.getLong(KEY_AUTO_ASSAULT_DISABLE_AT, 0L)
+
+    /** Длительность авто-штурма в минутах перед авто-выключением (0 = бессрочно). */
+    fun getAutoAssaultDurationMin(): Int =
+        prefs.getInt(KEY_AUTO_ASSAULT_DURATION_MIN, 0).coerceIn(0, AUTO_ASSAULT_DURATION_MAX_MIN)
+
+    fun setAutoAssaultDurationMin(value: Int) {
+        prefs.edit()
+            .putInt(KEY_AUTO_ASSAULT_DURATION_MIN, value.coerceIn(0, AUTO_ASSAULT_DURATION_MAX_MIN))
+            .apply()
+        if (isAutoAssaultEnabledRaw()) {
+            // Пересчитать срок выключения под новую длительность.
+            setAutoAssaultEnabled(true)
+        }
+    }
+
+    /** Разрешённые типы цели: набор из [AUTO_ASSAULT_TYPE_MONSTER]/PLAYER/CITY. */
+    fun getAutoAssaultTargetTypes(): Set<String> {
+        val stored = prefs.getStringSet(KEY_AUTO_ASSAULT_TARGET_TYPES, null)
+        return if (stored.isNullOrEmpty()) AUTO_ASSAULT_TYPES_ALL else stored.toSet()
+    }
+
+    fun setAutoAssaultTargetTypes(types: Set<String>) {
+        val sanitized = types.filter { it in AUTO_ASSAULT_TYPES_ALL }.toSet()
+            .ifEmpty { AUTO_ASSAULT_TYPES_ALL }
+        prefs.edit().putStringSet(KEY_AUTO_ASSAULT_TARGET_TYPES, sanitized).apply()
+    }
+
+    /** Минимальный уровень цели (0 = без ограничения). */
+    fun getAutoAssaultTargetLevelMin(): Int =
+        prefs.getInt(KEY_AUTO_ASSAULT_LEVEL_MIN, 0).coerceIn(0, AUTO_ASSAULT_LEVEL_MAX)
+
+    fun setAutoAssaultTargetLevelMin(value: Int) {
+        prefs.edit().putInt(KEY_AUTO_ASSAULT_LEVEL_MIN, value.coerceIn(0, AUTO_ASSAULT_LEVEL_MAX)).apply()
+    }
+
+    /** Максимальный уровень цели (0 = без ограничения). */
+    fun getAutoAssaultTargetLevelMax(): Int =
+        prefs.getInt(KEY_AUTO_ASSAULT_LEVEL_MAX, 0).coerceIn(0, AUTO_ASSAULT_LEVEL_MAX)
+
+    fun setAutoAssaultTargetLevelMax(value: Int) {
+        prefs.edit().putInt(KEY_AUTO_ASSAULT_LEVEL_MAX, value.coerceIn(0, AUTO_ASSAULT_LEVEL_MAX)).apply()
+    }
+
+    /** Не вступать, если до отправки штурма осталось меньше N секунд. */
+    fun getAutoAssaultMinRemainingSec(): Int =
+        prefs.getInt(KEY_AUTO_ASSAULT_MIN_REMAINING_SEC, AUTO_ASSAULT_MIN_REMAINING_DEFAULT_SEC)
+            .coerceIn(0, AUTO_ASSAULT_MIN_REMAINING_MAX_SEC)
+
+    fun setAutoAssaultMinRemainingSec(value: Int) {
+        prefs.edit()
+            .putInt(
+                KEY_AUTO_ASSAULT_MIN_REMAINING_SEC,
+                value.coerceIn(0, AUTO_ASSAULT_MIN_REMAINING_MAX_SEC),
+            )
+            .apply()
+    }
+
+    /** Кулдаун между авто-вступлениями (секунды). */
+    fun getAutoAssaultCooldownSec(): Int =
+        prefs.getInt(KEY_AUTO_ASSAULT_COOLDOWN_SEC, AUTO_ASSAULT_COOLDOWN_DEFAULT_SEC)
+            .coerceIn(AUTO_ASSAULT_COOLDOWN_MIN_SEC, AUTO_ASSAULT_COOLDOWN_MAX_SEC)
+
+    fun setAutoAssaultCooldownSec(value: Int) {
+        prefs.edit()
+            .putInt(
+                KEY_AUTO_ASSAULT_COOLDOWN_SEC,
+                value.coerceIn(AUTO_ASSAULT_COOLDOWN_MIN_SEC, AUTO_ASSAULT_COOLDOWN_MAX_SEC),
+            )
+            .apply()
+    }
+
+    /** Максимум одновременных авто-маршей (0 = без ограничения). */
+    fun getAutoAssaultMaxConcurrent(): Int =
+        prefs.getInt(KEY_AUTO_ASSAULT_MAX_CONCURRENT, 0).coerceIn(0, AUTO_ASSAULT_MAX_CONCURRENT_CAP)
+
+    fun setAutoAssaultMaxConcurrent(value: Int) {
+        prefs.edit()
+            .putInt(KEY_AUTO_ASSAULT_MAX_CONCURRENT, value.coerceIn(0, AUTO_ASSAULT_MAX_CONCURRENT_CAP))
+            .apply()
+    }
+
+    /** Лог последних авто-вступлений (свежие сверху), JSON-массив строк. */
+    fun getAutoAssaultJoinLog(): List<String> {
+        val raw = prefs.getString(KEY_AUTO_ASSAULT_JOIN_LOG, null) ?: return emptyList()
+        return runCatching {
+            val arr = org.json.JSONArray(raw)
+            (0 until arr.length()).map { arr.getString(it) }
+        }.getOrDefault(emptyList())
+    }
+
+    /** Добавить запись в лог (хранится не более [AUTO_ASSAULT_JOIN_LOG_MAX]). */
+    fun appendAutoAssaultJoinLog(entry: String) {
+        val trimmed = entry.trim()
+        if (trimmed.isEmpty()) return
+        val current = getAutoAssaultJoinLog().toMutableList()
+        current.add(0, trimmed)
+        while (current.size > AUTO_ASSAULT_JOIN_LOG_MAX) current.removeAt(current.size - 1)
+        val arr = org.json.JSONArray()
+        current.forEach { arr.put(it) }
+        prefs.edit().putString(KEY_AUTO_ASSAULT_JOIN_LOG, arr.toString()).apply()
+    }
+
+    fun clearAutoAssaultJoinLog() {
+        prefs.edit().remove(KEY_AUTO_ASSAULT_JOIN_LOG).apply()
+    }
+
+    /** Индексы отрядов 0…2 (в игре teamIndex), CSV «0,1,2». */
+    fun getAutoAssaultSquads(): Set<Int> = parseCsvInts(prefs.getString(KEY_AUTO_ASSAULT_SQUADS, "0,1,2"))
+        .filter { it in AUTO_ASSAULT_SQUAD_MIN..AUTO_ASSAULT_SQUAD_MAX }
+        .toSet()
+        .ifEmpty { setOf(0) }
+
+    fun setAutoAssaultSquads(indices: Set<Int>) {
+        val csv = indices
+            .filter { it in AUTO_ASSAULT_SQUAD_MIN..AUTO_ASSAULT_SQUAD_MAX }
+            .sorted()
+            .joinToString(",")
+        prefs.edit().putString(KEY_AUTO_ASSAULT_SQUADS, csv.ifEmpty { "0" }).apply()
+    }
+
+    fun getAutoAssaultSquadPowerMin(squadIndex: Int): Long =
+        prefs.getLong(squadPowerMinKey(squadIndex), 0L).coerceAtLeast(0L)
+
+    fun setAutoAssaultSquadPowerMin(squadIndex: Int, value: Long) {
+        prefs.edit()
+            .putLong(squadPowerMinKey(squadIndex), value.coerceAtLeast(0L))
+            .apply()
+    }
+
+    fun getAutoAssaultSquadPowerMax(squadIndex: Int): Long =
+        prefs.getLong(squadPowerMaxKey(squadIndex), AUTO_ASSAULT_POWER_MAX_DEFAULT)
+            .coerceIn(0L, AUTO_ASSAULT_POWER_CEILING)
+
+    fun setAutoAssaultSquadPowerMax(squadIndex: Int, value: Long) {
+        prefs.edit()
+            .putLong(
+                squadPowerMaxKey(squadIndex),
+                value.coerceIn(0L, AUTO_ASSAULT_POWER_CEILING),
+            )
+            .apply()
+    }
+
+    /** Максимальная дистанция до цели (клетки карты, Chebyshev от базы). */
+    fun getAutoAssaultMaxDistance(): Int =
+        prefs.getInt(KEY_AUTO_ASSAULT_MAX_DISTANCE, AUTO_ASSAULT_MAX_DISTANCE_DEFAULT)
+            .coerceIn(AUTO_ASSAULT_MAX_DISTANCE_MIN, AUTO_ASSAULT_MAX_DISTANCE_MAX)
+
+    fun setAutoAssaultMaxDistance(value: Int) {
+        prefs.edit()
+            .putInt(
+                KEY_AUTO_ASSAULT_MAX_DISTANCE,
+                value.coerceIn(AUTO_ASSAULT_MAX_DISTANCE_MIN, AUTO_ASSAULT_MAX_DISTANCE_MAX),
+            )
+            .apply()
+    }
+
+    /** userId соалийцев, чьи штурмы разрешены (пусто = все). */
+    fun getAutoAssaultAllowedMemberIds(): Set<String> =
+        parseCsvStrings(prefs.getString(KEY_AUTO_ASSAULT_ALLOWED_MEMBER_IDS, ""))
+
+    fun setAutoAssaultAllowedMemberIds(ids: Set<String>) {
+        val csv = ids.map { it.trim() }.filter { it.isNotEmpty() }.distinct().joinToString(",")
+        prefs.edit().putString(KEY_AUTO_ASSAULT_ALLOWED_MEMBER_IDS, csv).apply()
+    }
+
+    private fun squadPowerMinKey(squadIndex: Int): String =
+        "$KEY_AUTO_ASSAULT_SQUAD_POWER_MIN_PREFIX$squadIndex"
+
+    private fun squadPowerMaxKey(squadIndex: Int): String =
+        "$KEY_AUTO_ASSAULT_SQUAD_POWER_MAX_PREFIX$squadIndex"
+
+    private fun parseCsvInts(raw: String?): List<Int> =
+        raw?.split(',')
+            ?.mapNotNull { it.trim().toIntOrNull() }
+            ?: emptyList()
+
+    private fun parseCsvStrings(raw: String?): Set<String> =
+        raw?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.toSet()
+            ?: emptySet()
+
+    /**
      * Путь к уже скачанному и проверенному APK патча, установка которого отложена до удаления
      * сток-игры. Переживает перезапуск процесса (OEM-киллеры фона), чтобы [OverlayControlScreen]
      * мог доустановить патч при возврате пользователя в приложение.
@@ -483,6 +703,45 @@ class UserSettingsPreferences(context: Context) {
         const val AUTO_HELP_INTERVAL_DEFAULT_SEC = 30
         const val AUTO_HELP_INTERVAL_MIN_SEC = 5
         const val AUTO_HELP_INTERVAL_MAX_SEC = 600
+        private const val KEY_AUTO_ASSAULT_ENABLED = "auto_assault_enabled"
+        private const val KEY_AUTO_ASSAULT_SQUADS = "auto_assault_squads"
+        private const val KEY_AUTO_ASSAULT_MAX_DISTANCE = "auto_assault_max_distance"
+        private const val KEY_AUTO_ASSAULT_ALLOWED_MEMBER_IDS = "auto_assault_allowed_member_ids"
+        private const val KEY_AUTO_ASSAULT_SQUAD_POWER_MIN_PREFIX = "auto_assault_squad_power_min_"
+        private const val KEY_AUTO_ASSAULT_SQUAD_POWER_MAX_PREFIX = "auto_assault_squad_power_max_"
+        const val AUTO_ASSAULT_SQUAD_MIN = 0
+        const val AUTO_ASSAULT_SQUAD_MAX = 2
+        const val AUTO_ASSAULT_MAX_DISTANCE_DEFAULT = 500
+        const val AUTO_ASSAULT_MAX_DISTANCE_MIN = 1
+        const val AUTO_ASSAULT_MAX_DISTANCE_MAX = 9999
+        const val AUTO_ASSAULT_POWER_MAX_DEFAULT = 50_000_000L
+        const val AUTO_ASSAULT_POWER_CEILING = 999_999_999L
+        private const val KEY_AUTO_ASSAULT_DURATION_MIN = "auto_assault_duration_min"
+        private const val KEY_AUTO_ASSAULT_DISABLE_AT = "auto_assault_disable_at"
+        private const val KEY_AUTO_ASSAULT_TARGET_TYPES = "auto_assault_target_types"
+        private const val KEY_AUTO_ASSAULT_LEVEL_MIN = "auto_assault_level_min"
+        private const val KEY_AUTO_ASSAULT_LEVEL_MAX = "auto_assault_level_max"
+        private const val KEY_AUTO_ASSAULT_MIN_REMAINING_SEC = "auto_assault_min_remaining_sec"
+        private const val KEY_AUTO_ASSAULT_COOLDOWN_SEC = "auto_assault_cooldown_sec"
+        private const val KEY_AUTO_ASSAULT_MAX_CONCURRENT = "auto_assault_max_concurrent"
+        private const val KEY_AUTO_ASSAULT_JOIN_LOG = "auto_assault_join_log"
+        const val AUTO_ASSAULT_TYPE_MONSTER = "monster"
+        const val AUTO_ASSAULT_TYPE_PLAYER = "player"
+        const val AUTO_ASSAULT_TYPE_CITY = "city"
+        val AUTO_ASSAULT_TYPES_ALL = setOf(
+            AUTO_ASSAULT_TYPE_MONSTER,
+            AUTO_ASSAULT_TYPE_PLAYER,
+            AUTO_ASSAULT_TYPE_CITY,
+        )
+        const val AUTO_ASSAULT_LEVEL_MAX = 999
+        const val AUTO_ASSAULT_DURATION_MAX_MIN = 1440
+        const val AUTO_ASSAULT_MIN_REMAINING_DEFAULT_SEC = 5
+        const val AUTO_ASSAULT_MIN_REMAINING_MAX_SEC = 600
+        const val AUTO_ASSAULT_COOLDOWN_DEFAULT_SEC = 3
+        const val AUTO_ASSAULT_COOLDOWN_MIN_SEC = 1
+        const val AUTO_ASSAULT_COOLDOWN_MAX_SEC = 600
+        const val AUTO_ASSAULT_MAX_CONCURRENT_CAP = 3
+        const val AUTO_ASSAULT_JOIN_LOG_MAX = 10
         private const val KEY_PENDING_PATCH_APK_PATH = "pending_patch_apk_path"
         private const val KEY_EXCAVATION_PUSH = "excavation_push_enabled"
         private const val KEY_GAME_EVENT_PUSH_PREFIX = "game_event_push_"

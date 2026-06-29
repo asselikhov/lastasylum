@@ -138,6 +138,67 @@
     return-void
 .end method
 
+.method public static writeAutoAssault(Landroid/content/Context;Ljava/lang/String;)V
+    .locals 4
+
+    if-eqz p1, :cond_end
+
+    invoke-virtual {p1}, Ljava/lang/String;->trim()Ljava/lang/String;
+
+    move-result-object p1
+
+    invoke-virtual {p1}, Ljava/lang/String;->isEmpty()Z
+
+    move-result v0
+
+    if-eqz v0, :cond_end
+
+    :try_start_0
+    new-instance v0, Ljava/io/File;
+
+    invoke-virtual {p0}, Landroid/content/Context;->getFilesDir()Ljava/io/File;
+
+    move-result-object v1
+
+    const-string v2, "squadrelay_autoassault.json"
+
+    invoke-direct {v0, v1, v2}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+
+    new-instance v1, Ljava/io/FileOutputStream;
+
+    invoke-direct {v1, v0}, Ljava/io/FileOutputStream;-><init>(Ljava/io/File;)V
+
+    invoke-virtual {p1}, Ljava/lang/String;->getBytes()[B
+
+    move-result-object p1
+
+    invoke-virtual {v1, p1}, Ljava/io/FileOutputStream;->write([B)V
+
+    invoke-virtual {v1}, Ljava/io/FileOutputStream;->close()V
+
+    const-string p0, "MapFlyReceiver"
+
+    const-string p1, "autoassault config written"
+
+    invoke-static {p0, p1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+    :try_end_0
+    .catch Ljava/lang/Exception; {:try_start_0 .. :try_end_0} :catch_0
+
+    return-void
+
+    :catch_0
+    move-exception p0
+
+    const-string p1, "MapFlyReceiver"
+
+    const-string v0, "autoassault write failed"
+
+    invoke-static {p1, v0, p0}, Landroid/util/Log;->e(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I
+
+    :cond_end
+    return-void
+.end method
+
 .method public static writeTrigger(Landroid/content/Context;IIIZ)V
     .locals 4
 
@@ -299,9 +360,30 @@
 
     move-result v0
 
-    if-eqz v0, :cond_autohelp
+    if-eqz v0, :cond_autoassault
 
     invoke-static {p1}, Lcom/lastasylum/alliance/game/MapFlyReceiver;->writeShareClose(Landroid/content/Context;)V
+
+    return-void
+
+    :cond_autoassault
+    const-string v0, "autoassault"
+
+    const/4 v1, 0x0
+
+    invoke-virtual {p2, v0, v1}, Landroid/content/Intent;->getBooleanExtra(Ljava/lang/String;Z)Z
+
+    move-result v0
+
+    if-eqz v0, :cond_autohelp
+
+    const-string v0, "aaConfig"
+
+    invoke-virtual {p2, v0}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+
+    move-result-object p2
+
+    invoke-static {p1, p2}, Lcom/lastasylum/alliance/game/MapFlyReceiver;->writeAutoAssault(Landroid/content/Context;Ljava/lang/String;)V
 
     return-void
 
