@@ -117,6 +117,7 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.chat.outbox.OutboxResumeScheduler
 import com.lastasylum.alliance.data.telemetry.LatencySpanType
 import com.lastasylum.alliance.game.GameAutoAssaultBridge
+import com.lastasylum.alliance.game.GameAutoHelpBridge
 import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.layout.OverlayLayoutDp
 import com.lastasylum.alliance.di.ChatViewModelRegistry
@@ -1347,6 +1348,9 @@ class CombatOverlayService : Service() {
     /** Boost faster gate polling + lenient show while attaching HUD after game launch / screen on. */
     private var gameEntryBoostUntilMs: Long = 0L
 
+    /** Один раз за сессию в игре: сброс авто-штурма при входе (не при каждом alt-tab). */
+    private var autoAssaultDisarmedThisGameSession: Boolean = false
+
     /** Consecutive NOT_IN_TARGET probes before fast dismiss (avoids launcher/splash false negative). */
     private var gateNotInTargetStreak: Int = 0
 
@@ -2101,6 +2105,9 @@ class CombatOverlayService : Service() {
                             targets,
                             activityTokens,
                         )
+                    if (!inGame) {
+                        autoAssaultDisarmedThisGameSession = false
+                    }
                     if (inGame && lastAppliedGateShouldShow != true) {
                         gameEntryBoostUntilMs = maxOf(
                             gameEntryBoostUntilMs,
@@ -2109,9 +2116,14 @@ class CombatOverlayService : Service() {
                         GameForegroundGate.invalidateFullHeuristicCache()
                         GameForegroundGate.primeTotalTimeForegroundWatch(this@CombatOverlayService, targets)
                         gateNotInTargetStreak = 0
-                        // Актуализировать авто-штурм в игре только если включён в prefs (не гоняем лишние broadcast).
-                        if (AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isAutoAssaultEnabledRaw()) {
-                            GameAutoAssaultBridge.sync(this@CombatOverlayService)
+                        // Вход в игру: авто-штурм выключен; включение только вручную во вкладке «Штурм».
+                        if (!autoAssaultDisarmedThisGameSession) {
+                            autoAssaultDisarmedThisGameSession = true
+                            GameAutoAssaultBridge.disarmForGameSession(this@CombatOverlayService)
+                        }
+                        val userPrefs = AppContainer.from(this@CombatOverlayService).userSettingsPreferences
+                        if (userPrefs.isAutoHelpEnabled()) {
+                            GameAutoHelpBridge.sync(this@CombatOverlayService)
                         }
                     }
                     if (gateQuickProbeNotInTarget) {

@@ -65,6 +65,13 @@ function Get-ApkVersionName([string]$ApkPath) {
     return 'unknown'
 }
 
+function Get-MapFlyBridgeVersionFromJs([string]$JsPath) {
+    if (-not (Test-Path $JsPath)) { throw "Bridge hook script not found: $JsPath" }
+    $text = Get-Content $JsPath -Raw
+    if ($text -match "BRIDGE_VERSION\s*=\s*'([^']+)'") { return $Matches[1].Trim() }
+    throw "Could not read BRIDGE_VERSION from $JsPath"
+}
+
 function Inject-MapBridgeMeta([string]$ManifestPath, [string]$GameVersion, [string]$BridgeVersion = '1') {
     if (-not (Test-Path $ManifestPath)) {
         throw "Manifest not found: $ManifestPath"
@@ -74,11 +81,17 @@ function Inject-MapBridgeMeta([string]$ManifestPath, [string]$GameVersion, [stri
         $text = $text -replace '(<application\b)', '$1 android:debuggable="true"'
         Write-Host 'Injected android:debuggable="true"'
     }
-    if ($text -match 'com\.lastasylum\.alliance\.map_bridge_game_version') {
-        $text = $text -replace 'android:name="com\.lastasylum\.alliance\.map_bridge_game_version" android:value="[^"]*"', "android:name=`"com.lastasylum.alliance.map_bridge_game_version`" android:value=`"$GameVersion`""
+    $hadAny = $text -match 'com\.lastasylum\.alliance\.map_bridge'
+    if ($text -match 'android:name="com\.lastasylum\.alliance\.map_bridge_version"') {
+        $text = $text -replace 'android:name="com\.lastasylum\.alliance\.map_bridge_version"\s+android:value="[^"]*"', "android:name=`"com.lastasylum.alliance.map_bridge_version`" android:value=`"$BridgeVersion`""
+    }
+    if ($text -match 'android:name="com\.lastasylum\.alliance\.map_bridge_game_version"') {
+        $text = $text -replace 'android:name="com\.lastasylum\.alliance\.map_bridge_game_version"\s+android:value="[^"]*"', "android:name=`"com.lastasylum.alliance.map_bridge_game_version`" android:value=`"$GameVersion`""
+    }
+    if ($hadAny) {
         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
         [System.IO.File]::WriteAllText($ManifestPath, $text, $utf8NoBom)
-        Write-Host "Updated map bridge game version meta-data to $GameVersion"
+        Write-Host "Updated map bridge meta: game=$GameVersion bridge=v$BridgeVersion"
         return
     }
     $meta = @"
@@ -92,7 +105,7 @@ function Inject-MapBridgeMeta([string]$ManifestPath, [string]$GameVersion, [stri
     }
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText($ManifestPath, $patched, $utf8NoBom)
-    Write-Host "Injected map bridge meta-data for game version $GameVersion"
+    Write-Host "Injected map bridge meta-data for game version $GameVersion bridge v$BridgeVersion"
 }
 
 function Inject-GadgetSmali([string]$SmaliPath) {
@@ -298,7 +311,9 @@ Copy-Item $mapFlySmaliSrc $mapFlySmaliDst -Force
 Write-Host 'Copied MapFlyReceiver.smali'
 
 $manifest = Join-Path $WorkDir 'AndroidManifest.xml'
-Inject-MapBridgeMeta $manifest $gameVersion
+$bridgeVersion = Get-MapFlyBridgeVersionFromJs $HookScript
+Write-Host "Map bridge version from JS: v$bridgeVersion"
+Inject-MapBridgeMeta $manifest $gameVersion $bridgeVersion
 
 $unsignedBase = Join-Path $OutDir 'base-unsigned.apk'
 if (Test-Path $unsignedBase) { Remove-Item $unsignedBase -Force }

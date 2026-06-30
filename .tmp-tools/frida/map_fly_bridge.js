@@ -9,7 +9,9 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '45';
+const BRIDGE_VERSION = '49';
+const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
+const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -154,6 +156,12 @@ const AUTOHELP_MAX_INTERVAL_MS = 600000;
 // (PlayerData.bytes missing → infinite loading screen). Auto-help already used 30s; v41 lowered
 // assault to 2s but share/bookmark hooks had no delay at all — same failure mode.
 const BRIDGE_LUA_STARTUP_DELAY_MS = 30000;
+const WORLD_READY_FILE = '/data/data/com.phs.global/files/squadrelay_world_ready.ok';
+const WORLD_READY_FILE_LUA = "'" + WORLD_READY_FILE + "'";
+const WORLD_READY_PROBE_LUA =
+  'pcall(function() local D=_G.Data if type(D)~="table" then return end local ready=false if D.isInitialized==true then ready=true end local pd=D.PlayerData or D.UserData if type(pd)=="table" then local id=tonumber(pd.playerId or pd.id or pd.uid or pd.roleId) if id and id>0 then ready=true end end local ad=D.AllianceData if type(ad)=="table" and type(ad.member)=="table" then ready=true end local ok=ready and "1" or "0" local f=io.open(' +
+  WORLD_READY_FILE_LUA +
+  ',"w") if f then f:write(ok) f:close() end end)';
 
 // Event-driven auto-help. Captured live: tapping the real "Помощь" button sends `UnionHelpAllC2S`
 // (plus `GetUnionHelpListC2S` to refresh the list). Instead of polling, we wrap the alliance help
@@ -219,6 +227,12 @@ const AUTOASSAULT_SCAN_INTERVAL_MS = 1500;
 // одного ручного вступления этим отрядом.
 const AUTOASSAULT_JOIN_ENABLED = true;
 const AUTOASSAULT_MATCH_FILE = '/data/data/com.phs.global/files/squadrelay_autoassault_match.json';
+// ~17KB scan script inlined in JS; DoString aborts on large chunks — load from file instead.
+const AUTOASSAULT_SCAN_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan.lua';
+const AUTOASSAULT_SCAN_FILE_LUA = "'" + AUTOASSAULT_SCAN_FILE + "'";
+const AUTOASSAULT_SCAN_RUN_LUA =
+  'pcall(function() local lf=loadfile(' + AUTOASSAULT_SCAN_FILE_LUA + '); if lf then lf() end end)';
+const AUTOASSAULT_CFG_READ_MAX = 65536;
 const ASSAULT_JOIN_ACTION = 'com.lastasylum.alliance.action.ASSAULT_JOIN';
 // Ростер альянса (игра → приложение): мост периодически читает memberDic и шлёт
 // broadcast со списком соалийцев [{id,name,power,level,rank}] в SquadRelay, чтобы
@@ -285,7 +299,7 @@ const INSTALL_JOIN_CACHE_LUA = [
   '        end',
   '      end',
   '    end',
-  '    local pd0 = _G.Data and _G.Data.PlayerData',
+    '    local pd0 = _G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
   '    if pd0 then',
   '      local myId0 = tonumber(pd0.playerId or pd0.id or pd0.uid or pd0.roleId)',
   '      if myId0 and myId0 > 0 then _G.__sr_my_pid = myId0 end',
@@ -329,7 +343,7 @@ const INSTALL_JOIN_CACHE_LUA = [
   '    local parts = {}',
   '    for k, v in pairs(_G.__sr_team_cache) do parts[#parts + 1] = string.format("[%s]=%s", tostring(k), emitTeam(v)) end',
   '    local pid = tonumber(_G.__sr_my_pid) or 0',
-  '    local pd = _G.Data and _G.Data.PlayerData',
+  '    local pd = _G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
   '    if pd then local id = tonumber(pd.playerId or pd.id or pd.uid or pd.roleId) if id and id > 0 then pid = id end end',
   '    _G.__sr_my_pid = pid > 0 and pid or _G.__sr_my_pid',
   '    local s = string.format("return {pid=%s,teams={%s}}", tostring(pid), table.concat(parts, ","))',
@@ -449,7 +463,7 @@ const INSTALL_JOIN_CACHE_LUA = [
   '          for i = 1, #src.units do local u = src.units[i] units[i] = {heroId = u.heroId, slotId = u.slotId, heroSource = u.heroSource} end',
   '          _G.__sr_team_cache[idx] = {wingManId = src.wingManId or idx, units = units}',
   // targetPlayerId в join-proto — создатель штурма, не наш id; не перезаписывать __sr_my_pid.
-  '          local pd = _G.Data and _G.Data.PlayerData',
+  '          local pd = _G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
   '          if pd then',
   '            local myId = tonumber(pd.playerId or pd.id or pd.uid or pd.roleId)',
   '            if myId and myId > 0 then _G.__sr_my_pid = myId end',
@@ -463,10 +477,17 @@ const INSTALL_JOIN_CACHE_LUA = [
   'end)',
 ].join('\n');
 const AUTOASSAULT_SCAN_LUA = [
-  'pcall(function()',
+  'local __sr_aa_scan_ok, __sr_aa_scan_err = pcall(function()',
   '  local cfg = _G.__sr_aa_cfg',
   '  if not cfg or not cfg.enabled then return end',
   '  if cfg.disableAtEpochMs and cfg.disableAtEpochMs > 0 and (os.time()*1000) >= cfg.disableAtEpochMs then return end',
+  '  local minRem = tonumber(cfg.minRemainingSec) or 0',
+  '  local lvMin = tonumber(cfg.levelMin) or 0',
+  '  local lvMax = tonumber(cfg.levelMax) or 0',
+  '  local maxConc = tonumber(cfg.maxConcurrent) or 0',
+  '  local legD = tonumber(cfg.maxDistance) or 9999',
+  '  local maxDC = tonumber(cfg.maxDistanceCreator) or legD',
+  '  local maxDT = tonumber(cfg.maxDistanceTarget) or legD',
   '  local ad = _G.Data and _G.Data.AllianceData',
   '  local wars = ad and ad.wars',
   '  if type(wars) ~= "table" then return end',
@@ -483,9 +504,10 @@ const AUTOASSAULT_SCAN_LUA = [
   '  local TOP = package.loaded["AbyssEmpire.Logic.Troop.Define.TroopOperateParam"]',
   '  if not TOP or not TOP.DoSendMsg then return end',
   '  local C = _G.Config',
+  '  local troopFree, troopBusySec',
   '  local function cheb(ax,ay,bx,by) return math.max(math.abs(ax-bx), math.abs(ay-by)) end',
   '  local function castlePt()',
-  '    local pd = _G.Data and _G.Data.PlayerData',
+  '    local pd = _G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
   '    if pd then',
   '      local pt = pd.castlePoint or pd.homePoint or pd.basePoint or pd.point',
   '      if type(pt) == "table" and pt.x and pt.y then return pt end',
@@ -605,7 +627,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '    for id, endt in pairs(t) do if endt and endt > now then n = n + 1 else t[id] = nil end end',
   '    return n',
   '  end',
-  '  local function troopBusySec(idx)',
+  '  troopBusySec = function(idx)',
   '    local TM = package.loaded["AbyssEmpire.Logic.Troop.TroopManager"]',
   '    if type(TM) ~= "table" or type(TM.GetAllTroopInfos) ~= "function" then return 0 end',
   '    local ok, all = pcall(TM.GetAllTroopInfos, TM)',
@@ -663,7 +685,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '    local remWhenReady = remSec - troopBusySec(idx)',
   '    return remWhenReady >= eff',
   '  end',
-  '  local function troopFree(idx)',
+  '  troopFree = function(idx)',
   '    local TM = package.loaded["AbyssEmpire.Logic.Troop.TroopManager"]',
   '    if type(TM) ~= "table" or type(TM.GetAllTroopInfos) ~= "function" then return true end',
   '    local ok, all = pcall(TM.GetAllTroopInfos, TM)',
@@ -678,7 +700,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '    return false',
   '  end',
   '  local function myPlayerId()',
-  '    local pd = _G.Data and _G.Data.PlayerData',
+  '    local pd = _G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
   '    if pd then',
   '      local id = tonumber(pd.playerId or pd.id or pd.uid or pd.roleId)',
   '      if id and id > 0 then return id end',
@@ -771,13 +793,6 @@ const AUTOASSAULT_SCAN_LUA = [
   '  if maxJoinsPerScan < 1 then maxJoinsPerScan = 1 end',
   '  if maxJoinsPerScan > 3 then maxJoinsPerScan = 3 end',
   '  local cp = castlePt()',
-  '  local legD = tonumber(cfg.maxDistance) or 9999',
-  '  local maxDC = tonumber(cfg.maxDistanceCreator) or legD',
-  '  local maxDT = tonumber(cfg.maxDistanceTarget) or legD',
-  '  local minRem = tonumber(cfg.minRemainingSec) or 0',
-  '  local lvMin = tonumber(cfg.levelMin) or 0',
-  '  local lvMax = tonumber(cfg.levelMax) or 0',
-  '  local maxConc = tonumber(cfg.maxConcurrent) or 0',
   '  for di = 1, #dics do',
   '  local dic = dics[di]',
   '  for _, war in pairs(dic) do',
@@ -848,8 +863,11 @@ const AUTOASSAULT_SCAN_LUA = [
   '    end',
   '    ::continue::',
   '  end',
-  '  end',
-  'end)',
+  '  end)',
+  'if not __sr_aa_scan_ok then',
+  '  local ef = io.open(' + AUTOASSAULT_SCAN_ERR_FILE_LUA + ', "w")',
+  '  if ef then ef:write(tostring(__sr_aa_scan_err or "unknown")) ef:close() end',
+  'end',
 ].join('\n');
 
 const RVA = {
@@ -909,6 +927,9 @@ let lastAutoAssaultCfg = '';
 let autoAssaultLastTick = 0;
 let autoAssaultCfgPushed = false;
 let lastAutoAssaultMatchText = '';
+let autoAssaultColdStartPending = true;
+let worldReadyCached = false;
+let worldReadyLastProbeMs = 0;
 let allianceRosterLastTick = 0;
 let lastAllianceRosterText = '';
 let allianceRosterLastBroadcastMs = 0;
@@ -950,6 +971,28 @@ function writeFileEmpty(path) {
 const _diagDone = {};
 function bridgeLuaStartupReady(now) {
   return liveLuaEnvCapturedMs > 0 && now - liveLuaEnvCapturedMs >= BRIDGE_LUA_STARTUP_DELAY_MS;
+}
+
+function tickWorldReadyProbe(now) {
+  if (worldReadyCached) return;
+  if (!liveLuaEnv || liveLuaEnv.isNull()) return;
+  if (!bridgeLuaStartupReady(now)) return;
+  if (now - worldReadyLastProbeMs < 5000) return;
+  worldReadyLastProbeMs = now;
+  mainThreadFlyQueue.push(function () {
+    doStringNow(WORLD_READY_PROBE_LUA);
+    const t = readFileUtf8(WORLD_READY_FILE, 8);
+    if (t && t.trim() === '1') {
+      worldReadyCached = true;
+      log('world ready: session loaded');
+    }
+  });
+}
+
+function bridgeWorldReady(now) {
+  if (worldReadyCached) return true;
+  tickWorldReadyProbe(now);
+  return false;
 }
 
 function diagOnce(key, msg) {
@@ -1440,7 +1483,6 @@ function installDoStringHook() {
     Interceptor.attach(base.add(RVA.LuaEnv_DoString), {
       onEnter(args) {
         liveLuaEnv = args[0];
-        maybeInstallShareHook();
         if (doStringLogUntil > Date.now()) {
           const chunk = readIl2CppString(args[1]);
           if (chunk) log('DoString: ' + chunk.substring(0, 240).replace(/\s+/g, ' '));
@@ -2452,7 +2494,7 @@ function tickAutoHelp() {
   // loading). liveLuaEnvCapturedMs is set as soon as the Lua VM is captured (still on the loading
   // screen), so this skips the whole fragile login window. Mid-session toggles pass instantly
   // because the VM was captured long ago.
-  if (!bridgeLuaStartupReady(now)) return;
+  if (!bridgeLuaStartupReady(now) || !bridgeWorldReady(now)) return;
   if (autoHelpEnabled) {
     // (Re)install/maintain the event hook every interval. After the first successful wrap this is a
     // near no-op (the real work is event-driven inside the game, not here). Re-running also
@@ -2532,13 +2574,31 @@ function resetAutoAssaultBridgeState() {
   // That stub was polled as a real config update and disabled scans until the app re-synced.
   autoAssaultEnabled = false;
   lastAutoAssaultCfg = '';
+  autoAssaultColdStartPending = true;
+  worldReadyCached = false;
+  worldReadyLastProbeMs = 0;
+  writeFileEmpty(WORLD_READY_FILE);
+  ensureAutoAssaultScanFile.done = false;
 }
+
+function ensureAutoAssaultScanFile() {
+  try {
+    const f = new File(AUTOASSAULT_SCAN_FILE, 'w');
+    f.write(AUTOASSAULT_SCAN_LUA);
+    f.flush();
+    f.close();
+    ensureAutoAssaultScanFile.done = true;
+  } catch (e) {
+    log('autoassault scan file write failed: ' + e);
+  }
+}
+ensureAutoAssaultScanFile.done = false;
 
 function pollAutoAssaultConfig() {
   const paths = [AUTOASSAULT_FILE, AUTOASSAULT_SDCARD];
   for (let i = 0; i < paths.length; i++) {
     try {
-      const text = readFileUtf8(paths[i]);
+      const text = readFileUtf8(paths[i], AUTOASSAULT_CFG_READ_MAX);
       if (!text || !text.trim()) continue;
       if (text === lastAutoAssaultCfg) return;
       lastAutoAssaultCfg = text;
@@ -2550,7 +2610,10 @@ function pollAutoAssaultConfig() {
         log('autoassault config parse failed: ' + e);
         return;
       }
-      autoAssaultEnabled = !!cfg.enabled;
+      autoAssaultEnabled = autoAssaultColdStartPending ? false : !!cfg.enabled;
+      if (autoAssaultColdStartPending) {
+        autoAssaultColdStartPending = false;
+      }
       autoAssaultMaxDistance = parseInt(cfg.maxDistance, 10) || 500;
       const legDist = autoAssaultMaxDistance;
       autoAssaultMaxDistanceCreator =
@@ -2629,7 +2692,7 @@ function pollAutoAssaultConfig() {
 function tickAutoAssault() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (!bridgeLuaStartupReady(now)) return;
+  if (!bridgeLuaStartupReady(now) || !bridgeWorldReady(now)) return;
   pollAutoAssaultConfig();
   // Re-arm join-cache hook periodically (idempotent in lua). The game recreates its Lua
   // state during login/scene transitions, wiping _G.__sr_aa_cfg and TOP.__sr_dsm_orig; a
@@ -2648,16 +2711,21 @@ function tickAutoAssault() {
   if (now - autoAssaultLastTick < cooldownMs) return;
   autoAssaultLastTick = now;
   try {
+    ensureAutoAssaultScanFile();
     const cfgLua = buildAutoAssaultCfgLua();
-    const scanLua = AUTOASSAULT_SCAN_LUA;
-    // Atomic cfg+scan on the Unity main thread, then poll the match file after Lua ran.
-    // Separate runLua() calls interleave with share/roster hooks and pollAutoAssaultMatch()
-    // used to run before the queued scan — production never logged matches.
+    // Atomic cfg+scan+match-poll on Unity main thread. Inlined ~17KB scan via DoString aborts;
+    // loadfile from squadrelay_aa_scan.lua is stable (same pattern as eval channel).
     mainThreadFlyQueue.push(function () {
       doStringNow(cfgLua);
-      doStringNow(scanLua);
-    });
-    mainThreadFlyQueue.push(function () {
+      if (!doStringNow(AUTOASSAULT_SCAN_RUN_LUA)) {
+        log('autoassault scan run failed');
+      } else {
+        const scanErr = readFileUtf8(AUTOASSAULT_SCAN_ERR_FILE, 4096);
+        if (scanErr && scanErr.trim()) {
+          log('autoassault scan lua error: ' + scanErr.trim().substring(0, 240));
+          writeFileEmpty(AUTOASSAULT_SCAN_ERR_FILE);
+        }
+      }
       pollAutoAssaultMatch();
     });
   } catch (e) {
@@ -2710,7 +2778,7 @@ function sendAssaultJoinBroadcast(payload) {
 function tickAllianceRoster() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (!bridgeLuaStartupReady(now)) return;
+  if (!bridgeLuaStartupReady(now) || !bridgeWorldReady(now)) return;
   if (now - allianceRosterLastTick < ALLIANCE_ROSTER_SCAN_INTERVAL_MS) return;
   allianceRosterLastTick = now;
   try {
@@ -2947,7 +3015,7 @@ let lastShareText = '';
 function maybeInstallShareHook() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (!bridgeLuaStartupReady(now)) return;
+  if (!bridgeLuaStartupReady(now) || !bridgeWorldReady(now)) return;
   // Re-arm continuously: the game recreates its Lua state at runtime, wiping the
   // OnEnter/OnExit wrappers. The per-idx guard in SHARE_HOOK_LUA makes re-runs
   // idempotent within a state and re-installs on the fresh idx after a reset.
@@ -3014,7 +3082,7 @@ let lastBookmarkText = '';
 function maybeInstallBookmarkHook() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (!bridgeLuaStartupReady(now)) return;
+  if (!bridgeLuaStartupReady(now) || !bridgeWorldReady(now)) return;
   // Re-arm continuously (see maybeInstallShareHook): survives Lua state resets.
   const interval = bookmarkHookOk ? 2000 : 100;
   if (now - lastBookmarkInstallAt < interval) return;
@@ -3093,6 +3161,7 @@ setImmediate(function () {
   } catch (e) {}
   log('bridge started v' + BRIDGE_VERSION + ' pid=' + Process.id + ' proc=' + proc);
   resetAutoAssaultBridgeState();
+  ensureAutoAssaultScanFile();
   clearTriggerFiles();
   writeFileEmpty(SHARE_FILE);
   writeFileEmpty(SHARE_OK_FILE);
@@ -3105,10 +3174,12 @@ setImmediate(function () {
   lastBookmarkText = '';
   mapsDiagOnce();
   setInterval(function () {
+    const nowMs = Date.now();
     logLibStatusOnce();
     if (liveLuaEnvCapturedMs === 0 && liveLuaEnv && !liveLuaEnv.isNull()) {
-      liveLuaEnvCapturedMs = Date.now();
+      liveLuaEnvCapturedMs = nowMs;
     }
+    tickWorldReadyProbe(nowMs);
     pollTriggerFile();
     pollProbeFile();
     pollOpenChatFile();

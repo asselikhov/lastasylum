@@ -33,6 +33,14 @@ object GameAutoAssaultBridge {
         return if (names.size < allowedIds.size) emptyList() else names
     }
 
+    /** Сброс авто-штурма при входе в игру: выключить в prefs и в игровом мосте. */
+    fun disarmForGameSession(context: Context): Boolean {
+        val appContext = context.applicationContext
+        val prefs = UserSettingsPreferences(appContext)
+        prefs.setAutoAssaultEnabled(false)
+        return write(appContext, prefs, enabledOverride = false)
+    }
+
     fun sync(context: Context): Boolean {
         val prefs = UserSettingsPreferences(context.applicationContext)
         return write(context, prefs, enabledOverride = resolveAutoAssaultEnabled(prefs))
