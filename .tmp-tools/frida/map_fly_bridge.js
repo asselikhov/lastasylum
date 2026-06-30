@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '25';
+const BRIDGE_VERSION = '26';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -365,6 +365,8 @@ const AUTOASSAULT_SCAN_LUA = [
   '  if type(dic) ~= "table" then return end',
   '  local sm = package.loaded["Logic.Proto.Send.union_war"]',
   '  if not sm or not sm.JoinUnionRallyC2S then return end',
+  '  local TOP = package.loaded["AbyssEmpire.Logic.Troop.Define.TroopOperateParam"]',
+  '  if not TOP or not TOP.DoSendMsg then return end',
   '  local C = _G.Config',
   '  local function cheb(ax,ay,bx,by) return math.max(math.abs(ax-bx), math.abs(ay-by)) end',
   '  local function castlePt()',
@@ -602,8 +604,33 @@ const AUTOASSAULT_SCAN_LUA = [
   '    if cfg.joinEnabled and war.id and type(war.rallyPoint) == "table" then',
   '      local team = (_G.__sr_aa_build_team and _G.__sr_aa_build_team(pickedIdx)) or nil',
   '      if type(team) == "table" then',
-  '        local data = { warId = war.id, teamIndex = pickedIdx, target = war.rallyPoint, targetPlayerId = tonumber(war.playerId) or 0, team = team }',
-  '        pcall(function() sm.JoinUnionRallyC2S(data) end)',
+  '        local rp = war.rallyPoint',
+  '        local proto = { warId = war.id, teamIndex = pickedIdx, target = rp, targetPlayerId = tonumber(war.playerId) or 0, team = team }',
+  // JoinUnionRallyC2S(data) alone is a no-op (no packet). The UI path is
+  // RallyJoin.sendMsg -> TroopOperateParam:DoSendMsg -> JoinUnionRallyC2S via sender.
+  '        local inst = {',
+  '          warId = war.id,',
+  '          targetPlayerId = tonumber(war.playerId) or 0,',
+  '          paramTable = { allianceWarsAssemblyObj = war },',
+  '          allianceWarsAssemblyObj = war,',
+  '          marchType = 7,',
+  '          operate = "Battle",',
+  '          marchFormationType = 9,',
+  '          waitingTime = 60000,',
+  '          targetType = 6,',
+  '          endMainLocationX = rp.x,',
+  '          endMainLocationY = rp.y,',
+  '          worldPointStruct = { sid = rp.sid, pid = rp.pid, x = rp.x, y = rp.y },',
+  '          worldMapUnitData = { mainLocationX = rp.x, mainLocationY = rp.y, type = 1, point = rp },',
+  '          sender = function(self, data, client)',
+  '            return sm.JoinUnionRallyC2S(data, client or self)',
+  '          end,',
+  '          defaultSender = function(self, data, client)',
+  '            return self:sender(data, client)',
+  '          end,',
+  '        }',
+  '        setmetatable(inst, { __index = TOP })',
+  '        pcall(function() inst:DoSendMsg(proto) end)',
   '        markJoinedWar(war.id, war)',
   '      end',
   '    end',
