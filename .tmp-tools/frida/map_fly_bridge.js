@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '54';
+const BRIDGE_VERSION = '55';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -870,6 +870,11 @@ const AUTOASSAULT_SCAN_LUA = [
   '    if warKey and seenWarIds[warKey] then skip(wid, "dup"); goto continue end',
   '    if warKey then seenWarIds[warKey] = true end',
   '    if maxConc > 0 and marchingSquads() >= maxConc then skip(wid, "maxConcurrent"); break end',
+  '    do',
+  '      local myId = resolveMyPlayerId()',
+  '      local creatorId = tonumber(war.playerId)',
+  '      if myId and creatorId and creatorId > 0 and creatorId == myId then skip(wid, "ownRally"); goto continue end',
+  '    end',
   '    if war.id and (alreadyJoinedWar(war.id) or alreadyInRally(war)) then skip(wid, "alreadyIn"); goto continue end',
   '    local atk = war.attackSide',
   '    local maxM = atk and tonumber(atk.maxMember) or 0',
