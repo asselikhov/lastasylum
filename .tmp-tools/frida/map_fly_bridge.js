@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '27';
+const BRIDGE_VERSION = '28';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -371,9 +371,29 @@ const AUTOASSAULT_SCAN_LUA = [
   '  local function cheb(ax,ay,bx,by) return math.max(math.abs(ax-bx), math.abs(ay-by)) end',
   '  local function castlePt()',
   '    local pd = _G.Data and _G.Data.PlayerData',
-  '    if not pd then return nil end',
-  '    local pt = pd.castlePoint or pd.homePoint or pd.basePoint or pd.point',
-  '    if type(pt) == "table" and pt.x and pt.y then return pt end',
+  '    if pd then',
+  '      local pt = pd.castlePoint or pd.homePoint or pd.basePoint or pd.point',
+  '      if type(pt) == "table" and pt.x and pt.y then return pt end',
+  '    end',
+  // PlayerData часто nil в рантайме; координаты своего города берём из ростера альянса.
+  '    local myId = tonumber(_G.__sr_my_pid)',
+  '    if not myId or myId <= 0 then',
+  '      if pd then myId = tonumber(pd.playerId or pd.id or pd.uid or pd.roleId) end',
+  '    end',
+  '    if not myId or myId <= 0 then return nil end',
+  '    local md = _G.Data and _G.Data.AllianceData and _G.Data.AllianceData.member and _G.Data.AllianceData.member.memberDic',
+  '    if type(md) ~= "table" then return nil end',
+  '    local m = md[myId] or md[tostring(myId)]',
+  '    if not m then',
+  '      for _, mem in pairs(md) do',
+  '        local p = mem and mem.profile',
+  '        if type(p) == "table" and tonumber(p.id) == myId then m = mem break end',
+  '      end',
+  '    end',
+  '    local cc = m and m.cityCoords',
+  '    if type(cc) == "table" and cc.x and cc.y then',
+  '      return { x = tonumber(cc.x), y = tonumber(cc.y), sid = tonumber(cc.sid) }',
+  '    end',
   '    return nil',
   '  end',
   '  local function cfgRow(lairId)',
