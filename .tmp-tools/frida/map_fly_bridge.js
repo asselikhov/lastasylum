@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '28';
+const BRIDGE_VERSION = '29';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -396,6 +396,31 @@ const AUTOASSAULT_SCAN_LUA = [
   '    end',
   '    return nil',
   '  end',
+  // Точка сбора = город создателя (rallyPoint совпадает с cityCoords в ростере).
+  // Дистанция для фильтра maxDistance — до точки вступления, не до монстра (targetPoint).
+  '  local function memberCityPt(playerId)',
+  '    local pid = tonumber(playerId)',
+  '    if not pid or pid <= 0 then return nil end',
+  '    local md = _G.Data and _G.Data.AllianceData and _G.Data.AllianceData.member and _G.Data.AllianceData.member.memberDic',
+  '    if type(md) ~= "table" then return nil end',
+  '    local m = md[pid] or md[tostring(pid)]',
+  '    if not m then',
+  '      for _, mem in pairs(md) do',
+  '        local p = mem and mem.profile',
+  '        if type(p) == "table" and tonumber(p.id) == pid then m = mem break end',
+  '      end',
+  '    end',
+  '    local cc = m and m.cityCoords',
+  '    if type(cc) == "table" and cc.x and cc.y then',
+  '      return { x = tonumber(cc.x), y = tonumber(cc.y), sid = tonumber(cc.sid) }',
+  '    end',
+  '    return nil',
+  '  end',
+  '  local function creatorRallyPt(war)',
+  '    local rp = war.rallyPoint',
+  '    if type(rp) == "table" and rp.x and rp.y then return rp end',
+  '    return memberCityPt(war.playerId)',
+  '  end',
   '  local function cfgRow(lairId)',
   '    return C and C.SlgRallyInfo and C.SlgRallyInfo[lairId]',
   '  end',
@@ -608,9 +633,9 @@ const AUTOASSAULT_SCAN_LUA = [
   '    local lv = targetLevel(row, war)',
   '    if lvMin > 0 and lv > 0 and lv < lvMin then goto continue end',
   '    if lvMax > 0 and lv > 0 and lv > lvMax then goto continue end',
-  '    local tp = war.targetPoint',
-  '    if type(tp) ~= "table" or not tp.x or not tp.y then goto continue end',
-  '    local dist = cp and cheb(cp.x, cp.y, tp.x, tp.y) or -1',
+  '    local joinPt = creatorRallyPt(war)',
+  '    if type(joinPt) ~= "table" or not joinPt.x or not joinPt.y then goto continue end',
+  '    local dist = cp and cheb(cp.x, cp.y, joinPt.x, joinPt.y) or -1',
   '    if cp and maxD > 0 and dist > maxD then goto continue end',
   '    local pow = targetPower(row)',
   '    local pickedIdx = nil',
