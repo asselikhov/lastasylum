@@ -53,6 +53,7 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.data.settings.AutoAssaultOverlayDraft
 import com.lastasylum.alliance.game.GameAutoAssaultBridge
 import com.lastasylum.alliance.game.GameMapNavigator
 import com.lastasylum.alliance.game.OverlayBookmarkStore
@@ -124,6 +125,7 @@ class OverlayCommandsPopover(
     private var surfaceTransitionDepth = 0
     private var pendingSuppressRelease: Runnable? = null
     private var menuRevealCategory: ((Boolean) -> Unit)? = null
+    private var assaultSettingsFlushAction: (() -> Unit)? = null
 
     fun isShowing(): Boolean =
         surfaceTransitionDepth > 0 ||
@@ -146,6 +148,7 @@ class OverlayCommandsPopover(
     }
 
     fun hide() {
+        assaultSettingsFlushAction?.invoke()
         stopHeartPreviewPulse()
         reactionBurstPresenter.clear()
         hideReactionPickOnly()
@@ -173,6 +176,7 @@ class OverlayCommandsPopover(
 
     /** Close menu scrim after send without immediately dropping game-gate suppress. */
     private fun hideMenuOnly() {
+        assaultSettingsFlushAction?.invoke()
         stopHeartPreviewPulse()
         reactionBurstPresenter.clear()
         hideReactionPickOnly()
@@ -207,6 +211,7 @@ class OverlayCommandsPopover(
         reactionGridScroll = null
         reactionRow = null
         menuRevealCategory = null
+        assaultSettingsFlushAction = null
         hideReactionPickOnly()
         hideAssaultPickOnly()
         hideReactionBurstOnly()
@@ -1096,19 +1101,6 @@ class OverlayCommandsPopover(
                 context.getString(R.string.overlay_assault_allies_count, assaultAllowedIds.size)
             }
 
-        fun persistAssaultSettings(syncToggle: Boolean = false) {
-            assaultPrefs.setAutoAssaultSquads(assaultSquads)
-            assaultPrefs.setAutoAssaultAllowedMemberIds(assaultAllowedIds)
-            assaultPrefs.setAutoAssaultTargetTypes(assaultTypes)
-            if (syncToggle) {
-                // Только при явном переключателе: не сбрасывать таймер и не гонять apply() на каждый символ в полях.
-                assaultPrefs.setAutoAssaultEnabled(assaultEnabled)
-            }
-            // Поля фильтра не трогают enabled: в игру уходит флаг из prefs, а не из памяти UI.
-            val enabledForBridge = if (syncToggle) assaultEnabled else null
-            GameAutoAssaultBridge.write(context, assaultPrefs, enabledOverride = enabledForBridge)
-        }
-
         val targetSearchTabChip = choiceChip(context.getString(R.string.overlay_target_tab_search), true)
         val targetBookmarksTabChip = choiceChip(context.getString(R.string.overlay_target_tab_bookmarks), false)
         val targetAssaultTabChip = choiceChip(context.getString(R.string.overlay_target_tab_assault), false)
@@ -1329,41 +1321,55 @@ class OverlayCommandsPopover(
             "",
         )
 
-        fun readAssaultPowerPrefs() {
-            for (idx in 0 until 3) {
-                val min = assaultPowerMinEdits[idx].text?.toString()?.trim()?.toLongOrNull() ?: 0L
-                val max = assaultPowerMaxEdits[idx].text?.toString()?.trim()?.toLongOrNull()
-                    ?: UserSettingsPreferences.AUTO_ASSAULT_POWER_MAX_DEFAULT
-                assaultPrefs.setAutoAssaultSquadPowerMin(idx, min)
-                assaultPrefs.setAutoAssaultSquadPowerMax(idx, max)
+        fun collectAssaultDraftFromUi(): AutoAssaultOverlayDraft {
+            fun parseLong(edit: EditText, default: Long): Long =
+                edit.text?.toString()?.trim()?.toLongOrNull() ?: default
+            fun parseInt(edit: EditText, default: Int): Int =
+                edit.text?.toString()?.trim()?.toIntOrNull() ?: default
+            val distCreator = parseInt(
+                assaultDistanceCreatorEdit,
+                UserSettingsPreferences.AUTO_ASSAULT_MAX_DISTANCE_DEFAULT,
+            )
+            val distTarget = parseInt(
+                assaultDistanceTargetEdit,
+                UserSettingsPreferences.AUTO_ASSAULT_MAX_DISTANCE_DEFAULT,
+            )
+            return AutoAssaultOverlayDraft(
+                squads = assaultSquads.toSet(),
+                allowedMemberIds = assaultAllowedIds.toSet(),
+                targetTypes = assaultTypes.toSet(),
+                squadPowerMin = List(3) { idx -> parseLong(assaultPowerMinEdits[idx], 0L) },
+                squadPowerMax = List(3) { idx ->
+                    parseLong(assaultPowerMaxEdits[idx], UserSettingsPreferences.AUTO_ASSAULT_POWER_MAX_DEFAULT)
+                },
+                maxDistanceCreator = distCreator,
+                maxDistanceTarget = distTarget,
+                levelMin = parseInt(assaultLevelMinEdit, 0),
+                levelMax = parseInt(assaultLevelMaxEdit, 0),
+                minRemainingSec = parseInt(
+                    assaultMinRemainingEdit,
+                    UserSettingsPreferences.AUTO_ASSAULT_MIN_REMAINING_DEFAULT_SEC,
+                ),
+                cooldownSec = parseInt(
+                    assaultCooldownEdit,
+                    UserSettingsPreferences.AUTO_ASSAULT_COOLDOWN_DEFAULT_SEC,
+                ),
+                maxConcurrent = parseInt(assaultMaxConcurrentEdit, 0),
+                durationMin = parseInt(assaultDurationEdit, 0),
+            )
+        }
+
+        fun persistAssaultSettings(syncToggle: Boolean = false) {
+            val prevDuration = assaultPrefs.getAutoAssaultDurationMin()
+            val draft = collectAssaultDraftFromUi()
+            assaultPrefs.commitAutoAssaultOverlayDraft(draft)
+            if (syncToggle) {
+                assaultPrefs.setAutoAssaultEnabled(assaultEnabled)
+            } else if (assaultPrefs.isAutoAssaultEnabledRaw() && draft.durationMin != prevDuration) {
+                assaultPrefs.setAutoAssaultEnabled(true)
             }
-            val distCreator = assaultDistanceCreatorEdit.text?.toString()?.trim()?.toIntOrNull()
-                ?: UserSettingsPreferences.AUTO_ASSAULT_MAX_DISTANCE_DEFAULT
-            val distTarget = assaultDistanceTargetEdit.text?.toString()?.trim()?.toIntOrNull()
-                ?: UserSettingsPreferences.AUTO_ASSAULT_MAX_DISTANCE_DEFAULT
-            assaultPrefs.setAutoAssaultMaxDistanceCreator(distCreator)
-            assaultPrefs.setAutoAssaultMaxDistanceTarget(distTarget)
-            assaultPrefs.setAutoAssaultMaxDistance(maxOf(distCreator, distTarget))
-            assaultPrefs.setAutoAssaultTargetLevelMin(
-                assaultLevelMinEdit.text?.toString()?.trim()?.toIntOrNull() ?: 0,
-            )
-            assaultPrefs.setAutoAssaultTargetLevelMax(
-                assaultLevelMaxEdit.text?.toString()?.trim()?.toIntOrNull() ?: 0,
-            )
-            assaultPrefs.setAutoAssaultMinRemainingSec(
-                assaultMinRemainingEdit.text?.toString()?.trim()?.toIntOrNull()
-                    ?: UserSettingsPreferences.AUTO_ASSAULT_MIN_REMAINING_DEFAULT_SEC,
-            )
-            assaultPrefs.setAutoAssaultCooldownSec(
-                assaultCooldownEdit.text?.toString()?.trim()?.toIntOrNull()
-                    ?: UserSettingsPreferences.AUTO_ASSAULT_COOLDOWN_DEFAULT_SEC,
-            )
-            assaultPrefs.setAutoAssaultMaxConcurrent(
-                assaultMaxConcurrentEdit.text?.toString()?.trim()?.toIntOrNull() ?: 0,
-            )
-            assaultPrefs.setAutoAssaultDurationMin(
-                assaultDurationEdit.text?.toString()?.trim()?.toIntOrNull() ?: 0,
-            )
+            val enabledForBridge = if (syncToggle) assaultEnabled else null
+            GameAutoAssaultBridge.write(context, assaultPrefs, enabledOverride = enabledForBridge)
         }
 
         // Конструктор секции-карточки: подложка, отступы, вертикальный стек строк с зазорами.
@@ -1457,6 +1463,17 @@ class OverlayCommandsPopover(
             addView(assaultToggleTrack, LinearLayout.LayoutParams(dp(46), dp(26)))
         }
 
+        val assaultTypeChipViews = mutableListOf<Pair<String, TextView>>()
+
+        fun refreshAssaultTypeChips() {
+            assaultTypeChipViews.forEach { (typeKey, chip) ->
+                val sel = assaultTypes.contains(typeKey)
+                chip.background = optionChipBackground(sel)
+                chip.setTextColor(Color.parseColor(if (sel) "#FFE8F4FF" else "#9AB0C4D8"))
+                chip.typeface = if (sel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            }
+        }
+
         // ---- Тип цели (чипы) ----
         val assaultTypeOrder = listOf(
             UserSettingsPreferences.AUTO_ASSAULT_TYPE_MONSTER to R.string.overlay_assault_type_monster,
@@ -1475,13 +1492,11 @@ class OverlayCommandsPopover(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                     ).apply { if (i > 0) marginStart = dp(6) },
                 )
+                assaultTypeChipViews += typeKey to chip
                 chip.setOnClickListener {
                     if (assaultTypes.contains(typeKey)) assaultTypes.remove(typeKey) else assaultTypes.add(typeKey)
                     if (assaultTypes.isEmpty()) assaultTypes.add(typeKey)
-                    val sel = assaultTypes.contains(typeKey)
-                    chip.background = optionChipBackground(sel)
-                    chip.setTextColor(Color.parseColor(if (sel) "#FFE8F4FF" else "#9AB0C4D8"))
-                    chip.typeface = if (sel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    refreshAssaultTypeChips()
                     persistAssaultSettings()
                 }
             }
@@ -1494,6 +1509,21 @@ class OverlayCommandsPopover(
                 assaultSquads.contains(idx),
             )
         }
+
+        fun refreshAssaultSquadChips() {
+            assaultSquadChips.forEachIndexed { idx, chip ->
+                val sel = assaultSquads.contains(idx)
+                chip.background = optionChipBackground(sel)
+                chip.setTextColor(Color.parseColor(if (sel) "#FFE8F4FF" else "#9AB0C4D8"))
+                chip.typeface = if (sel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            }
+        }
+
+        fun refreshAssaultChipVisuals() {
+            refreshAssaultTypeChips()
+            refreshAssaultSquadChips()
+        }
+
         val assaultSquadsChips = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.START
@@ -1506,10 +1536,7 @@ class OverlayCommandsPopover(
                 chip.setOnClickListener {
                     if (assaultSquads.contains(idx)) assaultSquads.remove(idx) else assaultSquads.add(idx)
                     if (assaultSquads.isEmpty()) assaultSquads.add(idx)
-                    val selected = assaultSquads.contains(idx)
-                    chip.background = optionChipBackground(selected)
-                    chip.setTextColor(Color.parseColor(if (selected) "#FFE8F4FF" else "#9AB0C4D8"))
-                    chip.typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    refreshAssaultSquadChips()
                     persistAssaultSettings()
                 }
             }
@@ -1715,7 +1742,6 @@ class OverlayCommandsPopover(
         }
 
         assaultAlliesButton.setOnClickListener {
-            readAssaultPowerPrefs()
             persistAssaultSettings()
             showAssaultAlliesPicker(windowManager, assaultAllowedIds) { picked ->
                 assaultAllowedIds = picked.toMutableSet()
@@ -1726,9 +1752,17 @@ class OverlayCommandsPopover(
 
         val assaultPersistHandler = Handler(Looper.getMainLooper())
         var assaultPersistRunnable: Runnable? = null
+        fun flushAssaultFieldPersistNow() {
+            assaultPersistRunnable?.let { assaultPersistHandler.removeCallbacks(it) }
+            assaultPersistRunnable = null
+            persistAssaultSettings(syncToggle = false)
+        }
+        assaultSettingsFlushAction = {
+            if (selectedTargetTab == 2) flushAssaultFieldPersistNow()
+        }
         fun scheduleAssaultFieldPersist() {
             assaultPersistRunnable?.let { assaultPersistHandler.removeCallbacks(it) }
-            val task = Runnable { persistAssaultSettings(syncToggle = false) }
+            val task = Runnable { flushAssaultFieldPersistNow() }
             assaultPersistRunnable = task
             assaultPersistHandler.postDelayed(task, 450L)
         }
@@ -1737,10 +1771,19 @@ class OverlayCommandsPopover(
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
                 override fun afterTextChanged(s: Editable?) {
-                    readAssaultPowerPrefs()
                     scheduleAssaultFieldPersist()
                 }
             })
+        }
+        fun activateAssaultTab() {
+            assaultEnabled = assaultPrefs.isAutoAssaultEnabledRaw()
+            val disableAt = assaultPrefs.getAutoAssaultDisableAtMs()
+            if (disableAt in 1 until System.currentTimeMillis()) assaultEnabled = false
+            renderAssaultToggle()
+            refreshAssaultChipVisuals()
+            assaultAlliesLabel.text = assaultAlliesLabel()
+            refreshAssaultLog()
+            flushAssaultFieldPersistNow()
         }
         watchAssaultField(assaultDistanceCreatorEdit)
         watchAssaultField(assaultDistanceTargetEdit)
@@ -1880,16 +1923,12 @@ class OverlayCommandsPopover(
         }
 
         fun selectTargetTab(index: Int) {
+            if (selectedTargetTab == 2 && index != 2) {
+                flushAssaultFieldPersistNow()
+            }
             selectedTargetTab = index
             if (index == 1) refreshBookmarkList()
-            if (index == 2) {
-                assaultEnabled = assaultPrefs.isAutoAssaultEnabledRaw()
-                val disableAt = assaultPrefs.getAutoAssaultDisableAtMs()
-                if (disableAt in 1 until System.currentTimeMillis()) assaultEnabled = false
-                renderAssaultToggle()
-                readAssaultPowerPrefs()
-                refreshAssaultLog()
-            }
+            if (index == 2) activateAssaultTab()
             refreshTargetSubTabs()
         }
         targetSearchTabChip.setOnClickListener { selectTargetTab(0) }
@@ -2410,7 +2449,13 @@ class OverlayCommandsPopover(
         }
 
         fun applyCategory(index: Int) {
-            selectedCategoryIndex = index.coerceIn(0, categories.lastIndex)
+            val nextIndex = index.coerceIn(0, categories.lastIndex)
+            val leavingTargetAssault =
+                categories.getOrNull(selectedCategoryIndex)?.isTarget == true &&
+                    selectedTargetTab == 2 &&
+                    !categories[nextIndex].isTarget
+            if (leavingTargetAssault) flushAssaultFieldPersistNow()
+            selectedCategoryIndex = nextIndex
             val cat = categories[selectedCategoryIndex]
             refreshTabs()
             rebuildOptionsForCategory(cat)
@@ -2422,6 +2467,7 @@ class OverlayCommandsPopover(
                 reactionStickerPackPicker.dismissPicker()
                 reactionStickerPackPicker.root.visibility = View.GONE
                 refreshTargetSubTabs()
+                if (selectedTargetTab == 2) activateAssaultTab()
                 invalidateReactionBurstAnchor()
             } else if (cat.isReactions) {
                 ensurePopoverSuppressHeld()

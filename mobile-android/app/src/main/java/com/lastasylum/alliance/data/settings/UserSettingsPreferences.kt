@@ -2,6 +2,23 @@ package com.lastasylum.alliance.data.settings
 
 import android.content.Context
 
+/** Snapshot of auto-assault fields edited in the overlay «Цель → Штурм» tab. */
+data class AutoAssaultOverlayDraft(
+    val squads: Set<Int>,
+    val allowedMemberIds: Set<String>,
+    val targetTypes: Set<String>,
+    val squadPowerMin: List<Long>,
+    val squadPowerMax: List<Long>,
+    val maxDistanceCreator: Int,
+    val maxDistanceTarget: Int,
+    val levelMin: Int,
+    val levelMax: Int,
+    val minRemainingSec: Int,
+    val cooldownSec: Int,
+    val maxConcurrent: Int,
+    val durationMin: Int,
+)
+
 /** User-facing toggles from Profile; read also by [com.lastasylum.alliance.overlay.CombatOverlayService]. */
 class UserSettingsPreferences(context: Context) {
     private val prefs =
@@ -426,6 +443,74 @@ class UserSettingsPreferences(context: Context) {
     fun setAutoAssaultAllowedMemberIds(ids: Set<String>) {
         val csv = ids.map { it.trim() }.filter { it.isNotEmpty() }.distinct().joinToString(",")
         prefs.edit().putString(KEY_AUTO_ASSAULT_ALLOWED_MEMBER_IDS, csv).apply()
+    }
+
+    /**
+     * Atomically commits overlay assault settings so [GameAutoAssaultBridge] reads the same values
+     * immediately (individual [apply] calls can lag behind the next broadcast read).
+     */
+    fun commitAutoAssaultOverlayDraft(draft: AutoAssaultOverlayDraft): Boolean {
+        val squadsCsv = draft.squads
+            .filter { it in AUTO_ASSAULT_SQUAD_MIN..AUTO_ASSAULT_SQUAD_MAX }
+            .sorted()
+            .joinToString(",")
+            .ifEmpty { "0" }
+        val idsCsv = draft.allowedMemberIds
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .joinToString(",")
+        val typesSanitized = draft.targetTypes
+            .filter { it in AUTO_ASSAULT_TYPES_ALL }
+            .toSet()
+            .ifEmpty { AUTO_ASSAULT_TYPES_ALL }
+        val distCreator = draft.maxDistanceCreator
+            .coerceIn(AUTO_ASSAULT_MAX_DISTANCE_MIN, AUTO_ASSAULT_MAX_DISTANCE_MAX)
+        val distTarget = draft.maxDistanceTarget
+            .coerceIn(AUTO_ASSAULT_MAX_DISTANCE_MIN, AUTO_ASSAULT_MAX_DISTANCE_MAX)
+        val distLegacy = maxOf(distCreator, distTarget)
+        val editor = prefs.edit()
+            .putString(KEY_AUTO_ASSAULT_SQUADS, squadsCsv)
+            .putString(KEY_AUTO_ASSAULT_ALLOWED_MEMBER_IDS, idsCsv)
+            .putStringSet(KEY_AUTO_ASSAULT_TARGET_TYPES, typesSanitized)
+            .putInt(KEY_AUTO_ASSAULT_MAX_DISTANCE, distLegacy)
+            .putInt(KEY_AUTO_ASSAULT_MAX_DISTANCE_CREATOR, distCreator)
+            .putInt(KEY_AUTO_ASSAULT_MAX_DISTANCE_TARGET, distTarget)
+            .putInt(
+                KEY_AUTO_ASSAULT_LEVEL_MIN,
+                draft.levelMin.coerceIn(0, AUTO_ASSAULT_LEVEL_MAX),
+            )
+            .putInt(
+                KEY_AUTO_ASSAULT_LEVEL_MAX,
+                draft.levelMax.coerceIn(0, AUTO_ASSAULT_LEVEL_MAX),
+            )
+            .putInt(
+                KEY_AUTO_ASSAULT_MIN_REMAINING_SEC,
+                draft.minRemainingSec.coerceIn(0, AUTO_ASSAULT_MIN_REMAINING_MAX_SEC),
+            )
+            .putInt(
+                KEY_AUTO_ASSAULT_COOLDOWN_SEC,
+                draft.cooldownSec.coerceIn(
+                    AUTO_ASSAULT_COOLDOWN_MIN_SEC,
+                    AUTO_ASSAULT_COOLDOWN_MAX_SEC,
+                ),
+            )
+            .putInt(
+                KEY_AUTO_ASSAULT_MAX_CONCURRENT,
+                draft.maxConcurrent.coerceIn(0, AUTO_ASSAULT_MAX_CONCURRENT_CAP),
+            )
+            .putInt(
+                KEY_AUTO_ASSAULT_DURATION_MIN,
+                draft.durationMin.coerceIn(0, AUTO_ASSAULT_DURATION_MAX_MIN),
+            )
+        for (idx in AUTO_ASSAULT_SQUAD_MIN..AUTO_ASSAULT_SQUAD_MAX) {
+            val min = draft.squadPowerMin.getOrElse(idx) { 0L }.coerceAtLeast(0L)
+            val max = draft.squadPowerMax.getOrElse(idx) { AUTO_ASSAULT_POWER_MAX_DEFAULT }
+                .coerceIn(0L, AUTO_ASSAULT_POWER_CEILING)
+            editor.putLong(squadPowerMinKey(idx), min)
+            editor.putLong(squadPowerMaxKey(idx), max)
+        }
+        return editor.commit()
     }
 
     private fun squadPowerMinKey(squadIndex: Int): String =
