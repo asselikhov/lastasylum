@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '30';
+const BRIDGE_VERSION = '31';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -288,6 +288,11 @@ const INSTALL_JOIN_CACHE_LUA = [
   '        end',
   '      end',
   '    end',
+  '    local pd0 = _G.Data and _G.Data.PlayerData',
+  '    if pd0 then',
+  '      local myId0 = tonumber(pd0.playerId or pd0.id or pd0.uid or pd0.roleId)',
+  '      if myId0 and myId0 > 0 then _G.__sr_my_pid = myId0 end',
+  '    end',
   '  end',
   '  local function emitTeam(t)',
   '    local us = {}',
@@ -340,7 +345,12 @@ const INSTALL_JOIN_CACHE_LUA = [
   '          local units = {}',
   '          for i = 1, #src.units do local u = src.units[i] units[i] = {heroId = u.heroId, slotId = u.slotId, heroSource = u.heroSource} end',
   '          _G.__sr_team_cache[idx] = {wingManId = src.wingManId or idx, units = units}',
-  '          if protoData.targetPlayerId then _G.__sr_my_pid = protoData.targetPlayerId end',
+  // targetPlayerId в join-proto — создатель штурма, не наш id; не перезаписывать __sr_my_pid.
+  '          local pd = _G.Data and _G.Data.PlayerData',
+  '          if pd then',
+  '            local myId = tonumber(pd.playerId or pd.id or pd.uid or pd.roleId)',
+  '            if myId and myId > 0 then _G.__sr_my_pid = myId end',
+  '          end',
   '          if _G.__sr_save_cache then pcall(_G.__sr_save_cache) end',
   '        end',
   '      end)',
@@ -375,11 +385,10 @@ const AUTOASSAULT_SCAN_LUA = [
   '      local pt = pd.castlePoint or pd.homePoint or pd.basePoint or pd.point',
   '      if type(pt) == "table" and pt.x and pt.y then return pt end',
   '    end',
-  // PlayerData часто nil в рантайме; координаты своего города берём из ростера альянса.
-  '    local myId = tonumber(_G.__sr_my_pid)',
-  '    if not myId or myId <= 0 then',
-  '      if pd then myId = tonumber(pd.playerId or pd.id or pd.uid or pd.roleId) end',
-  '    end',
+    // PlayerData часто nil в рантайме; координаты своего города берём из ростера альянса.
+  '    local myId = nil',
+  '    if pd then myId = tonumber(pd.playerId or pd.id or pd.uid or pd.roleId) end',
+  '    if not myId or myId <= 0 then myId = tonumber(_G.__sr_my_pid) end',
   '    if not myId or myId <= 0 then return nil end',
   '    local md = _G.Data and _G.Data.AllianceData and _G.Data.AllianceData.member and _G.Data.AllianceData.member.memberDic',
   '    if type(md) ~= "table" then return nil end',
@@ -564,11 +573,14 @@ const AUTOASSAULT_SCAN_LUA = [
   '    return false',
   '  end',
   '  local function myPlayerId()',
+  '    local pd = _G.Data and _G.Data.PlayerData',
+  '    if pd then',
+  '      local id = tonumber(pd.playerId or pd.id or pd.uid or pd.roleId)',
+  '      if id and id > 0 then return id end',
+  '    end',
   '    local cached = tonumber(_G.__sr_my_pid)',
   '    if cached and cached > 0 then return cached end',
-  '    local pd = _G.Data and _G.Data.PlayerData',
-  '    if not pd then return nil end',
-  '    return tonumber(pd.playerId or pd.id or pd.uid or pd.roleId)',
+  '    return nil',
   '  end',
   '  local function alreadyInRally(war)',
   '    local pid = myPlayerId()',
