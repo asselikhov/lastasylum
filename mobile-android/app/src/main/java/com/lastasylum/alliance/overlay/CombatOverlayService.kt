@@ -2109,8 +2109,10 @@ class CombatOverlayService : Service() {
                         GameForegroundGate.invalidateFullHeuristicCache()
                         GameForegroundGate.primeTotalTimeForegroundWatch(this@CombatOverlayService, targets)
                         gateNotInTargetStreak = 0
-                        // Сброс/актуализация авто-штурма в игре: по умолчанию выкл, пока пользователь не включит.
-                        GameAutoAssaultBridge.sync(this@CombatOverlayService)
+                        // Актуализировать авто-штурм в игре только если включён в prefs (не гоняем лишние broadcast).
+                        if (AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isAutoAssaultEnabledRaw()) {
+                            GameAutoAssaultBridge.sync(this@CombatOverlayService)
+                        }
                     }
                     if (gateQuickProbeNotInTarget) {
                         gateNotInTargetStreak++

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.util.Log
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.overlay.AllianceMember
 import com.lastasylum.alliance.overlay.AllianceRosterCache
 import org.json.JSONArray
 import org.json.JSONObject
@@ -18,6 +19,19 @@ object GameAutoAssaultBridge {
     private const val TAG = "GameAutoAssaultBridge"
     private const val EXTRA_AUTO_ASSAULT = "autoassault"
     private const val EXTRA_AA_CONFIG = "aaConfig"
+
+    /**
+     * Имена для Lua-фильтра: при неполном ростере не шлём урезанный список (фильтр по userIds).
+     */
+    internal fun creatorNamesForBridge(allowedIds: Set<String>, roster: List<AllianceMember>): List<String> {
+        if (allowedIds.isEmpty()) return emptyList()
+        val names = roster
+            .filter { allowedIds.contains(it.id) }
+            .map { it.name.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        return if (names.size < allowedIds.size) emptyList() else names
+    }
 
     fun sync(context: Context): Boolean {
         val prefs = UserSettingsPreferences(context.applicationContext)
@@ -106,11 +120,7 @@ object GameAutoAssaultBridge {
         if (allowedIds.isEmpty()) return emptyList()
         val roster = AllianceRosterCache.peek().takeIf { it.isNotEmpty() }
             ?: AllianceRosterCache.parse(prefs.getAllianceRosterJson())
-        return roster
-            .filter { allowedIds.contains(it.id) }
-            .map { it.name.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
+        return creatorNamesForBridge(allowedIds, roster)
     }
 
     /** Включён ли авто-штурм для broadcast (без побочного сброса prefs при истечении таймера). */

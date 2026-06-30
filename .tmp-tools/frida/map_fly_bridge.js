@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '44';
+const BRIDGE_VERSION = '45';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -474,6 +474,7 @@ const AUTOASSAULT_SCAN_LUA = [
   // (keyed по id), а не в самом wars (это контейнер под-словарей).
   '  local function dcount(t) local n=0 if type(t)=="table" then for _ in pairs(t) do n=n+1 end end return n end',
   '  local dics = {}',
+  '  local seenWarIds = {}',
   '  if type(wars.assemblyDic) == "table" then dics[#dics + 1] = wars.assemblyDic end',
   '  if type(wars.activityDic) == "table" then dics[#dics + 1] = wars.activityDic end',
   '  if #dics == 0 then return end',
@@ -765,6 +766,10 @@ const AUTOASSAULT_SCAN_LUA = [
   '  end',
   '  local usedSquads = {}',
   '  local joinsThisScan = 0',
+  '  local maxJoinsPerScan = 1',
+  '  if type(cfg.squads) == "table" then maxJoinsPerScan = #cfg.squads end',
+  '  if maxJoinsPerScan < 1 then maxJoinsPerScan = 1 end',
+  '  if maxJoinsPerScan > 3 then maxJoinsPerScan = 3 end',
   '  local cp = castlePt()',
   '  local legD = tonumber(cfg.maxDistance) or 9999',
   '  local maxDC = tonumber(cfg.maxDistanceCreator) or legD',
@@ -777,6 +782,9 @@ const AUTOASSAULT_SCAN_LUA = [
   '  local dic = dics[di]',
   '  for _, war in pairs(dic) do',
   '    if type(war) ~= "table" or not war.isRally then goto continue end',
+  '    local warKey = war.id and tostring(war.id) or nil',
+  '    if warKey and seenWarIds[warKey] then goto continue end',
+  '    if warKey then seenWarIds[warKey] = true end',
   '    if maxConc > 0 and marchingSquads() >= maxConc then break end',
   '    if war.id and (alreadyJoinedWar(war.id) or alreadyInRally(war)) then goto continue end',
   '    local atk = war.attackSide',
@@ -823,8 +831,8 @@ const AUTOASSAULT_SCAN_LUA = [
   '      local rpJoin = war.rallyPoint',
   '      if type(rpJoin) ~= "table" or not rpJoin.x then rpJoin = joinPt end',
   '      if type(rpJoin) ~= "table" or not rpJoin.x then goto continue end',
-  // Один join за проход скана (~1.5с): иначе пакеты наслаиваются и срабатывает только первый отряд.
-  '      if joinsThisScan >= 1 then goto continue end',
+  // До maxJoinsPerScan вступлений за проход: разные отряды в разные штурмы (usedSquads).
+  '      if joinsThisScan >= maxJoinsPerScan then goto continue end',
   '      local team = (_G.__sr_aa_build_team and _G.__sr_aa_build_team(pickedIdx)) or nil',
   '      if type(team) ~= "table" then goto continue end',
   '      if type(war.rallyPoint) ~= "table" then war.rallyPoint = rpJoin end',
@@ -2519,19 +2527,11 @@ function buildAutoAssaultCfgLua() {
   );
 }
 
-function resetAutoAssaultConfigFile() {
-  const stub = '{"enabled":false}';
-  for (let i = 0; i < 2; i++) {
-    const path = i === 0 ? AUTOASSAULT_FILE : AUTOASSAULT_SDCARD;
-    try {
-      const f = new File(path, 'w');
-      f.write(stub);
-      f.flush();
-      f.close();
-    } catch (e) {}
-  }
-  lastAutoAssaultCfg = stub;
+function resetAutoAssaultBridgeState() {
+  // In-memory only: do NOT write {"enabled":false} to the config file on bridge start.
+  // That stub was polled as a real config update and disabled scans until the app re-synced.
   autoAssaultEnabled = false;
+  lastAutoAssaultCfg = '';
 }
 
 function pollAutoAssaultConfig() {
@@ -2648,13 +2648,21 @@ function tickAutoAssault() {
   if (now - autoAssaultLastTick < cooldownMs) return;
   autoAssaultLastTick = now;
   try {
-    // Re-push cfg every scan: __sr_aa_cfg lives in Lua _G and is lost on state resets.
-    runLua(buildAutoAssaultCfgLua());
-    runLua(AUTOASSAULT_SCAN_LUA);
+    const cfgLua = buildAutoAssaultCfgLua();
+    const scanLua = AUTOASSAULT_SCAN_LUA;
+    // Atomic cfg+scan on the Unity main thread, then poll the match file after Lua ran.
+    // Separate runLua() calls interleave with share/roster hooks and pollAutoAssaultMatch()
+    // used to run before the queued scan — production never logged matches.
+    mainThreadFlyQueue.push(function () {
+      doStringNow(cfgLua);
+      doStringNow(scanLua);
+    });
+    mainThreadFlyQueue.push(function () {
+      pollAutoAssaultMatch();
+    });
   } catch (e) {
     log('autoassault scan error: ' + e);
   }
-  pollAutoAssaultMatch();
 }
 
 // Lua writes the latest matched rally to a file; read it and forward to the SquadRelay app
@@ -3084,7 +3092,7 @@ setImmediate(function () {
     proc = readFileUtf8('/proc/self/cmdline', 256).replace(/\0/g, ' ').trim();
   } catch (e) {}
   log('bridge started v' + BRIDGE_VERSION + ' pid=' + Process.id + ' proc=' + proc);
-  resetAutoAssaultConfigFile();
+  resetAutoAssaultBridgeState();
   clearTriggerFiles();
   writeFileEmpty(SHARE_FILE);
   writeFileEmpty(SHARE_OK_FILE);
