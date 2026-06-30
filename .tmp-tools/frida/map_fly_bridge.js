@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '58';
+const BRIDGE_VERSION = '59';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -229,6 +229,7 @@ const AUTOHELP_INSTALL_LUA = [
 const AUTOHELP_DISABLE_LUA = 'pcall(function() _G.__sr_help_enabled = false end)';
 
 const AUTOASSAULT_FILE = '/data/data/com.phs.global/files/squadrelay_autoassault.json';
+const AUTOASSAULT_FILE_LUA = "'" + AUTOASSAULT_FILE + "'";
 const AUTOASSAULT_SDCARD = '/sdcard/Download/squadrelay_autoassault.json';
 const AUTOASSAULT_SCAN_INTERVAL_MS = 1500;
 // Реальное вступление включено. Доп. защита: авто-вступление шлёт пакет только если
@@ -602,7 +603,47 @@ const AUTOASSAULT_SCAN_LUA = [
   '  local diag = {}',
   '  local function D(s) diag[#diag + 1] = tostring(s) end',
   '  local function skip(id, why) D("skip id=" .. tostring(id) .. " " .. why) end',
+  '  local function jsonNum(s, key)',
+  '    local v = s:match("\\"" .. key .. "\\":(%d+)")',
+  '    return v and tonumber(v) or nil',
+  '  end',
+  '  local function loadCfgFromJson()',
+  '    local f = io.open(' + AUTOASSAULT_FILE_LUA + ', "r")',
+  '    if not f then return nil end',
+  '    local s = f:read("*a") f:close()',
+  '    if not s or #s < 20 then return nil end',
+  '    local cfg = {}',
+  '    cfg.enabled = s:find("\\"enabled\\":true", 1, true) ~= nil',
+  '    cfg.maxDistance = jsonNum(s, "maxDistance") or 9999',
+  '    cfg.maxDistanceCreator = jsonNum(s, "maxDistanceCreator") or cfg.maxDistance',
+  '    cfg.maxDistanceTarget = jsonNum(s, "maxDistanceTarget") or cfg.maxDistance',
+  '    cfg.minRemainingSec = jsonNum(s, "minRemainingSec") or 0',
+  '    cfg.levelMin = jsonNum(s, "levelMin") or 0',
+  '    cfg.levelMax = jsonNum(s, "levelMax") or 0',
+  '    cfg.maxConcurrent = jsonNum(s, "maxConcurrent") or 0',
+  '    cfg.disableAtEpochMs = jsonNum(s, "disableAtEpochMs") or 0',
+  '    cfg.myPlayerId = jsonNum(s, "myPlayerId")',
+  '    cfg.myCastleX = jsonNum(s, "myCastleX")',
+  '    cfg.myCastleY = jsonNum(s, "myCastleY")',
+  '    cfg.myCastleSid = jsonNum(s, "myCastleSid")',
+  '    cfg.joinEnabled = true',
+  '    cfg.targetTypes = {}',
+  '    local tt = s:match("\\"targetTypes\\":%[([^%]]*)%]")',
+  '    if tt then for v in tt:gmatch("\\"([^\\"]+)\\"") do cfg.targetTypes[#cfg.targetTypes + 1] = v end end',
+  '    cfg.allowedUserIds = {}',
+  '    local ids = s:match("\\"allowedUserIds\\":%[([^%]]*)%]")',
+  '    if ids then for v in ids:gmatch("\\"(%d+)\\"") do cfg.allowedUserIds[#cfg.allowedUserIds + 1] = v end end',
+  '    cfg.squads = {}',
+  '    for idx, pmin, pmax in s:gmatch("\\"index\\":(%d+),\\"powerMin\\":(%d+),\\"powerMax\\":(%d+)") do',
+  '      cfg.squads[#cfg.squads + 1] = { index = tonumber(idx), powerMin = tonumber(pmin), powerMax = tonumber(pmax) }',
+  '    end',
+  '    return cfg',
+  '  end',
   '  local cfg = _G.__sr_aa_cfg',
+  '  if type(cfg) ~= "table" or not cfg.myPlayerId then',
+  '    local fc = loadCfgFromJson()',
+  '    if type(fc) == "table" then cfg = fc _G.__sr_aa_cfg = fc end',
+  '  end',
   '  if not cfg then D("abort: __sr_aa_cfg nil"); return end',
   '  if not cfg.enabled then D("abort: cfg.enabled=false"); return end',
   '  if cfg.disableAtEpochMs and cfg.disableAtEpochMs > 0 and (os.time()*1000) >= cfg.disableAtEpochMs then return end',
@@ -1038,7 +1079,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '  if maxJoinsPerScan > 3 then maxJoinsPerScan = 3 end',
   '  local cp = castlePt()',
   '  local rallySeen = 0',
-  '  D("myPid=" .. tostring(resolveMyPlayerId()) .. " castlePt=" .. (cp and (cp.x .. "," .. cp.y) or "nil") .. " joinFn=" .. tostring(type(_G.__sr_aa_join_rally)) .. " buildTeam=" .. tostring(type(_G.__sr_aa_build_team)))',
+  '  D("myPid=" .. tostring(resolveMyPlayerId()) .. " cfgPid=" .. tostring(cfg.myPlayerId) .. " castlePt=" .. (cp and (cp.x .. "," .. cp.y) or "nil") .. " joinFn=" .. tostring(type(_G.__sr_aa_join_rally)) .. " buildTeam=" .. tostring(type(_G.__sr_aa_build_team)))',
   '  for di = 1, #dics do',
   '  local dic = dics[di]',
   '  for _, war in pairs(dic) do',
@@ -3116,9 +3157,6 @@ function tickAutoAssault() {
   try {
     ensureAutoAssaultScanFile();
     mainThreadFlyQueue.push(function () {
-      doStringNow(MARK_SELF_LUA);
-      const cfgLua = buildAutoAssaultCfgLua();
-      doStringNow(cfgLua);
       const scanOk = doStringNow(AUTOASSAULT_SCAN_RUN_LUA);
       if (!scanOk) {
         log('autoassault scan run failed (DoString)');
