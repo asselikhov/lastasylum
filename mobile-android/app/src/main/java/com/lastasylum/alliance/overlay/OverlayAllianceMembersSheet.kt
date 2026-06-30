@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -69,6 +70,7 @@ private object AllianceRowTokens {
 
 /** Критерий сортировки списка участников альянса. */
 private enum class AllianceSort(val labelRes: Int) {
+    ONLINE(R.string.overlay_alliance_sort_online),
     POWER(R.string.overlay_alliance_sort_power),
     KILLS(R.string.overlay_alliance_sort_kills),
     LEVEL(R.string.overlay_alliance_sort_level),
@@ -113,12 +115,22 @@ fun OverlayAllianceMembersSheet(
     val visible = remember(roster, query, sort) {
         val q = query.trim().lowercase()
         val base = if (q.isEmpty()) roster else roster.filter { it.name.lowercase().contains(q) }
+        val nowMs = System.currentTimeMillis()
         val primary = when (sort) {
+            AllianceSort.ONLINE -> compareByDescending<AllianceMember> { isAllianceMemberOnline(it.logoutMs, nowMs) }
+                .thenByDescending { it.logoutMs }
             AllianceSort.POWER -> compareByDescending<AllianceMember> { it.power }
             AllianceSort.KILLS -> compareByDescending<AllianceMember> { it.kills }
             AllianceSort.LEVEL -> compareByDescending<AllianceMember> { it.level }
         }
         base.sortedWith(primary.thenBy { it.name.lowercase() })
+    }
+
+    val listState = rememberLazyListState()
+    LaunchedEffect(sort, query) {
+        if (visible.isNotEmpty()) {
+            listState.scrollToItem(0)
+        }
     }
 
     val sheetHeight = (configuration.screenHeightDp * 0.74f).roundToInt().dp
@@ -207,7 +219,7 @@ fun OverlayAllianceMembersSheet(
                         )
                     }
                 } else {
-                    LazyColumn(modifier = Modifier.weight(1f)) {
+                    LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
                         itemsIndexed(visible, key = { _, m -> m.id }) { index, m ->
                             AllianceMemberRow(
                                 member = m,
@@ -414,10 +426,15 @@ private fun formatCompact(value: Long): String {
     }
 }
 
+private fun isAllianceMemberOnline(logoutMs: Long, nowMs: Long = System.currentTimeMillis()): Boolean {
+    if (logoutMs <= 0L) return true
+    return nowMs - logoutMs < 60_000L
+}
+
 private fun formatLastSeen(logoutMs: Long): String {
     if (logoutMs <= 0L) return "\u0432 \u0441\u0435\u0442\u0438"
+    if (isAllianceMemberOnline(logoutMs)) return "\u0441\u0435\u0439\u0447\u0430\u0441"
     val diff = System.currentTimeMillis() - logoutMs
-    if (diff < 60_000L) return "\u0441\u0435\u0439\u0447\u0430\u0441"
     val minutes = diff / 60_000L
     if (minutes < 60L) return "${minutes}\u043c"
     val hours = minutes / 60L

@@ -790,6 +790,7 @@
     <string name="overlay_alliance_col_kills">Убийства</string>
     <string name="overlay_alliance_col_coords">Коорд</string>
     <string name="overlay_alliance_col_seen">Был</string>
+    <string name="overlay_alliance_sort_online">Онлайн</string>
     <string name="overlay_alliance_sort_power">Мощь</string>
     <string name="overlay_alliance_sort_kills">Поверженные</string>
     <string name="overlay_alliance_sort_level">Уровень</string>
