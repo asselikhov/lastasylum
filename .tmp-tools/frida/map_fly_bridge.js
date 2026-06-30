@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '52';
+const BRIDGE_VERSION = '53';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -753,7 +753,18 @@ const AUTOASSAULT_SCAN_LUA = [
   '      return false',
   '    end',
   '    local w0 = _G.Data and _G.Data.AllianceData and _G.Data.AllianceData.wars',
-  '    return scanDic(w0 and w0.assemblyDic) or scanDic(w0 and w0.activityDic)',
+    '    return scanDic(w0 and w0.assemblyDic) or scanDic(w0 and w0.activityDic)',
+  '  end',
+  '  _G.__sr_aa_active = _G.__sr_aa_active or {}',
+  '  _G.__sr_aa_pending = _G.__sr_aa_pending or {}',
+  '  local function squadPending(idx)',
+  '    local t = _G.__sr_aa_pending[tostring(idx)]',
+  '    if t and t > os.time() then return true end',
+  '    if t then _G.__sr_aa_pending[tostring(idx)] = nil end',
+  '    return false',
+  '  end',
+  '  local function markSquadPending(idx)',
+  '    _G.__sr_aa_pending[tostring(idx)] = os.time() + 8',
   '  end',
   '  local function squadUnavailable(idx)',
   '    if squadPending(idx) then return true end',
@@ -789,17 +800,6 @@ const AUTOASSAULT_SCAN_LUA = [
   '      end',
   '    end',
   '    return n',
-  '  end',
-  '  _G.__sr_aa_active = _G.__sr_aa_active or {}',
-  '  _G.__sr_aa_pending = _G.__sr_aa_pending or {}',
-  '  local function squadPending(idx)',
-  '    local t = _G.__sr_aa_pending[tostring(idx)]',
-  '    if t and t > os.time() then return true end',
-  '    if t then _G.__sr_aa_pending[tostring(idx)] = nil end',
-  '    return false',
-  '  end',
-  '  local function markSquadPending(idx)',
-  '    _G.__sr_aa_pending[tostring(idx)] = os.time() + 8',
   '  end',
   '  local usedSquads = {}',
   '  local joinsThisScan = 0',
