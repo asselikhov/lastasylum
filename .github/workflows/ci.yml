@@ -10,6 +10,8 @@ jobs:
     # "available patch" version and never flags an outdated installed patch:
     #   - .tmp-tools/frida/map_fly_bridge.js     -> const BRIDGE_VERSION = '<n>'
     #   - mobile-android/app/build.gradle.kts    -> val squadRelayMapBridgeVersion = "<n>"
+    # Game patch CI (build-game-patch.yml + ci-build-game-patch.ps1) also requires the
+    # manifest -BridgeVersion to equal BRIDGE_VERSION so the APK label matches libmapflybridge.so.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

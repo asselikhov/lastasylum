@@ -15,9 +15,9 @@ on:
         required: false
         default: "com.phs.global"
       bridge_version:
-        description: "Map bridge version (bump when the bridge changes)"
+        description: "Map bridge version (must match BRIDGE_VERSION in map_fly_bridge.js; leave empty to use JS)"
         required: false
-        default: "9"
+        default: ""
 
 jobs:
   build:
@@ -45,6 +45,29 @@ jobs:
         working-directory: .tmp-tools
         run: npm ci
 
+      - name: Resolve and verify map bridge version
+        id: bridge
+        run: |
+          set -euo pipefail
+          js_file=".tmp-tools/frida/map_fly_bridge.js"
+          js_ver=$( { grep -oE "BRIDGE_VERSION[[:space:]]*=[[:space:]]*'[^']+'" "$js_file" || true; } | head -1 | grep -oE "'[^']+'" | tr -d "'" || true)
+          input_ver="${{ github.event.inputs.bridge_version }}"
+          if [ -z "$input_ver" ]; then
+            input_ver="$js_ver"
+          fi
+          echo "map_fly_bridge.js BRIDGE_VERSION = '${js_ver:-<none>}'"
+          echo "manifest bridge_version        = '${input_ver:-<none>}'"
+          if [ -z "$js_ver" ] || [ -z "$input_ver" ]; then
+            echo "::error::Could not resolve map bridge version."
+            exit 1
+          fi
+          if [ "$input_ver" != "$js_ver" ]; then
+            echo "::error::Manifest bridge_version ($input_ver) must match map_fly_bridge.js BRIDGE_VERSION ($js_ver). Leave the workflow input empty or bump both together."
+            exit 1
+          fi
+          echo "Map bridge version for manifest: $js_ver"
+          echo "bridge_version=$js_ver" >> "$GITHUB_OUTPUT"
+
       - name: Download stock split set
         run: |
           mkdir -p stock
@@ -70,7 +93,7 @@ jobs:
             -KsAlias "${{ secrets.PATCH_KEY_ALIAS }}" `
             -KsPass "${{ secrets.PATCH_KEYSTORE_PASSWORD }}" `
             -KsKeyPass "${{ secrets.PATCH_KEY_PASSWORD }}" `
-            -BridgeVersion "${{ github.event.inputs.bridge_version }}"
+            -BridgeVersion "${{ steps.bridge.outputs.bridge_version }}"
 
       - name: Write patches.json index
         run: |
@@ -84,7 +107,7 @@ jobs:
               "asset": "${ASSET}",
               "sha256": "${{ steps.build.outputs.sha256 }}",
               "sizeBytes": ${{ steps.build.outputs.size }},
-              "bridgeVersion": "${{ github.event.inputs.bridge_version }}"
+              "bridgeVersion": "${{ steps.bridge.outputs.bridge_version }}"
             }
           }
           EOF
@@ -93,7 +116,7 @@ jobs:
       - name: Publish release
         run: |
           VER="${{ github.event.inputs.game_version }}"
-          BRIDGE="${{ github.event.inputs.bridge_version }}"
+          BRIDGE="${{ steps.bridge.outputs.bridge_version }}"
           SHA="${{ steps.build.outputs.sha256 }}"
           SIZE="${{ steps.build.outputs.size }}"
           TAG="game-${VER}"

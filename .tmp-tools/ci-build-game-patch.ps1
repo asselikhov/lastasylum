@@ -29,6 +29,23 @@ $BaseWork = Join-Path $WorkRoot 'base-decoded'
 $HookScript = Join-Path $TmpTools 'frida/map_fly_bridge.js'
 $MapBridgeSmaliRoot = Join-Path $TmpTools 'frida-patch/map-bridge-smali'
 
+function Get-MapFlyBridgeVersionFromJs([string]$JsPath) {
+    if (-not (Test-Path $JsPath)) { throw "Bridge hook script not found: $JsPath" }
+    $text = Get-Content $JsPath -Raw
+    if ($text -match "BRIDGE_VERSION\s*=\s*'([^']+)'") { return $Matches[1].Trim() }
+    throw "Could not read BRIDGE_VERSION from $JsPath"
+}
+
+$jsBridgeVersion = Get-MapFlyBridgeVersionFromJs $HookScript
+if ($BridgeVersion.Trim() -ne $jsBridgeVersion) {
+    throw @"
+Manifest -BridgeVersion ($BridgeVersion) does not match map_fly_bridge.js BRIDGE_VERSION ($jsBridgeVersion).
+The APK meta-data and compiled libmapflybridge.so must share one version - bump BRIDGE_VERSION in the JS file and pass the same -BridgeVersion.
+"@
+}
+Write-Host "Bridge version verified: manifest and JS both use v$jsBridgeVersion"
+$BridgeVersion = $jsBridgeVersion
+
 $ApktoolJar = Join-Path $ToolsDir 'apktool.jar'
 $UberSignerJar = Join-Path $ToolsDir 'uber-apk-signer.jar'
 $ApkEditorJar = Join-Path $ToolsDir 'APKEditor.jar'
