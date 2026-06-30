@@ -12,6 +12,7 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.InputFilter
 import android.text.InputType
@@ -1082,7 +1083,7 @@ class OverlayCommandsPopover(
         var selectedBookmark = OverlayBookmarkTag.ENEMIES
 
         val assaultPrefs = UserSettingsPreferences(context)
-        var assaultEnabled = assaultPrefs.isAutoAssaultEnabledRaw()
+        var assaultEnabled = assaultPrefs.isAutoAssaultEnabled()
         var assaultSquads = assaultPrefs.getAutoAssaultSquads().toMutableSet()
         var assaultAllowedIds = assaultPrefs.getAutoAssaultAllowedMemberIds().toMutableSet()
         val assaultTypes = assaultPrefs.getAutoAssaultTargetTypes().toMutableSet()
@@ -1094,13 +1095,15 @@ class OverlayCommandsPopover(
                 context.getString(R.string.overlay_assault_allies_count, assaultAllowedIds.size)
             }
 
-        fun persistAssaultSettings() {
+        fun persistAssaultSettings(syncToggle: Boolean = false) {
             assaultPrefs.setAutoAssaultSquads(assaultSquads)
             assaultPrefs.setAutoAssaultAllowedMemberIds(assaultAllowedIds)
             assaultPrefs.setAutoAssaultTargetTypes(assaultTypes)
-            // setAutoAssaultEnabled пересчитывает срок авто-выключения по текущей длительности.
-            assaultPrefs.setAutoAssaultEnabled(assaultEnabled)
-            GameAutoAssaultBridge.write(context, assaultPrefs)
+            if (syncToggle) {
+                // Только при явном переключателе: не сбрасывать таймер и не гонять apply() на каждый символ в полях.
+                assaultPrefs.setAutoAssaultEnabled(assaultEnabled)
+            }
+            GameAutoAssaultBridge.write(context, assaultPrefs, enabledOverride = assaultEnabled)
         }
 
         val targetSearchTabChip = choiceChip(context.getString(R.string.overlay_target_tab_search), true)
@@ -1418,7 +1421,7 @@ class OverlayCommandsPopover(
         assaultToggleTrack.setOnClickListener {
             assaultEnabled = !assaultEnabled
             renderAssaultToggle()
-            persistAssaultSettings()
+            persistAssaultSettings(syncToggle = true)
         }
         val assaultSwitchCard = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1718,13 +1721,21 @@ class OverlayCommandsPopover(
             }
         }
 
+        val assaultPersistHandler = Handler(Looper.getMainLooper())
+        var assaultPersistRunnable: Runnable? = null
+        fun scheduleAssaultFieldPersist() {
+            assaultPersistRunnable?.let { assaultPersistHandler.removeCallbacks(it) }
+            val task = Runnable { persistAssaultSettings(syncToggle = false) }
+            assaultPersistRunnable = task
+            assaultPersistHandler.postDelayed(task, 450L)
+        }
         fun watchAssaultField(edit: EditText) {
             edit.addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
                 override fun afterTextChanged(s: Editable?) {
                     readAssaultPowerPrefs()
-                    persistAssaultSettings()
+                    scheduleAssaultFieldPersist()
                 }
             })
         }

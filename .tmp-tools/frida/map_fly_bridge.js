@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '38';
+const BRIDGE_VERSION = '40';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -366,13 +366,25 @@ const INSTALL_JOIN_CACHE_LUA = [
   // Вступление в штурм: RallyJoin.Set(teamIndex, {allianceWarsAssemblyObj}) + оригинальный DoSendMsg.
   // DoSendMsg вызывает sender() без аргументов — нужен игровой sender или fallback с proto.
   '  _G.__sr_aa_join_rally = function(war, pickedIdx, team)',
-  '    if type(war) ~= "table" or type(war.rallyPoint) ~= "table" or type(team) ~= "table" then return false end',
+  '    if type(war) ~= "table" or type(team) ~= "table" then return false end',
+  '    local rp = war.rallyPoint',
+  '    if type(rp) ~= "table" or not rp.x then',
+  '      local pid = tonumber(war.playerId)',
+  '      if pid and pid > 0 then',
+  '        local md = _G.Data and _G.Data.AllianceData and _G.Data.AllianceData.member and _G.Data.AllianceData.member.memberDic',
+  '        if type(md) == "table" then',
+  '          local m = md[pid] or md[tostring(pid)]',
+  '          local cc = m and m.cityCoords',
+  '          if type(cc) == "table" and cc.x and cc.y then rp = { x = tonumber(cc.x), y = tonumber(cc.y), sid = tonumber(cc.sid) } war.rallyPoint = rp end',
+  '        end',
+  '      end',
+  '    end',
+  '    if type(rp) ~= "table" or not rp.x then return false end',
   '    local RJ = package.loaded["AbyssEmpire.Logic.Troop.Define.Param.RallyJoin"]',
   '    local TOP = package.loaded["AbyssEmpire.Logic.Troop.Define.TroopOperateParam"]',
   '    local sm = package.loaded["Logic.Proto.Send.union_war"]',
   '    if type(RJ) ~= "table" or type(TOP) ~= "table" or not sm or not sm.JoinUnionRallyC2S then return false end',
   '    local orig = TOP.__sr_dsm_orig or TOP.DoSendMsg',
-  '    local rp = war.rallyPoint',
   '    local creator = tonumber(war.playerId) or 0',
   '    local proto = { warId = war.id, teamIndex = pickedIdx, target = rp, targetPlayerId = creator, team = team }',
   '    local function memberCount()',
@@ -426,7 +438,8 @@ const INSTALL_JOIN_CACHE_LUA = [
   '        end',
   '      end',
   '    end',
-  '    return false',
+  // Пакет ушёл без ошибки Lua — ответ сервера асинхронный, memberCount обновится позже.
+  '    return ok',
   '  end',
   '  if not TOP.__sr_dsm_orig then',
   '    TOP.__sr_dsm_orig = TOP.DoSendMsg',
@@ -2573,6 +2586,7 @@ function tickAutoAssault() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
   if (liveLuaEnvCapturedMs === 0 || now - liveLuaEnvCapturedMs < AUTOASSAULT_STARTUP_DELAY_MS) return;
+  pollAutoAssaultConfig();
   // Re-arm join-cache hook periodically (idempotent in lua). The game recreates its Lua
   // state during login/scene transitions, wiping _G.__sr_aa_cfg and TOP.__sr_dsm_orig; a
   // one-shot install keyed only on liveLuaEnvCapturedMs never runs again after that.

@@ -221,7 +221,7 @@ class UserSettingsPreferences(context: Context) {
         } else {
             edit.putLong(KEY_AUTO_ASSAULT_DISABLE_AT, 0L)
         }
-        edit.apply()
+        edit.commit()
     }
 
     /** Эпоха (мс), когда авто-штурм должен сам выключиться (0 = бессрочно). */

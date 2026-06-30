@@ -24,9 +24,13 @@ object GameAutoAssaultBridge {
         return write(context, prefs)
     }
 
-    fun write(context: Context, prefs: UserSettingsPreferences): Boolean {
+    fun write(
+        context: Context,
+        prefs: UserSettingsPreferences,
+        enabledOverride: Boolean? = null,
+    ): Boolean {
         val appContext = context.applicationContext
-        val json = buildConfigJson(prefs)
+        val json = buildConfigJson(prefs, enabledOverride)
         var sent = false
         for (pkg in GameDeepLinkNavigator.targetPackages(appContext)) {
             val trimmed = pkg.trim()
@@ -54,7 +58,10 @@ object GameAutoAssaultBridge {
         return sent
     }
 
-    private fun buildConfigJson(prefs: UserSettingsPreferences): JSONObject {
+    private fun buildConfigJson(
+        prefs: UserSettingsPreferences,
+        enabledOverride: Boolean? = null,
+    ): JSONObject {
         val allowedIds = prefs.getAutoAssaultAllowedMemberIds()
         val allowedNames = resolveAllowedCreatorNames(prefs, allowedIds)
         val selectedSquads = prefs.getAutoAssaultSquads()
@@ -76,8 +83,9 @@ object GameAutoAssaultBridge {
         prefs.getAutoAssaultTargetTypes().forEach { types.put(it) }
         val distCreator = prefs.getAutoAssaultMaxDistanceCreator()
         val distTarget = prefs.getAutoAssaultMaxDistanceTarget()
+        val enabled = enabledOverride ?: prefs.isAutoAssaultEnabled()
         return JSONObject()
-            .put("enabled", prefs.isAutoAssaultEnabled())
+            .put("enabled", enabled)
             .put("maxDistance", maxOf(distCreator, distTarget))
             .put("maxDistanceCreator", distCreator)
             .put("maxDistanceTarget", distTarget)
