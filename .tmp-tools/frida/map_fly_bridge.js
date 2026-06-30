@@ -9,9 +9,11 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '50';
+const BRIDGE_VERSION = '51';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
+const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
+const AUTOASSAULT_SCAN_DIAG_FILE_LUA = "'" + AUTOASSAULT_SCAN_DIAG_FILE + "'";
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -156,16 +158,16 @@ const AUTOHELP_MAX_INTERVAL_MS = 600000;
 // (PlayerData.bytes missing → infinite loading screen). Auto-help already used 30s; v41 lowered
 // assault to 2s but share/bookmark hooks had no delay at all — same failure mode.
 const BRIDGE_LUA_STARTUP_DELAY_MS = 30000;
-// After world-ready probe passes, wait before ANY background DoString (hooks, auto-help,
-// assault scan, roster). AllianceData.member appears during login sync while the UI is
-// still on the loading screen — v49 treated that as "ready" and corrupted login.
+// After world-ready: hooks/auto-help wait longer (fragile during login UI). Assault scan uses
+// a shorter grace so joins start sooner once playerId is known.
+const BRIDGE_ASSAULT_GRACE_MS = 5000;
 const BRIDGE_POST_WORLD_READY_GRACE_MS = 20000;
 const WORLD_READY_FILE = '/data/data/com.phs.global/files/squadrelay_world_ready.ok';
 const WORLD_READY_FILE_LUA = "'" + WORLD_READY_FILE + "'";
 const WORLD_READY_PROBE_LUA =
-  'pcall(function() local D=_G.Data if type(D)~="table" then return end if D.isInitialized~=true then return end local pd=D.PlayerData or D.UserData if type(pd)~="table" then return end local id=tonumber(pd.playerId or pd.id or pd.uid or pd.roleId) if not id or id<=0 then return end local f=io.open(' +
+  'pcall(function() local D=_G.Data if type(D)~="table" then return end local function mark() local f=io.open(' +
   WORLD_READY_FILE_LUA +
-  ',"w") if f then f:write("1") f:close() end end)';
+  ',"w") if f then f:write("1") f:close() end end local pd=D.PlayerData or D.UserData if type(pd)=="table" then local id=tonumber(pd.playerId or pd.id or pd.uid or pd.roleId) if id and id>0 then mark() return end end local pid=tonumber(_G.__sr_my_pid) if pid and pid>0 then mark() end end)';
 
 // Event-driven auto-help. Captured live: tapping the real "Помощь" button sends `UnionHelpAllC2S`
 // (plus `GetUnionHelpListC2S` to refresh the list). Instead of polling, we wrap the alliance help
@@ -235,7 +237,9 @@ const AUTOASSAULT_MATCH_FILE = '/data/data/com.phs.global/files/squadrelay_autoa
 const AUTOASSAULT_SCAN_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan.lua';
 const AUTOASSAULT_SCAN_FILE_LUA = "'" + AUTOASSAULT_SCAN_FILE + "'";
 const AUTOASSAULT_SCAN_RUN_LUA =
-  'pcall(function() local lf=loadfile(' + AUTOASSAULT_SCAN_FILE_LUA + '); if lf then lf() end end)';
+  'pcall(function() local lf,le=loadfile(' +
+  AUTOASSAULT_SCAN_FILE_LUA +
+  '); if not lf then error(tostring(le or "loadfile nil")) end lf() end)';
 const AUTOASSAULT_CFG_READ_MAX = 65536;
 const ASSAULT_JOIN_ACTION = 'com.lastasylum.alliance.action.ASSAULT_JOIN';
 // Ростер альянса (игра → приложение): мост периодически читает memberDic и шлёт
@@ -482,8 +486,12 @@ const INSTALL_JOIN_CACHE_LUA = [
 ].join('\n');
 const AUTOASSAULT_SCAN_LUA = [
   'local __sr_aa_scan_ok, __sr_aa_scan_err = pcall(function()',
+  '  local diag = {}',
+  '  local function D(s) diag[#diag + 1] = tostring(s) end',
+  '  local function skip(id, why) D("skip id=" .. tostring(id) .. " " .. why) end',
   '  local cfg = _G.__sr_aa_cfg',
-  '  if not cfg or not cfg.enabled then return end',
+  '  if not cfg then D("abort: __sr_aa_cfg nil"); return end',
+  '  if not cfg.enabled then D("abort: cfg.enabled=false"); return end',
   '  if cfg.disableAtEpochMs and cfg.disableAtEpochMs > 0 and (os.time()*1000) >= cfg.disableAtEpochMs then return end',
   '  local minRem = tonumber(cfg.minRemainingSec) or 0',
   '  local lvMin = tonumber(cfg.levelMin) or 0',
@@ -494,7 +502,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '  local maxDT = tonumber(cfg.maxDistanceTarget) or legD',
   '  local ad = _G.Data and _G.Data.AllianceData',
   '  local wars = ad and ad.wars',
-  '  if type(wars) ~= "table" then return end',
+  '  if type(wars) ~= "table" then D("abort: no AllianceData.wars"); return end',
   // Присоединяемые штурмы лежат в под-словарях wars.assemblyDic / wars.activityDic
   // (keyed по id), а не в самом wars (это контейнер под-словарей).
   '  local function dcount(t) local n=0 if type(t)=="table" then for _ in pairs(t) do n=n+1 end end return n end',
@@ -502,7 +510,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '  local seenWarIds = {}',
   '  if type(wars.assemblyDic) == "table" then dics[#dics + 1] = wars.assemblyDic end',
   '  if type(wars.activityDic) == "table" then dics[#dics + 1] = wars.activityDic end',
-  '  if #dics == 0 then return end',
+  '  if #dics == 0 then D("abort: no assemblyDic/activityDic"); return end',
   '  local sm = package.loaded["Logic.Proto.Send.union_war"]',
   '  if not sm or not sm.JoinUnionRallyC2S then return end',
   '  local TOP = package.loaded["AbyssEmpire.Logic.Troop.Define.TroopOperateParam"]',
@@ -797,36 +805,40 @@ const AUTOASSAULT_SCAN_LUA = [
   '  if maxJoinsPerScan < 1 then maxJoinsPerScan = 1 end',
   '  if maxJoinsPerScan > 3 then maxJoinsPerScan = 3 end',
   '  local cp = castlePt()',
+  '  local rallySeen = 0',
+  '  D("myPid=" .. tostring(myPlayerId()) .. " castlePt=" .. (cp and (cp.x .. "," .. cp.y) or "nil") .. " joinFn=" .. tostring(type(_G.__sr_aa_join_rally)) .. " buildTeam=" .. tostring(type(_G.__sr_aa_build_team)))',
   '  for di = 1, #dics do',
   '  local dic = dics[di]',
   '  for _, war in pairs(dic) do',
   '    if type(war) ~= "table" or not war.isRally then goto continue end',
+  '    rallySeen = rallySeen + 1',
   '    local warKey = war.id and tostring(war.id) or nil',
-  '    if warKey and seenWarIds[warKey] then goto continue end',
+  '    local wid = war.id or "?"',
+  '    if warKey and seenWarIds[warKey] then skip(wid, "dup"); goto continue end',
   '    if warKey then seenWarIds[warKey] = true end',
-  '    if maxConc > 0 and marchingSquads() >= maxConc then break end',
-  '    if war.id and (alreadyJoinedWar(war.id) or alreadyInRally(war)) then goto continue end',
+  '    if maxConc > 0 and marchingSquads() >= maxConc then skip(wid, "maxConcurrent"); break end',
+  '    if war.id and (alreadyJoinedWar(war.id) or alreadyInRally(war)) then skip(wid, "alreadyIn"); goto continue end',
   '    local atk = war.attackSide',
   '    local maxM = atk and tonumber(atk.maxMember) or 0',
   '    local cnt = memberCount(atk)',
-  '    if maxM > 0 and cnt >= maxM then goto continue end',
-  '    if not allowedCreator(war) then goto continue end',
+  '    if maxM > 0 and cnt >= maxM then skip(wid, "full " .. cnt .. "/" .. maxM); goto continue end',
+  '    if not allowedCreator(war) then skip(wid, "creator " .. tostring(war.playerId)); goto continue end',
   '    local row = cfgRow(war.targetLairId)',
   '    local ttype = classify(war, row)',
-  '    if not typeAllowed(ttype) then goto continue end',
+  '    if not typeAllowed(ttype) then skip(wid, "type " .. ttype); goto continue end',
   '    local lv = targetLevel(row, war)',
-  '    if lvMin > 0 and lv > 0 and lv < lvMin then goto continue end',
-  '    if lvMax > 0 and lv > 0 and lv > lvMax then goto continue end',
+  '    if lvMin > 0 and lv > 0 and lv < lvMin then skip(wid, "lv<min"); goto continue end',
+  '    if lvMax > 0 and lv > 0 and lv > lvMax then skip(wid, "lv>max"); goto continue end',
   '    local joinPt = creatorRallyPt(war)',
-  '    if type(joinPt) ~= "table" or not joinPt.x or not joinPt.y then goto continue end',
+  '    if type(joinPt) ~= "table" or not joinPt.x or not joinPt.y then skip(wid, "noRallyPt"); goto continue end',
   '    local distC = cp and cheb(cp.x, cp.y, joinPt.x, joinPt.y) or -1',
-  '    if maxDC > 0 and cp and distC >= 0 and distC > maxDC then goto continue end',
+  '    if maxDC > 0 and cp and distC >= 0 and distC > maxDC then skip(wid, "distC=" .. math.floor(distC) .. ">" .. maxDC); goto continue end',
   '    local distT = -1',
   '    local tp = war.targetPoint',
   '    if type(tp) == "table" and tp.x and tp.y then',
   '      distT = cp and cheb(cp.x, cp.y, tp.x, tp.y) or -1',
   '    end',
-  '    if maxDT > 0 and cp and distT >= 0 and distT > maxDT then goto continue end',
+  '    if maxDT > 0 and cp and distT >= 0 and distT > maxDT then skip(wid, "distT=" .. math.floor(distT) .. ">" .. maxDT); goto continue end',
   '    local pow = targetPower(row)',
   '    local pickedIdx = nil',
   '    local squads = cfg.squads',
@@ -843,31 +855,40 @@ const AUTOASSAULT_SCAN_LUA = [
   '        end',
   '      end',
   '    end',
-  '    if pickedIdx == nil then goto continue end',
+  '    if pickedIdx == nil then skip(wid, "noFreeSquad"); goto continue end',
+  '    D("match id=" .. tostring(wid) .. " squad=" .. pickedIdx .. " creator=" .. tostring(war.playerName))',
   '    local matchJson = string.format(\'{"creator":"%s","type":"%s","power":%d,"level":%d,"dist":%d,"distCreator":%d,"distTarget":%d,"squad":%d,"id":"%s","time":%d}\', tostring(war.playerName or ""):gsub(\'"\',"\'"), ttype, math.floor(pow), math.floor(lv), math.floor(distC), math.floor(distC), math.floor(distT), pickedIdx, tostring(war.id or ""), os.time())',
   '    local f = io.open(' + AUTOASSAULT_MATCH_FILE_LUA + ', "w") if f then f:write(matchJson) f:close() end',
   '    if cfg.joinEnabled and war.id then',
   '      local rpJoin = war.rallyPoint',
   '      if type(rpJoin) ~= "table" or not rpJoin.x then rpJoin = joinPt end',
-  '      if type(rpJoin) ~= "table" or not rpJoin.x then goto continue end',
+  '      if type(rpJoin) ~= "table" or not rpJoin.x then skip(wid, "noRpJoin"); goto continue end',
   // До maxJoinsPerScan вступлений за проход: разные отряды в разные штурмы (usedSquads).
-  '      if joinsThisScan >= maxJoinsPerScan then goto continue end',
+  '      if joinsThisScan >= maxJoinsPerScan then skip(wid, "joinCap"); goto continue end',
   '      local team = (_G.__sr_aa_build_team and _G.__sr_aa_build_team(pickedIdx)) or nil',
-  '      if type(team) ~= "table" then goto continue end',
+  '      if type(team) ~= "table" then skip(wid, "noTeam idx=" .. pickedIdx); goto continue end',
   '      if type(war.rallyPoint) ~= "table" then war.rallyPoint = rpJoin end',
   '      usedSquads[pickedIdx] = true',
   '      joinsThisScan = joinsThisScan + 1',
   '      if _G.__sr_aa_join_rally and _G.__sr_aa_join_rally(war, pickedIdx, team) then',
+  '        D("join ok id=" .. tostring(wid) .. " squad=" .. pickedIdx)',
   '        markSquadPending(pickedIdx)',
   '        markJoinedWar(war.id, war)',
   '      elseif squadInRallyMember(pickedIdx) or not troopFree(pickedIdx) then',
+  '        D("join assumed id=" .. tostring(wid) .. " squad=" .. pickedIdx)',
   '        markSquadPending(pickedIdx)',
   '        markJoinedWar(war.id, war)',
+  '      else',
+  '        skip(wid, "joinFailed squad=" .. pickedIdx)',
   '      end',
   '    end',
   '    ::continue::',
   '  end',
-  '  end)',
+  '  end',
+  '  D("done rallies=" .. rallySeen .. " joins=" .. joinsThisScan)',
+  '  local df = io.open(' + AUTOASSAULT_SCAN_DIAG_FILE_LUA + ', "w")',
+  '  if df then df:write(table.concat(diag, "\\n")) df:close() end',
+  'end)',
   'if not __sr_aa_scan_ok then',
   '  local ef = io.open(' + AUTOASSAULT_SCAN_ERR_FILE_LUA + ', "w")',
   '  if ef then ef:write(tostring(__sr_aa_scan_err or "unknown")) ef:close() end',
@@ -936,6 +957,7 @@ let worldReadyCached = false;
 let worldReadyAtMs = 0;
 let worldReadyLastProbeMs = 0;
 let backgroundLuaUnblockedLogged = false;
+let assaultGraceUnblockedLogged = false;
 let allianceRosterLastTick = 0;
 let lastAllianceRosterText = '';
 let allianceRosterLastBroadcastMs = 0;
@@ -992,7 +1014,9 @@ function tickWorldReadyProbe(now) {
     if (t && t.trim() === '1') {
       worldReadyCached = true;
       worldReadyAtMs = Date.now();
-      log('world ready: session loaded (player id + isInitialized)');
+      log('world ready: session loaded (playerId)');
+    } else {
+      diagOnce('world-not-ready', 'world-ready probe returned: ' + JSON.stringify(t));
     }
   });
 }
@@ -1001,6 +1025,17 @@ function bridgeWorldReady(now) {
   if (worldReadyCached) return true;
   tickWorldReadyProbe(now);
   return false;
+}
+
+function bridgeAssaultReady(now) {
+  if (!bridgeWorldReady(now)) return false;
+  if (worldReadyAtMs <= 0) return false;
+  if (now - worldReadyAtMs < BRIDGE_ASSAULT_GRACE_MS) return false;
+  if (!assaultGraceUnblockedLogged) {
+    assaultGraceUnblockedLogged = true;
+    log('autoassault unblocked (grace=' + BRIDGE_ASSAULT_GRACE_MS + 'ms after world ready)');
+  }
+  return true;
 }
 
 function bridgeBackgroundLuaReady(now) {
@@ -2607,6 +2642,7 @@ function resetAutoAssaultBridgeState() {
   worldReadyCached = false;
   worldReadyAtMs = 0;
   backgroundLuaUnblockedLogged = false;
+  assaultGraceUnblockedLogged = false;
   worldReadyLastProbeMs = 0;
   writeFileEmpty(WORLD_READY_FILE);
   ensureAutoAssaultScanFile.done = false;
@@ -2641,10 +2677,8 @@ function pollAutoAssaultConfig() {
         log('autoassault config parse failed: ' + e);
         return;
       }
-      autoAssaultEnabled = autoAssaultColdStartPending ? false : !!cfg.enabled;
-      if (autoAssaultColdStartPending) {
-        autoAssaultColdStartPending = false;
-      }
+      autoAssaultEnabled = !!cfg.enabled;
+      autoAssaultColdStartPending = false;
       autoAssaultMaxDistance = parseInt(cfg.maxDistance, 10) || 500;
       const legDist = autoAssaultMaxDistance;
       autoAssaultMaxDistanceCreator =
@@ -2723,7 +2757,23 @@ function pollAutoAssaultConfig() {
 function tickAutoAssault() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
+  if (!bridgeLuaStartupReady(now)) {
+    diagOnce('aa-wait-startup', 'autoassault waiting: startup delay (' + BRIDGE_LUA_STARTUP_DELAY_MS + 'ms)');
+    return;
+  }
+  if (!bridgeAssaultReady(now)) {
+    diagOnce(
+      'aa-wait-grace',
+      'autoassault waiting: world=' +
+        worldReadyCached +
+        ' graceMs=' +
+        (worldReadyAtMs > 0 ? now - worldReadyAtMs : -1) +
+        '/' +
+        BRIDGE_ASSAULT_GRACE_MS,
+    );
+    tickWorldReadyProbe(now);
+    return;
+  }
   pollAutoAssaultConfig();
   // Re-arm join-cache hook periodically (idempotent in lua). The game recreates its Lua
   // state during login/scene transitions, wiping _G.__sr_aa_cfg and TOP.__sr_dsm_orig; a
@@ -2736,7 +2786,10 @@ function tickAutoAssault() {
       log('join cache install error: ' + e);
     }
   }
-  if (!autoAssaultEnabled) return;
+  if (!autoAssaultEnabled) {
+    diagOnce('aa-disabled', 'autoassault scan skipped: enabled=false');
+    return;
+  }
   if (autoAssaultDisableAtMs > 0 && Date.now() >= autoAssaultDisableAtMs) return;
   const cooldownMs = Math.max(autoAssaultCooldownSec * 1000, AUTOASSAULT_SCAN_INTERVAL_MS);
   if (now - autoAssaultLastTick < cooldownMs) return;
@@ -2748,17 +2801,22 @@ function tickAutoAssault() {
     // loadfile from squadrelay_aa_scan.lua is stable (same pattern as eval channel).
     mainThreadFlyQueue.push(function () {
       doStringNow(cfgLua);
-      if (!doStringNow(AUTOASSAULT_SCAN_RUN_LUA)) {
-        log('autoassault scan run failed');
-      } else {
-        const scanErr = readFileUtf8(AUTOASSAULT_SCAN_ERR_FILE, 4096);
-        if (scanErr && scanErr.trim()) {
-          log('autoassault scan lua error: ' + scanErr.trim().substring(0, 240));
-          writeFileEmpty(AUTOASSAULT_SCAN_ERR_FILE);
-        }
+      const scanOk = doStringNow(AUTOASSAULT_SCAN_RUN_LUA);
+      if (!scanOk) {
+        log('autoassault scan run failed (DoString)');
+      }
+      const scanErr = readFileUtf8(AUTOASSAULT_SCAN_ERR_FILE, 4096);
+      if (scanErr && scanErr.trim()) {
+        log('autoassault scan lua error: ' + scanErr.trim().substring(0, 400));
+        writeFileEmpty(AUTOASSAULT_SCAN_ERR_FILE);
+      }
+      const scanDiag = readFileUtf8(AUTOASSAULT_SCAN_DIAG_FILE, 8192);
+      if (scanDiag && scanDiag.trim()) {
+        log('autoassault scan diag:\n' + scanDiag.trim().substring(0, 1200));
       }
       pollAutoAssaultMatch();
     });
+    log('autoassault scan queued');
   } catch (e) {
     log('autoassault scan error: ' + e);
   }
@@ -2809,7 +2867,7 @@ function sendAssaultJoinBroadcast(payload) {
 function tickAllianceRoster() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
+  if (!bridgeLuaStartupReady(now) || !bridgeAssaultReady(now)) return;
   if (now - allianceRosterLastTick < ALLIANCE_ROSTER_SCAN_INTERVAL_MS) return;
   allianceRosterLastTick = now;
   try {
