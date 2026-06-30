@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '40';
+const BRIDGE_VERSION = '41';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -215,7 +215,7 @@ const AUTOHELP_DISABLE_LUA = 'pcall(function() _G.__sr_help_enabled = false end)
 
 const AUTOASSAULT_FILE = '/data/data/com.phs.global/files/squadrelay_autoassault.json';
 const AUTOASSAULT_SDCARD = '/sdcard/Download/squadrelay_autoassault.json';
-const AUTOASSAULT_STARTUP_DELAY_MS = 30000;
+const AUTOASSAULT_STARTUP_DELAY_MS = 2000;
 const AUTOASSAULT_SCAN_INTERVAL_MS = 1500;
 // Реальное вступление включено. Доп. защита: авто-вступление шлёт пакет только если
 // для нужного teamIndex есть кэш состава (build_team != nil) — т.е. после хотя бы
@@ -2490,6 +2490,21 @@ function buildAutoAssaultCfgLua() {
   );
 }
 
+function peekAutoAssaultFileEnabled() {
+  const paths = [AUTOASSAULT_FILE, AUTOASSAULT_SDCARD];
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const text = readFileUtf8(paths[i]);
+      if (!text || !text.trim()) continue;
+      const cfg = JSON.parse(text);
+      return !!cfg.enabled;
+    } catch (e) {
+      /* try next path */
+    }
+  }
+  return null;
+}
+
 function pollAutoAssaultConfig() {
   const paths = [AUTOASSAULT_FILE, AUTOASSAULT_SDCARD];
   for (let i = 0; i < paths.length; i++) {
@@ -2587,6 +2602,9 @@ function tickAutoAssault() {
   const now = Date.now();
   if (liveLuaEnvCapturedMs === 0 || now - liveLuaEnvCapturedMs < AUTOASSAULT_STARTUP_DELAY_MS) return;
   pollAutoAssaultConfig();
+  const fileEnabled = peekAutoAssaultFileEnabled();
+  if (fileEnabled === true) autoAssaultEnabled = true;
+  else if (fileEnabled === false) autoAssaultEnabled = false;
   // Re-arm join-cache hook periodically (idempotent in lua). The game recreates its Lua
   // state during login/scene transitions, wiping _G.__sr_aa_cfg and TOP.__sr_dsm_orig; a
   // one-shot install keyed only on liveLuaEnvCapturedMs never runs again after that.

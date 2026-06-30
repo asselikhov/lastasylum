@@ -21,7 +21,7 @@ object GameAutoAssaultBridge {
 
     fun sync(context: Context): Boolean {
         val prefs = UserSettingsPreferences(context.applicationContext)
-        return write(context, prefs)
+        return write(context, prefs, enabledOverride = resolveAutoAssaultEnabled(prefs))
     }
 
     fun write(
@@ -83,7 +83,7 @@ object GameAutoAssaultBridge {
         prefs.getAutoAssaultTargetTypes().forEach { types.put(it) }
         val distCreator = prefs.getAutoAssaultMaxDistanceCreator()
         val distTarget = prefs.getAutoAssaultMaxDistanceTarget()
-        val enabled = enabledOverride ?: prefs.isAutoAssaultEnabled()
+        val enabled = enabledOverride ?: resolveAutoAssaultEnabled(prefs)
         return JSONObject()
             .put("enabled", enabled)
             .put("maxDistance", maxOf(distCreator, distTarget))
@@ -111,6 +111,14 @@ object GameAutoAssaultBridge {
             .map { it.name.trim() }
             .filter { it.isNotEmpty() }
             .distinct()
+    }
+
+    /** Включён ли авто-штурм для broadcast (без побочного сброса prefs при истечении таймера). */
+    private fun resolveAutoAssaultEnabled(prefs: UserSettingsPreferences): Boolean {
+        if (!prefs.isAutoAssaultEnabledRaw()) return false
+        val disableAt = prefs.getAutoAssaultDisableAtMs()
+        if (disableAt in 1 until System.currentTimeMillis()) return false
+        return true
     }
 
     private fun isInstalled(context: Context, packageName: String): Boolean =

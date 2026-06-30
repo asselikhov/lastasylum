@@ -987,7 +987,8 @@ class OverlayCommandsPopover(
                 )
             }
         }
-        GameAutoAssaultBridge.sync(context)
+        // Не шлём autoassault broadcast при каждом открытии меню — иначе enabled=false из prefs
+        // гасит скан в игре. Конфиг уходит при правках вкладки «Штурм» и при persistAssaultSettings().
         menuScrim?.takeIf { it.isAttachedToWindow }?.let { cached ->
             cached.visibility = View.VISIBLE
             attachedWindowManager = windowManager
