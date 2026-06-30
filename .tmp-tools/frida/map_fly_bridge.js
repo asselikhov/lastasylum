@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '49';
+const BRIDGE_VERSION = '50';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const LIB = 'libil2cpp.so';
@@ -156,12 +156,16 @@ const AUTOHELP_MAX_INTERVAL_MS = 600000;
 // (PlayerData.bytes missing → infinite loading screen). Auto-help already used 30s; v41 lowered
 // assault to 2s but share/bookmark hooks had no delay at all — same failure mode.
 const BRIDGE_LUA_STARTUP_DELAY_MS = 30000;
+// After world-ready probe passes, wait before ANY background DoString (hooks, auto-help,
+// assault scan, roster). AllianceData.member appears during login sync while the UI is
+// still on the loading screen — v49 treated that as "ready" and corrupted login.
+const BRIDGE_POST_WORLD_READY_GRACE_MS = 20000;
 const WORLD_READY_FILE = '/data/data/com.phs.global/files/squadrelay_world_ready.ok';
 const WORLD_READY_FILE_LUA = "'" + WORLD_READY_FILE + "'";
 const WORLD_READY_PROBE_LUA =
-  'pcall(function() local D=_G.Data if type(D)~="table" then return end local ready=false if D.isInitialized==true then ready=true end local pd=D.PlayerData or D.UserData if type(pd)=="table" then local id=tonumber(pd.playerId or pd.id or pd.uid or pd.roleId) if id and id>0 then ready=true end end local ad=D.AllianceData if type(ad)=="table" and type(ad.member)=="table" then ready=true end local ok=ready and "1" or "0" local f=io.open(' +
+  'pcall(function() local D=_G.Data if type(D)~="table" then return end if D.isInitialized~=true then return end local pd=D.PlayerData or D.UserData if type(pd)~="table" then return end local id=tonumber(pd.playerId or pd.id or pd.uid or pd.roleId) if not id or id<=0 then return end local f=io.open(' +
   WORLD_READY_FILE_LUA +
-  ',"w") if f then f:write(ok) f:close() end end)';
+  ',"w") if f then f:write("1") f:close() end end)';
 
 // Event-driven auto-help. Captured live: tapping the real "Помощь" button sends `UnionHelpAllC2S`
 // (plus `GetUnionHelpListC2S` to refresh the list). Instead of polling, we wrap the alliance help
@@ -929,7 +933,9 @@ let autoAssaultCfgPushed = false;
 let lastAutoAssaultMatchText = '';
 let autoAssaultColdStartPending = true;
 let worldReadyCached = false;
+let worldReadyAtMs = 0;
 let worldReadyLastProbeMs = 0;
+let backgroundLuaUnblockedLogged = false;
 let allianceRosterLastTick = 0;
 let lastAllianceRosterText = '';
 let allianceRosterLastBroadcastMs = 0;
@@ -980,11 +986,13 @@ function tickWorldReadyProbe(now) {
   if (now - worldReadyLastProbeMs < 5000) return;
   worldReadyLastProbeMs = now;
   mainThreadFlyQueue.push(function () {
+    writeFileEmpty(WORLD_READY_FILE);
     doStringNow(WORLD_READY_PROBE_LUA);
     const t = readFileUtf8(WORLD_READY_FILE, 8);
     if (t && t.trim() === '1') {
       worldReadyCached = true;
-      log('world ready: session loaded');
+      worldReadyAtMs = Date.now();
+      log('world ready: session loaded (player id + isInitialized)');
     }
   });
 }
@@ -993,6 +1001,21 @@ function bridgeWorldReady(now) {
   if (worldReadyCached) return true;
   tickWorldReadyProbe(now);
   return false;
+}
+
+function bridgeBackgroundLuaReady(now) {
+  if (!bridgeWorldReady(now)) return false;
+  if (worldReadyAtMs <= 0) return false;
+  if (now - worldReadyAtMs < BRIDGE_POST_WORLD_READY_GRACE_MS) return false;
+  if (!backgroundLuaUnblockedLogged) {
+    backgroundLuaUnblockedLogged = true;
+    log(
+      'background lua unblocked (grace=' +
+        BRIDGE_POST_WORLD_READY_GRACE_MS +
+        'ms after world ready)',
+    );
+  }
+  return true;
 }
 
 function diagOnce(key, msg) {
@@ -2355,6 +2378,8 @@ function runProbe(clip, url) {
 }
 
 function pollProbeFile() {
+  const now = Date.now();
+  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
   try {
     const text = readFileUtf8(PROBE_FILE);
     if (!text || !text.trim() || text === lastProbeText) return;
@@ -2379,6 +2404,8 @@ function pollProbeFile() {
 
 // Триггер открытия личного чата с игроком (app пишет {playerId, playerName}).
 function pollOpenChatFile() {
+  const now = Date.now();
+  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
   const paths = [OPEN_CHAT_FILE, OPEN_CHAT_SDCARD];
   for (let i = 0; i < paths.length; i++) {
     try {
@@ -2434,6 +2461,8 @@ function openPrivateChat(pid, name) {
 
 // Канал произвольного Lua для отладки/реверса: выполняем код из файла (он сам пишет результат).
 function pollEvalFile() {
+  const now = Date.now();
+  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
   const paths = [EVAL_FILE, EVAL_SDCARD];
   for (let i = 0; i < paths.length; i++) {
     try {
@@ -2494,7 +2523,7 @@ function tickAutoHelp() {
   // loading). liveLuaEnvCapturedMs is set as soon as the Lua VM is captured (still on the loading
   // screen), so this skips the whole fragile login window. Mid-session toggles pass instantly
   // because the VM was captured long ago.
-  if (!bridgeLuaStartupReady(now) || !bridgeWorldReady(now)) return;
+  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
   if (autoHelpEnabled) {
     // (Re)install/maintain the event hook every interval. After the first successful wrap this is a
     // near no-op (the real work is event-driven inside the game, not here). Re-running also
@@ -2576,6 +2605,8 @@ function resetAutoAssaultBridgeState() {
   lastAutoAssaultCfg = '';
   autoAssaultColdStartPending = true;
   worldReadyCached = false;
+  worldReadyAtMs = 0;
+  backgroundLuaUnblockedLogged = false;
   worldReadyLastProbeMs = 0;
   writeFileEmpty(WORLD_READY_FILE);
   ensureAutoAssaultScanFile.done = false;
@@ -2692,7 +2723,7 @@ function pollAutoAssaultConfig() {
 function tickAutoAssault() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (!bridgeLuaStartupReady(now) || !bridgeWorldReady(now)) return;
+  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
   pollAutoAssaultConfig();
   // Re-arm join-cache hook periodically (idempotent in lua). The game recreates its Lua
   // state during login/scene transitions, wiping _G.__sr_aa_cfg and TOP.__sr_dsm_orig; a
@@ -2778,7 +2809,7 @@ function sendAssaultJoinBroadcast(payload) {
 function tickAllianceRoster() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (!bridgeLuaStartupReady(now) || !bridgeWorldReady(now)) return;
+  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
   if (now - allianceRosterLastTick < ALLIANCE_ROSTER_SCAN_INTERVAL_MS) return;
   allianceRosterLastTick = now;
   try {
@@ -3015,7 +3046,7 @@ let lastShareText = '';
 function maybeInstallShareHook() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (!bridgeLuaStartupReady(now) || !bridgeWorldReady(now)) return;
+  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
   // Re-arm continuously: the game recreates its Lua state at runtime, wiping the
   // OnEnter/OnExit wrappers. The per-idx guard in SHARE_HOOK_LUA makes re-runs
   // idempotent within a state and re-installs on the fresh idx after a reset.
@@ -3082,7 +3113,7 @@ let lastBookmarkText = '';
 function maybeInstallBookmarkHook() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (!bridgeLuaStartupReady(now) || !bridgeWorldReady(now)) return;
+  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
   // Re-arm continuously (see maybeInstallShareHook): survives Lua state resets.
   const interval = bookmarkHookOk ? 2000 : 100;
   if (now - lastBookmarkInstallAt < interval) return;
