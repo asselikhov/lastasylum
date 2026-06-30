@@ -1881,8 +1881,12 @@ class OverlayCommandsPopover(
             selectedTargetTab = index
             if (index == 1) refreshBookmarkList()
             if (index == 2) {
+                assaultEnabled = assaultPrefs.isAutoAssaultEnabledRaw()
+                val disableAt = assaultPrefs.getAutoAssaultDisableAtMs()
+                if (disableAt in 1 until System.currentTimeMillis()) assaultEnabled = false
+                renderAssaultToggle()
                 readAssaultPowerPrefs()
-                persistAssaultSettings()
+                persistAssaultSettings(syncToggle = true)
                 refreshAssaultLog()
             }
             refreshTargetSubTabs()
