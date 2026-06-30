@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '51';
+const BRIDGE_VERSION = '52';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -151,6 +151,8 @@ const BOOKMARK_HOOK_LUA = [
 // tapping the in-game "Помощь" button right when it pops up), not on a fixed poll.
 const AUTOHELP_FILE = '/data/data/com.phs.global/files/squadrelay_autohelp.json';
 const AUTOHELP_SDCARD = '/sdcard/Download/squadrelay_autohelp.json';
+const AUTOHELP_OK_FILE = '/data/data/com.phs.global/files/squadrelay_autohelp_hook.ok';
+const AUTOHELP_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_autohelp_diag.txt';
 const AUTOHELP_MIN_INTERVAL_MS = 5000;
 const AUTOHELP_MAX_INTERVAL_MS = 600000;
 // Delay before ANY background runLua (share/bookmark hooks, auto-assault, roster, auto-help).
@@ -167,7 +169,7 @@ const WORLD_READY_FILE_LUA = "'" + WORLD_READY_FILE + "'";
 const WORLD_READY_PROBE_LUA =
   'pcall(function() local D=_G.Data if type(D)~="table" then return end local function mark() local f=io.open(' +
   WORLD_READY_FILE_LUA +
-  ',"w") if f then f:write("1") f:close() end end local pd=D.PlayerData or D.UserData if type(pd)=="table" then local id=tonumber(pd.playerId or pd.id or pd.uid or pd.roleId) if id and id>0 then mark() return end end local pid=tonumber(_G.__sr_my_pid) if pid and pid>0 then mark() end end)';
+  ',"w") if f then f:write("1") f:close() end end local pd=D.PlayerData or D.UserData if type(pd)=="table" then local id=tonumber(pd.playerId or pd.id or pd.uid or pd.roleId) if id and id>0 then mark() return end end local pid=tonumber(_G.__sr_my_pid) if pid and pid>0 then mark() return end local ad=D.AllianceData if type(ad)=="table" and type(ad.member)=="table" then local md=ad.member.memberDic if type(md)=="table" then for k,m in pairs(md) do local p=m and m.profile if type(p)=="table" then local id=tonumber(p.id or k) if id and id>0 and (m.isSelf or p.isSelf or m.self) then _G.__sr_my_pid=id mark() return end end end end end if type(ad)=="table" and type(ad.wars)=="table" and type(ad.wars.assemblyDic)=="table" then for _ in pairs(ad.wars.assemblyDic) do mark() return end end end)';
 
 // Event-driven auto-help. Captured live: tapping the real "Помощь" button sends `UnionHelpAllC2S`
 // (plus `GetUnionHelpListC2S` to refresh the list). Instead of polling, we wrap the alliance help
@@ -219,6 +221,7 @@ const AUTOHELP_INSTALL_LUA = [
   '    end',
   '  end',
   '  if newly and sm.GetUnionHelpListC2S then pcall(function() sm.GetUnionHelpListC2S() end) end',
+  "  local g=io.open('" + AUTOHELP_OK_FILE + "','w') if g then g:write('ok') g:close() end",
   'end)',
 ].join('\n');
 
@@ -1001,6 +1004,28 @@ function bridgeLuaStartupReady(now) {
   return liveLuaEnvCapturedMs > 0 && now - liveLuaEnvCapturedMs >= BRIDGE_LUA_STARTUP_DELAY_MS;
 }
 
+function tryWorldReadyViaIl2cpp() {
+  try {
+    attachIl2CppThread();
+    const luaCls = findManagedClass('GameFrameWork', 'LuaManager');
+    if (luaCls.isNull()) {
+      luaCls = findManagedClass('', 'LuaManager');
+    }
+    if (luaCls.isNull()) return false;
+    const initLua = readStaticByte(luaCls, 0x18);
+    const worldNet = readStaticByte(luaCls, 0x0a);
+    return initLua === 1 && worldNet === 1;
+  } catch (e) {
+    return false;
+  }
+}
+
+function markWorldReady(source) {
+  worldReadyCached = true;
+  worldReadyAtMs = Date.now();
+  log('world ready: session loaded (' + source + ')');
+}
+
 function tickWorldReadyProbe(now) {
   if (worldReadyCached) return;
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
@@ -1008,16 +1033,22 @@ function tickWorldReadyProbe(now) {
   if (now - worldReadyLastProbeMs < 5000) return;
   worldReadyLastProbeMs = now;
   mainThreadFlyQueue.push(function () {
+    if (!liveLuaEnv || liveLuaEnv.isNull()) {
+      if (tryWorldReadyViaIl2cpp()) markWorldReady('il2cpp pre-lua');
+      return;
+    }
     writeFileEmpty(WORLD_READY_FILE);
     doStringNow(WORLD_READY_PROBE_LUA);
-    const t = readFileUtf8(WORLD_READY_FILE, 8);
+    let t = readFileUtf8(WORLD_READY_FILE, 8);
     if (t && t.trim() === '1') {
-      worldReadyCached = true;
-      worldReadyAtMs = Date.now();
-      log('world ready: session loaded (playerId)');
-    } else {
-      diagOnce('world-not-ready', 'world-ready probe returned: ' + JSON.stringify(t));
+      markWorldReady('lua probe');
+      return;
     }
+    if (tryWorldReadyViaIl2cpp()) {
+      markWorldReady('il2cpp isInitLua+isWorldNetwork');
+      return;
+    }
+    diagOnce('world-not-ready', 'world-ready probe returned: ' + JSON.stringify(t));
   });
 }
 
@@ -1036,6 +1067,13 @@ function bridgeAssaultReady(now) {
     log('autoassault unblocked (grace=' + BRIDGE_ASSAULT_GRACE_MS + 'ms after world ready)');
   }
   return true;
+}
+
+// Auto-help is event-driven (fires when help data updates). It only needs startup delay +
+// world-ready — NOT the 20s hook grace (that blocked help after v50).
+function bridgeAutoHelpReady(now) {
+  if (!bridgeLuaStartupReady(now)) return false;
+  return bridgeWorldReady(now);
 }
 
 function bridgeBackgroundLuaReady(now) {
@@ -2526,6 +2564,7 @@ function pollAutoHelpConfig() {
       const text = readFileUtf8(paths[i]);
       if (!text || !text.trim()) continue;
       if (text === lastAutoHelpCfg) return;
+      const wasEnabled = autoHelpEnabled;
       lastAutoHelpCfg = text;
       const me = text.match(/"enabled"\s*:\s*(true|false)/);
       const mi = text.match(/"intervalSec"\s*:\s*(\d+)/);
@@ -2536,8 +2575,12 @@ function pollAutoHelpConfig() {
         if (ms > AUTOHELP_MAX_INTERVAL_MS) ms = AUTOHELP_MAX_INTERVAL_MS;
         autoHelpIntervalMs = ms;
       }
-      // Delay the first help-poll by one full interval so it never fires during login/loading.
-      autoHelpLastRun = Date.now();
+      // Install hook immediately when enabled (incl. config sync on game entry).
+      if (autoHelpEnabled && !wasEnabled) {
+        autoHelpLastRun = 0;
+      } else if (!autoHelpEnabled) {
+        autoHelpLastRun = Date.now();
+      }
       log('autohelp config: enabled=' + autoHelpEnabled + ' interval=' + autoHelpIntervalMs + 'ms');
       return;
     } catch (e) {
@@ -2552,22 +2595,24 @@ function pollAutoHelpConfig() {
 function tickAutoHelp() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  // HARD startup gate: do not run ANY auto-help Lua until the session is fully loaded and the
-  // socket is stable. Running runLua (a main-thread DoString) during the login / alliance-sync
-  // window corrupts the game's union message handling and drops the connection (game stuck
-  // loading). liveLuaEnvCapturedMs is set as soon as the Lua VM is captured (still on the loading
-  // screen), so this skips the whole fragile login window. Mid-session toggles pass instantly
-  // because the VM was captured long ago.
-  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
+  if (!bridgeAutoHelpReady(now)) {
+    diagOnce('autohelp-wait', 'autohelp waiting: startup=' + bridgeLuaStartupReady(now) + ' world=' + worldReadyCached);
+    return;
+  }
   if (autoHelpEnabled) {
-    // (Re)install/maintain the event hook every interval. After the first successful wrap this is a
-    // near no-op (the real work is event-driven inside the game, not here). Re-running also
-    // re-wraps if the help class metatable was ever reloaded.
     if (now - autoHelpLastRun < autoHelpIntervalMs) return;
     autoHelpLastRun = now;
     autoHelpAppliedEnabled = true;
     try {
       runLua(AUTOHELP_INSTALL_LUA);
+      mainThreadFlyQueue.push(function () {
+        const ok = readFileUtf8(AUTOHELP_OK_FILE, 8);
+        if (ok && ok.indexOf('ok') >= 0) {
+          diagOnce('autohelp-armed', 'autohelp hook armed (event-driven UnionHelpAllC2S)');
+        } else {
+          log('autohelp hook not confirmed (AllianceData.help missing or not loaded yet)');
+        }
+      });
     } catch (e) {
       log('autohelp install error: ' + e);
     }
