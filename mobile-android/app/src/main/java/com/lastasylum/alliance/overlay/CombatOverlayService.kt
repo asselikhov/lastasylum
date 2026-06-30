@@ -5442,14 +5442,19 @@ class CombatOverlayService : Service() {
             }
             val power = obj.optLong("power", 0L)
             val level = obj.optInt("level", 0)
-            val dist = obj.optInt("dist", -1)
+            val distCreator = obj.optInt("distCreator", obj.optInt("dist", -1))
+            val distTarget = obj.optInt("distTarget", -1)
             val squad = obj.optInt("squad", -1)
             val parts = buildString {
                 append(creator)
                 append(" • ").append(type)
                 if (level > 0) append(" ур.").append(level)
                 if (power > 0) append(" • ").append(formatAssaultPower(power))
-                if (dist >= 0) append(" • ").append(dist).append("кл")
+                if (distCreator >= 0 && distTarget >= 0) {
+                    append(" • созд.").append(distCreator).append("кл / цель").append(distTarget).append("кл")
+                } else if (distCreator >= 0) {
+                    append(" • ").append(distCreator).append("кл")
+                }
                 if (squad >= 0) append(" • отряд ").append(squad + 1)
             }
             AppContainer.from(this).userSettingsPreferences.appendAutoAssaultJoinLog(parts)

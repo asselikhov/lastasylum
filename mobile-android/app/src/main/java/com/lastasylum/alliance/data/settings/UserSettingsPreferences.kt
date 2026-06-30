@@ -375,15 +375,45 @@ class UserSettingsPreferences(context: Context) {
             .apply()
     }
 
-    /** Максимальная дистанция до цели (клетки карты, Chebyshev от базы). */
+    /** Максимальная дистанция до цели (клетки карты, Chebyshev от базы). Устаревшее — см. creator/target. */
     fun getAutoAssaultMaxDistance(): Int =
         prefs.getInt(KEY_AUTO_ASSAULT_MAX_DISTANCE, AUTO_ASSAULT_MAX_DISTANCE_DEFAULT)
             .coerceIn(AUTO_ASSAULT_MAX_DISTANCE_MIN, AUTO_ASSAULT_MAX_DISTANCE_MAX)
 
     fun setAutoAssaultMaxDistance(value: Int) {
+        val v = value.coerceIn(AUTO_ASSAULT_MAX_DISTANCE_MIN, AUTO_ASSAULT_MAX_DISTANCE_MAX)
+        prefs.edit()
+            .putInt(KEY_AUTO_ASSAULT_MAX_DISTANCE, v)
+            .apply()
+    }
+
+    /** Макс. дистанция до города создателя штурма / точки сбора (rallyPoint). */
+    fun getAutoAssaultMaxDistanceCreator(): Int =
+        prefs.getInt(
+            KEY_AUTO_ASSAULT_MAX_DISTANCE_CREATOR,
+            getAutoAssaultMaxDistance(),
+        ).coerceIn(AUTO_ASSAULT_MAX_DISTANCE_MIN, AUTO_ASSAULT_MAX_DISTANCE_MAX)
+
+    fun setAutoAssaultMaxDistanceCreator(value: Int) {
         prefs.edit()
             .putInt(
-                KEY_AUTO_ASSAULT_MAX_DISTANCE,
+                KEY_AUTO_ASSAULT_MAX_DISTANCE_CREATOR,
+                value.coerceIn(AUTO_ASSAULT_MAX_DISTANCE_MIN, AUTO_ASSAULT_MAX_DISTANCE_MAX),
+            )
+            .apply()
+    }
+
+    /** Макс. дистанция до монстра / цели штурма (targetPoint). */
+    fun getAutoAssaultMaxDistanceTarget(): Int =
+        prefs.getInt(
+            KEY_AUTO_ASSAULT_MAX_DISTANCE_TARGET,
+            getAutoAssaultMaxDistance(),
+        ).coerceIn(AUTO_ASSAULT_MAX_DISTANCE_MIN, AUTO_ASSAULT_MAX_DISTANCE_MAX)
+
+    fun setAutoAssaultMaxDistanceTarget(value: Int) {
+        prefs.edit()
+            .putInt(
+                KEY_AUTO_ASSAULT_MAX_DISTANCE_TARGET,
                 value.coerceIn(AUTO_ASSAULT_MAX_DISTANCE_MIN, AUTO_ASSAULT_MAX_DISTANCE_MAX),
             )
             .apply()
@@ -713,6 +743,8 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_AUTO_ASSAULT_ENABLED = "auto_assault_enabled"
         private const val KEY_AUTO_ASSAULT_SQUADS = "auto_assault_squads"
         private const val KEY_AUTO_ASSAULT_MAX_DISTANCE = "auto_assault_max_distance"
+        private const val KEY_AUTO_ASSAULT_MAX_DISTANCE_CREATOR = "auto_assault_max_distance_creator"
+        private const val KEY_AUTO_ASSAULT_MAX_DISTANCE_TARGET = "auto_assault_max_distance_target"
         private const val KEY_AUTO_ASSAULT_ALLOWED_MEMBER_IDS = "auto_assault_allowed_member_ids"
         private const val KEY_AUTO_ASSAULT_SQUAD_POWER_MIN_PREFIX = "auto_assault_squad_power_min_"
         private const val KEY_AUTO_ASSAULT_SQUAD_POWER_MAX_PREFIX = "auto_assault_squad_power_max_"

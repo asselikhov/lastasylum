@@ -1290,8 +1290,12 @@ class OverlayCommandsPopover(
                 context.getString(R.string.overlay_assault_power_max_hint),
             )
         }
-        val assaultDistanceEdit = assaultNumField(
-            assaultPrefs.getAutoAssaultMaxDistance().toString(),
+        val assaultDistanceCreatorEdit = assaultNumField(
+            assaultPrefs.getAutoAssaultMaxDistanceCreator().toString(),
+            "",
+        )
+        val assaultDistanceTargetEdit = assaultNumField(
+            assaultPrefs.getAutoAssaultMaxDistanceTarget().toString(),
             "",
         )
         val assaultLevelMinEdit = assaultNumField(
@@ -1327,9 +1331,13 @@ class OverlayCommandsPopover(
                 assaultPrefs.setAutoAssaultSquadPowerMin(idx, min)
                 assaultPrefs.setAutoAssaultSquadPowerMax(idx, max)
             }
-            val dist = assaultDistanceEdit.text?.toString()?.trim()?.toIntOrNull()
+            val distCreator = assaultDistanceCreatorEdit.text?.toString()?.trim()?.toIntOrNull()
                 ?: UserSettingsPreferences.AUTO_ASSAULT_MAX_DISTANCE_DEFAULT
-            assaultPrefs.setAutoAssaultMaxDistance(dist)
+            val distTarget = assaultDistanceTargetEdit.text?.toString()?.trim()?.toIntOrNull()
+                ?: UserSettingsPreferences.AUTO_ASSAULT_MAX_DISTANCE_DEFAULT
+            assaultPrefs.setAutoAssaultMaxDistanceCreator(distCreator)
+            assaultPrefs.setAutoAssaultMaxDistanceTarget(distTarget)
+            assaultPrefs.setAutoAssaultMaxDistance(maxOf(distCreator, distTarget))
             assaultPrefs.setAutoAssaultTargetLevelMin(
                 assaultLevelMinEdit.text?.toString()?.trim()?.toIntOrNull() ?: 0,
             )
@@ -1545,8 +1553,11 @@ class OverlayCommandsPopover(
         val assaultLevelToField = assaultCompactField(
             context.getString(R.string.overlay_assault_f_level_to), assaultLevelMaxEdit,
         )
-        val assaultDistanceField = assaultCompactField(
-            context.getString(R.string.overlay_assault_f_distance), assaultDistanceEdit,
+        val assaultDistanceCreatorField = assaultCompactField(
+            context.getString(R.string.overlay_assault_f_distance_creator), assaultDistanceCreatorEdit,
+        )
+        val assaultDistanceTargetField = assaultCompactField(
+            context.getString(R.string.overlay_assault_f_distance_target), assaultDistanceTargetEdit,
         )
         val assaultTimeField = assaultCompactField(
             context.getString(R.string.overlay_assault_f_time), assaultMinRemainingEdit,
@@ -1637,7 +1648,7 @@ class OverlayCommandsPopover(
             assaultNote(context.getString(R.string.overlay_assault_types_title)) to 8,
             assaultTypesChips to 6,
             assaultTwoCol(assaultLevelFromField, assaultLevelToField) to 10,
-            assaultDistanceField to 10,
+            assaultTwoCol(assaultDistanceCreatorField, assaultDistanceTargetField) to 10,
         )
         val assaultSquadsCard = assaultCard(
             assaultSectionTitle(context.getString(R.string.overlay_assault_card_squads)) to 0,
@@ -1717,7 +1728,8 @@ class OverlayCommandsPopover(
                 }
             })
         }
-        watchAssaultField(assaultDistanceEdit)
+        watchAssaultField(assaultDistanceCreatorEdit)
+        watchAssaultField(assaultDistanceTargetEdit)
         watchAssaultField(assaultLevelMinEdit)
         watchAssaultField(assaultLevelMaxEdit)
         watchAssaultField(assaultMinRemainingEdit)

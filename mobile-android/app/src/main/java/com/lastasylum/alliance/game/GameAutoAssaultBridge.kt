@@ -74,9 +74,13 @@ object GameAutoAssaultBridge {
         allowedIds.forEach { ids.put(it) }
         val types = JSONArray()
         prefs.getAutoAssaultTargetTypes().forEach { types.put(it) }
+        val distCreator = prefs.getAutoAssaultMaxDistanceCreator()
+        val distTarget = prefs.getAutoAssaultMaxDistanceTarget()
         return JSONObject()
             .put("enabled", prefs.isAutoAssaultEnabled())
-            .put("maxDistance", prefs.getAutoAssaultMaxDistance())
+            .put("maxDistance", maxOf(distCreator, distTarget))
+            .put("maxDistanceCreator", distCreator)
+            .put("maxDistanceTarget", distTarget)
             .put("minRemainingSec", prefs.getAutoAssaultMinRemainingSec())
             .put("cooldownSec", prefs.getAutoAssaultCooldownSec())
             .put("maxConcurrent", prefs.getAutoAssaultMaxConcurrent())

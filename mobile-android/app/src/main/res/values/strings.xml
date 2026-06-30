@@ -915,6 +915,8 @@
     <string name="overlay_assault_f_level_from">Уровень от</string>
     <string name="overlay_assault_f_level_to">Уровень до</string>
     <string name="overlay_assault_f_distance">Дистанция, кл</string>
+    <string name="overlay_assault_f_distance_creator">До создателя, кл</string>
+    <string name="overlay_assault_f_distance_target">До цели, кл</string>
     <string name="overlay_assault_f_time">Время до старта, с</string>
     <string name="overlay_assault_f_cooldown">Кулдаун, с</string>
     <string name="overlay_assault_f_limit">Лимит маршей</string>

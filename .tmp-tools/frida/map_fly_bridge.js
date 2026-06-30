@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '29';
+const BRIDGE_VERSION = '30';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -397,7 +397,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '    return nil',
   '  end',
   // Точка сбора = город создателя (rallyPoint совпадает с cityCoords в ростере).
-  // Дистанция для фильтра maxDistance — до точки вступления, не до монстра (targetPoint).
+  // Дистанция: maxDistanceCreator — до города создателя / rallyPoint; maxDistanceTarget — до монстра (targetPoint).
   '  local function memberCityPt(playerId)',
   '    local pid = tonumber(playerId)',
   '    if not pid or pid <= 0 then return nil end',
@@ -613,7 +613,9 @@ const AUTOASSAULT_SCAN_LUA = [
   '  _G.__sr_aa_active = _G.__sr_aa_active or {}',
   '  local usedSquads = {}',
   '  local cp = castlePt()',
-  '  local maxD = tonumber(cfg.maxDistance) or 9999',
+  '  local legD = tonumber(cfg.maxDistance) or 9999',
+  '  local maxDC = tonumber(cfg.maxDistanceCreator) or legD',
+  '  local maxDT = tonumber(cfg.maxDistanceTarget) or legD',
   '  local minRem = tonumber(cfg.minRemainingSec) or 0',
   '  local lvMin = tonumber(cfg.levelMin) or 0',
   '  local lvMax = tonumber(cfg.levelMax) or 0',
@@ -635,8 +637,14 @@ const AUTOASSAULT_SCAN_LUA = [
   '    if lvMax > 0 and lv > 0 and lv > lvMax then goto continue end',
   '    local joinPt = creatorRallyPt(war)',
   '    if type(joinPt) ~= "table" or not joinPt.x or not joinPt.y then goto continue end',
-  '    local dist = cp and cheb(cp.x, cp.y, joinPt.x, joinPt.y) or -1',
-  '    if cp and maxD > 0 and dist > maxD then goto continue end',
+  '    local distC = cp and cheb(cp.x, cp.y, joinPt.x, joinPt.y) or -1',
+  '    if maxDC > 0 and (not cp or distC < 0 or distC > maxDC) then goto continue end',
+  '    local distT = -1',
+  '    local tp = war.targetPoint',
+  '    if type(tp) == "table" and tp.x and tp.y then',
+  '      distT = cp and cheb(cp.x, cp.y, tp.x, tp.y) or -1',
+  '    end',
+  '    if maxDT > 0 and (not cp or distT < 0 or distT > maxDT) then goto continue end',
   '    local pow = targetPower(row)',
   '    local pickedIdx = nil',
   '    local squads = cfg.squads',
@@ -655,7 +663,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '      end',
   '    end',
   '    if pickedIdx == nil then goto continue end',
-  '    local matchJson = string.format(\'{"creator":"%s","type":"%s","power":%d,"level":%d,"dist":%d,"squad":%d,"id":"%s","time":%d}\', tostring(war.playerName or ""):gsub(\'"\',"\'"), ttype, math.floor(pow), math.floor(lv), math.floor(dist), pickedIdx, tostring(war.id or ""), os.time())',
+  '    local matchJson = string.format(\'{"creator":"%s","type":"%s","power":%d,"level":%d,"dist":%d,"distCreator":%d,"distTarget":%d,"squad":%d,"id":"%s","time":%d}\', tostring(war.playerName or ""):gsub(\'"\',"\'"), ttype, math.floor(pow), math.floor(lv), math.floor(distC), math.floor(distC), math.floor(distT), pickedIdx, tostring(war.id or ""), os.time())',
   '    local f = io.open(' + AUTOASSAULT_MATCH_FILE_LUA + ', "w") if f then f:write(matchJson) f:close() end',
   '    if cfg.joinEnabled and war.id and type(war.rallyPoint) == "table" then',
   '      local team = (_G.__sr_aa_build_team and _G.__sr_aa_build_team(pickedIdx)) or nil',
@@ -736,6 +744,8 @@ let lastAutoHelpCfg = '';
 let autoHelpAppliedEnabled = null;
 let autoAssaultEnabled = false;
 let autoAssaultMaxDistance = 500;
+let autoAssaultMaxDistanceCreator = 500;
+let autoAssaultMaxDistanceTarget = 500;
 let autoAssaultSquads = [];
 let autoAssaultAllowedNames = [];
 let autoAssaultAllowedUserIds = [];
@@ -2308,6 +2318,10 @@ function buildAutoAssaultCfgLua() {
     (autoAssaultEnabled ? 'true' : 'false') +
     ',maxDistance=' +
     autoAssaultMaxDistance +
+    ',maxDistanceCreator=' +
+    autoAssaultMaxDistanceCreator +
+    ',maxDistanceTarget=' +
+    autoAssaultMaxDistanceTarget +
     ',minRemainingSec=' +
     autoAssaultMinRemainingSec +
     ',levelMin=' +
@@ -2350,6 +2364,15 @@ function pollAutoAssaultConfig() {
       }
       autoAssaultEnabled = !!cfg.enabled;
       autoAssaultMaxDistance = parseInt(cfg.maxDistance, 10) || 500;
+      const legDist = autoAssaultMaxDistance;
+      autoAssaultMaxDistanceCreator =
+        cfg.maxDistanceCreator !== undefined && cfg.maxDistanceCreator !== null
+          ? parseInt(cfg.maxDistanceCreator, 10) || legDist
+          : legDist;
+      autoAssaultMaxDistanceTarget =
+        cfg.maxDistanceTarget !== undefined && cfg.maxDistanceTarget !== null
+          ? parseInt(cfg.maxDistanceTarget, 10) || legDist
+          : legDist;
       autoAssaultMinRemainingSec = parseInt(cfg.minRemainingSec, 10);
       if (isNaN(autoAssaultMinRemainingSec)) autoAssaultMinRemainingSec = 5;
       autoAssaultCooldownSec = parseInt(cfg.cooldownSec, 10) || 3;
@@ -2394,8 +2417,10 @@ function pollAutoAssaultConfig() {
       log(
         'autoassault config: enabled=' +
           autoAssaultEnabled +
-          ' maxDist=' +
-          autoAssaultMaxDistance +
+          ' maxDistC=' +
+          autoAssaultMaxDistanceCreator +
+          ' maxDistT=' +
+          autoAssaultMaxDistanceTarget +
           ' squads=' +
           autoAssaultSquads.length +
           ' names=' +
