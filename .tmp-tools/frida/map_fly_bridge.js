@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '43';
+const BRIDGE_VERSION = '44';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -2519,19 +2519,19 @@ function buildAutoAssaultCfgLua() {
   );
 }
 
-function peekAutoAssaultFileEnabled() {
-  const paths = [AUTOASSAULT_FILE, AUTOASSAULT_SDCARD];
-  for (let i = 0; i < paths.length; i++) {
+function resetAutoAssaultConfigFile() {
+  const stub = '{"enabled":false}';
+  for (let i = 0; i < 2; i++) {
+    const path = i === 0 ? AUTOASSAULT_FILE : AUTOASSAULT_SDCARD;
     try {
-      const text = readFileUtf8(paths[i]);
-      if (!text || !text.trim()) continue;
-      const cfg = JSON.parse(text);
-      return !!cfg.enabled;
-    } catch (e) {
-      /* try next path */
-    }
+      const f = new File(path, 'w');
+      f.write(stub);
+      f.flush();
+      f.close();
+    } catch (e) {}
   }
-  return null;
+  lastAutoAssaultCfg = stub;
+  autoAssaultEnabled = false;
 }
 
 function pollAutoAssaultConfig() {
@@ -2631,9 +2631,6 @@ function tickAutoAssault() {
   const now = Date.now();
   if (!bridgeLuaStartupReady(now)) return;
   pollAutoAssaultConfig();
-  const fileEnabled = peekAutoAssaultFileEnabled();
-  if (fileEnabled === true) autoAssaultEnabled = true;
-  else if (fileEnabled === false) autoAssaultEnabled = false;
   // Re-arm join-cache hook periodically (idempotent in lua). The game recreates its Lua
   // state during login/scene transitions, wiping _G.__sr_aa_cfg and TOP.__sr_dsm_orig; a
   // one-shot install keyed only on liveLuaEnvCapturedMs never runs again after that.
@@ -3087,6 +3084,7 @@ setImmediate(function () {
     proc = readFileUtf8('/proc/self/cmdline', 256).replace(/\0/g, ' ').trim();
   } catch (e) {}
   log('bridge started v' + BRIDGE_VERSION + ' pid=' + Process.id + ' proc=' + proc);
+  resetAutoAssaultConfigFile();
   clearTriggerFiles();
   writeFileEmpty(SHARE_FILE);
   writeFileEmpty(SHARE_OK_FILE);

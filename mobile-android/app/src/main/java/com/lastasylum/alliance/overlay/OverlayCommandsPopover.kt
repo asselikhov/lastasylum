@@ -1084,7 +1084,7 @@ class OverlayCommandsPopover(
         var selectedBookmark = OverlayBookmarkTag.ENEMIES
 
         val assaultPrefs = UserSettingsPreferences(context)
-        var assaultEnabled = assaultPrefs.isAutoAssaultEnabled()
+        var assaultEnabled = assaultPrefs.isAutoAssaultEnabledRaw()
         var assaultSquads = assaultPrefs.getAutoAssaultSquads().toMutableSet()
         var assaultAllowedIds = assaultPrefs.getAutoAssaultAllowedMemberIds().toMutableSet()
         val assaultTypes = assaultPrefs.getAutoAssaultTargetTypes().toMutableSet()
@@ -1104,7 +1104,9 @@ class OverlayCommandsPopover(
                 // Только при явном переключателе: не сбрасывать таймер и не гонять apply() на каждый символ в полях.
                 assaultPrefs.setAutoAssaultEnabled(assaultEnabled)
             }
-            GameAutoAssaultBridge.write(context, assaultPrefs, enabledOverride = assaultEnabled)
+            // Поля фильтра не трогают enabled: в игру уходит флаг из prefs, а не из памяти UI.
+            val enabledForBridge = if (syncToggle) assaultEnabled else null
+            GameAutoAssaultBridge.write(context, assaultPrefs, enabledOverride = enabledForBridge)
         }
 
         val targetSearchTabChip = choiceChip(context.getString(R.string.overlay_target_tab_search), true)
@@ -1886,7 +1888,6 @@ class OverlayCommandsPopover(
                 if (disableAt in 1 until System.currentTimeMillis()) assaultEnabled = false
                 renderAssaultToggle()
                 readAssaultPowerPrefs()
-                persistAssaultSettings(syncToggle = true)
                 refreshAssaultLog()
             }
             refreshTargetSubTabs()

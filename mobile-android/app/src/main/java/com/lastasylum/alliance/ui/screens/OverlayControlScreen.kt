@@ -72,6 +72,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.game.GameAutoAssaultBridge
 import com.lastasylum.alliance.game.GameAutoHelpBridge
 import com.lastasylum.alliance.game.GameDeepLinkNavigator
 import com.lastasylum.alliance.game.GameMapPatchStatus
@@ -226,6 +227,7 @@ fun OverlayControlScreen() {
 
     LaunchedEffect(Unit) {
         GameAutoHelpBridge.sync(appContext)
+        GameAutoAssaultBridge.sync(appContext)
     }
 
     if (showGameEventsDialog) {

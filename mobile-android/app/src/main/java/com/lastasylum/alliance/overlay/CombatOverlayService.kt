@@ -116,6 +116,7 @@ import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.chat.outbox.OutboxResumeScheduler
 import com.lastasylum.alliance.data.telemetry.LatencySpanType
+import com.lastasylum.alliance.game.GameAutoAssaultBridge
 import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.layout.OverlayLayoutDp
 import com.lastasylum.alliance.di.ChatViewModelRegistry
@@ -2108,6 +2109,8 @@ class CombatOverlayService : Service() {
                         GameForegroundGate.invalidateFullHeuristicCache()
                         GameForegroundGate.primeTotalTimeForegroundWatch(this@CombatOverlayService, targets)
                         gateNotInTargetStreak = 0
+                        // Сброс/актуализация авто-штурма в игре: по умолчанию выкл, пока пользователь не включит.
+                        GameAutoAssaultBridge.sync(this@CombatOverlayService)
                     }
                     if (gateQuickProbeNotInTarget) {
                         gateNotInTargetStreak++
