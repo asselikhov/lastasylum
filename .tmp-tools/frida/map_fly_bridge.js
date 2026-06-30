@@ -1007,7 +1007,7 @@ function bridgeLuaStartupReady(now) {
 function tryWorldReadyViaIl2cpp() {
   try {
     attachIl2CppThread();
-    const luaCls = findManagedClass('GameFrameWork', 'LuaManager');
+    let luaCls = findManagedClass('GameFrameWork', 'LuaManager');
     if (luaCls.isNull()) {
       luaCls = findManagedClass('', 'LuaManager');
     }
