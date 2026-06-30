@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '23';
+const BRIDGE_VERSION = '24';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -470,11 +470,8 @@ const AUTOASSAULT_SCAN_LUA = [
   '    end',
   '    return 0',
   '  end',
-  // «Время до старта»: minRem — не вступать, если до отправления останется МЕНЬШЕ
-  // minRem секунд (слишком поздно). Для занятого отряда: remWhenReady = remSec − busySec.
-  // Марш до точки сбора идёт внутри окна формирования — отдельно не вычитаем.
-  // 1-мин штурмы (окно ~60с): если minRem=59, без cap вступление возможно ~1 сек —
-  // cap effectiveMinRem для коротких окон (≤120с): min(userMinRem, 50% окна).
+  // «Время до старта» (minRem): только для ЗАНЯТЫХ отрядов — хватит ли времени после возврата.
+  // Свободный отряд вступает сразу (игра сама проверит успеет ли марш до точки сбора).
   '  local function formationWindowSec(war)',
   '    local st = tonumber(war.rallyStartTime)',
   '    local en = tonumber(war.rallyEndTime)',
@@ -488,6 +485,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '    return minRem',
   '  end',
   '  local function remOkForSquad(war, idx)',
+  '    if troopFree(idx) then return true end',
   '    local eff = effectiveMinRem(war)',
   '    if eff <= 0 then return true end',
   '    if not war.rallyEndTime then return true end',
