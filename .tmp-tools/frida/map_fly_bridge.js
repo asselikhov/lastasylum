@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '41';
+const BRIDGE_VERSION = '42';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -949,6 +949,34 @@ function diagOnce(key, msg) {
   log('DIAG ' + key + ': ' + msg);
 }
 
+const LOG_ROTATE_BYTES = 1024 * 1024;
+let logWriteCount = 0;
+
+function truncateLogFile(path) {
+  try {
+    const f = new File(path, 'w');
+    f.write('');
+    f.flush();
+    f.close();
+  } catch (e) {}
+}
+
+function maybeRotateLogFiles() {
+  if (typeof Java === 'undefined' || !Java.available) return;
+  try {
+    Java.perform(function () {
+      const JFile = Java.use('java.io.File');
+      for (let i = 0; i < 2; i++) {
+        const path = i === 0 ? LOG : LOG_SDCARD;
+        const file = JFile.$new(path);
+        if (!file.exists()) continue;
+        const len = file.length();
+        if (len > LOG_ROTATE_BYTES) truncateLogFile(path);
+      }
+    });
+  } catch (e) {}
+}
+
 function log(line) {
   console.log('[map_fly_bridge] ' + line);
   for (const path of [LOG, LOG_SDCARD]) {
@@ -959,6 +987,8 @@ function log(line) {
       f.close();
     } catch (e) {}
   }
+  logWriteCount++;
+  if (logWriteCount === 1 || logWriteCount % 250 === 0) maybeRotateLogFiles();
 }
 
 function il2CppPathFromMaps() {
@@ -1468,9 +1498,7 @@ function runLua(code) {
     return;
   }
   mainThreadFlyQueue.push(function () {
-    if (doStringNow(code)) {
-      log('runLua ok: ' + code.substring(0, 120));
-    }
+    doStringNow(code);
   });
 }
 
