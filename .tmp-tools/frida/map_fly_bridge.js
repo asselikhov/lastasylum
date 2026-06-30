@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '57';
+const BRIDGE_VERSION = '58';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -310,6 +310,48 @@ const ALLIANCE_ROSTER_LUA = [
   '  end',
   '  local s = "[" .. table.concat(out, ",") .. "]"',
   '  local f = io.open(' + ALLIANCE_ROSTER_FILE_LUA + ', "w") if f then f:write(s) f:close() end',
+  'end)',
+].join('\n');
+// Lightweight self pid/castle resolver (must stay small — large DoString blocks abort the VM).
+const MARK_SELF_LUA = [
+  'pcall(function()',
+  '  local pd = _G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
+  '  local myName = nil',
+  '  if type(pd) == "table" then',
+  '    myName = pd.playerName or pd.name or pd.nickName or pd.nickname or pd.roleName or pd.userName',
+  '  end',
+  '  if not myName or tostring(myName) == "" then return end',
+  '  local md = _G.Data and _G.Data.AllianceData and _G.Data.AllianceData.member and _G.Data.AllianceData.member.memberDic',
+  '  if type(md) ~= "table" then return end',
+  '  local q = string.char(34)',
+  '  for pid, m in pairs(md) do',
+  '    local p = m and m.profile',
+  '    if type(p) == "table" then',
+  '      local pn = tostring(p.name or "")',
+  '      if pn == tostring(myName) or string.lower(pn) == string.lower(tostring(myName)) then',
+  '        local selfId = tonumber(p.id or pid)',
+  '        if selfId and selfId > 0 then',
+  '          _G.__sr_my_pid = selfId',
+  '          _G.__sr_aa_my_pid = selfId',
+  '          local cx, cy, cs = 0, 0, 0',
+  '          local cc = m.cityCoords',
+  '          if type(cc) == "table" and cc.x and cc.y then',
+  '            cx = math.floor(tonumber(cc.x))',
+  '            cy = math.floor(tonumber(cc.y))',
+  '            cs = math.floor(tonumber(cc.sid) or 0)',
+  '            _G.__sr_my_castle = { x = cx, y = cy, sid = cs }',
+  '          end',
+  '          local sf = io.open(' + SELF_PLAYER_FILE_LUA + ', "w")',
+  '          if sf then',
+  '            local esc = tostring(myName):gsub(q, string.char(39))',
+  '            sf:write("{"..q.."id"..q..":"..q..tostring(selfId)..q..","..q.."name"..q..":"..q..esc..q..","..q.."x"..q..":"..tostring(cx)..","..q.."y"..q..":"..tostring(cy)..","..q.."sid"..q..":"..tostring(cs).."}")',
+  '            sf:close()',
+  '          end',
+  '        end',
+  '        break',
+  '      end',
+  '    end',
+  '  end',
   'end)',
 ].join('\n');
 // Кэш реальных составов марша (team) по teamIndex, снятый с настоящих вступлений.
@@ -1144,6 +1186,10 @@ let autoAssaultMinRemainingSec = 5;
 let autoAssaultCooldownSec = 3;
 let autoAssaultMaxConcurrent = 0;
 let autoAssaultDisableAtMs = 0;
+let autoAssaultMyPlayerId = 0;
+let autoAssaultMyCastleX = 0;
+let autoAssaultMyCastleY = 0;
+let autoAssaultMyCastleSid = 0;
 let lastAutoAssaultCfg = '';
 let autoAssaultLastTick = 0;
 let autoAssaultCfgPushed = false;
@@ -2826,14 +2872,20 @@ function luaEscape(s) {
 }
 
 function readSelfPlayerForCfg() {
-  const out = { id: 0, cx: 0, cy: 0, cs: 0 };
+  const out = {
+    id: autoAssaultMyPlayerId,
+    cx: autoAssaultMyCastleX,
+    cy: autoAssaultMyCastleY,
+    cs: autoAssaultMyCastleSid,
+  };
+  if (out.id > 0 && out.cx > 0 && out.cy > 0) return out;
   try {
     const text = readFileUtf8(SELF_PLAYER_FILE, 512);
     if (!text || !text.trim()) return out;
     const o = JSON.parse(text);
-    out.id = parseInt(o.id, 10) || 0;
-    out.cx = parseInt(o.x, 10) || 0;
-    out.cy = parseInt(o.y, 10) || 0;
+    if (parseInt(o.id, 10) > 0) out.id = parseInt(o.id, 10) || 0;
+    if (parseInt(o.x, 10) > 0) out.cx = parseInt(o.x, 10) || 0;
+    if (parseInt(o.y, 10) > 0) out.cy = parseInt(o.y, 10) || 0;
     out.cs = parseInt(o.sid, 10) || 0;
   } catch (e) {}
   return out;
@@ -2957,6 +3009,10 @@ function pollAutoAssaultConfig() {
       autoAssaultLevelMax = parseInt(cfg.levelMax, 10) || 0;
       autoAssaultMaxConcurrent = parseInt(cfg.maxConcurrent, 10) || 0;
       autoAssaultDisableAtMs = parseInt(cfg.disableAtEpochMs, 10) || 0;
+      autoAssaultMyPlayerId = parseInt(cfg.myPlayerId, 10) || 0;
+      autoAssaultMyCastleX = parseInt(cfg.myCastleX, 10) || 0;
+      autoAssaultMyCastleY = parseInt(cfg.myCastleY, 10) || 0;
+      autoAssaultMyCastleSid = parseInt(cfg.myCastleSid, 10) || 0;
       autoAssaultTargetTypes = [];
       if (cfg.targetTypes && cfg.targetTypes.length) {
         for (let t = 0; t < cfg.targetTypes.length; t++) {
@@ -3003,7 +3059,9 @@ function pollAutoAssaultConfig() {
           ' names=' +
           autoAssaultAllowedNames.length +
           ' userIds=' +
-          autoAssaultAllowedUserIds.length,
+          autoAssaultAllowedUserIds.length +
+          ' myPid=' +
+          autoAssaultMyPlayerId,
       );
       return;
     } catch (e) {
@@ -3057,9 +3115,8 @@ function tickAutoAssault() {
   autoAssaultLastTick = now;
   try {
     ensureAutoAssaultScanFile();
-    // Refresh self pid/castle from roster before each scan (assault may run before periodic roster tick).
     mainThreadFlyQueue.push(function () {
-      doStringNow(ALLIANCE_ROSTER_LUA);
+      doStringNow(MARK_SELF_LUA);
       const cfgLua = buildAutoAssaultCfgLua();
       doStringNow(cfgLua);
       const scanOk = doStringNow(AUTOASSAULT_SCAN_RUN_LUA);

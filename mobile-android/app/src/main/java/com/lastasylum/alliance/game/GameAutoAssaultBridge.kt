@@ -5,6 +5,7 @@ import android.content.Intent
 import android.util.Log
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.AllianceMember
 import com.lastasylum.alliance.overlay.AllianceRosterCache
 import org.json.JSONArray
@@ -33,6 +34,28 @@ object GameAutoAssaultBridge {
         return if (names.size < allowedIds.size) emptyList() else names
     }
 
+    /** Сопоставление активного игрового ника профиля с записью в игровом ростере альянса. */
+    internal fun resolveSelfMemberFromRoster(
+        roster: List<AllianceMember>,
+        gameNickname: String?,
+    ): AllianceMember? {
+        val nick = gameNickname?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return roster.firstOrNull { it.name == nick }
+            ?: roster.firstOrNull { it.name.equals(nick, ignoreCase = true) }
+    }
+
+    private fun resolveSelfMember(context: Context, prefs: UserSettingsPreferences): AllianceMember? {
+        val roster = AllianceRosterCache.peek().takeIf { it.isNotEmpty() }
+            ?: AllianceRosterCache.parse(prefs.getAllianceRosterJson())
+        if (roster.isEmpty()) return null
+        val profile = AppContainer.from(context.applicationContext).usersRepository.peekMyProfile()
+            ?: AppContainer.from(context.applicationContext).usersRepository.peekMyProfileDisk()
+            ?: return null
+        val nick = profile.activeGameNickname?.trim()?.takeIf { it.isNotEmpty() }
+            ?: profile.gameIdentities.firstOrNull { it.id == profile.activeGameIdentityId }?.gameNickname?.trim()
+        return resolveSelfMemberFromRoster(roster, nick)
+    }
+
     /** Сброс авто-штурма при входе в игру: выключить в prefs и в игровом мосте. */
     fun disarmForGameSession(context: Context): Boolean {
         val appContext = context.applicationContext
@@ -52,7 +75,7 @@ object GameAutoAssaultBridge {
         enabledOverride: Boolean? = null,
     ): Boolean {
         val appContext = context.applicationContext
-        val json = buildConfigJson(prefs, enabledOverride)
+        val json = buildConfigJson(appContext, prefs, enabledOverride)
         var sent = false
         for (pkg in GameDeepLinkNavigator.targetPackages(appContext)) {
             val trimmed = pkg.trim()
@@ -81,11 +104,13 @@ object GameAutoAssaultBridge {
     }
 
     private fun buildConfigJson(
+        context: Context,
         prefs: UserSettingsPreferences,
         enabledOverride: Boolean? = null,
     ): JSONObject {
         val allowedIds = prefs.getAutoAssaultAllowedMemberIds()
         val allowedNames = resolveAllowedCreatorNames(prefs, allowedIds)
+        val self = resolveSelfMember(context, prefs)
         val selectedSquads = prefs.getAutoAssaultSquads()
         val squads = JSONArray()
         for (idx in UserSettingsPreferences.AUTO_ASSAULT_SQUAD_MIN..UserSettingsPreferences.AUTO_ASSAULT_SQUAD_MAX) {
@@ -121,6 +146,10 @@ object GameAutoAssaultBridge {
             .put("squads", squads)
             .put("allowedNames", names)
             .put("allowedUserIds", ids)
+            .put("myPlayerId", self?.id?.toLongOrNull() ?: 0L)
+            .put("myCastleX", self?.x ?: 0)
+            .put("myCastleY", self?.y ?: 0)
+            .put("myCastleSid", self?.sid ?: 0)
     }
 
     /** Игровые ники создателей штурма: username из игрового ростера альянса (по playerId). */

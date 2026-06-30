@@ -43,4 +43,15 @@ class GameAutoAssaultBridgeTest {
         val roster = listOf(member("1", "Alpha"), member("2", "Beta"))
         assertEquals(listOf("Alpha", "Beta"), GameAutoAssaultBridge.creatorNamesForBridge(ids, roster))
     }
+
+    @Test
+    fun resolveSelfMemberFromRoster_matchesExactAndIgnoreCase() {
+        val roster = listOf(
+            member("97589813357", "Lev44"),
+            member("2", "Other"),
+        )
+        assertEquals("97589813357", GameAutoAssaultBridge.resolveSelfMemberFromRoster(roster, "Lev44")?.id)
+        assertEquals("97589813357", GameAutoAssaultBridge.resolveSelfMemberFromRoster(roster, "lev44")?.id)
+        assertEquals(null, GameAutoAssaultBridge.resolveSelfMemberFromRoster(roster, "Missing"))
+    }
 }
