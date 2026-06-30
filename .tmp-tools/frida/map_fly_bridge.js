@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '56';
+const BRIDGE_VERSION = '57';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -250,6 +250,8 @@ const ASSAULT_JOIN_ACTION = 'com.lastasylum.alliance.action.ASSAULT_JOIN';
 // в настройках штурма показывать актуальный список из игры, а не из приложения.
 const ALLIANCE_ROSTER_FILE = '/data/data/com.phs.global/files/squadrelay_alliance_roster.json';
 const ALLIANCE_ROSTER_FILE_LUA = "'" + ALLIANCE_ROSTER_FILE + "'";
+const SELF_PLAYER_FILE = '/data/data/com.phs.global/files/squadrelay_self_player.json';
+const SELF_PLAYER_FILE_LUA = "'" + SELF_PLAYER_FILE + "'";
 const ALLIANCE_ROSTER_ACTION = 'com.lastasylum.alliance.action.ALLIANCE_ROSTER';
 const ALLIANCE_ROSTER_SCAN_INTERVAL_MS = 20000;
 const ALLIANCE_ROSTER_LUA = [
@@ -258,21 +260,33 @@ const ALLIANCE_ROSTER_LUA = [
   '  local md = ad and ad.member and ad.member.memberDic',
   '  if type(md) ~= "table" then return end',
   '  local q = string.char(34)',
+  '  local function markSelf(m, pidKey)',
+  '    local p = m and m.profile',
+  '    local selfId = tonumber(p and p.id or pidKey)',
+  '    if not selfId or selfId <= 0 then return end',
+  '    _G.__sr_my_pid = selfId',
+  '    _G.__sr_aa_my_pid = selfId',
+  '    local ccSelf = m and m.cityCoords',
+  '    local cx, cy, cs = 0, 0, 0',
+  '    if type(ccSelf) == "table" and ccSelf.x and ccSelf.y then',
+  '      cx = math.floor(tonumber(ccSelf.x))',
+  '      cy = math.floor(tonumber(ccSelf.y))',
+  '      cs = math.floor(tonumber(ccSelf.sid) or 0)',
+  '      _G.__sr_my_castle = { x = cx, y = cy, sid = cs }',
+  '    end',
+  '    local nm = p and p.name and tostring(p.name) or ""',
+  '    local sf = io.open(' + SELF_PLAYER_FILE_LUA + ', "w")',
+  '    if sf then',
+  '      local esc = nm:gsub(q, string.char(39))',
+  '      sf:write("{"..q.."id"..q..":"..q..tostring(selfId)..q..","..q.."name"..q..":"..q..esc..q..","..q.."x"..q..":"..tostring(cx)..","..q.."y"..q..":"..tostring(cy)..","..q.."sid"..q..":"..tostring(cs).."}")',
+  '      sf:close()',
+  '    end',
+  '  end',
   '  local out = {}',
   '  for pid, m in pairs(md) do',
   '    local p = m and m.profile',
   '    if type(p) == "table" and p.name then',
-  '      if m.isSelf or m.self or p.isSelf or p.self then',
-  '        local selfId = tonumber(p.id or pid)',
-  '        if selfId and selfId > 0 then',
-  '          _G.__sr_my_pid = selfId',
-  '          _G.__sr_aa_my_pid = selfId',
-  '          local ccSelf = m.cityCoords',
-  '          if type(ccSelf) == "table" and ccSelf.x and ccSelf.y then',
-  '            _G.__sr_my_castle = { x = tonumber(ccSelf.x), y = tonumber(ccSelf.y), sid = tonumber(ccSelf.sid) }',
-  '          end',
-  '        end',
-  '      end',
+  '      if m.isSelf or m.self or p.isSelf or p.self then markSelf(m, pid) end',
   '      local nm = tostring(p.name):gsub(q, string.char(39)):gsub(string.char(92), " ")',
   '      local cc = m.cityCoords',
   '      local cx = (type(cc) == "table" and tonumber(cc.x)) or 0',
@@ -282,6 +296,16 @@ const ALLIANCE_ROSTER_LUA = [
   // перебираем известные имена поля (как killEnemyCount в шаринге «В рейд»).
   '      local kn = tonumber(p.killEnemyCount) or tonumber(p.killNum) or tonumber(p.kill) or tonumber(p.killCount) or tonumber(m.killEnemyCount) or tonumber(m.killNum) or 0',
   '      out[#out + 1] = "{"..q.."id"..q..":"..q..tostring(p.id or pid)..q..","..q.."name"..q..":"..q..nm..q..","..q.."power"..q..":"..tostring(math.floor(tonumber(p.battlePower) or 0))..","..q.."level"..q..":"..tostring(math.floor(tonumber(p.level) or 0))..","..q.."castle"..q..":"..tostring(math.floor(tonumber(m.castleLevel) or 0))..","..q.."rank"..q..":"..tostring(math.floor(tonumber(m.rank) or 0))..","..q.."kills"..q..":"..tostring(math.floor(kn))..","..q.."x"..q..":"..tostring(math.floor(cx))..","..q.."y"..q..":"..tostring(math.floor(cy))..","..q.."sid"..q..":"..tostring(math.floor(cs))..","..q.."logout"..q..":"..tostring(math.floor(tonumber(m.logoutTime) or 0)).."}"',
+  '    end',
+  '  end',
+  '  if not (_G.__sr_my_pid and tonumber(_G.__sr_my_pid) > 0) then',
+  '    local pd = _G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
+  '    local myName = pd and (pd.playerName or pd.name or pd.nickName or pd.nickname)',
+  '    if myName and tostring(myName) ~= "" then',
+  '      for pid2, m2 in pairs(md) do',
+  '        local p2 = m2 and m2.profile',
+  '        if type(p2) == "table" and tostring(p2.name) == tostring(myName) then markSelf(m2, pid2) break end',
+  '      end',
   '    end',
   '  end',
   '  local s = "[" .. table.concat(out, ",") .. "]"',
@@ -318,6 +342,7 @@ const INSTALL_JOIN_CACHE_LUA = [
   '            if type(d.teams) == "table" then for k, v in pairs(d.teams) do _G.__sr_team_cache[tonumber(k) or k] = v end end',
   '            local p0 = tonumber(d.pid)',
   '            if p0 and p0 > 0 then _G.__sr_my_pid = p0 end',
+  '            if p0 and p0 <= 0 and _G.__sr_save_cache then pcall(_G.__sr_save_cache) end',
   '          end',
   '        end',
   '      end',
@@ -335,6 +360,22 @@ const INSTALL_JOIN_CACHE_LUA = [
   '          if type(m0) == "table" and (m0.isSelf or m0.self or (m0.profile and (m0.profile.isSelf or m0.profile.self))) then',
   '            local id0 = tonumber(m0.profile and m0.profile.id or k0)',
   '            if id0 and id0 > 0 then _G.__sr_my_pid = id0 break end',
+  '          end',
+  '        end',
+  '      end',
+  '    end',
+  '    if not (_G.__sr_my_pid and tonumber(_G.__sr_my_pid) > 0) then',
+  '      local pdN = _G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
+  '      local myName0 = pdN and (pdN.playerName or pdN.name or pdN.nickName or pdN.nickname)',
+  '      if myName0 and tostring(myName0) ~= "" then',
+  '        local mdN = _G.Data and _G.Data.AllianceData and _G.Data.AllianceData.member and _G.Data.AllianceData.member.memberDic',
+  '        if type(mdN) == "table" then',
+  '          for kN, mN in pairs(mdN) do',
+  '            local pN = mN and mN.profile',
+  '            if type(pN) == "table" and tostring(pN.name) == tostring(myName0) then',
+  '              local idN = tonumber(pN.id or kN)',
+  '              if idN and idN > 0 then _G.__sr_my_pid = idN break end',
+  '            end',
   '          end',
   '        end',
   '      end',
@@ -559,41 +600,10 @@ const AUTOASSAULT_SCAN_LUA = [
   '    if type(p) == "table" and (p.isSelf or p.self) then return true end',
   '    return false',
   '  end',
-  '  local function resolveMyPlayerId()',
-  '    if tonumber(_G.__sr_my_pid) and tonumber(_G.__sr_my_pid) <= 0 then _G.__sr_my_pid = nil end',
-  '    if tonumber(_G.__sr_aa_my_pid) and tonumber(_G.__sr_aa_my_pid) <= 0 then _G.__sr_aa_my_pid = nil end',
-  '    local pid = tonumber(_G.__sr_aa_my_pid)',
-  '    if pid and pid > 0 then return pid end',
+  '  local function resolvePlayerName()',
   '    local pd = _G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
-  '    if type(pd) == "table" then',
-  '      pid = tonumber(pd.playerId or pd.id or pd.uid or pd.roleId)',
-  '    end',
-  '    local cached = tonumber(_G.__sr_my_pid)',
-  '    if (not pid or pid <= 0) and cached and cached > 0 then pid = cached end',
-  '    if not pid or pid <= 0 then',
-  '      local md = memberDic()',
-  '      if type(md) == "table" then',
-  '        for k, m in pairs(md) do',
-  '          if memberIsSelf(m) then',
-  '            pid = tonumber(m.profile and m.profile.id or k)',
-  '            break',
-  '          end',
-  '        end',
-  '      end',
-  '    end',
-  '    if not pid or pid <= 0 then',
-  '      local ad = _G.Data and _G.Data.AllianceData',
-  '      local me = ad and (ad.myMember or ad.selfMember or (ad.member and ad.member.self))',
-  '      if type(me) == "table" then',
-  '        pid = tonumber(me.profile and me.profile.id or me.playerId or me.id)',
-  '      end',
-  '    end',
-  '    if pid and pid > 0 then',
-  '      _G.__sr_my_pid = pid',
-  '      _G.__sr_aa_my_pid = pid',
-  '      return pid',
-  '    end',
-  '    return nil',
+  '    if type(pd) ~= "table" then return nil end',
+  '    return pd.playerName or pd.name or pd.nickName or pd.nickname',
   '  end',
   '  local function ptFromMember(m)',
   '    local cc = m and m.cityCoords',
@@ -616,17 +626,111 @@ const AUTOASSAULT_SCAN_LUA = [
   '    end',
   '    return m',
   '  end',
+  '  local function applySelfId(pid, m)',
+  '    pid = tonumber(pid)',
+  '    if not pid or pid <= 0 then return nil end',
+  '    _G.__sr_my_pid = pid',
+  '    _G.__sr_aa_my_pid = pid',
+  '    if type(m) == "table" then',
+  '      local pt = ptFromMember(m)',
+  '      if pt then _G.__sr_my_castle = pt end',
+  '    end',
+  '    return pid',
+  '  end',
+  '  local function selfFromFile()',
+  '    local rf = io.open(' + SELF_PLAYER_FILE_LUA + ', "r")',
+  '    if not rf then return nil end',
+  '    local s = rf:read("*a") rf:close()',
+  '    if not s or #s < 5 then return nil end',
+  '    local q = string.char(34)',
+  '    local id = tonumber(s:match(q .. "id" .. q .. ":" .. q .. "(%d+)" .. q))',
+  '    local x = tonumber(s:match(q .. "x" .. q .. ":(%-?%d+)"))',
+  '    local y = tonumber(s:match(q .. "y" .. q .. ":(%-?%d+)"))',
+  '    local sid = tonumber(s:match(q .. "sid" .. q .. ":(%-?%d+)"))',
+  '    if id and id > 0 and x and y and x > 0 and y > 0 then',
+  '      _G.__sr_my_castle = { x = x, y = y, sid = sid or 0 }',
+  '    end',
+  '    if id and id > 0 then return applySelfId(id, memberRecord(id)) end',
+  '    return nil',
+  '  end',
+  '  local function resolveMyPlayerId()',
+  '    if tonumber(_G.__sr_my_pid) and tonumber(_G.__sr_my_pid) <= 0 then _G.__sr_my_pid = nil end',
+  '    if tonumber(_G.__sr_aa_my_pid) and tonumber(_G.__sr_aa_my_pid) <= 0 then _G.__sr_aa_my_pid = nil end',
+  '    local cfgMy = cfg and tonumber(cfg.myPlayerId)',
+  '    if cfgMy and cfgMy > 0 then return applySelfId(cfgMy, memberRecord(cfgMy)) end',
+  '    local pid = tonumber(_G.__sr_aa_my_pid)',
+  '    if pid and pid > 0 then return pid end',
+  '    pid = selfFromFile()',
+  '    if pid and pid > 0 then return pid end',
+  '    local pd = _G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
+  '    if type(pd) == "table" then',
+  '      pid = tonumber(pd.playerId or pd.id or pd.uid or pd.roleId)',
+  '    end',
+  '    local cached = tonumber(_G.__sr_my_pid)',
+  '    if (not pid or pid <= 0) and cached and cached > 0 then pid = cached end',
+  '    if not pid or pid <= 0 then',
+  '      local md = memberDic()',
+  '      if type(md) == "table" then',
+  '        for k, m in pairs(md) do',
+  '          if memberIsSelf(m) then',
+  '            pid = tonumber(m.profile and m.profile.id or k)',
+  '            break',
+  '          end',
+  '        end',
+  '      end',
+  '    end',
+  '    if not pid or pid <= 0 then',
+  '      local myName = resolvePlayerName()',
+  '      if myName and tostring(myName) ~= "" then',
+  '        local md = memberDic()',
+  '        if type(md) == "table" then',
+  '          for k, m in pairs(md) do',
+  '            local p = m and m.profile',
+  '            if type(p) == "table" and tostring(p.name) == tostring(myName) then',
+  '              pid = tonumber(p.id or k)',
+  '              break',
+  '            end',
+  '          end',
+  '        end',
+  '      end',
+  '    end',
+  '    if not pid or pid <= 0 then',
+  '      local ad = _G.Data and _G.Data.AllianceData',
+  '      local me = ad and (ad.myMember or ad.selfMember or (ad.member and ad.member.self))',
+  '      if type(me) == "table" then',
+  '        pid = tonumber(me.profile and me.profile.id or me.playerId or me.id)',
+  '      end',
+  '    end',
+  '    if pid and pid > 0 then',
+  '      return applySelfId(pid, memberRecord(pid))',
+  '    end',
+  '    return nil',
+  '  end',
   '  local function selfMemberRecord()',
   '    local md = memberDic()',
   '    if type(md) ~= "table" then return nil end',
   '    local pid = resolveMyPlayerId()',
   '    if pid and pid > 0 then return memberRecord(pid) end',
+  '    local myName = resolvePlayerName()',
+  '    if myName and tostring(myName) ~= "" then',
+  '      for k, m in pairs(md) do',
+  '        local p = m and m.profile',
+  '        if type(p) == "table" and tostring(p.name) == tostring(myName) then return m end',
+  '      end',
+  '    end',
   '    for k, m in pairs(md) do',
   '      if memberIsSelf(m) then return m end',
   '    end',
   '    return nil',
   '  end',
   '  local function castlePt()',
+  '    if cfg then',
+  '      local cx = tonumber(cfg.myCastleX)',
+  '      local cy = tonumber(cfg.myCastleY)',
+  '      if cx and cy and cx > 0 and cy > 0 then',
+  '        return { x = cx, y = cy, sid = tonumber(cfg.myCastleSid) or 0 }',
+  '      end',
+  '    end',
   '    local pd = _G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
   '    if type(pd) == "table" then',
   '      local pt = pd.castlePoint or pd.homePoint or pd.basePoint or pd.point',
@@ -2721,7 +2825,22 @@ function luaEscape(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
+function readSelfPlayerForCfg() {
+  const out = { id: 0, cx: 0, cy: 0, cs: 0 };
+  try {
+    const text = readFileUtf8(SELF_PLAYER_FILE, 512);
+    if (!text || !text.trim()) return out;
+    const o = JSON.parse(text);
+    out.id = parseInt(o.id, 10) || 0;
+    out.cx = parseInt(o.x, 10) || 0;
+    out.cy = parseInt(o.y, 10) || 0;
+    out.cs = parseInt(o.sid, 10) || 0;
+  } catch (e) {}
+  return out;
+}
+
 function buildAutoAssaultCfgLua() {
+  const self = readSelfPlayerForCfg();
   const squadParts = autoAssaultSquads.map(function (s) {
     return '{index=' + s.index + ',powerMin=' + s.powerMin + ',powerMax=' + s.powerMax + '}';
   });
@@ -2763,6 +2882,14 @@ function buildAutoAssaultCfgLua() {
     idParts.join(',') +
     '},squads={' +
     squadParts.join(',') +
+    '},myPlayerId=' +
+    self.id +
+    ',myCastleX=' +
+    self.cx +
+    ',myCastleY=' +
+    self.cy +
+    ',myCastleSid=' +
+    self.cs +
     '}} end)'
   );
 }
@@ -2930,10 +3057,10 @@ function tickAutoAssault() {
   autoAssaultLastTick = now;
   try {
     ensureAutoAssaultScanFile();
-    const cfgLua = buildAutoAssaultCfgLua();
-    // Atomic cfg+scan+match-poll on Unity main thread. Inlined ~17KB scan via DoString aborts;
-    // loadfile from squadrelay_aa_scan.lua is stable (same pattern as eval channel).
+    // Refresh self pid/castle from roster before each scan (assault may run before periodic roster tick).
     mainThreadFlyQueue.push(function () {
+      doStringNow(ALLIANCE_ROSTER_LUA);
+      const cfgLua = buildAutoAssaultCfgLua();
       doStringNow(cfgLua);
       const scanOk = doStringNow(AUTOASSAULT_SCAN_RUN_LUA);
       if (!scanOk) {
