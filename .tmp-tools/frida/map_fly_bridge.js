@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '36';
+const BRIDGE_VERSION = '37';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -780,13 +780,13 @@ const AUTOASSAULT_SCAN_LUA = [
   '    local joinPt = creatorRallyPt(war)',
   '    if type(joinPt) ~= "table" or not joinPt.x or not joinPt.y then goto continue end',
   '    local distC = cp and cheb(cp.x, cp.y, joinPt.x, joinPt.y) or -1',
-  '    if maxDC > 0 and (not cp or distC < 0 or distC > maxDC) then goto continue end',
+  '    if maxDC > 0 and cp and distC >= 0 and distC > maxDC then goto continue end',
   '    local distT = -1',
   '    local tp = war.targetPoint',
   '    if type(tp) == "table" and tp.x and tp.y then',
   '      distT = cp and cheb(cp.x, cp.y, tp.x, tp.y) or -1',
   '    end',
-  '    if maxDT > 0 and (not cp or distT < 0 or distT > maxDT) then goto continue end',
+  '    if maxDT > 0 and cp and distT >= 0 and distT > maxDT then goto continue end',
   '    local pow = targetPower(row)',
   '    local pickedIdx = nil',
   '    local squads = cfg.squads',
