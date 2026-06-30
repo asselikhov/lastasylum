@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '26';
+const BRIDGE_VERSION = '27';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -402,11 +402,20 @@ const AUTOASSAULT_SCAN_LUA = [
   '    for i = 1, #types do if tostring(types[i]) == t then return true end end',
   '    return false',
   '  end',
-  '  local function allowedName(name)',
+  '  local function allowedCreator(war)',
   '    local names = cfg.allowedNames',
-  '    if type(names) ~= "table" or #names == 0 then return true end',
-  '    name = tostring(name or "")',
-  '    for i = 1, #names do if tostring(names[i]) == name then return true end end',
+  '    local ids = cfg.allowedUserIds',
+  '    local hasNames = type(names) == "table" and #names > 0',
+  '    local hasIds = type(ids) == "table" and #ids > 0',
+  '    if not hasNames and not hasIds then return true end',
+  '    if hasNames then',
+  '      local name = tostring(war.playerName or "")',
+  '      for i = 1, #names do if tostring(names[i]) == name then return true end end',
+  '    end',
+  '    if hasIds then',
+  '      local pid = tonumber(war.playerId)',
+  '      if pid then for i = 1, #ids do if tonumber(ids[i]) == pid then return true end end end',
+  '    end',
   '    return false',
   '  end',
   '  local function squadOk(pow, idx)',
@@ -510,6 +519,8 @@ const AUTOASSAULT_SCAN_LUA = [
   '    return false',
   '  end',
   '  local function myPlayerId()',
+  '    local cached = tonumber(_G.__sr_my_pid)',
+  '    if cached and cached > 0 then return cached end',
   '    local pd = _G.Data and _G.Data.PlayerData',
   '    if not pd then return nil end',
   '    return tonumber(pd.playerId or pd.id or pd.uid or pd.roleId)',
@@ -570,7 +581,7 @@ const AUTOASSAULT_SCAN_LUA = [
   '    local maxM = atk and tonumber(atk.maxMember) or 0',
   '    local cnt = memberCount(atk)',
   '    if maxM > 0 and cnt >= maxM then goto continue end',
-  '    if not allowedName(war.playerName) then goto continue end',
+  '    if not allowedCreator(war) then goto continue end',
   '    local row = cfgRow(war.targetLairId)',
   '    local ttype = classify(war, row)',
   '    if not typeAllowed(ttype) then goto continue end',
@@ -682,6 +693,7 @@ let autoAssaultEnabled = false;
 let autoAssaultMaxDistance = 500;
 let autoAssaultSquads = [];
 let autoAssaultAllowedNames = [];
+let autoAssaultAllowedUserIds = [];
 let autoAssaultTargetTypes = [];
 let autoAssaultLevelMin = 0;
 let autoAssaultLevelMax = 0;
@@ -2243,6 +2255,9 @@ function buildAutoAssaultCfgLua() {
   const typeParts = autoAssaultTargetTypes.map(function (t) {
     return '"' + luaEscape(t) + '"';
   });
+  const idParts = autoAssaultAllowedUserIds.map(function (id) {
+    return '"' + luaEscape(String(id)) + '"';
+  });
   return (
     'pcall(function() _G.__sr_aa_cfg={enabled=' +
     (autoAssaultEnabled ? 'true' : 'false') +
@@ -2264,6 +2279,8 @@ function buildAutoAssaultCfgLua() {
     typeParts.join(',') +
     '},allowedNames={' +
     nameParts.join(',') +
+    '},allowedUserIds={' +
+    idParts.join(',') +
     '},squads={' +
     squadParts.join(',') +
     '}} end)'
@@ -2320,6 +2337,15 @@ function pollAutoAssaultConfig() {
           if (n && String(n).trim()) autoAssaultAllowedNames.push(String(n).trim());
         }
       }
+      autoAssaultAllowedUserIds = [];
+      if (cfg.allowedUserIds && cfg.allowedUserIds.length) {
+        for (let u = 0; u < cfg.allowedUserIds.length; u++) {
+          const id = cfg.allowedUserIds[u];
+          if (id !== undefined && id !== null && String(id).trim()) {
+            autoAssaultAllowedUserIds.push(String(id).trim());
+          }
+        }
+      }
       log(
         'autoassault config: enabled=' +
           autoAssaultEnabled +
@@ -2328,7 +2354,9 @@ function pollAutoAssaultConfig() {
           ' squads=' +
           autoAssaultSquads.length +
           ' names=' +
-          autoAssaultAllowedNames.length,
+          autoAssaultAllowedNames.length +
+          ' userIds=' +
+          autoAssaultAllowedUserIds.length,
       );
       return;
     } catch (e) {
