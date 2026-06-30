@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '24';
+const BRIDGE_VERSION = '25';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -641,6 +641,7 @@ let actionBaselineReady = false;
 let liveLuaEnv = ptr(0);
 let liveLuaEnvCapturedMs = 0;
 let joinCacheEnvMs = 0;
+let joinCacheLastInstallAt = 0;
 let doStringLogUntil = 0;
 let cachedAppFrame = ptr(0);
 let mainThreadFlyQueue = [];
@@ -2316,22 +2317,13 @@ function tickAutoAssault() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
   if (liveLuaEnvCapturedMs === 0 || now - liveLuaEnvCapturedMs < AUTOASSAULT_STARTUP_DELAY_MS) return;
-  if (!autoAssaultCfgPushed) {
-    try {
-      runLua(buildAutoAssaultCfgLua());
-      autoAssaultCfgPushed = true;
-    } catch (e) {
-      log('autoassault cfg push error: ' + e);
-    }
-  }
-  // Устанавливаем кэш team по реальным вступлениям независимо от enabled,
-  // чтобы состав успел закэшироваться (в т.ч. при ручных вступлениях игрока).
-  // Переустанавливаем при пересъёме Lua-окружения (рестарт игры обнуляет _G).
-  if (joinCacheEnvMs !== liveLuaEnvCapturedMs) {
+  // Re-arm join-cache hook periodically (idempotent in lua). The game recreates its Lua
+  // state during login/scene transitions, wiping _G.__sr_aa_cfg and TOP.__sr_dsm_orig; a
+  // one-shot install keyed only on liveLuaEnvCapturedMs never runs again after that.
+  if (now - joinCacheLastInstallAt >= 2000) {
+    joinCacheLastInstallAt = now;
     try {
       runLua(INSTALL_JOIN_CACHE_LUA);
-      joinCacheEnvMs = liveLuaEnvCapturedMs;
-      log('join team cache installed');
     } catch (e) {
       log('join cache install error: ' + e);
     }
@@ -2342,6 +2334,8 @@ function tickAutoAssault() {
   if (now - autoAssaultLastTick < cooldownMs) return;
   autoAssaultLastTick = now;
   try {
+    // Re-push cfg every scan: __sr_aa_cfg lives in Lua _G and is lost on state resets.
+    runLua(buildAutoAssaultCfgLua());
     runLua(AUTOASSAULT_SCAN_LUA);
   } catch (e) {
     log('autoassault scan error: ' + e);
