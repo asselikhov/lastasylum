@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '22';
+const BRIDGE_VERSION = '23';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -470,21 +470,30 @@ const AUTOASSAULT_SCAN_LUA = [
   '    end',
   '    return 0',
   '  end',
-  // Марш до точки сбора при вступлении в ралли ~60 с (marchDuration из захваченного
-  // пакета), не dist*1.5 сек/клетку — та формула давала сотни секунд на типичной
-  // дистанции и при minRemainingSec=59 отсеивала ВСЕ штурмы дальше ~160 клеток.
-  '  local function estJoinMarchSec(war)',
-  '    return 60',
+  // «Время до старта»: minRem — не вступать, если до отправления останется МЕНЬШЕ
+  // minRem секунд (слишком поздно). Для занятого отряда: remWhenReady = remSec − busySec.
+  // Марш до точки сбора идёт внутри окна формирования — отдельно не вычитаем.
+  // 1-мин штурмы (окно ~60с): если minRem=59, без cap вступление возможно ~1 сек —
+  // cap effectiveMinRem для коротких окон (≤120с): min(userMinRem, 50% окна).
+  '  local function formationWindowSec(war)',
+  '    local st = tonumber(war.rallyStartTime)',
+  '    local en = tonumber(war.rallyEndTime)',
+  '    if st and en and en > st then return (en - st) / 1000 end',
+  '    return 0',
   '  end',
-  // «Время до старта»: проверяем не «сейчас», а момент когда отряд сможет вступить
-  // (освободится + дойдёт до точки сбора). Иначе занятый отряд «пропускает» штурм,
-  // пока тикает таймер, хотя к моменту освобождения условие ещё выполнялось бы.
+  '  local function effectiveMinRem(war)',
+  '    if minRem <= 0 then return 0 end',
+  '    local w = formationWindowSec(war)',
+  '    if w > 0 and w <= 120 then return math.min(minRem, math.max(5, math.floor(w * 0.5))) end',
+  '    return minRem',
+  '  end',
   '  local function remOkForSquad(war, idx)',
-  '    if minRem <= 0 then return true end',
+  '    local eff = effectiveMinRem(war)',
+  '    if eff <= 0 then return true end',
   '    if not war.rallyEndTime then return true end',
   '    local remSec = (tonumber(war.rallyEndTime) - os.time() * 1000) / 1000',
-  '    local remAtJoin = remSec - troopBusySec(idx) - estJoinMarchSec(war)',
-  '    return remAtJoin >= minRem',
+  '    local remWhenReady = remSec - troopBusySec(idx)',
+  '    return remWhenReady >= eff',
   '  end',
   '  local function troopFree(idx)',
   '    local TM = package.loaded["AbyssEmpire.Logic.Troop.TroopManager"]',
