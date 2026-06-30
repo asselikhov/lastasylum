@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '42';
+const BRIDGE_VERSION = '43';
 const LIB = 'libil2cpp.so';
 const TRIGGER_FILE = '/data/data/com.phs.global/files/squadrelay_map_fly.json';
 const TRIGGER_SDCARD = '/sdcard/Download/squadrelay_map_fly.json';
@@ -149,13 +149,11 @@ const AUTOHELP_FILE = '/data/data/com.phs.global/files/squadrelay_autohelp.json'
 const AUTOHELP_SDCARD = '/sdcard/Download/squadrelay_autohelp.json';
 const AUTOHELP_MIN_INTERVAL_MS = 5000;
 const AUTOHELP_MAX_INTERVAL_MS = 600000;
-// Startup delay (ms) measured from when the game's Lua VM is first captured. We run NO auto-help
-// Lua at all until this elapses. Running a runLua (DoString on the Unity main thread) during the
-// login / post-login alliance-sync window can corrupt the game's union message handling
-// (union.lua funcReceive throws → "Socket连接断开" → connection drops, stuck on loading). So we skip
-// the fragile login window, then install the event hook once. For a mid-session toggle the VM was
-// captured long ago, so auto-help starts almost immediately.
-const AUTOHELP_STARTUP_DELAY_MS = 30000;
+// Delay before ANY background runLua (share/bookmark hooks, auto-assault, roster, auto-help).
+// Running DoString on the Unity main thread during login / alliance-sync corrupts Lua loading
+// (PlayerData.bytes missing → infinite loading screen). Auto-help already used 30s; v41 lowered
+// assault to 2s but share/bookmark hooks had no delay at all — same failure mode.
+const BRIDGE_LUA_STARTUP_DELAY_MS = 30000;
 
 // Event-driven auto-help. Captured live: tapping the real "Помощь" button sends `UnionHelpAllC2S`
 // (plus `GetUnionHelpListC2S` to refresh the list). Instead of polling, we wrap the alliance help
@@ -215,7 +213,6 @@ const AUTOHELP_DISABLE_LUA = 'pcall(function() _G.__sr_help_enabled = false end)
 
 const AUTOASSAULT_FILE = '/data/data/com.phs.global/files/squadrelay_autoassault.json';
 const AUTOASSAULT_SDCARD = '/sdcard/Download/squadrelay_autoassault.json';
-const AUTOASSAULT_STARTUP_DELAY_MS = 2000;
 const AUTOASSAULT_SCAN_INTERVAL_MS = 1500;
 // Реальное вступление включено. Доп. защита: авто-вступление шлёт пакет только если
 // для нужного teamIndex есть кэш состава (build_team != nil) — т.е. после хотя бы
@@ -943,6 +940,10 @@ function writeFileEmpty(path) {
 }
 
 const _diagDone = {};
+function bridgeLuaStartupReady(now) {
+  return liveLuaEnvCapturedMs > 0 && now - liveLuaEnvCapturedMs >= BRIDGE_LUA_STARTUP_DELAY_MS;
+}
+
 function diagOnce(key, msg) {
   if (_diagDone[key]) return;
   _diagDone[key] = true;
@@ -2443,7 +2444,7 @@ function tickAutoHelp() {
   // loading). liveLuaEnvCapturedMs is set as soon as the Lua VM is captured (still on the loading
   // screen), so this skips the whole fragile login window. Mid-session toggles pass instantly
   // because the VM was captured long ago.
-  if (liveLuaEnvCapturedMs === 0 || now - liveLuaEnvCapturedMs < AUTOHELP_STARTUP_DELAY_MS) return;
+  if (!bridgeLuaStartupReady(now)) return;
   if (autoHelpEnabled) {
     // (Re)install/maintain the event hook every interval. After the first successful wrap this is a
     // near no-op (the real work is event-driven inside the game, not here). Re-running also
@@ -2628,7 +2629,7 @@ function pollAutoAssaultConfig() {
 function tickAutoAssault() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (liveLuaEnvCapturedMs === 0 || now - liveLuaEnvCapturedMs < AUTOASSAULT_STARTUP_DELAY_MS) return;
+  if (!bridgeLuaStartupReady(now)) return;
   pollAutoAssaultConfig();
   const fileEnabled = peekAutoAssaultFileEnabled();
   if (fileEnabled === true) autoAssaultEnabled = true;
@@ -2704,7 +2705,7 @@ function sendAssaultJoinBroadcast(payload) {
 function tickAllianceRoster() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
-  if (liveLuaEnvCapturedMs === 0 || now - liveLuaEnvCapturedMs < AUTOASSAULT_STARTUP_DELAY_MS) return;
+  if (!bridgeLuaStartupReady(now)) return;
   if (now - allianceRosterLastTick < ALLIANCE_ROSTER_SCAN_INTERVAL_MS) return;
   allianceRosterLastTick = now;
   try {
@@ -2941,6 +2942,7 @@ let lastShareText = '';
 function maybeInstallShareHook() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
+  if (!bridgeLuaStartupReady(now)) return;
   // Re-arm continuously: the game recreates its Lua state at runtime, wiping the
   // OnEnter/OnExit wrappers. The per-idx guard in SHARE_HOOK_LUA makes re-runs
   // idempotent within a state and re-installs on the fresh idx after a reset.
@@ -3007,6 +3009,7 @@ let lastBookmarkText = '';
 function maybeInstallBookmarkHook() {
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
+  if (!bridgeLuaStartupReady(now)) return;
   // Re-arm continuously (see maybeInstallShareHook): survives Lua state resets.
   const interval = bookmarkHookOk ? 2000 : 100;
   if (now - lastBookmarkInstallAt < interval) return;
