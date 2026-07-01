@@ -429,6 +429,99 @@
     return-void
 .end method
 
+.method public static writeCityRelocate(Landroid/content/Context;Ljava/lang/String;III)V
+    .locals 4
+
+    if-eqz p1, :cond_end
+
+    invoke-virtual {p1}, Ljava/lang/String;->trim()Ljava/lang/String;
+
+    move-result-object p1
+
+    invoke-virtual {p1}, Ljava/lang/String;->isEmpty()Z
+
+    move-result v0
+
+    if-nez v0, :cond_end
+
+    :try_start_0
+    new-instance v0, Lorg/json/JSONObject;
+
+    invoke-direct {v0}, Lorg/json/JSONObject;-><init>()V
+
+    const-string v1, "mode"
+
+    invoke-virtual {v0, v1, p1}, Lorg/json/JSONObject;->put(Ljava/lang/String;Ljava/lang/Object;)Lorg/json/JSONObject;
+
+    const-string v1, "x"
+
+    invoke-virtual {v0, v1, p2}, Lorg/json/JSONObject;->put(Ljava/lang/String;I)Lorg/json/JSONObject;
+
+    const-string v1, "y"
+
+    invoke-virtual {v0, v1, p3}, Lorg/json/JSONObject;->put(Ljava/lang/String;I)Lorg/json/JSONObject;
+
+    const-string v1, "sid"
+
+    invoke-virtual {v0, v1, p4}, Lorg/json/JSONObject;->put(Ljava/lang/String;I)Lorg/json/JSONObject;
+
+    const-string v1, "ts"
+
+    invoke-static {}, Ljava/lang/System;->currentTimeMillis()J
+
+    move-result-wide v2
+
+    invoke-virtual {v0, v1, v2, v3}, Lorg/json/JSONObject;->put(Ljava/lang/String;J)Lorg/json/JSONObject;
+
+    new-instance v1, Ljava/io/File;
+
+    invoke-virtual {p0}, Landroid/content/Context;->getFilesDir()Ljava/io/File;
+
+    move-result-object v2
+
+    const-string v3, "squadrelay_city_relocate.json"
+
+    invoke-direct {v1, v2, v3}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+
+    new-instance v2, Ljava/io/FileOutputStream;
+
+    invoke-direct {v2, v1}, Ljava/io/FileOutputStream;-><init>(Ljava/io/File;)V
+
+    invoke-virtual {v0}, Lorg/json/JSONObject;->toString()Ljava/lang/String;
+
+    move-result-object v0
+
+    invoke-virtual {v0}, Ljava/lang/String;->getBytes()[B
+
+    move-result-object v0
+
+    invoke-virtual {v2, v0}, Ljava/io/FileOutputStream;->write([B)V
+
+    invoke-virtual {v2}, Ljava/io/FileOutputStream;->close()V
+
+    const-string v0, "MapFlyReceiver"
+
+    const-string v1, "city-relocate trigger written"
+
+    invoke-static {v0, v1}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+    :try_end_0
+    .catch Ljava/lang/Exception; {:try_start_0 .. :try_end_0} :catch_0
+
+    return-void
+
+    :catch_0
+    move-exception p0
+
+    const-string p1, "MapFlyReceiver"
+
+    const-string p2, "city-relocate write failed"
+
+    invoke-static {p1, p2, p0}, Landroid/util/Log;->e(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I
+
+    :cond_end
+    return-void
+.end method
+
 
 # virtual methods
 .method public onReceive(Landroid/content/Context;Landroid/content/Intent;)V
@@ -450,7 +543,7 @@
 
     move-result v0
 
-    if-eqz v0, :cond_shareclose
+    if-eqz v0, :cond_cityrelocate
 
     const-string v0, "ocPlayerId"
 
@@ -465,6 +558,47 @@
     move-result-object v1
 
     invoke-static {p1, v0, v1}, Lcom/lastasylum/alliance/game/MapFlyReceiver;->writeOpenChat(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V
+
+    return-void
+
+    :cond_cityrelocate
+    const-string v0, "cityrelocate"
+
+    const/4 v1, 0x0
+
+    invoke-virtual {p2, v0, v1}, Landroid/content/Intent;->getBooleanExtra(Ljava/lang/String;Z)Z
+
+    move-result v0
+
+    if-eqz v0, :cond_shareclose
+
+    const-string v0, "crMode"
+
+    invoke-virtual {p2, v0}, Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;
+
+    move-result-object v0
+
+    const-string v1, "crX"
+
+    const/4 v2, -0x1
+
+    invoke-virtual {p2, v1, v2}, Landroid/content/Intent;->getIntExtra(Ljava/lang/String;I)I
+
+    move-result v1
+
+    const-string v3, "crY"
+
+    invoke-virtual {p2, v3, v2}, Landroid/content/Intent;->getIntExtra(Ljava/lang/String;I)I
+
+    move-result v3
+
+    const-string v4, "crSid"
+
+    invoke-virtual {p2, v4, v2}, Landroid/content/Intent;->getIntExtra(Ljava/lang/String;I)I
+
+    move-result p2
+
+    invoke-static {p1, v0, v1, v3, p2}, Lcom/lastasylum/alliance/game/MapFlyReceiver;->writeCityRelocate(Landroid/content/Context;Ljava/lang/String;III)V
 
     return-void
 

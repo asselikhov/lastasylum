@@ -370,6 +370,30 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().putString(KEY_ALLIANCE_ROSTER_JSON, json).apply()
     }
 
+    /** JSON пункта сбора альянса из игры: `{"x","y","sid"}`. */
+    fun getAllianceRallyJson(): String? = prefs.getString(KEY_ALLIANCE_RALLY_JSON, null)
+
+    fun setAllianceRallyJson(json: String) {
+        prefs.edit().putString(KEY_ALLIANCE_RALLY_JSON, json).apply()
+    }
+
+    fun getDirectTeleportServer(): Int? =
+        prefs.getInt(KEY_DIRECT_TELEPORT_SERVER, -1).takeIf { it > 0 }
+
+    fun getDirectTeleportX(): Int? =
+        prefs.getInt(KEY_DIRECT_TELEPORT_X, -1).takeIf { it > 0 }
+
+    fun getDirectTeleportY(): Int? =
+        prefs.getInt(KEY_DIRECT_TELEPORT_Y, -1).takeIf { it > 0 }
+
+    fun setDirectTeleportCoords(x: Int, y: Int, serverNumber: Int) {
+        prefs.edit()
+            .putInt(KEY_DIRECT_TELEPORT_X, x)
+            .putInt(KEY_DIRECT_TELEPORT_Y, y)
+            .putInt(KEY_DIRECT_TELEPORT_SERVER, serverNumber)
+            .apply()
+    }
+
     /** Индексы отрядов 0…2 (в игре teamIndex), CSV «0,1,2». */
     fun getAutoAssaultSquads(): Set<Int> = parseCsvInts(prefs.getString(KEY_AUTO_ASSAULT_SQUADS, "0,1,2"))
         .filter { it in AUTO_ASSAULT_SQUAD_MIN..AUTO_ASSAULT_SQUAD_MAX }
@@ -867,6 +891,10 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_AUTO_ASSAULT_MAX_CONCURRENT = "auto_assault_max_concurrent"
         private const val KEY_AUTO_ASSAULT_JOIN_LOG = "auto_assault_join_log"
         private const val KEY_ALLIANCE_ROSTER_JSON = "alliance_roster_json"
+        private const val KEY_ALLIANCE_RALLY_JSON = "alliance_rally_json"
+        private const val KEY_DIRECT_TELEPORT_SERVER = "direct_teleport_server"
+        private const val KEY_DIRECT_TELEPORT_X = "direct_teleport_x"
+        private const val KEY_DIRECT_TELEPORT_Y = "direct_teleport_y"
         const val AUTO_ASSAULT_TYPE_MONSTER = "monster"
         const val AUTO_ASSAULT_TYPE_PLAYER = "player"
         const val AUTO_ASSAULT_TYPE_CITY = "city"

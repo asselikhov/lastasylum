@@ -849,6 +849,17 @@
     <string name="overlay_app_update_gate_cd">Доступно обновление приложения</string>
     <string name="overlay_app_update_downloading">Загрузка обновления…</string>
     <string name="overlay_hud_alliance_chat_cd">Чат альянса, непрочитанные: %1$d</string>
+    <string name="overlay_hud_teleport_cd">Перемещение территории</string>
+    <string name="overlay_teleport_title">Перемещение</string>
+    <string name="overlay_teleport_direct_section">Прямое перемещение</string>
+    <string name="overlay_teleport_direct_action">Прямое перемещение</string>
+    <string name="overlay_teleport_alliance_action">Перемещение альянса</string>
+    <string name="overlay_teleport_rally_label">Пункт сбора</string>
+    <string name="overlay_teleport_rally_coords">#%1$d  X:%2$d  Y:%3$d</string>
+    <string name="overlay_teleport_rally_unknown">Координаты пока не получены из игры</string>
+    <string name="overlay_teleport_rally_fly">Перелёт</string>
+    <string name="overlay_teleport_sent">Команда перемещения отправлена в игру</string>
+    <string name="overlay_teleport_map_sent">Перелёт к пункту сбора</string>
     <string name="overlay_hud_news_cd">Новости команды: %1$d</string>
     <string name="overlay_panel_unread_subtitle">%1$d непрочитанных</string>
     <string name="overlay_panel_unread_subtitle_max">99+ непрочитанных</string>

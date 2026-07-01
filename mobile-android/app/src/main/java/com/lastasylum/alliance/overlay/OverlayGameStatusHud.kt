@@ -18,6 +18,7 @@ data class OverlayGameStatusHudState(
 fun OverlayGameStatusHud(
     state: OverlayGameStatusHudState,
     onMailClick: () -> Unit,
+    onTeleportClick: () -> Unit,
     onNewsClick: () -> Unit,
     onForumClick: () -> Unit,
     onAppUpdateClick: () -> Unit,
@@ -58,6 +59,13 @@ fun OverlayGameStatusHud(
                     state.allianceChatUnread,
                 ),
                 onClick = onMailClick,
+            )
+            OverlayGameHudChip(
+                icon = OverlayHudIcons.teleport,
+                accent = OverlayHudChipAccent.Teleport,
+                badgeCount = 0,
+                contentDescription = stringResource(R.string.overlay_hud_teleport_cd),
+                onClick = onTeleportClick,
             )
         }
     }

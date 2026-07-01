@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '59';
+const BRIDGE_VERSION = '60';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -26,6 +26,15 @@ const LOG_SDCARD = '/sdcard/Download/la_map_fly_bridge.log';
 const OPEN_CHAT_FILE = '/data/data/com.phs.global/files/squadrelay_open_chat.json';
 const OPEN_CHAT_SDCARD = '/sdcard/Download/squadrelay_open_chat.json';
 const CHAT_RE_DUMP = '/sdcard/Download/squadrelay_chat_re.txt';
+
+// Телепорт территории (города): direct = WorldCityRelocateC2S, alliance = RequestRallyPointRelocateC2S.
+const CITY_RELOCATE_FILE = '/data/data/com.phs.global/files/squadrelay_city_relocate.json';
+const CITY_RELOCATE_SDCARD = '/sdcard/Download/squadrelay_city_relocate.json';
+
+// Пункт сбора альянса (Data.AllianceData.rallyPoint.point) → приложение для оверлея «Перемещение».
+const ALLIANCE_RALLY_FILE = '/data/data/com.phs.global/files/squadrelay_alliance_rally.json';
+const ALLIANCE_RALLY_FILE_LUA = "'" + ALLIANCE_RALLY_FILE + "'";
+const ALLIANCE_RALLY_ACTION = 'com.lastasylum.alliance.action.ALLIANCE_RALLY';
 
 // Канал произвольного Lua для отладки/реверса: приложение/adb пишет Lua-код в файл, мост его
 // выполняет на main-thread (код сам пишет результат через io.open). Срабатывает только при
@@ -311,6 +320,18 @@ const ALLIANCE_ROSTER_LUA = [
   '  end',
   '  local s = "[" .. table.concat(out, ",") .. "]"',
   '  local f = io.open(' + ALLIANCE_ROSTER_FILE_LUA + ', "w") if f then f:write(s) f:close() end',
+  '  local rp = ad and ad.rallyPoint and ad.rallyPoint.point',
+  '  if type(rp) ~= "table" or not rp.x or not rp.y then',
+  '    local ter = ad and ad.territory',
+  '    rp = ter and ter.allianceRallyWorldPoint',
+  '  end',
+  '  if type(rp) == "table" and rp.x and rp.y then',
+  '    local rx = math.floor(tonumber(rp.x) or 0)',
+  '    local ry = math.floor(tonumber(rp.y) or 0)',
+  '    local rs = math.floor(tonumber(rp.sid) or 0)',
+  '    local rf = io.open(' + ALLIANCE_RALLY_FILE_LUA + ', "w")',
+  '    if rf then rf:write("{"..q.."x"..q..":"..tostring(rx)..","..q.."y"..q..":"..tostring(ry)..","..q.."sid"..q..":"..tostring(rs).."}") rf:close() end',
+  '  end',
   'end)',
 ].join('\n');
 // Lightweight self pid/castle resolver (must stay small — large DoString blocks abort the VM).
@@ -1196,6 +1217,9 @@ let activeHijack = null;
 let probeObserveUntil = 0;
 let lastProbeText = '';
 let lastOpenChatText = '';
+let lastCityRelocateText = '';
+let lastAllianceRallyText = '';
+let allianceRallyLastBroadcastMs = 0;
 let lastEvalText = '';
 let actionSeen = {};
 let actionCatchUntil = 0;
@@ -2477,7 +2501,10 @@ let drainScheduled = false;
 function clearTriggerFiles() {
   writeFileEmpty(TRIGGER_FILE);
   writeFileEmpty(TRIGGER_SDCARD);
+  writeFileEmpty(CITY_RELOCATE_FILE);
+  writeFileEmpty(CITY_RELOCATE_SDCARD);
   lastTriggerText = '';
+  lastCityRelocateText = '';
 }
 
 function drainPendingFliesNative() {
@@ -2810,6 +2837,86 @@ function openPrivateChat(pid, name) {
     'end)',
   ].join('\n');
   runLua(code);
+}
+
+// Прямое перемещение территории (расход предмета «Прямое перемещение»).
+// Реверс v1.0.81: Logic.Proto.Send.world.WorldCityRelocateC2S + RelocationType.CITY (=1).
+function cityRelocateDirect(x, y, sid) {
+  const xi = Math.floor(Number(x));
+  const yi = Math.floor(Number(y));
+  const si = Math.floor(Number(sid));
+  if (!xi || !yi || !si) {
+    log('city-relocate direct: invalid coords x=' + x + ' y=' + y + ' sid=' + sid);
+    return;
+  }
+  const code = [
+    'pcall(function()',
+    '  local x=' + xi + ' local y=' + yi + ' local sid=' + si,
+    '  local sw=package.loaded["Logic.Proto.Send.world"]',
+    '  local RT=package.loaded["Logic.Map.WorldMapEnum"] and package.loaded["Logic.Map.WorldMapEnum"].RelocationType',
+    '  local rtype=RT and RT.CITY or 1',
+    '  if not sw or not sw.WorldCityRelocateC2S then return end',
+    '  local pt={x=x,y=y,sid=sid}',
+    '  sw.WorldCityRelocateC2S({point=pt,relocateType=rtype,x=x,y=y,sid=sid}, {})',
+    'end)',
+  ].join('\n');
+  log('city-relocate direct x=' + xi + ' y=' + yi + ' sid=' + si);
+  runLua(code);
+}
+
+// Перемещение альянса (расход предмета «Перемещение альянса») — к зоне альянса / rally.
+// Реверс v1.0.81: Logic.Proto.Send.union_territory.RequestRallyPointRelocateC2S + RelocationType.ALLY_BOSS (=2).
+function cityRelocateAlliance() {
+  const code = [
+    'pcall(function()',
+    '  local ut=package.loaded["Logic.Proto.Send.union_territory"]',
+    '  local RT=package.loaded["Logic.Map.WorldMapEnum"] and package.loaded["Logic.Map.WorldMapEnum"].RelocationType',
+    '  local rtype=RT and RT.ALLY_BOSS or 2',
+    '  if not ut or not ut.RequestRallyPointRelocateC2S then return end',
+    '  ut.RequestRallyPointRelocateC2S({relocateType=rtype,type=rtype}, {})',
+    'end)',
+  ].join('\n');
+  log('city-relocate alliance');
+  runLua(code);
+}
+
+function pollCityRelocateFile() {
+  const now = Date.now();
+  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
+  const paths = [CITY_RELOCATE_FILE, CITY_RELOCATE_SDCARD];
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const text = readFileUtf8(paths[i]);
+      if (!text || !text.trim()) continue;
+      if (text === lastCityRelocateText) return;
+      lastCityRelocateText = text;
+      const modeM = text.match(/"mode"\s*:\s*"([^"]+)"/);
+      const mode = modeM ? modeM[1] : '';
+      log('city-relocate trigger: ' + text.trim());
+      if (mode === 'alliance') {
+        cityRelocateAlliance();
+      } else if (mode === 'direct') {
+        const mx = text.match(/"x"\s*:\s*(-?\d+)/);
+        const my = text.match(/"y"\s*:\s*(-?\d+)/);
+        const ms = text.match(/"sid"\s*:\s*(-?\d+)/);
+        if (mx && my && ms) {
+          cityRelocateDirect(parseInt(mx[1], 10), parseInt(my[1], 10), parseInt(ms[1], 10));
+        } else {
+          log('city-relocate direct parse failed: ' + text.trim());
+        }
+      } else {
+        log('city-relocate unknown mode: ' + mode);
+      }
+      writeFileEmpty(paths[i]);
+      lastCityRelocateText = '';
+      return;
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes('No such file') && !msg.includes('not found')) {
+        log('city-relocate poll error: ' + e);
+      }
+    }
+  }
 }
 
 // Канал произвольного Lua для отладки/реверса: выполняем код из файла (он сам пишет результат).
@@ -3244,6 +3351,7 @@ function tickAllianceRoster() {
     lastAllianceRosterText = text;
     allianceRosterLastBroadcastMs = now;
     sendAllianceRosterBroadcast(text.trim());
+    pollAllianceRallyFile(now);
   } catch (e) {
     const msg = String(e);
     if (!msg.includes('No such file') && !msg.includes('not found')) {
@@ -3270,6 +3378,47 @@ function sendAllianceRosterBroadcast(payload) {
     });
   } catch (e) {
     log('alliance-roster broadcast failed: ' + e);
+  }
+}
+
+const ALLIANCE_RALLY_REBROADCAST_MS = 60000;
+
+function pollAllianceRallyFile(nowMs) {
+  try {
+    const text = readFileUtf8(ALLIANCE_RALLY_FILE, 4096);
+    if (!text || !text.trim()) return;
+    const changed = text !== lastAllianceRallyText;
+    const due = nowMs - allianceRallyLastBroadcastMs >= ALLIANCE_RALLY_REBROADCAST_MS;
+    if (!changed && !due) return;
+    lastAllianceRallyText = text;
+    allianceRallyLastBroadcastMs = nowMs;
+    sendAllianceRallyBroadcast(text.trim());
+  } catch (e) {
+    const msg = String(e);
+    if (!msg.includes('No such file') && !msg.includes('not found')) {
+      log('alliance rally poll error: ' + e);
+    }
+  }
+}
+
+function sendAllianceRallyBroadcast(payload) {
+  if (typeof Java === 'undefined' || !Java.available) return;
+  try {
+    Java.perform(function () {
+      const ActivityThread = Java.use('android.app.ActivityThread');
+      const app = ActivityThread.currentApplication();
+      if (app === null) return;
+      const ctx = app.getApplicationContext();
+      const Intent = Java.use('android.content.Intent');
+      const intent = Intent.$new(ALLIANCE_RALLY_ACTION);
+      intent.setPackage(SHARE_APP_PKG);
+      intent.putExtra.overload('java.lang.String', 'java.lang.String').call(intent, 'payload', payload);
+      intent.addFlags(0x10000000);
+      ctx.sendBroadcast(intent);
+      log('alliance-rally broadcast -> ' + SHARE_APP_PKG + ' (' + payload.length + 'b)');
+    });
+  } catch (e) {
+    log('alliance-rally broadcast failed: ' + e);
   }
 }
 
@@ -3628,6 +3777,7 @@ setImmediate(function () {
     pollTriggerFile();
     pollProbeFile();
     pollOpenChatFile();
+    pollCityRelocateFile();
     pollEvalFile();
     pollAutoHelpConfig();
     pollAutoAssaultConfig();

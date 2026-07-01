@@ -81,6 +81,12 @@ internal enum class OverlayHudChipAccent(
         icon = Color(0xFF5EEAD4),
         border = Color(0x9938B8A8),
     ),
+    Teleport(
+        backgroundTop = Color(0xE01A2E38),
+        backgroundBottom = Color(0xE00E1C24),
+        icon = Color(0xFF4DD0E1),
+        border = Color(0x9938A8B8),
+    ),
     Search(
         backgroundTop = Color(0xE0282438),
         backgroundBottom = Color(0xE0181428),

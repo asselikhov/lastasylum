@@ -320,6 +320,33 @@ class CombatOverlayService : Service() {
             handleAllianceRosterBroadcast(payload)
         }
     }
+    private var allianceRallyReceiverRegistered = false
+    private val allianceRallyFlow = MutableStateFlow<com.lastasylum.alliance.game.AllianceRallyPoint?>(null)
+    private val allianceRallyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            if (intent?.action != com.lastasylum.alliance.game.AllianceRallyBridge.ACTION_ALLIANCE_RALLY) return
+            val payload = intent.getStringExtra(com.lastasylum.alliance.game.AllianceRallyBridge.EXTRA_PAYLOAD)
+            handleAllianceRallyBroadcast(payload)
+        }
+    }
+    private val overlayTeleportPanel by lazy {
+        OverlayTeleportPanel(
+            context = this,
+            mainHandler = mainHandler,
+            dp = { dp(it) },
+            prefs = AppContainer.from(this).userSettingsPreferences,
+            defaultServerProvider = { resolveOverlayActiveServerNumber() },
+            rallyPointProvider = {
+                allianceRallyFlow.value
+                    ?: com.lastasylum.alliance.game.AllianceRallyPoint.parse(
+                        AppContainer.from(this).userSettingsPreferences.getAllianceRallyJson(),
+                    )
+            },
+            onDirectTeleport = { x, y, sid -> onOverlayDirectTeleport(x, y, sid) },
+            onAllianceTeleport = { onOverlayAllianceTeleport() },
+            onFlyToRally = { x, y, sid -> onOverlayFlyToRally(x, y, sid) },
+        )
+    }
     private val overlayPresenceCoordinator by lazy {
         OverlayPresenceCoordinator(
             scope = serviceScope,
@@ -342,7 +369,8 @@ class CombatOverlayService : Service() {
     }
 
     private fun isOverlayModalPopoverBlocking(): Boolean =
-        overlayCommandsPopover.isBlockingGameGateDismiss()
+        overlayCommandsPopover.isBlockingGameGateDismiss() ||
+            overlayTeleportPanel.isShowing
 
     /**
      * Пинги идут только пока гейт видит целевую игру; после выхода heartbeat останавливается
@@ -1414,6 +1442,10 @@ class CombatOverlayService : Service() {
         registerBookmarkReceiver()
         registerAssaultJoinReceiver()
         registerAllianceRosterReceiver()
+        registerAllianceRallyReceiver()
+        allianceRallyFlow.value = com.lastasylum.alliance.game.AllianceRallyPoint.parse(
+            AppContainer.from(this).userSettingsPreferences.getAllianceRallyJson(),
+        )
         startOverlayFcmTokenRegistration()
         serviceScope.launch {
             ensureOverlayRaidRoomReadyForSend()
@@ -3877,6 +3909,47 @@ class CombatOverlayService : Service() {
         }
     }
 
+    private fun openOverlayTeleportFromHud() {
+        if (isOverlayAppUpdateGateActive()) return
+        OverlayChatInteractionHold.prepareOverlayModalInteraction(isOverlayUi = true)
+        extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
+        ensureOverlayIfPermitted()
+        overlayCommandsPopover.hide()
+        val mgr = windowManager ?: systemWindowManager()
+        if (mgr == null) {
+            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(isOverlayUi = true)
+            return
+        }
+        overlayTeleportPanel.toggle(mgr)
+        if (!overlayTeleportPanel.isShowing) {
+            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(isOverlayUi = true)
+        }
+    }
+
+    private fun resolveOverlayActiveServerNumber(): Int? {
+        val repo = AppContainer.from(this).usersRepository
+        return repo.peekMyProfile()?.activeServerNumber
+            ?: repo.peekMyProfileDisk()?.activeServerNumber
+    }
+
+    private fun onOverlayDirectTeleport(x: Int, y: Int, serverNumber: Int) {
+        overlayCommandsPopover.hide()
+        com.lastasylum.alliance.game.GameCityTeleportBridge.sendDirect(this, x, y, serverNumber)
+        Toast.makeText(this, R.string.overlay_teleport_sent, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun onOverlayAllianceTeleport() {
+        overlayCommandsPopover.hide()
+        com.lastasylum.alliance.game.GameCityTeleportBridge.sendAlliance(this)
+        Toast.makeText(this, R.string.overlay_teleport_sent, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun onOverlayFlyToRally(x: Int, y: Int, serverNumber: Int) {
+        overlayCommandsPopover.hide()
+        com.lastasylum.alliance.game.GameMapNavigator.open(this, x, y, serverNumber)
+        Toast.makeText(this, R.string.overlay_teleport_map_sent, Toast.LENGTH_SHORT).show()
+    }
+
     private fun overlayVoiceSoundDisplayedOn(): Boolean {
         voiceSession?.let { return it.soundOn }
         return AppContainer.from(this).userSettingsPreferences.isOverlayVoiceSoundEnabled()
@@ -4069,7 +4142,11 @@ class CombatOverlayService : Service() {
                     OverlayGameStatusHud(
                         state = state,
                         onForumClick = { showOverlayHudPane(OverlayHudPane.Forum) },
-                        onMailClick = { showOverlayHudPane(OverlayHudPane.Chat) },
+                        onMailClick = {
+                            (windowManager ?: systemWindowManager())?.let { overlayTeleportPanel.hide(it) }
+                            showOverlayHudPane(OverlayHudPane.Chat)
+                        },
+                        onTeleportClick = { openOverlayTeleportFromHud() },
                         onNewsClick = { showOverlayHudPane(OverlayHudPane.News) },
                         onAppUpdateClick = { onOverlayAppUpdateClick() },
                     )
@@ -4646,6 +4723,8 @@ class CombatOverlayService : Service() {
         runCatching { (windowManager ?: systemWindowManager())?.let { overlayBookmarkPanel.hide(it) } }
         unregisterAssaultJoinReceiver()
         unregisterAllianceRosterReceiver()
+        unregisterAllianceRallyReceiver()
+        runCatching { (windowManager ?: systemWindowManager())?.let { overlayTeleportPanel.hide(it) } }
         unregisterVoiceMicPermissionReceiver()
         if (AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
             AppContainer.from(this).authRepository.hasSession()
@@ -5430,6 +5509,35 @@ class CombatOverlayService : Service() {
         if (!allianceRosterReceiverRegistered) return
         runCatching { unregisterReceiver(allianceRosterReceiver) }
         allianceRosterReceiverRegistered = false
+    }
+
+    private fun registerAllianceRallyReceiver() {
+        if (allianceRallyReceiverRegistered) return
+        val filter = IntentFilter(com.lastasylum.alliance.game.AllianceRallyBridge.ACTION_ALLIANCE_RALLY)
+        runCatching {
+            ContextCompat.registerReceiver(
+                this,
+                allianceRallyReceiver,
+                filter,
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            allianceRallyReceiverRegistered = true
+        }.onFailure { e -> Log.w(TAG, "registerAllianceRallyReceiver failed", e) }
+    }
+
+    private fun unregisterAllianceRallyReceiver() {
+        if (!allianceRallyReceiverRegistered) return
+        runCatching { unregisterReceiver(allianceRallyReceiver) }
+        allianceRallyReceiverRegistered = false
+    }
+
+    /** Пункт сбора альянса из игрового моста. */
+    private fun handleAllianceRallyBroadcast(payload: String?) {
+        val point = com.lastasylum.alliance.game.AllianceRallyPoint.parse(payload) ?: return
+        allianceRallyFlow.value = point
+        runCatching {
+            AppContainer.from(this).userSettingsPreferences.setAllianceRallyJson(payload!!.trim())
+        }
     }
 
     /** Ростер альянса из игрового моста: кэшируем в память и в настройки для выбора соалийцев. */

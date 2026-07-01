@@ -10,6 +10,7 @@ import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.HeadsetMic
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MicOff
+import androidx.compose.material.icons.outlined.NearMe
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.RocketLaunch
 import androidx.compose.material.icons.outlined.Search
@@ -28,6 +29,7 @@ object OverlayHudIcons {
     val news: ImageVector = Icons.AutoMirrored.Outlined.Article
     val forum: ImageVector = Icons.Outlined.Forum
     val mail: ImageVector = Icons.Outlined.ChatBubbleOutline
+    val teleport: ImageVector = Icons.Outlined.NearMe
     val search: ImageVector = Icons.Outlined.Search
     val team: ImageVector = Icons.Outlined.Groups
     val notifications: ImageVector = Icons.Outlined.Notifications
