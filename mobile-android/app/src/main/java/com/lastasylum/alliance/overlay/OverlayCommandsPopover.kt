@@ -1276,15 +1276,31 @@ class OverlayCommandsPopover(
                 filters = arrayOf(InputFilter.LengthFilter(12))
             }
 
+        fun assaultPowerField(initial: Long, hintText: String): EditText =
+            EditText(context).apply {
+                setText(OverlayGroupedNumberField.formatDisplay(initial))
+                hint = hintText
+                inputType = InputType.TYPE_CLASS_NUMBER
+                isSingleLine = true
+                maxLines = 1
+                gravity = Gravity.CENTER
+                setTextColor(Color.parseColor("#FFF8FAFF"))
+                setHintTextColor(Color.parseColor("#6A8098B0"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                setPadding(dp(10), dp(7), dp(10), dp(7))
+                background = fieldBackground()
+                filters = arrayOf(InputFilter.LengthFilter(18))
+            }
+
         val assaultPowerMinEdits = Array(3) { idx ->
-            assaultNumField(
-                assaultPrefs.getAutoAssaultSquadPowerMin(idx).toString(),
+            assaultPowerField(
+                assaultPrefs.getAutoAssaultSquadPowerMin(idx),
                 context.getString(R.string.overlay_assault_power_min_hint),
             )
         }
         val assaultPowerMaxEdits = Array(3) { idx ->
-            assaultNumField(
-                assaultPrefs.getAutoAssaultSquadPowerMax(idx).toString(),
+            assaultPowerField(
+                assaultPrefs.getAutoAssaultSquadPowerMax(idx),
                 context.getString(R.string.overlay_assault_power_max_hint),
             )
         }
@@ -1323,7 +1339,7 @@ class OverlayCommandsPopover(
 
         fun collectAssaultDraftFromUi(): AutoAssaultOverlayDraft {
             fun parseLong(edit: EditText, default: Long): Long =
-                edit.text?.toString()?.trim()?.toLongOrNull() ?: default
+                OverlayGroupedNumberField.parse(edit.text) ?: default
             fun parseInt(edit: EditText, default: Int): Int =
                 edit.text?.toString()?.trim()?.toIntOrNull() ?: default
             val distCreator = parseInt(
@@ -1365,8 +1381,12 @@ class OverlayCommandsPopover(
             assaultPrefs.commitAutoAssaultOverlayDraft(draft)
             if (syncToggle) {
                 assaultPrefs.setAutoAssaultEnabled(assaultEnabled)
-            } else if (assaultPrefs.isAutoAssaultEnabledRaw() && draft.durationMin != prevDuration) {
-                assaultPrefs.setAutoAssaultEnabled(true)
+            } else if (assaultPrefs.isAutoAssaultEnabledRaw()) {
+                if (draft.durationMin <= 0) {
+                    assaultPrefs.clearStaleAutoAssaultDisableAt()
+                } else if (draft.durationMin != prevDuration) {
+                    assaultPrefs.setAutoAssaultEnabled(true)
+                }
             }
             val enabledForBridge = if (syncToggle) assaultEnabled else null
             GameAutoAssaultBridge.write(context, assaultPrefs, enabledOverride = enabledForBridge)
@@ -1777,8 +1797,12 @@ class OverlayCommandsPopover(
         }
         fun activateAssaultTab() {
             assaultEnabled = assaultPrefs.isAutoAssaultEnabledRaw()
-            val disableAt = assaultPrefs.getAutoAssaultDisableAtMs()
-            if (disableAt in 1 until System.currentTimeMillis()) assaultEnabled = false
+            if (assaultPrefs.getAutoAssaultDurationMin() > 0) {
+                val disableAt = assaultPrefs.getAutoAssaultDisableAtMs()
+                if (disableAt in 1 until System.currentTimeMillis()) assaultEnabled = false
+            } else {
+                assaultPrefs.clearStaleAutoAssaultDisableAt()
+            }
             renderAssaultToggle()
             refreshAssaultChipVisuals()
             assaultAlliesLabel.text = assaultAlliesLabel()
@@ -1794,8 +1818,8 @@ class OverlayCommandsPopover(
         watchAssaultField(assaultMaxConcurrentEdit)
         watchAssaultField(assaultDurationEdit)
         for (idx in 0 until 3) {
-            watchAssaultField(assaultPowerMinEdits[idx])
-            watchAssaultField(assaultPowerMaxEdits[idx])
+            OverlayGroupedNumberField.bind(assaultPowerMinEdits[idx]) { scheduleAssaultFieldPersist() }
+            OverlayGroupedNumberField.bind(assaultPowerMaxEdits[idx]) { scheduleAssaultFieldPersist() }
         }
 
         val targetHost = LinearLayout(context).apply {

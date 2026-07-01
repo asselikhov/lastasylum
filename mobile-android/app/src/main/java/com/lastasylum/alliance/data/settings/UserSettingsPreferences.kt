@@ -212,12 +212,26 @@ class UserSettingsPreferences(context: Context) {
      */
     fun isAutoAssaultEnabled(): Boolean {
         if (!prefs.getBoolean(KEY_AUTO_ASSAULT_ENABLED, false)) return false
+        if (getAutoAssaultDurationMin() <= 0) {
+            clearStaleAutoAssaultDisableAt()
+            return true
+        }
         val disableAt = prefs.getLong(KEY_AUTO_ASSAULT_DISABLE_AT, 0L)
         if (disableAt in 1 until System.currentTimeMillis()) {
-            prefs.edit().putBoolean(KEY_AUTO_ASSAULT_ENABLED, false).apply()
+            prefs.edit()
+                .putBoolean(KEY_AUTO_ASSAULT_ENABLED, false)
+                .putLong(KEY_AUTO_ASSAULT_DISABLE_AT, 0L)
+                .apply()
             return false
         }
         return true
+    }
+
+    /** Сброс устаревшего таймера, если «Авто-выкл» = 0 (бессрочно). */
+    fun clearStaleAutoAssaultDisableAt() {
+        if (prefs.getLong(KEY_AUTO_ASSAULT_DISABLE_AT, 0L) != 0L) {
+            prefs.edit().putLong(KEY_AUTO_ASSAULT_DISABLE_AT, 0L).commit()
+        }
     }
 
     /** Сырое сохранённое значение без учёта истечения таймера (для отображения переключателя). */
@@ -509,6 +523,9 @@ class UserSettingsPreferences(context: Context) {
                 .coerceIn(0L, AUTO_ASSAULT_POWER_CEILING)
             editor.putLong(squadPowerMinKey(idx), min)
             editor.putLong(squadPowerMaxKey(idx), max)
+        }
+        if (draft.durationMin <= 0) {
+            editor.putLong(KEY_AUTO_ASSAULT_DISABLE_AT, 0L)
         }
         return editor.commit()
     }

@@ -163,6 +163,7 @@ object GameAutoAssaultBridge {
     /** Включён ли авто-штурм для broadcast (без побочного сброса prefs при истечении таймера). */
     private fun resolveAutoAssaultEnabled(prefs: UserSettingsPreferences): Boolean {
         if (!prefs.isAutoAssaultEnabledRaw()) return false
+        if (prefs.getAutoAssaultDurationMin() <= 0) return true
         val disableAt = prefs.getAutoAssaultDisableAtMs()
         if (disableAt in 1 until System.currentTimeMillis()) return false
         return true
