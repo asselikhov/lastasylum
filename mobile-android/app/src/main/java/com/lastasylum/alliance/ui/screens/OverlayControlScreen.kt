@@ -415,10 +415,17 @@ fun OverlayControlScreen() {
                                     if (patchInProgress) return@Button
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     val pending = pendingPatchApk?.takeIf { it.exists() }
-                                    if (pending != null &&
-                                        !GamePatchInstaller.isStockGameInstalled(appContext)
-                                    ) {
-                                        launchPatchInstall(pending)
+                                    if (pending != null) {
+                                        if (GamePatchInstaller.isStockGameInstalled(appContext)) {
+                                            Toast.makeText(
+                                                context,
+                                                R.string.game_patch_uninstall_prompt,
+                                                Toast.LENGTH_LONG,
+                                            ).show()
+                                            GamePatchInstaller.requestUninstallStockGame(context)
+                                        } else {
+                                            launchPatchInstall(pending)
+                                        }
                                         return@Button
                                     }
                                     scope.launch {
