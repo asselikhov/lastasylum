@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '71';
+const BRIDGE_VERSION = '72';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -35,6 +35,9 @@ const CITY_RELOCATE_SDCARD = '/sdcard/Download/squadrelay_city_relocate.json';
 const ALLIANCE_RALLY_FILE = '/data/data/com.phs.global/files/squadrelay_alliance_rally.json';
 const ALLIANCE_RALLY_FILE_LUA = "'" + ALLIANCE_RALLY_FILE + "'";
 const ALLIANCE_RALLY_ACTION = 'com.lastasylum.alliance.action.ALLIANCE_RALLY';
+const ALLIANCE_RALLY_PULSE_FILE = '/data/data/com.phs.global/files/squadrelay_alliance_rally_pulse.json';
+const ALLIANCE_RALLY_PULSE_SDCARD = '/sdcard/Download/squadrelay_alliance_rally_pulse.json';
+const ALLIANCE_RALLY_SCAN_INTERVAL_MS = 3000;
 
 // Остаток предметов перемещения в инвентаре (Data.ItemData.itemsCount).
 const RELOCATE_ITEMS_FILE = '/data/data/com.phs.global/files/squadrelay_relocate_items.json';
@@ -341,6 +344,50 @@ const ALLIANCE_ROSTER_LUA = [
   '    local rf = io.open(' + ALLIANCE_RALLY_FILE_LUA + ', "w")',
   '    if rf then rf:write("{"..q.."x"..q..":"..tostring(rx)..","..q.."y"..q..":"..tostring(ry)..","..q.."sid"..q..":"..tostring(rs).."}") rf:close() end',
   '  end',
+  'end)',
+].join('\n');
+// Пункт сбора альянса — отдельный опрос (не ждём bridgeAssaultReady / ростер).
+const ALLIANCE_RALLY_LUA = [
+  'pcall(function()',
+  '  local q=string.char(34)',
+  '  local ad = _G.Data and _G.Data.AllianceData',
+  '  local rp = ad and ad.rallyPoint and ad.rallyPoint.point',
+  '  if type(rp) ~= "table" or not rp.x or not rp.y then',
+  '    local ter = ad and ad.territory',
+  '    rp = ter and ter.allianceRallyWorldPoint',
+  '  end',
+  '  if type(rp) ~= "table" or not rp.x or not rp.y then',
+  '    pcall(function()',
+  '      local cd = _G.Data and (_G.Data.CollectData or _G.Data.WorldCollectData or _G.Data.MarkData)',
+  '      if type(cd) ~= "table" then return end',
+  '      local lists = { cd.allianceList, cd.unionList, cd.alliance, cd.union, cd.markDic, cd.collectDic }',
+  '      for _, lst in ipairs(lists) do',
+  '        if type(lst) == "table" then',
+  '          for _, item in pairs(lst) do',
+  '            if type(item) == "table" then',
+  '              local nm = string.lower(tostring(item.name or item.markName or item.title or ""))',
+  '              if string.find(nm, "сбор", 1, true) or string.find(nm, "rally", 1, true) or string.find(nm, "пункт", 1, true) then',
+  '                local pt = item.point or item.pos or item.worldPoint or item',
+  '                if type(pt) == "table" and pt.x and pt.y then rp = { x = pt.x, y = pt.y, sid = pt.sid or item.sid } break end',
+  '              end',
+  '            end',
+  '          end',
+  '        end',
+  '        if type(rp) == "table" and rp.x and rp.y then break end',
+  '      end',
+  '    end)',
+  '  end',
+  '  if type(rp) ~= "table" or not rp.x or not rp.y then return end',
+  '  local rx = math.floor(tonumber(rp.x) or 0)',
+  '  local ry = math.floor(tonumber(rp.y) or 0)',
+  '  local rs = math.floor(tonumber(rp.sid) or 0)',
+  '  if rs <= 0 then',
+  '    local pd = _G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
+  '    rs = math.floor(tonumber(pd and (pd.serverId or pd.sid or pd.server)) or 0)',
+  '  end',
+  '  if rx <= 0 or ry <= 0 then return end',
+  '  local rf = io.open(' + ALLIANCE_RALLY_FILE_LUA + ', "w")',
+  '  if rf then rf:write("{"..q.."x"..q..":"..tostring(rx)..","..q.."y"..q..":"..tostring(ry)..","..q.."sid"..q..":"..tostring(rs).."}") rf:close() end',
   'end)',
 ].join('\n');
 // Счётчики предметов перемещения: itemsCount + Config.Item/itemDic (VIP-магазин может не попадать в один ключ).
@@ -1303,6 +1350,7 @@ let lastOpenChatText = '';
 let lastCityRelocateText = '';
 let lastAllianceRallyText = '';
 let allianceRallyLastBroadcastMs = 0;
+let allianceRallyLastTick = 0;
 let relocateItemsLastTick = 0;
 let lastRelocateItemsText = '';
 let relocateItemsLastBroadcastMs = 0;
@@ -3597,7 +3645,7 @@ function tickAllianceRoster() {
     lastAllianceRosterText = text;
     allianceRosterLastBroadcastMs = now;
     sendAllianceRosterBroadcast(text.trim());
-    pollAllianceRallyFile(now);
+    pollAllianceRallyFile(now, false);
   } catch (e) {
     const msg = String(e);
     if (!msg.includes('No such file') && !msg.includes('not found')) {
@@ -3629,13 +3677,13 @@ function sendAllianceRosterBroadcast(payload) {
 
 const ALLIANCE_RALLY_REBROADCAST_MS = 60000;
 
-function pollAllianceRallyFile(nowMs) {
+function pollAllianceRallyFile(nowMs, force) {
   try {
     const text = readFileUtf8(ALLIANCE_RALLY_FILE, 4096);
     if (!text || !text.trim()) return;
     const changed = text !== lastAllianceRallyText;
     const due = nowMs - allianceRallyLastBroadcastMs >= ALLIANCE_RALLY_REBROADCAST_MS;
-    if (!changed && !due) return;
+    if (!changed && !due && !force) return;
     lastAllianceRallyText = text;
     allianceRallyLastBroadcastMs = nowMs;
     sendAllianceRallyBroadcast(text.trim());
@@ -3666,6 +3714,42 @@ function sendAllianceRallyBroadcast(payload) {
   } catch (e) {
     log('alliance-rally broadcast failed: ' + e);
   }
+}
+
+function maybeAllianceRallyPulse() {
+  const paths = [ALLIANCE_RALLY_PULSE_FILE, ALLIANCE_RALLY_PULSE_SDCARD];
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const text = readFileUtf8(paths[i], 256);
+      if (!text || !text.trim()) continue;
+      writeFileEmpty(paths[i]);
+      allianceRallyLastTick = 0;
+      lastAllianceRallyText = '';
+      return true;
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes('No such file') && !msg.includes('not found')) {
+        log('alliance-rally pulse error: ' + e);
+      }
+    }
+  }
+  return false;
+}
+
+function tickAllianceRally() {
+  const pulsed = maybeAllianceRallyPulse();
+  if (!liveLuaEnv || liveLuaEnv.isNull()) return;
+  const now = Date.now();
+  if (!bridgeLuaStartupReady(now)) return;
+  if (!pulsed && now - allianceRallyLastTick < ALLIANCE_RALLY_SCAN_INTERVAL_MS) return;
+  allianceRallyLastTick = now;
+  try {
+    runLua(ALLIANCE_RALLY_LUA);
+  } catch (e) {
+    log('alliance-rally scan error: ' + e);
+    return;
+  }
+  pollAllianceRallyFile(now, pulsed);
 }
 
 function maybeRelocateItemsPulse() {
@@ -4100,6 +4184,7 @@ setImmediate(function () {
     tickAutoHelp();
     tickAutoAssault();
     tickAllianceRoster();
+    tickAllianceRally();
     tickRelocateItems();
     maybeInstallShareHook();
     pollShareFile();

@@ -17,15 +17,22 @@ data class AllianceRallyPoint(
     fun isValid(): Boolean = x > 0 && y > 0 && serverNumber > 0
 
     companion object {
-        fun parse(json: String?): AllianceRallyPoint? {
+        fun parse(json: String?, serverHint: Int? = null): AllianceRallyPoint? {
             val raw = json?.trim().orEmpty()
             if (raw.isEmpty()) return null
             return runCatching {
                 val obj = org.json.JSONObject(raw)
                 val x = obj.optInt("x", -1)
                 val y = obj.optInt("y", -1)
-                val sid = obj.optInt("sid", obj.optInt("server", -1))
-                AllianceRallyPoint(x, y, sid).takeIf { it.isValid() }
+                val sid = when {
+                    obj.has("sid") -> obj.optInt("sid", -1)
+                    obj.has("server") -> obj.optInt("server", -1)
+                    else -> -1
+                }
+                val point = AllianceRallyPoint(x, y, sid)
+                if (point.isValid()) return@runCatching point
+                val hint = serverHint?.takeIf { it > 0 } ?: return@runCatching null
+                if (point.x > 0 && point.y > 0) point.copy(serverNumber = hint) else null
             }.getOrNull()
         }
     }

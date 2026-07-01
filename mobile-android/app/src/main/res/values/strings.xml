@@ -957,6 +957,7 @@
     <string name="overlay_bookmark_mobs">Мобы</string>
     <string name="overlay_bookmark_chests">Сундуки</string>
     <string name="overlay_bookmark_cities">Города</string>
+    <string name="overlay_bookmark_alliance">Альянс</string>
     <string name="overlay_bookmark_add">Добавить</string>
     <string name="overlay_bookmark_panel_title">В закладки</string>
     <string name="overlay_bookmark_added">Добавлено в «%1$s»</string>

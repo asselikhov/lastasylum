@@ -12,6 +12,7 @@ enum class OverlayBookmarkTag(val storageKey: String, val labelRes: Int) {
     MOBS("mobs", R.string.overlay_bookmark_mobs),
     CHESTS("chests", R.string.overlay_bookmark_chests),
     CITIES("cities", R.string.overlay_bookmark_cities),
+    ALLIANCE("alliance", R.string.overlay_bookmark_alliance),
     ;
 
     companion object {

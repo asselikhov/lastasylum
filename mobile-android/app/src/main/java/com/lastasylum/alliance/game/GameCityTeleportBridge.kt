@@ -24,6 +24,7 @@ object GameCityTeleportBridge {
   private const val MODE_ALLIANCE = "alliance"
   private const val MODE_RANDOM = "random"
   private const val RELOCATE_ITEMS_PULSE_SDCARD = "/sdcard/Download/squadrelay_relocate_items_pulse.json"
+  private const val ALLIANCE_RALLY_PULSE_SDCARD = "/sdcard/Download/squadrelay_alliance_rally_pulse.json"
 
   fun sendDirect(context: Context, x: Int, y: Int, serverNumber: Int): Boolean {
     if (x <= 0 || y <= 0 || serverNumber <= 0) return false
@@ -36,6 +37,19 @@ object GameCityTeleportBridge {
   fun sendRandom(context: Context): Boolean {
     logInfo("sendRandom: dispatching mode=$MODE_RANDOM")
     return dispatch(context, MODE_RANDOM, -1, -1, -1)
+  }
+
+  /** Просит игровой мост немедленно перечитать пункт сбора альянса из игры. */
+  fun requestAllianceRallyRefresh(context: Context) {
+    runCatching {
+      val json = JSONObject().apply {
+        put("ts", System.currentTimeMillis())
+      }
+      File(ALLIANCE_RALLY_PULSE_SDCARD).writeText(json.toString())
+      logDebug("alliance-rally pulse $json")
+    }.onFailure { e ->
+      Log.w(TAG, "alliance-rally pulse write failed", e)
+    }
   }
 
   /** Просит игровой мост немедленно перечитать инвентарь предметов перемещения. */

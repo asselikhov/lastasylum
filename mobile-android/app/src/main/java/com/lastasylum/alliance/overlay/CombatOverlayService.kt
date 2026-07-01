@@ -362,6 +362,8 @@ class CombatOverlayService : Service() {
             onPanelShown = {
                 teleportPanelOpenTick.value++
                 com.lastasylum.alliance.game.GameCityTeleportBridge.requestRelocateItemsRefresh(this)
+                com.lastasylum.alliance.game.GameCityTeleportBridge.requestAllianceRallyRefresh(this)
+                refreshAllianceRallyFallback()
             },
             onDirectTeleport = { x, y, sid -> onOverlayDirectTeleport(x, y, sid) },
             onRandomTeleport = { onOverlayRandomTeleport() },
@@ -1490,9 +1492,10 @@ class CombatOverlayService : Service() {
         registerAllianceRallyReceiver()
         registerRelocateItemsReceiver()
         registerRelocateResultReceiver()
-        allianceRallyFlow.value = com.lastasylum.alliance.game.AllianceRallyPoint.parse(
-            AppContainer.from(this).userSettingsPreferences.getAllianceRallyJson(),
-        )
+        allianceRallyFlow.value = refreshAllianceRallyFallback(silent = true)
+            ?: com.lastasylum.alliance.game.AllianceRallyPoint.parse(
+                AppContainer.from(this).userSettingsPreferences.getAllianceRallyJson(),
+            )
         relocateItemsFlow.value = com.lastasylum.alliance.game.RelocateItemCounts.parse(
             AppContainer.from(this).userSettingsPreferences.getRelocateItemsJson(),
         )
@@ -5589,10 +5592,38 @@ class CombatOverlayService : Service() {
 
     /** Пункт сбора альянса из игрового моста. */
     private fun handleAllianceRallyBroadcast(payload: String?) {
-        val point = com.lastasylum.alliance.game.AllianceRallyPoint.parse(payload) ?: return
+        val point = com.lastasylum.alliance.game.AllianceRallyPointResolver.fromJson(
+            payload,
+            resolveOverlayActiveServerNumber(),
+        ) ?: return
+        applyAllianceRallyPoint(point, payload?.trim())
+    }
+
+    /** Если мост ещё не прислал координаты — подтягиваем из кэша и закладок. */
+    private fun refreshAllianceRallyFallback(silent: Boolean = false): com.lastasylum.alliance.game.AllianceRallyPoint? {
+        val current = allianceRallyFlow.value
+        if (current?.isValid() == true) return current
+        val resolved = com.lastasylum.alliance.game.AllianceRallyPointResolver.resolve(
+            this,
+            resolveOverlayActiveServerNumber(),
+        ) ?: return null
+        applyAllianceRallyPoint(resolved, com.lastasylum.alliance.game.AllianceRallyPointResolver.toPersistJson(resolved))
+        if (!silent) {
+            Log.d(TAG, "alliance rally fallback #${resolved.serverNumber} X:${resolved.x} Y:${resolved.y}")
+        }
+        return resolved
+    }
+
+    private fun applyAllianceRallyPoint(
+        point: com.lastasylum.alliance.game.AllianceRallyPoint,
+        persistJson: String?,
+    ) {
+        if (!point.isValid()) return
         allianceRallyFlow.value = point
-        runCatching {
-            AppContainer.from(this).userSettingsPreferences.setAllianceRallyJson(payload!!.trim())
+        persistJson?.let { json ->
+            runCatching {
+                AppContainer.from(this).userSettingsPreferences.setAllianceRallyJson(json)
+            }
         }
     }
 
@@ -5758,6 +5789,20 @@ class CombatOverlayService : Service() {
         target: com.lastasylum.alliance.game.RaidShareTarget,
     ) {
         val added = com.lastasylum.alliance.game.OverlayBookmarkStore.add(this, tag, target)
+        if (added) {
+            val serverHint = resolveOverlayActiveServerNumber()
+            val rally = if (tag == com.lastasylum.alliance.game.OverlayBookmarkTag.ALLIANCE) {
+                com.lastasylum.alliance.game.AllianceRallyPointResolver.fromAllianceTagBookmark(target, serverHint)
+            } else {
+                com.lastasylum.alliance.game.AllianceRallyPointResolver.fromBookmark(target, serverHint)
+            }
+            rally?.let { point ->
+                applyAllianceRallyPoint(
+                    point,
+                    com.lastasylum.alliance.game.AllianceRallyPointResolver.toPersistJson(point),
+                )
+            }
+        }
         val tagName = getString(tag.labelRes)
         val msg = if (added) {
             getString(R.string.overlay_bookmark_added, tagName)
