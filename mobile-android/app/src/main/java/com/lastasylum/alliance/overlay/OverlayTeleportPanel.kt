@@ -56,7 +56,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.game.AllianceRallyPoint
@@ -738,7 +737,7 @@ private fun RoutePlannerTabContent(
   }
 
   deletePointTarget?.let { target ->
-    Dialog(onDismissRequest = { deletePointTarget = null }) {
+    OverlayAwareDialog(onDismissRequest = { deletePointTarget = null }) {
       Column(
         modifier = Modifier
           .widthIn(min = 280.dp, max = 320.dp)
@@ -952,7 +951,7 @@ private fun EditRoutePointDialog(
     )
   }
 
-  Dialog(onDismissRequest = onDismiss) {
+    OverlayAwareDialog(onDismissRequest = onDismiss) {
     Column(
       modifier = Modifier
         .widthIn(min = 280.dp, max = 340.dp)
@@ -1378,7 +1377,7 @@ private fun RelocateAllConfirmDialog(
   onSchedule: () -> Unit,
 ) {
   val stats = RoutePlannerRelocateStats.forRoute(route, emptySet())
-  Dialog(onDismissRequest = onDismiss) {
+    OverlayAwareDialog(onDismissRequest = onDismiss) {
     Column(
       modifier = Modifier
         .widthIn(min = 280.dp, max = 320.dp)
@@ -1458,7 +1457,7 @@ private fun ScheduleRelocateDialog(
   onConfirm: (minutes: Int) -> Unit,
 ) {
   var minutesText by remember { mutableStateOf("5") }
-  Dialog(onDismissRequest = onDismiss) {
+    OverlayAwareDialog(onDismissRequest = onDismiss) {
     Column(
       modifier = Modifier
         .widthIn(min = 280.dp, max = 320.dp)
@@ -1519,7 +1518,7 @@ private fun DeleteRouteConfirmDialog(
   onDismiss: () -> Unit,
   onConfirm: () -> Unit,
 ) {
-  Dialog(onDismissRequest = onDismiss) {
+    OverlayAwareDialog(onDismissRequest = onDismiss) {
     Column(
       modifier = Modifier
         .widthIn(min = 280.dp, max = 320.dp)
@@ -1570,7 +1569,7 @@ private fun CreateRouteDialog(
   var selectedType by remember(initialType) { mutableStateOf(initialType) }
   var nameError by remember { mutableStateOf(false) }
 
-  Dialog(onDismissRequest = onDismiss) {
+    OverlayAwareDialog(onDismissRequest = onDismiss) {
     Column(
       modifier = Modifier
         .widthIn(min = 280.dp, max = 320.dp)

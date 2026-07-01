@@ -1189,6 +1189,7 @@ class CombatOverlayService : Service() {
                 LocalViewModelStoreOwner provides owner,
                 LocalSavedStateRegistryOwner provides owner,
                 LocalOnBackPressedDispatcherOwner provides owner,
+                LocalOverlayUiMode provides true,
             ) {
                 SquadRelayTheme(content = content)
             }
