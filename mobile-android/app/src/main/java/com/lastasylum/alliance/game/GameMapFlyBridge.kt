@@ -2,8 +2,6 @@ package com.lastasylum.alliance.game
 
 import android.content.Context
 import android.content.Intent
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.di.AppContainer
@@ -24,10 +22,6 @@ object GameMapFlyBridge {
     private const val TAG = "GameMapFlyBridge"
     private const val MAP_FLY_RECEIVER = "com.lastasylum.alliance.game.MapFlyReceiver"
     private const val SDCARD_TRIGGER = "/sdcard/Download/squadrelay_map_fly.json"
-    /** Let overlay hide + game resume before in-process fly. */
-    private const val BRIDGE_FLY_DELAY_MS = 750L
-
-    private val mainHandler = Handler(Looper.getMainLooper())
 
     fun send(
         context: Context,
@@ -42,13 +36,11 @@ object GameMapFlyBridge {
         val cross = crossServer ||
             (resolvedServer != null && activeServer != null && resolvedServer != activeServer)
         GameDeepLinkNavigator.prepareBridgeFly(appContext)
-        mainHandler.postDelayed({
-            val sent = dispatchFlyBroadcast(appContext, x, y, resolvedServer, cross)
-            if (sent) {
-                GameDeepLinkNavigator.finishBridgeFly()
-            }
-        }, BRIDGE_FLY_DELAY_MS)
-        return true
+        val sent = dispatchFlyBroadcast(appContext, x, y, resolvedServer, cross)
+        if (sent) {
+            GameDeepLinkNavigator.finishBridgeFly()
+        }
+        return sent
     }
 
     private fun dispatchFlyBroadcast(

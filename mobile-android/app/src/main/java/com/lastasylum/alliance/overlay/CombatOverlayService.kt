@@ -5662,6 +5662,8 @@ class CombatOverlayService : Service() {
             code.contains("cell_blocked", ignoreCase = true) -> R.string.overlay_teleport_failed_cell_blocked
             code.contains("relocate_not_enabled", ignoreCase = true) ||
                 code.contains("relocate disabled", ignoreCase = true) -> R.string.overlay_teleport_failed_not_enabled
+            code.contains("not_on_world_map", ignoreCase = true) -> R.string.overlay_teleport_failed_not_on_world_map
+            code.contains("item_not_consumed", ignoreCase = true) -> R.string.overlay_teleport_failed_item_not_consumed
             code.contains("no_map_view", ignoreCase = true) ||
                 code.contains("lua_env_not_ready", ignoreCase = true) -> R.string.overlay_teleport_failed_no_map
             else -> R.string.overlay_teleport_failed

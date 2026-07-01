@@ -869,6 +869,8 @@
     <string name="overlay_teleport_failed_cell_blocked">Нельзя переместиться: область 3×3 занята или недоступна</string>
     <string name="overlay_teleport_failed_not_enabled">Перемещение в эти координаты недоступно</string>
     <string name="overlay_teleport_failed_no_map">Откройте карту мира в игре</string>
+    <string name="overlay_teleport_failed_not_on_world_map">Случайное перемещение: откройте карту мира в игре</string>
+    <string name="overlay_teleport_failed_item_not_consumed">Подтвердите случайное перемещение в окне игры</string>
     <string name="overlay_teleport_map_sent">Перелёт к пункту сбора</string>
     <string name="overlay_hud_news_cd">Новости команды: %1$d</string>
     <string name="overlay_panel_unread_subtitle">%1$d непрочитанных</string>

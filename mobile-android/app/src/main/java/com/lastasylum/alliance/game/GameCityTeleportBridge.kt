@@ -2,8 +2,6 @@ package com.lastasylum.alliance.game
 
 import android.content.Context
 import android.content.Intent
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import com.lastasylum.alliance.BuildConfig
 import org.json.JSONObject
@@ -11,7 +9,7 @@ import java.io.File
 
 /**
  * Телепорт территории (города) в игре: sdcard-триггер + broadcast в пропатченную игру.
- * Frida-мост: прямое — CityRelocationItem + CityRelocationHandler; альянс — RequestRallyPointRelocateC2S; случайное — ShowNornalPanel + OnOkClickHandler (type=0).
+ * Frida-мост: прямое — CityRelocationItem + CityRelocationHandler; альянс — RequestRallyPointRelocateC2S; случайное — UseItemC2S (item_UseUp_randomMove).
  */
 object GameCityTeleportBridge {
   private const val EXTRA_CITY_RELOCATE = "cityrelocate"
@@ -26,10 +24,6 @@ object GameCityTeleportBridge {
   private const val MODE_ALLIANCE = "alliance"
   private const val MODE_RANDOM = "random"
   private const val RELOCATE_ITEMS_PULSE_SDCARD = "/sdcard/Download/squadrelay_relocate_items_pulse.json"
-
-  private const val BRIDGE_DELAY_MS = 750L
-
-  private val mainHandler = Handler(Looper.getMainLooper())
 
   fun sendDirect(context: Context, x: Int, y: Int, serverNumber: Int): Boolean {
     if (x <= 0 || y <= 0 || serverNumber <= 0) return false
@@ -66,13 +60,11 @@ object GameCityTeleportBridge {
   ): Boolean {
     val appContext = context.applicationContext
     GameDeepLinkNavigator.prepareBridgeFly(appContext)
-    mainHandler.postDelayed({
-      val sent = sendBroadcast(appContext, mode, x, y, serverNumber)
-      if (sent) {
-        GameDeepLinkNavigator.finishBridgeFly()
-      }
-    }, BRIDGE_DELAY_MS)
-    return true
+    val sent = sendBroadcast(appContext, mode, x, y, serverNumber)
+    if (sent) {
+      GameDeepLinkNavigator.finishBridgeFly()
+    }
+    return sent
   }
 
   private fun sendBroadcast(

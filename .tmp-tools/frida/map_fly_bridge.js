@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '67';
+const BRIDGE_VERSION = '71';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -2950,7 +2950,9 @@ function sendRelocateResultBroadcast(payload) {
   }
 }
 
-function runCityRelocateLua(tag, mode, innerLua) {
+function runCityRelocateLua(tag, mode, innerLua, opts) {
+  const broadcast = !opts || opts.broadcast !== false;
+  const onDone = opts && typeof opts.onDone === 'function' ? opts.onDone : null;
   const code = [
     'pcall(function()',
     '  local RF = "' + RELOCATE_RESULT_FILE + '"',
@@ -2978,14 +2980,20 @@ function runCityRelocateLua(tag, mode, innerLua) {
   ].join('\n');
   mainThreadFlyQueue.push(function () {
     writeFileEmpty(RELOCATE_RESULT_FILE);
+    const relayFail = function (error) {
+      const payload = JSON.stringify({ ok: false, mode: mode, error: error });
+      if (onDone) {
+        onDone(false, error);
+      } else {
+        sendRelocateResultBroadcast(payload);
+      }
+    };
     if (!liveLuaEnv || liveLuaEnv.isNull()) {
-      sendRelocateResultBroadcast(
-        JSON.stringify({ ok: false, mode: mode, error: 'lua_env_not_ready' }),
-      );
+      relayFail('lua_env_not_ready');
       return;
     }
     if (!doStringNow(code)) {
-      sendRelocateResultBroadcast(JSON.stringify({ ok: false, mode: mode, error: 'lua_exec_failed' }));
+      relayFail('lua_exec_failed');
       return;
     }
     let raw = '';
@@ -2995,10 +3003,26 @@ function runCityRelocateLua(tag, mode, innerLua) {
       log('relocate-result read error: ' + e);
     }
     if (!raw) {
-      sendRelocateResultBroadcast(JSON.stringify({ ok: false, mode: mode, error: 'no_result' }));
+      const fail = JSON.stringify({ ok: false, mode: mode, error: 'no_result' });
+      if (onDone) {
+        onDone(false, 'no_result');
+      } else {
+        sendRelocateResultBroadcast(fail);
+      }
       return;
     }
-    sendRelocateResultBroadcast(raw);
+    if (onDone) {
+      try {
+        const parsed = JSON.parse(raw);
+        onDone(!!parsed.ok, parsed.error || '');
+      } catch (e) {
+        onDone(false, 'bad_result');
+      }
+      return;
+    }
+    if (broadcast) {
+      sendRelocateResultBroadcast(raw);
+    }
   });
 }
 
@@ -3075,45 +3099,30 @@ function cityRelocateAlliance() {
   runCityRelocateLua('alliance', 'alliance', inner);
 }
 
-// Случайное перемещение (item_UseUp_randomMove): relocateType=0 + ShowNornalPanel + OnOkClickHandler
-// с CityRelocationItem — как подтверждение в игре после предмета из сумки.
+// Случайное перемещение: UseItemC2S (как кнопка предмета в сумке — захват sr_bag_manual_capture).
 function cityRelocateRandom() {
   const inner = [
-    '    pcall(function() require("UIs.WorldMapUI.WorldCityRelocationPosWin") end)',
-    '    pcall(function() require("Logic.Proto.Send.world") end)',
-    '    local RND = 0',
-    '    local idx = package.loaded["UIs.WorldMapUI.WorldCityRelocationPosWin"]',
-    '    local classIdx = idx and ((getmetatable(idx) or {}).__index or idx)',
-    '    if not classIdx then error("no_handler") end',
-    '    local gmc = _G.GlobalMapCtrlManager',
-    '    local wm = gmc and gmc.GetWorldManager and gmc:GetWorldManager()',
-    '    local muv = wm and wm.mapUnitsView',
-    '    if not muv then error("no_map_view") end',
-    '    local cityItem = muv.CityRelocationItem',
-    '    local allyItem = muv.AllyBossRelocationItem or cityItem',
-    '    if not cityItem then error("no_relocation_item") end',
-    '    local win = {',
-    '      relocateType = RND,',
-    '      type = RND,',
-    '      paramTable = { {}, {} },',
-    '      cityRelocationItem = cityItem,',
-    '      allyBossRelocationItem = allyItem,',
-    '    }',
-    '    setmetatable(win, { __index = classIdx })',
-    '    if classIdx.ShowNornalPanel then',
-    '      pcall(function() classIdx.ShowNornalPanel(win, RND) end)',
+    '    pcall(function() require("Logic.Proto.Send.item") end)',
+    '    pcall(function() require("Logic.Map.MapLogic.Helper.WorldMapHelper") end)',
+    '    local si = package.loaded["Logic.Proto.Send.item"]',
+    '    if not si or not si.UseItemC2S then error("no_api") end',
+    '    local WH = package.loaded["Logic.Map.MapLogic.Helper.WorldMapHelper"]',
+    '    if WH and WH.IsInWorldMap and not WH:IsInWorldMap() then error("not_on_world_map") end',
+    '    local id = _G.Data and _G.Data.ItemData',
+    '    local ic = id and id.itemsCount',
+    '    local before = tonumber(ic and ic.item_UseUp_randomMove) or 0',
+    '    if before <= 0 then error("no_random_stock") end',
+    '    local uuid = nil',
+    '    for k, row in pairs((id and id.itemsTab) or {}) do',
+    '      if type(row) == "table" and row.itemId == "item_UseUp_randomMove" then',
+    '        uuid = row.uuid or k',
+    '        break',
+    '      end',
     '    end',
-    '    if classIdx.OnOkClickHandler then',
-    '      classIdx.OnOkClickHandler(win)',
-    '    elseif classIdx.OnOkClick2Handler then',
-    '      classIdx.OnOkClick2Handler(win)',
-    '    else',
-    '      local sw = package.loaded["Logic.Proto.Send.world"]',
-    '      if not sw or not sw.WorldCityRelocateC2S then error("no_api") end',
-    '      sw.WorldCityRelocateC2S({ relocateType = RND, type = RND }, {})',
-    '    end',
+    '    if not uuid then error("no_random_uuid") end',
+    '    si.UseItemC2S({ items = { { itemId = "item_UseUp_randomMove", uuid = uuid, count = 1 } } })',
   ].join('\n');
-  log('city-relocate random (type=0 + relocation item)');
+  log('city-relocate random UseItemC2S');
   runCityRelocateLua('random', 'random', inner);
 }
 
@@ -4083,10 +4092,8 @@ setImmediate(function () {
       liveLuaEnvCapturedMs = nowMs;
     }
     tickWorldReadyProbe(nowMs);
-    pollTriggerFile();
     pollProbeFile();
     pollOpenChatFile();
-    pollCityRelocateFile();
     pollEvalFile();
     pollAutoHelpConfig();
     pollAutoAssaultConfig();
@@ -4102,11 +4109,14 @@ setImmediate(function () {
     if (libBase() && pendingFlies.length) scheduleDrainPendingFlies();
   }, 400);
   setInterval(function () {
+    pollTriggerFile();
+    pollCityRelocateFile();
     maybeInstallShareHook();
     pollShareFile();
     pollShareCloseFile();
     maybeInstallBookmarkHook();
     pollBookmarkFile();
+    if (libBase() && pendingFlies.length) scheduleDrainPendingFlies();
   }, 100);
 });
 
