@@ -116,5 +116,12 @@ open class TeamsApiUnusedStub : TeamsApi {
         body: ToggleReactionRequest,
     ): TeamForumMessageDto = unused()
 
+    override suspend fun getRoutePlanner(teamId: String): TeamRoutePlannerSnapshotDto = unused()
+
+    override suspend fun putRoutePlanner(
+        teamId: String,
+        body: PutTeamRoutePlannerBody,
+    ): TeamRoutePlannerSnapshotDto = unused()
+
     private fun unused(): Nothing = error("unused")
 }

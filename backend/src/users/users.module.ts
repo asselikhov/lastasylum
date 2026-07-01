@@ -36,6 +36,11 @@ import {
 } from './schemas/team-news-read-state.schema';
 import { TeamNewsService } from './team-news.service';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
+import { TeamRoutePlannerService } from './team-route-planner.service';
+import {
+  TeamRoutePlanner,
+  TeamRoutePlannerSchema,
+} from './schemas/team-route-planner.schema';
 import {
   AllianceStickerRoleGrant,
   AllianceStickerRoleGrantSchema,
@@ -63,6 +68,7 @@ import { UserAvatarService } from './user-avatar.service';
       { name: TeamNews.name, schema: TeamNewsSchema },
       { name: TeamNewsAttachment.name, schema: TeamNewsAttachmentSchema },
       { name: TeamNewsReadState.name, schema: TeamNewsReadStateSchema },
+      { name: TeamRoutePlanner.name, schema: TeamRoutePlannerSchema },
       {
         name: AllianceStickerRoleGrant.name,
         schema: AllianceStickerRoleGrantSchema,
@@ -81,6 +87,7 @@ import { UserAvatarService } from './user-avatar.service';
     TeamsService,
     TeamNewsService,
     TeamNewsAttachmentsService,
+    TeamRoutePlannerService,
     StickerAccessService,
     UserAvatarService,
     {
@@ -95,6 +102,7 @@ import { UserAvatarService } from './user-avatar.service';
     TeamsService,
     TeamNewsService,
     TeamNewsAttachmentsService,
+    TeamRoutePlannerService,
     MongooseModule,
     ForumModule,
     StickerAccessService,

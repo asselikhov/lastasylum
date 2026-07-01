@@ -10,6 +10,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,8 +21,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -30,10 +34,13 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,19 +50,42 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.game.AllianceRallyPoint
 import com.lastasylum.alliance.game.RelocateItemCounts
+import com.lastasylum.alliance.game.RoutePlannerAccess
+import com.lastasylum.alliance.game.RoutePlannerPoint
+import com.lastasylum.alliance.game.RoutePlannerRoute
+import com.lastasylum.alliance.game.RoutePlannerStore
+import com.lastasylum.alliance.game.RoutePlannerSync
+import com.lastasylum.alliance.game.RoutePlannerPointStatus
+import com.lastasylum.alliance.game.RoutePointStatus
+import com.lastasylum.alliance.game.RoutePlannerRelocateStats
+import com.lastasylum.alliance.game.RoutePlannerType
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+
+private data class RoutePointEditTarget(
+  val route: RoutePlannerRoute,
+  val point: RoutePlannerPoint,
+)
+
+private enum class TeleportPanelTab {
+    Teleport,
+    Planner,
+}
 
 /**
- * Компактное центральное окно «Перемещение»: прямое / случайное / альянс + пункт сбора.
+ * Компактное центральное окно «Перемещение»: вкладки перемещения и планировщика маршрутов.
  */
 class OverlayTeleportPanel(
   private val context: Context,
@@ -72,6 +102,10 @@ class OverlayTeleportPanel(
   private val onRandomTeleport: () -> Unit,
   private val onAllianceTeleport: () -> Unit,
   private val onFlyToRally: (x: Int, y: Int, serverNumber: Int) -> Unit,
+  private val onRelocateAll: (route: RoutePlannerRoute) -> Unit,
+  private val onRepositionPointOnMap: (route: RoutePlannerRoute, point: RoutePlannerPoint) -> Unit,
+  private val onExportRouteToRaid: (route: RoutePlannerRoute) -> Unit,
+  private val onScheduleRelocateAll: (route: RoutePlannerRoute, delayMinutes: Int) -> Unit,
 ) {
   private var scrim: FrameLayout? = null
   private var composeView: ComposeView? = null
@@ -171,6 +205,18 @@ class OverlayTeleportPanel(
           onFlyToRally(x, y, sid)
           attachedWindowManager?.let { hide(it) }
         },
+        onRelocateAll = { route ->
+          onRelocateAll(route)
+        },
+        onRepositionPointOnMap = { route, point ->
+          onRepositionPointOnMap(route, point)
+        },
+        onExportRouteToRaid = { route ->
+          onExportRouteToRaid(route)
+        },
+        onScheduleRelocateAll = { route, delayMinutes ->
+          onScheduleRelocateAll(route, delayMinutes)
+        },
       )
     }
     composeContentInstalled = true
@@ -226,41 +272,12 @@ private fun TeleportPanelContent(
   onRandomTeleport: () -> Unit,
   onAllianceTeleport: () -> Unit,
   onFlyToRally: (x: Int, y: Int, serverNumber: Int) -> Unit,
+  onRelocateAll: (route: RoutePlannerRoute) -> Unit,
+  onRepositionPointOnMap: (route: RoutePlannerRoute, point: RoutePlannerPoint) -> Unit,
+  onExportRouteToRaid: (route: RoutePlannerRoute) -> Unit,
+  onScheduleRelocateAll: (route: RoutePlannerRoute, delayMinutes: Int) -> Unit,
 ) {
-  val itemCounts by relocateItemsFlow.collectAsState()
-  val rallyPoint by rallyPointFlow.collectAsState()
-  val openTick by panelOpenTick.collectAsState()
-
-  val initialCoords = remember { loadDirectTeleportCoordTexts(prefs, defaultServer) }
-  var serverText by remember { mutableStateOf(initialCoords.server) }
-  var xText by remember { mutableStateOf(initialCoords.x) }
-  var yText by remember { mutableStateOf(initialCoords.y) }
-  var lastSyncedOpenTick by remember { mutableStateOf(0) }
-
-  SideEffect {
-    if (openTick <= lastSyncedOpenTick) return@SideEffect
-    val loaded = loadDirectTeleportCoordTexts(prefs, defaultServer)
-    serverText = loaded.server
-    xText = loaded.x
-    yText = loaded.y
-    lastSyncedOpenTick = openTick
-  }
-
-  fun persistCoords() {
-    prefs.setDirectTeleportCoordTexts(serverText, xText, yText)
-  }
-
-  val server = serverText.trim().toIntOrNull()
-  val x = xText.trim().toIntOrNull()
-  val y = yText.trim().toIntOrNull()
-  val directReady = server != null && server in MIN_SERVER..MAX_SERVER &&
-    x != null && x > 0 && y != null && y > 0
-  val directCount = itemCounts?.direct
-  val randomCount = itemCounts?.random
-  val allianceCount = itemCounts?.alliance
-  val directEnabled = directReady && directCount != null && directCount > 0
-  val randomEnabled = randomCount != null && randomCount > 0
-  val allianceEnabled = allianceCount != null && allianceCount > 0
+  var selectedTab by remember { mutableStateOf(TeleportPanelTab.Teleport) }
 
   val cardShape = RoundedCornerShape(16.dp)
   val cardBg = Brush.verticalGradient(
@@ -290,137 +307,1377 @@ private fun TeleportPanelContent(
           onClick = {},
         )
         .padding(horizontal = 14.dp, vertical = 12.dp),
-      verticalArrangement = Arrangement.spacedBy(6.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      Text(
-        text = contextString(R.string.overlay_teleport_title),
-        color = ComposeColor(0xFFE8EAED),
-        fontSize = 17.sp,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.fillMaxWidth(),
-        textAlign = TextAlign.Center,
+      TeleportPanelTabRow(
+        selected = selectedTab,
+        onSelect = { selectedTab = it },
       )
 
-      RallyPointRow(
-        rallyPoint = rallyPoint,
-        onFly = onFlyToRally,
-      )
+      when (selectedTab) {
+        TeleportPanelTab.Teleport -> TeleportTabContent(
+          prefs = prefs,
+          defaultServer = defaultServer,
+          rallyPointFlow = rallyPointFlow,
+          relocateItemsFlow = relocateItemsFlow,
+          panelOpenTick = panelOpenTick,
+          onDirectTeleport = onDirectTeleport,
+          onRandomTeleport = onRandomTeleport,
+          onAllianceTeleport = onAllianceTeleport,
+          onFlyToRally = onFlyToRally,
+        )
+        TeleportPanelTab.Planner -> RoutePlannerTabContent(
+          panelOpenTick = panelOpenTick,
+          onDirectTeleport = onDirectTeleport,
+          onFlyToPoint = onFlyToRally,
+          onRelocateAll = onRelocateAll,
+          onRepositionPointOnMap = onRepositionPointOnMap,
+          onExportRouteToRaid = onExportRouteToRaid,
+          onScheduleRelocateAll = onScheduleRelocateAll,
+        )
+      }
+    }
+  }
+}
 
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+@Composable
+private fun TeleportPanelTabRow(
+  selected: TeleportPanelTab,
+  onSelect: (TeleportPanelTab) -> Unit,
+) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clip(RoundedCornerShape(10.dp))
+      .background(ComposeColor(0xFF1A222E))
+      .padding(3.dp),
+    horizontalArrangement = Arrangement.spacedBy(4.dp),
+  ) {
+    TeleportPanelTab.entries.forEach { tab ->
+      val isSelected = tab == selected
+      val labelRes = when (tab) {
+        TeleportPanelTab.Teleport -> R.string.overlay_teleport_tab_move
+        TeleportPanelTab.Planner -> R.string.overlay_teleport_tab_planner
+      }
+      Box(
+        modifier = Modifier
+          .weight(1f)
+          .clip(RoundedCornerShape(8.dp))
+          .background(if (isSelected) ComposeColor(0xFF2E7D6E) else ComposeColor(0x001A222E))
+          .clickable { onSelect(tab) }
+          .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center,
       ) {
-        CoordField(
-          label = "#",
-          value = serverText,
-          onValueChange = {
-            serverText = it.filter { ch -> ch.isDigit() }.take(4)
-            persistCoords()
-          },
-          modifier = Modifier.weight(0.85f),
+        Text(
+          text = contextString(labelRes),
+          color = if (isSelected) ComposeColor.White else ComposeColor(0xFFB0BEC5),
+          fontSize = 13.sp,
+          fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
         )
-        CoordField(
-          label = "X",
-          value = xText,
-          onValueChange = {
-            xText = it.filter { ch -> ch.isDigit() }.take(4)
-            persistCoords()
-          },
-          modifier = Modifier.weight(1f),
-        )
-        CoordField(
-          label = "Y",
-          value = yText,
-          onValueChange = {
-            yText = it.filter { ch -> ch.isDigit() }.take(4)
-            persistCoords()
-          },
-          modifier = Modifier.weight(1f),
+      }
+    }
+  }
+}
+
+@Composable
+private fun TeleportTabContent(
+  prefs: UserSettingsPreferences,
+  defaultServer: Int?,
+  rallyPointFlow: StateFlow<AllianceRallyPoint?>,
+  relocateItemsFlow: StateFlow<RelocateItemCounts?>,
+  panelOpenTick: StateFlow<Int>,
+  onDirectTeleport: (x: Int, y: Int, serverNumber: Int) -> Unit,
+  onRandomTeleport: () -> Unit,
+  onAllianceTeleport: () -> Unit,
+  onFlyToRally: (x: Int, y: Int, serverNumber: Int) -> Unit,
+) {
+  val itemCounts by relocateItemsFlow.collectAsState()
+  val rallyPoint by rallyPointFlow.collectAsState()
+  val openTick by panelOpenTick.collectAsState()
+
+  val initialCoords = remember { loadDirectTeleportCoordTexts(prefs, defaultServer) }
+  var serverText by remember { mutableStateOf(initialCoords.server) }
+  var xText by remember { mutableStateOf(initialCoords.x) }
+  var yText by remember { mutableStateOf(initialCoords.y) }
+  var lastSyncedOpenTick by remember { mutableIntStateOf(0) }
+
+  SideEffect {
+    if (openTick <= lastSyncedOpenTick) return@SideEffect
+    val loaded = loadDirectTeleportCoordTexts(prefs, defaultServer)
+    serverText = loaded.server
+    xText = loaded.x
+    yText = loaded.y
+    lastSyncedOpenTick = openTick
+  }
+
+  fun persistCoords() {
+    prefs.setDirectTeleportCoordTexts(serverText, xText, yText)
+  }
+
+  val server = serverText.trim().toIntOrNull()
+  val x = xText.trim().toIntOrNull()
+  val y = yText.trim().toIntOrNull()
+  val directReady = server != null && server in MIN_SERVER..MAX_SERVER &&
+    x != null && x > 0 && y != null && y > 0
+  val directCount = itemCounts?.direct
+  val randomCount = itemCounts?.random
+  val allianceCount = itemCounts?.alliance
+  val directEnabled = directReady && directCount != null && directCount > 0
+  val randomEnabled = randomCount != null && randomCount > 0
+  val allianceEnabled = allianceCount != null && allianceCount > 0
+
+  Column(
+    modifier = Modifier.fillMaxWidth(),
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    RallyPointRow(
+      rallyPoint = rallyPoint,
+      onFly = onFlyToRally,
+    )
+
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      CoordField(
+        label = "#",
+        value = serverText,
+        onValueChange = {
+          serverText = it.filter { ch -> ch.isDigit() }.take(4)
+          persistCoords()
+        },
+        modifier = Modifier.weight(0.85f),
+      )
+      CoordField(
+        label = "X",
+        value = xText,
+        onValueChange = {
+          xText = it.filter { ch -> ch.isDigit() }.take(4)
+          persistCoords()
+        },
+        modifier = Modifier.weight(1f),
+      )
+      CoordField(
+        label = "Y",
+        value = yText,
+        onValueChange = {
+          yText = it.filter { ch -> ch.isDigit() }.take(4)
+          persistCoords()
+        },
+        modifier = Modifier.weight(1f),
+      )
+    }
+
+    Column(
+      modifier = Modifier.fillMaxWidth(),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+      Button(
+        onClick = {
+          if (directEnabled) {
+            onDirectTeleport(x, y, server)
+          }
+        },
+        enabled = directEnabled,
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(
+          containerColor = ComposeColor(0xFF2E7D6E),
+          disabledContainerColor = ComposeColor(0xFF2A3038),
+          contentColor = ComposeColor.White,
+          disabledContentColor = ComposeColor(0xFF6B7280),
+        ),
+        shape = RoundedCornerShape(10.dp),
+        contentPadding = ButtonDefaults.ContentPadding,
+      ) {
+        Text(
+          text = teleportActionLabel(
+            baseRes = R.string.overlay_teleport_direct_action,
+            withCountRes = R.string.overlay_teleport_direct_action_with_count,
+            count = directCount,
+          ),
+          fontSize = 14.sp,
+          fontWeight = FontWeight.Medium,
         )
       }
 
-      Column(
+      OutlinedButton(
+        onClick = onRandomTeleport,
+        enabled = randomEnabled,
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+          contentColor = ComposeColor(0xFF90CAF9),
+          disabledContentColor = ComposeColor(0xFF6B7280),
+        ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, ComposeColor(0x665A9BD5)),
+        contentPadding = ButtonDefaults.ContentPadding,
       ) {
+        Text(
+          text = teleportActionLabel(
+            baseRes = R.string.overlay_teleport_random_action,
+            withCountRes = R.string.overlay_teleport_random_action_with_count,
+            count = randomCount,
+          ),
+          fontSize = 14.sp,
+          fontWeight = FontWeight.Medium,
+        )
+      }
+
+      OutlinedButton(
+        onClick = onAllianceTeleport,
+        enabled = allianceEnabled,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+          contentColor = ComposeColor(0xFF80CBC4),
+          disabledContentColor = ComposeColor(0xFF6B7280),
+        ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, ComposeColor(0x6640A090)),
+        contentPadding = ButtonDefaults.ContentPadding,
+      ) {
+        Text(
+          text = teleportActionLabel(
+            baseRes = R.string.overlay_teleport_alliance_action,
+            withCountRes = R.string.overlay_teleport_alliance_action_with_count,
+            count = allianceCount,
+          ),
+          fontSize = 14.sp,
+          fontWeight = FontWeight.Medium,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun RoutePlannerTabContent(
+  panelOpenTick: StateFlow<Int>,
+  onDirectTeleport: (x: Int, y: Int, serverNumber: Int) -> Unit,
+  onFlyToPoint: (x: Int, y: Int, serverNumber: Int) -> Unit,
+  onRelocateAll: (route: RoutePlannerRoute) -> Unit,
+  onRepositionPointOnMap: (route: RoutePlannerRoute, point: RoutePlannerPoint) -> Unit,
+  onExportRouteToRaid: (route: RoutePlannerRoute) -> Unit,
+  onScheduleRelocateAll: (route: RoutePlannerRoute, delayMinutes: Int) -> Unit,
+) {
+  val context = LocalContext.current
+  val scope = rememberCoroutineScope()
+  val openTick by panelOpenTick.collectAsState()
+  var lastLoadedTick by remember { mutableIntStateOf(-1) }
+  var teamId by remember { mutableStateOf<String?>(null) }
+  var canCreate by remember { mutableStateOf(false) }
+  var canView by remember { mutableStateOf(false) }
+  val routes = remember { mutableStateListOf<RoutePlannerRoute>() }
+  var showCreateDialog by remember { mutableStateOf(false) }
+  var editingRoute by remember { mutableStateOf<RoutePlannerRoute?>(null) }
+  var deletingRoute by remember { mutableStateOf<RoutePlannerRoute?>(null) }
+  var relocateAllConfirmRoute by remember { mutableStateOf<RoutePlannerRoute?>(null) }
+  var editPointTarget by remember { mutableStateOf<RoutePointEditTarget?>(null) }
+  var deletePointTarget by remember { mutableStateOf<RoutePointEditTarget?>(null) }
+  var searchQuery by remember { mutableStateOf("") }
+  var typeFilter by remember { mutableStateOf<RoutePlannerType?>(null) }
+  var scheduleRelocateRoute by remember { mutableStateOf<RoutePlannerRoute?>(null) }
+
+  fun reload() {
+    teamId = RoutePlannerAccess.resolveTeamId(context)
+    canCreate = RoutePlannerAccess.canCreateRoutes(context)
+    canView = RoutePlannerAccess.canViewRoutes(context)
+    routes.clear()
+    val tid = teamId
+    if (!tid.isNullOrBlank()) {
+      routes.addAll(RoutePlannerStore.list(context, tid))
+    }
+  }
+
+  val filteredRoutes = remember(routes.toList(), searchQuery, typeFilter) {
+    val q = searchQuery.trim().lowercase()
+    routes.filter { route ->
+      val typeOk = typeFilter == null || route.type == typeFilter
+      if (!typeOk) return@filter false
+      if (q.isEmpty()) return@filter true
+      route.name.lowercase().contains(q) ||
+        route.points.any { point ->
+          point.memberName.lowercase().contains(q)
+        }
+    }
+  }
+
+  fun afterMutation(tid: String) {
+    reload()
+    if (canCreate) {
+      scope.launch {
+        RoutePlannerSync.push(context, tid)
+        reload()
+      }
+    }
+  }
+
+  SideEffect {
+    if (openTick != lastLoadedTick) {
+      reload()
+      lastLoadedTick = openTick
+      val tid = teamId?.trim().orEmpty()
+      if (tid.isNotEmpty()) {
+        scope.launch {
+          if (RoutePlannerSync.pullIfNewer(context, tid)) {
+            reload()
+          }
+        }
+      }
+    }
+  }
+
+  if (showCreateDialog) {
+    CreateRouteDialog(
+      onDismiss = { showCreateDialog = false },
+      onConfirm = { name, type ->
+        val tid = teamId?.trim().orEmpty()
+        if (tid.isEmpty()) return@CreateRouteDialog
+        val route = runCatching { RoutePlannerRoute.create(name, type) }.getOrNull() ?: return@CreateRouteDialog
+        if (RoutePlannerStore.add(context, tid, route)) {
+          afterMutation(tid)
+          Toast.makeText(
+            context,
+            context.getString(R.string.overlay_route_planner_created, route.name),
+            Toast.LENGTH_SHORT,
+          ).show()
+        }
+        showCreateDialog = false
+      },
+    )
+  }
+
+  editingRoute?.let { route ->
+    CreateRouteDialog(
+      titleRes = R.string.overlay_route_route_edit_title,
+      confirmRes = R.string.overlay_route_planner_save,
+      initialName = route.name,
+      initialType = route.type,
+      onDismiss = { editingRoute = null },
+      onConfirm = { name, type ->
+        val tid = teamId?.trim().orEmpty()
+        if (tid.isEmpty()) return@CreateRouteDialog
+        if (RoutePlannerStore.updateRoute(context, tid, route.id, name, type) != null) {
+          afterMutation(tid)
+          Toast.makeText(context, R.string.overlay_route_route_updated, Toast.LENGTH_SHORT).show()
+        }
+        editingRoute = null
+      },
+    )
+  }
+
+  deletingRoute?.let { route ->
+    DeleteRouteConfirmDialog(
+      route = route,
+      onDismiss = { deletingRoute = null },
+      onConfirm = {
+        val tid = teamId?.trim().orEmpty()
+        if (tid.isNotEmpty()) {
+          RoutePlannerStore.deleteRoute(context, tid, route.id)
+          afterMutation(tid)
+          Toast.makeText(context, R.string.overlay_route_route_deleted, Toast.LENGTH_SHORT).show()
+        }
+        deletingRoute = null
+      },
+    )
+  }
+
+  relocateAllConfirmRoute?.let { route ->
+    val onlineCount = remember(route.id, openTick) {
+      OverlayTeamPresenceCache.peek(teamId.orEmpty())?.ingame?.size ?: 0
+    }
+    RelocateAllConfirmDialog(
+      route = route,
+      onlineInOverlay = onlineCount,
+      onDismiss = { relocateAllConfirmRoute = null },
+      onConfirm = {
+        relocateAllConfirmRoute = null
+        onRelocateAll(route)
+      },
+      onSchedule = {
+        relocateAllConfirmRoute = null
+        scheduleRelocateRoute = route
+      },
+    )
+  }
+
+  scheduleRelocateRoute?.let { route ->
+    ScheduleRelocateDialog(
+      route = route,
+      onDismiss = { scheduleRelocateRoute = null },
+      onConfirm = { minutes ->
+        scheduleRelocateRoute = null
+        onScheduleRelocateAll(route, minutes)
+      },
+    )
+  }
+
+  editPointTarget?.let { target ->
+    EditRoutePointDialog(
+      point = target.point,
+      onDismiss = { editPointTarget = null },
+      onSaveMember = { member ->
+        val tid = teamId?.trim().orEmpty()
+        if (tid.isEmpty()) return@EditRoutePointDialog
+        val updated = target.point.withMember(member.id, member.name)
+        if (RoutePlannerStore.updatePoint(context, tid, target.route.id, updated) != null) {
+          afterMutation(tid)
+          Toast.makeText(context, R.string.overlay_route_point_updated, Toast.LENGTH_SHORT).show()
+        }
+        editPointTarget = null
+      },
+      onRepositionOnMap = {
+        editPointTarget = null
+        onRepositionPointOnMap(target.route, target.point)
+      },
+      onDelete = {
+        editPointTarget = null
+        deletePointTarget = target
+      },
+    )
+  }
+
+  deletePointTarget?.let { target ->
+    Dialog(onDismissRequest = { deletePointTarget = null }) {
+      Column(
+        modifier = Modifier
+          .widthIn(min = 280.dp, max = 320.dp)
+          .clip(RoundedCornerShape(14.dp))
+          .background(ComposeColor(0xF2141C2A))
+          .border(1.dp, ComposeColor(0x55FFFFFF), RoundedCornerShape(14.dp))
+          .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Text(
+          text = contextString(R.string.overlay_route_point_delete_confirm, target.point.memberName),
+          color = ComposeColor(0xFFE8EAED),
+          fontSize = 14.sp,
+          lineHeight = 20.sp,
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.End,
+        ) {
+          TextButton(onClick = { deletePointTarget = null }) {
+            Text(contextString(R.string.overlay_route_planner_cancel))
+          }
+          Button(
+            onClick = {
+              val tid = teamId?.trim().orEmpty()
+              if (tid.isNotEmpty()) {
+                RoutePlannerStore.deletePoint(context, tid, target.route.id, target.point.id)
+                afterMutation(tid)
+                Toast.makeText(context, R.string.overlay_route_point_deleted, Toast.LENGTH_SHORT).show()
+              }
+              deletePointTarget = null
+            },
+            colors = ButtonDefaults.buttonColors(
+              containerColor = ComposeColor(0xFFB71C1C),
+              contentColor = ComposeColor.White,
+            ),
+            shape = RoundedCornerShape(8.dp),
+          ) {
+            Text(contextString(R.string.overlay_route_point_delete))
+          }
+        }
+      }
+    }
+  }
+
+  Column(
+    modifier = Modifier.fillMaxWidth(),
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    when {
+      !canView || teamId.isNullOrBlank() -> {
+        Text(
+          text = contextString(R.string.overlay_route_planner_no_team),
+          color = ComposeColor(0xFF90A4AE),
+          fontSize = 13.sp,
+          lineHeight = 18.sp,
+        )
+      }
+      else -> {
+        if (!canCreate) {
+          Text(
+            text = contextString(R.string.overlay_route_planner_view_hint),
+            color = ComposeColor(0xFF78909C),
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+          )
+        }
+        OutlinedTextField(
+          value = searchQuery,
+          onValueChange = { searchQuery = it },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          placeholder = {
+            Text(
+              contextString(R.string.overlay_route_planner_search_hint),
+              color = ComposeColor(0xFF78909C),
+              fontSize = 13.sp,
+            )
+          },
+          textStyle = androidx.compose.ui.text.TextStyle(
+            fontSize = 14.sp,
+            color = ComposeColor(0xFFE8EAED),
+          ),
+          colors = plannerFieldColors(),
+          shape = RoundedCornerShape(10.dp),
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          RouteTypeFilterChip(
+            label = contextString(R.string.overlay_route_planner_filter_all),
+            selected = typeFilter == null,
+            onClick = { typeFilter = null },
+          )
+          RouteTypeFilterChip(
+            label = contextString(R.string.overlay_route_planner_type_pvp),
+            selected = typeFilter == RoutePlannerType.PVP,
+            onClick = { typeFilter = RoutePlannerType.PVP },
+          )
+          RouteTypeFilterChip(
+            label = contextString(R.string.overlay_route_planner_type_pve),
+            selected = typeFilter == RoutePlannerType.PVE,
+            onClick = { typeFilter = RoutePlannerType.PVE },
+          )
+        }
+        when {
+          routes.isEmpty() -> {
+            Text(
+              text = contextString(R.string.overlay_route_planner_empty),
+              color = ComposeColor(0xFFE0E0E0),
+              fontSize = 14.sp,
+              fontWeight = FontWeight.Medium,
+            )
+            Text(
+              text = contextString(R.string.overlay_route_planner_empty_hint),
+              color = ComposeColor(0xFF90A4AE),
+              fontSize = 12.sp,
+              lineHeight = 16.sp,
+            )
+          }
+          filteredRoutes.isEmpty() -> {
+            Text(
+              text = contextString(R.string.overlay_route_planner_search_empty),
+              color = ComposeColor(0xFF90A4AE),
+              fontSize = 13.sp,
+              lineHeight = 18.sp,
+            )
+          }
+          else -> {
+            Text(
+              text = contextString(R.string.overlay_route_planner_count, filteredRoutes.size),
+              color = ComposeColor(0xFF90A4AE),
+              fontSize = 12.sp,
+            )
+            LazyColumn(
+              modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 280.dp),
+              verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              items(filteredRoutes, key = { it.id }) { route ->
+                RoutePlannerListItem(
+                  route = route,
+                  canManage = canCreate,
+                  onFlyToPoint = onFlyToPoint,
+                  onDirectToPoint = onDirectTeleport,
+                  onRelocateAll = { relocateAllConfirmRoute = route },
+                  onEditPoint = { point -> editPointTarget = RoutePointEditTarget(route, point) },
+                  onEditRoute = { editingRoute = route },
+                  onDuplicateRoute = {
+                    val tid = teamId?.trim().orEmpty()
+                    if (tid.isNotEmpty() && RoutePlannerStore.duplicateRoute(context, tid, route.id) != null) {
+                      afterMutation(tid)
+                      Toast.makeText(context, R.string.overlay_route_route_duplicated, Toast.LENGTH_SHORT).show()
+                    }
+                  },
+                  onDeleteRoute = { deletingRoute = route },
+                  onExportToRaid = { onExportRouteToRaid(route) },
+                  onMovePoint = { point, delta ->
+                    val tid = teamId?.trim().orEmpty()
+                    if (tid.isNotEmpty() && RoutePlannerStore.movePoint(context, tid, route.id, point.id, delta) != null) {
+                      afterMutation(tid)
+                    }
+                  },
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (canCreate && !teamId.isNullOrBlank()) {
+      Button(
+        onClick = { showCreateDialog = true },
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(
+          containerColor = ComposeColor(0xFF3949AB),
+          contentColor = ComposeColor.White,
+        ),
+        shape = RoundedCornerShape(10.dp),
+      ) {
+        Text(
+          text = contextString(R.string.overlay_route_planner_create),
+          fontSize = 14.sp,
+          fontWeight = FontWeight.Medium,
+        )
+      }
+    }
+  }
+}
+
+private fun loadAllianceMembers(context: android.content.Context): List<AllianceMember> =
+  RoutePlannerAllianceMembers.load(context)
+
+@Composable
+private fun EditRoutePointDialog(
+  point: RoutePlannerPoint,
+  onDismiss: () -> Unit,
+  onSaveMember: (AllianceMember) -> Unit,
+  onRepositionOnMap: () -> Unit,
+  onDelete: () -> Unit,
+) {
+  val context = LocalContext.current
+  val members = remember { loadAllianceMembers(context) }
+  var selectedMemberId by remember(point.id) {
+    mutableStateOf(
+      point.memberId?.takeIf { id -> members.any { it.id == id } }
+        ?: members.firstOrNull { it.name.equals(point.memberName, ignoreCase = true) }?.id,
+    )
+  }
+
+  Dialog(onDismissRequest = onDismiss) {
+    Column(
+      modifier = Modifier
+        .widthIn(min = 280.dp, max = 340.dp)
+        .clip(RoundedCornerShape(14.dp))
+        .background(ComposeColor(0xF2141C2A))
+        .border(1.dp, ComposeColor(0x55FFFFFF), RoundedCornerShape(14.dp))
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Text(
+        text = contextString(R.string.overlay_route_point_edit_title),
+        color = ComposeColor(0xFFE8EAED),
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+      )
+      Text(
+        text = contextString(
+          R.string.overlay_route_point_coords,
+          point.sid,
+          point.x,
+          point.y,
+          point.memberName,
+        ),
+        color = ComposeColor(0xFF90A4AE),
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+      )
+      Text(
+        text = contextString(R.string.overlay_route_point_edit_member),
+        color = ComposeColor(0xFF78909C),
+        fontSize = 12.sp,
+      )
+      if (members.isEmpty()) {
+        RoutePlannerMemberPickerList(
+          members = emptyList(),
+          selectedMemberId = null,
+          onSelect = {},
+          emptyText = contextString(R.string.overlay_route_assign_no_members),
+        )
+      } else {
+        RoutePlannerMemberPickerList(
+          members = members,
+          selectedMemberId = selectedMemberId,
+          onSelect = { selectedMemberId = it },
+          emptyText = contextString(R.string.overlay_route_assign_no_members),
+        )
+      }
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        OutlinedButton(
+          onClick = onRepositionOnMap,
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(8.dp),
+          colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFF81D4FA)),
+        ) {
+          Text(contextString(R.string.overlay_route_point_edit_on_map), fontSize = 12.sp)
+        }
+        OutlinedButton(
+          onClick = onDelete,
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(8.dp),
+          colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFFE57373)),
+        ) {
+          Text(contextString(R.string.overlay_route_point_delete), fontSize = 12.sp)
+        }
+      }
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+      ) {
+        TextButton(onClick = onDismiss) {
+          Text(contextString(R.string.overlay_route_planner_cancel))
+        }
         Button(
           onClick = {
-            if (directEnabled) {
-              onDirectTeleport(x, y, server)
-            }
+            val member = members.firstOrNull { it.id == selectedMemberId } ?: return@Button
+            onSaveMember(member)
           },
-          enabled = directEnabled,
-          modifier = Modifier.fillMaxWidth(),
+          enabled = selectedMemberId != null && members.isNotEmpty(),
           colors = ButtonDefaults.buttonColors(
-            containerColor = ComposeColor(0xFF2E7D6E),
-            disabledContainerColor = ComposeColor(0xFF2A3038),
+            containerColor = ComposeColor(0xFF3949AB),
             contentColor = ComposeColor.White,
-            disabledContentColor = ComposeColor(0xFF6B7280),
           ),
-          shape = RoundedCornerShape(10.dp),
-          contentPadding = ButtonDefaults.ContentPadding,
+          shape = RoundedCornerShape(8.dp),
         ) {
-          Text(
-            text = teleportActionLabel(
-              baseRes = R.string.overlay_teleport_direct_action,
-              withCountRes = R.string.overlay_teleport_direct_action_with_count,
-              count = directCount,
-            ),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-          )
-        }
-
-        OutlinedButton(
-          onClick = onRandomTeleport,
-          enabled = randomEnabled,
-          modifier = Modifier.fillMaxWidth(),
-          shape = RoundedCornerShape(10.dp),
-          colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = ComposeColor(0xFF90CAF9),
-            disabledContentColor = ComposeColor(0xFF6B7280),
-          ),
-          border = androidx.compose.foundation.BorderStroke(1.dp, ComposeColor(0x665A9BD5)),
-          contentPadding = ButtonDefaults.ContentPadding,
-        ) {
-          Text(
-            text = teleportActionLabel(
-              baseRes = R.string.overlay_teleport_random_action,
-              withCountRes = R.string.overlay_teleport_random_action_with_count,
-              count = randomCount,
-            ),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-          )
-        }
-
-        OutlinedButton(
-          onClick = onAllianceTeleport,
-          enabled = allianceEnabled,
-          modifier = Modifier.fillMaxWidth(),
-          shape = RoundedCornerShape(10.dp),
-          colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = ComposeColor(0xFF80CBC4),
-            disabledContentColor = ComposeColor(0xFF6B7280),
-          ),
-          border = androidx.compose.foundation.BorderStroke(1.dp, ComposeColor(0x6640A090)),
-          contentPadding = ButtonDefaults.ContentPadding,
-        ) {
-          Text(
-            text = teleportActionLabel(
-              baseRes = R.string.overlay_teleport_alliance_action,
-              withCountRes = R.string.overlay_teleport_alliance_action_with_count,
-              count = allianceCount,
-            ),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-          )
+          Text(contextString(R.string.overlay_route_assign_confirm))
         }
       }
     }
   }
 }
+
+@Composable
+private fun RouteTypeFilterChip(
+  label: String,
+  selected: Boolean,
+  onClick: () -> Unit,
+) {
+  val bg = if (selected) ComposeColor(0xFF3949AB) else ComposeColor(0x22FFFFFF)
+  val fg = if (selected) ComposeColor.White else ComposeColor(0xFFB0BEC5)
+  Box(
+    modifier = Modifier
+      .clip(RoundedCornerShape(8.dp))
+      .background(bg)
+      .clickable(onClick = onClick)
+      .padding(horizontal = 10.dp, vertical = 6.dp),
+  ) {
+    Text(text = label, color = fg, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+  }
+}
+
+@Composable
+private fun RoutePlannerListItem(
+  route: RoutePlannerRoute,
+  canManage: Boolean,
+  onFlyToPoint: (x: Int, y: Int, serverNumber: Int) -> Unit,
+  onDirectToPoint: (x: Int, y: Int, serverNumber: Int) -> Unit,
+  onRelocateAll: () -> Unit,
+  onEditPoint: (RoutePlannerPoint) -> Unit,
+  onEditRoute: () -> Unit,
+  onDuplicateRoute: () -> Unit,
+  onDeleteRoute: () -> Unit,
+  onExportToRaid: () -> Unit,
+  onMovePoint: (RoutePlannerPoint, delta: Int) -> Unit,
+) {
+  val context = LocalContext.current
+  var expanded by remember(route.id) { mutableStateOf(route.points.isNotEmpty()) }
+  val typeLabelRes = when (route.type) {
+    RoutePlannerType.PVP -> R.string.overlay_route_planner_type_pvp
+    RoutePlannerType.PVE -> R.string.overlay_route_planner_type_pve
+  }
+  val typeColor = when (route.type) {
+    RoutePlannerType.PVP -> ComposeColor(0xFFE57373)
+    RoutePlannerType.PVE -> ComposeColor(0xFF81C784)
+  }
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clip(RoundedCornerShape(10.dp))
+      .background(ComposeColor(0xFF1A222E))
+      .border(1.dp, ComposeColor(0x33445566), RoundedCornerShape(10.dp))
+      .clickable { expanded = !expanded }
+      .padding(horizontal = 10.dp, vertical = 9.dp),
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Column(modifier = Modifier.weight(1f)) {
+        Text(
+          text = route.name,
+          color = ComposeColor(0xFFECEFF1),
+          fontSize = 14.sp,
+          fontWeight = FontWeight.Medium,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+        if (route.points.isNotEmpty()) {
+          Text(
+            text = contextString(R.string.overlay_route_points_count, route.points.size),
+            color = ComposeColor(0xFF78909C),
+            fontSize = 11.sp,
+          )
+        }
+      }
+      Text(
+        text = contextString(typeLabelRes),
+        color = typeColor,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+          .padding(start = 8.dp)
+          .clip(RoundedCornerShape(6.dp))
+          .background(typeColor.copy(alpha = 0.15f))
+          .padding(horizontal = 8.dp, vertical = 4.dp),
+      )
+    }
+    if (expanded && route.points.isNotEmpty()) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        OutlinedButton(
+          onClick = onExportToRaid,
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(8.dp),
+          colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFF80CBC4)),
+        ) {
+          Text(contextString(R.string.overlay_route_route_export_raid), fontSize = 11.sp)
+        }
+        if (canManage) {
+          OutlinedButton(
+            onClick = onEditRoute,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFFCE93D8)),
+          ) {
+            Text(contextString(R.string.overlay_route_route_edit), fontSize = 11.sp)
+          }
+        }
+      }
+      if (canManage) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          OutlinedButton(
+            onClick = onDuplicateRoute,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFF81D4FA)),
+          ) {
+            Text(contextString(R.string.overlay_route_route_duplicate), fontSize = 11.sp)
+          }
+          OutlinedButton(
+            onClick = onDeleteRoute,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFFE57373)),
+          ) {
+            Text(contextString(R.string.overlay_route_route_delete), fontSize = 11.sp)
+          }
+        }
+        Button(
+          onClick = onRelocateAll,
+          modifier = Modifier.fillMaxWidth(),
+          colors = ButtonDefaults.buttonColors(
+            containerColor = ComposeColor(0xFF047857),
+            contentColor = ComposeColor.White,
+          ),
+          shape = RoundedCornerShape(8.dp),
+        ) {
+          Text(
+            text = contextString(R.string.overlay_route_relocate_all),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+          )
+        }
+      }
+      route.orderedPoints().forEachIndexed { index, point ->
+        val ordered = route.orderedPoints()
+        RoutePlannerPointRow(
+          point = point,
+          stepIndex = index + 1,
+          isMine = RoutePlannerAccess.isPointAssignedToMe(context, point),
+          status = RoutePlannerPointStatus.resolve(context, point),
+          canEdit = canManage,
+          canMoveUp = canManage && index > 0,
+          canMoveDown = canManage && index < ordered.lastIndex,
+          onFly = { onFlyToPoint(point.x, point.y, point.sid) },
+          onTeleport = { onDirectToPoint(point.x, point.y, point.sid) },
+          onEdit = { onEditPoint(point) },
+          onMoveUp = { onMovePoint(point, -1) },
+          onMoveDown = { onMovePoint(point, 1) },
+        )
+      }
+    } else if (expanded && canManage) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        OutlinedButton(
+          onClick = onEditRoute,
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(8.dp),
+          colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFFCE93D8)),
+        ) {
+          Text(contextString(R.string.overlay_route_route_edit), fontSize = 11.sp)
+        }
+        OutlinedButton(
+          onClick = onDeleteRoute,
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(8.dp),
+          colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFFE57373)),
+        ) {
+          Text(contextString(R.string.overlay_route_route_delete), fontSize = 11.sp)
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun RoutePlannerPointRow(
+  point: RoutePlannerPoint,
+  stepIndex: Int,
+  isMine: Boolean,
+  status: RoutePointStatus,
+  canEdit: Boolean,
+  canMoveUp: Boolean,
+  canMoveDown: Boolean,
+  onFly: () -> Unit,
+  onTeleport: () -> Unit,
+  onEdit: () -> Unit,
+  onMoveUp: () -> Unit,
+  onMoveDown: () -> Unit,
+) {
+  val borderColor = if (isMine) ComposeColor(0xFF7986CB) else ComposeColor(0x22334455)
+  val bgColor = if (isMine) ComposeColor(0xFF1A2438) else ComposeColor(0xFF121820)
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clip(RoundedCornerShape(8.dp))
+      .background(bgColor)
+      .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+      .padding(horizontal = 8.dp, vertical = 7.dp),
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Text(
+        text = contextString(R.string.overlay_route_point_step, stepIndex),
+        color = ComposeColor(0xFF90CAF9),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+      )
+      if (isMine) {
+        Text(
+          text = contextString(R.string.overlay_route_point_mine),
+          color = ComposeColor(0xFFCE93D8),
+          fontSize = 11.sp,
+          fontWeight = FontWeight.Medium,
+        )
+      }
+    }
+    val statusLabel = when (status) {
+      RoutePointStatus.OnPlace -> contextString(R.string.overlay_route_point_status_on_place)
+      RoutePointStatus.NotMoved -> contextString(R.string.overlay_route_point_status_not_moved)
+      RoutePointStatus.Unknown -> null
+    }
+    if (statusLabel != null) {
+      Text(
+        text = statusLabel,
+        color = if (status == RoutePointStatus.OnPlace) ComposeColor(0xFF81C784) else ComposeColor(0xFFE57373),
+        fontSize = 11.sp,
+      )
+    }
+    Text(
+      text = contextString(
+        R.string.overlay_route_point_coords,
+        point.sid,
+        point.x,
+        point.y,
+        point.memberName,
+      ),
+      color = ComposeColor(0xFFB0BEC5),
+      fontSize = 12.sp,
+      lineHeight = 16.sp,
+    )
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      OutlinedButton(
+        onClick = onFly,
+        modifier = Modifier.weight(1f),
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFF81D4FA)),
+      ) {
+        Text(contextString(R.string.overlay_route_point_fly), fontSize = 12.sp)
+      }
+      Button(
+        onClick = onTeleport,
+        modifier = Modifier.weight(1f),
+        colors = ButtonDefaults.buttonColors(
+          containerColor = ComposeColor(0xFF3949AB),
+          contentColor = ComposeColor.White,
+        ),
+        shape = RoundedCornerShape(8.dp),
+      ) {
+        Text(contextString(R.string.overlay_route_point_teleport), fontSize = 12.sp)
+      }
+    }
+    if (canEdit) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        OutlinedButton(
+          onClick = onMoveUp,
+          enabled = canMoveUp,
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(8.dp),
+          colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFF90CAF9)),
+        ) {
+          Text(contextString(R.string.overlay_route_point_move_up), fontSize = 11.sp)
+        }
+        OutlinedButton(
+          onClick = onMoveDown,
+          enabled = canMoveDown,
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(8.dp),
+          colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFF90CAF9)),
+        ) {
+          Text(contextString(R.string.overlay_route_point_move_down), fontSize = 11.sp)
+        }
+      }
+      OutlinedButton(
+        onClick = onEdit,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFFCE93D8)),
+      ) {
+        Text(contextString(R.string.overlay_route_point_edit), fontSize = 12.sp)
+      }
+    }
+  }
+}
+
+@Composable
+private fun RelocateAllConfirmDialog(
+  route: RoutePlannerRoute,
+  onlineInOverlay: Int,
+  onDismiss: () -> Unit,
+  onConfirm: () -> Unit,
+  onSchedule: () -> Unit,
+) {
+  val stats = RoutePlannerRelocateStats.forRoute(route, emptySet())
+  Dialog(onDismissRequest = onDismiss) {
+    Column(
+      modifier = Modifier
+        .widthIn(min = 280.dp, max = 320.dp)
+        .clip(RoundedCornerShape(14.dp))
+        .background(ComposeColor(0xF2141C2A))
+        .border(1.dp, ComposeColor(0x55FFFFFF), RoundedCornerShape(14.dp))
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text(
+        text = contextString(R.string.overlay_route_relocate_all_confirm_title),
+        color = ComposeColor(0xFFE8EAED),
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+      )
+      Text(
+        text = contextString(
+          R.string.overlay_route_relocate_all_confirm_body,
+          route.points.size,
+          route.name,
+        ),
+        color = ComposeColor(0xFFB0BEC5),
+        fontSize = 13.sp,
+        lineHeight = 18.sp,
+      )
+      Text(
+        text = contextString(
+          R.string.overlay_route_relocate_all_hint,
+          stats.totalPoints,
+          onlineInOverlay,
+          stats.unassignedMembers,
+        ),
+        color = ComposeColor(0xFF78909C),
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+      )
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        OutlinedButton(
+          onClick = onSchedule,
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(8.dp),
+          colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFF80CBC4)),
+        ) {
+          Text(contextString(R.string.overlay_route_relocate_schedule), fontSize = 12.sp)
+        }
+        Button(
+          onClick = onConfirm,
+          modifier = Modifier.weight(1f),
+          colors = ButtonDefaults.buttonColors(
+            containerColor = ComposeColor(0xFF047857),
+            contentColor = ComposeColor.White,
+          ),
+          shape = RoundedCornerShape(8.dp),
+        ) {
+          Text(contextString(R.string.overlay_route_relocate_all), fontSize = 12.sp)
+        }
+      }
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+      ) {
+        TextButton(onClick = onDismiss) {
+          Text(contextString(R.string.overlay_route_planner_cancel))
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ScheduleRelocateDialog(
+  route: RoutePlannerRoute,
+  onDismiss: () -> Unit,
+  onConfirm: (minutes: Int) -> Unit,
+) {
+  var minutesText by remember { mutableStateOf("5") }
+  Dialog(onDismissRequest = onDismiss) {
+    Column(
+      modifier = Modifier
+        .widthIn(min = 280.dp, max = 320.dp)
+        .clip(RoundedCornerShape(14.dp))
+        .background(ComposeColor(0xF2141C2A))
+        .border(1.dp, ComposeColor(0x55FFFFFF), RoundedCornerShape(14.dp))
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text(
+        text = contextString(R.string.overlay_route_relocate_schedule_title),
+        color = ComposeColor(0xFFE8EAED),
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+      )
+      Text(
+        text = contextString(R.string.overlay_route_relocate_schedule_body),
+        color = ComposeColor(0xFFB0BEC5),
+        fontSize = 13.sp,
+      )
+      OutlinedTextField(
+        value = minutesText,
+        onValueChange = { minutesText = it.filter { ch -> ch.isDigit() }.take(3) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text("мин", fontSize = 12.sp) },
+        colors = plannerFieldColors(),
+        shape = RoundedCornerShape(8.dp),
+      )
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+      ) {
+        TextButton(onClick = onDismiss) {
+          Text(contextString(R.string.overlay_route_planner_cancel))
+        }
+        Button(
+          onClick = {
+            val minutes = minutesText.toIntOrNull()?.coerceIn(1, 180) ?: return@Button
+            onConfirm(minutes)
+          },
+          colors = ButtonDefaults.buttonColors(
+            containerColor = ComposeColor(0xFF3949AB),
+            contentColor = ComposeColor.White,
+          ),
+          shape = RoundedCornerShape(8.dp),
+        ) {
+          Text(contextString(R.string.overlay_route_relocate_schedule_confirm))
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun DeleteRouteConfirmDialog(
+  route: RoutePlannerRoute,
+  onDismiss: () -> Unit,
+  onConfirm: () -> Unit,
+) {
+  Dialog(onDismissRequest = onDismiss) {
+    Column(
+      modifier = Modifier
+        .widthIn(min = 280.dp, max = 320.dp)
+        .clip(RoundedCornerShape(14.dp))
+        .background(ComposeColor(0xF2141C2A))
+        .border(1.dp, ComposeColor(0x55FFFFFF), RoundedCornerShape(14.dp))
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text(
+        text = contextString(R.string.overlay_route_route_delete_confirm, route.name),
+        color = ComposeColor(0xFFE8EAED),
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+      )
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+      ) {
+        TextButton(onClick = onDismiss) {
+          Text(contextString(R.string.overlay_route_planner_cancel))
+        }
+        Button(
+          onClick = onConfirm,
+          colors = ButtonDefaults.buttonColors(
+            containerColor = ComposeColor(0xFFB71C1C),
+            contentColor = ComposeColor.White,
+          ),
+          shape = RoundedCornerShape(8.dp),
+        ) {
+          Text(contextString(R.string.overlay_route_route_delete))
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun CreateRouteDialog(
+  onDismiss: () -> Unit,
+  onConfirm: (name: String, type: RoutePlannerType) -> Unit,
+  titleRes: Int = R.string.overlay_route_planner_create_title,
+  confirmRes: Int = R.string.overlay_route_planner_confirm,
+  initialName: String = "",
+  initialType: RoutePlannerType = RoutePlannerType.PVP,
+) {
+  var name by remember(initialName) { mutableStateOf(initialName) }
+  var selectedType by remember(initialType) { mutableStateOf(initialType) }
+  var nameError by remember { mutableStateOf(false) }
+
+  Dialog(onDismissRequest = onDismiss) {
+    Column(
+      modifier = Modifier
+        .widthIn(min = 280.dp, max = 320.dp)
+        .clip(RoundedCornerShape(14.dp))
+        .background(ComposeColor(0xF2141C2A))
+        .border(1.dp, ComposeColor(0x55FFFFFF), RoundedCornerShape(14.dp))
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text(
+        text = contextString(titleRes),
+        color = ComposeColor(0xFFE8EAED),
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+      )
+
+      OutlinedTextField(
+        value = name,
+        onValueChange = {
+          name = it.take(64)
+          nameError = false
+        },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(contextString(R.string.overlay_route_planner_name_label), fontSize = 12.sp) },
+        singleLine = true,
+        isError = nameError,
+        supportingText = if (nameError) {
+          { Text(contextString(R.string.overlay_route_planner_name_required), color = ComposeColor(0xFFE57373)) }
+        } else {
+          null
+        },
+        colors = plannerFieldColors(),
+        shape = RoundedCornerShape(8.dp),
+      )
+
+      Text(
+        text = contextString(R.string.overlay_route_planner_type_label),
+        color = ComposeColor(0xFF90A4AE),
+        fontSize = 12.sp,
+      )
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        RoutePlannerType.entries.forEach { type ->
+          val selected = type == selectedType
+          val labelRes = when (type) {
+            RoutePlannerType.PVP -> R.string.overlay_route_planner_type_pvp
+            RoutePlannerType.PVE -> R.string.overlay_route_planner_type_pve
+          }
+          Box(
+            modifier = Modifier
+              .weight(1f)
+              .clip(RoundedCornerShape(8.dp))
+              .background(if (selected) ComposeColor(0xFF3949AB) else ComposeColor(0xFF1A222E))
+              .border(
+                1.dp,
+                if (selected) ComposeColor(0xFF7986CB) else ComposeColor(0x33445566),
+                RoundedCornerShape(8.dp),
+              )
+              .clickable { selectedType = type }
+              .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = contextString(labelRes),
+              color = if (selected) ComposeColor.White else ComposeColor(0xFFB0BEC5),
+              fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            )
+          }
+        }
+      }
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+      ) {
+        TextButton(onClick = onDismiss) {
+          Text(contextString(R.string.overlay_route_planner_cancel), color = ComposeColor(0xFF90A4AE))
+        }
+        TextButton(
+          onClick = {
+            if (name.trim().isEmpty()) {
+              nameError = true
+              return@TextButton
+            }
+            onConfirm(name, selectedType)
+          },
+        ) {
+          Text(contextString(confirmRes), color = ComposeColor(0xFF80CBC4))
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun plannerFieldColors() = OutlinedTextFieldDefaults.colors(
+  focusedTextColor = ComposeColor(0xFFECEFF1),
+  unfocusedTextColor = ComposeColor(0xFFECEFF1),
+  focusedBorderColor = ComposeColor(0xFF7986CB),
+  unfocusedBorderColor = ComposeColor(0xFF455A64),
+  focusedLabelColor = ComposeColor(0xFF9FA8DA),
+  unfocusedLabelColor = ComposeColor(0xFF78909C),
+  cursorColor = ComposeColor(0xFF7986CB),
+)
 
 @Composable
 private fun RallyPointRow(
@@ -522,7 +1779,7 @@ private fun teleportActionLabel(baseRes: Int, withCountRes: Int, count: Int?): S
 
 @Composable
 private fun contextString(resId: Int, vararg args: Any): String {
-  val ctx = androidx.compose.ui.platform.LocalContext.current
+  val ctx = LocalContext.current
   return if (args.isEmpty()) ctx.getString(resId) else ctx.getString(resId, *args)
 }
 

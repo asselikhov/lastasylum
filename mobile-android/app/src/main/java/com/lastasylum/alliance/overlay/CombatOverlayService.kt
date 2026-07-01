@@ -306,6 +306,59 @@ class CombatOverlayService : Service() {
             handleBookmarkBroadcast(payload)
         }
     }
+    private var mapRelocPanelReceiverRegistered = false
+    private var lastMapRelocPanelSeq = 0L
+    private var mapRelocPanelOpen = false
+    private var pendingRoutePlacement: com.lastasylum.alliance.game.RoutePlacementResult? = null
+    private var pendingRoutePointReposition: com.lastasylum.alliance.game.RoutePlannerPoint? = null
+    private var pendingRoutePointRepositionRouteId: String? = null
+    private var routePlacementActive = false
+    private val routeRelocateScheduler by lazy {
+        com.lastasylum.alliance.game.RouteRelocateAllScheduler(mainHandler) { route ->
+            onRouteRelocateAll(route)
+        }
+    }
+    private val mapRelocPanelReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            if (intent?.action != com.lastasylum.alliance.game.MapRelocPanelBridge.ACTION_RELOC_PANEL) return
+            val payload = intent.getStringExtra(com.lastasylum.alliance.game.MapRelocPanelBridge.EXTRA_PAYLOAD)
+            handleMapRelocPanelBroadcast(payload)
+        }
+    }
+    private val overlayMapRelocStrip by lazy {
+        OverlayMapRelocStrip(
+            context = this,
+            mainHandler = mainHandler,
+            dp = { dp(it) },
+            onRouteClick = { target -> onMapRelocRouteClick(target) },
+        )
+    }
+    private val overlayRoutePlacementBar by lazy {
+        OverlayRoutePlacementBar(
+            context = this,
+            mainHandler = mainHandler,
+            dp = { dp(it) },
+            onCancel = { onRoutePlacementCancel() },
+            onConfirm = { onRoutePlacementConfirm() },
+        )
+    }
+    private val overlayRouteAssignPanel by lazy {
+        OverlayRouteAssignPanel(
+            context = this,
+            mainHandler = mainHandler,
+            dp = { dp(it) },
+            onAssign = { route, member -> onRoutePointAssign(route, member) },
+            onDismiss = { onRouteAssignDismiss() },
+        )
+    }
+    private var routePlacementReceiverRegistered = false
+    private val routePlacementReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            if (intent?.action != com.lastasylum.alliance.game.RoutePlacementBridge.ACTION_ROUTE_PLACEMENT) return
+            val payload = intent.getStringExtra(com.lastasylum.alliance.game.RoutePlacementBridge.EXTRA_PAYLOAD)
+            handleRoutePlacementBroadcast(payload)
+        }
+    }
     private var assaultJoinReceiverRegistered = false
     private val assaultJoinReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, intent: Intent?) {
@@ -361,14 +414,22 @@ class CombatOverlayService : Service() {
             panelOpenTick = teleportPanelOpenTick,
             onPanelShown = {
                 teleportPanelOpenTick.value++
+                hydrateOverlayTeamContextForTeleportPanel()
+                syncRoutePlannerFromServer()
                 com.lastasylum.alliance.game.GameCityTeleportBridge.requestRelocateItemsRefresh(this)
-                com.lastasylum.alliance.game.GameCityTeleportBridge.requestAllianceRallyRefresh(this)
+                if (allianceRallyFlow.value?.isValid() != true) {
+                    com.lastasylum.alliance.game.GameCityTeleportBridge.requestAllianceRallyRefresh(this)
+                }
                 refreshAllianceRallyFallback()
             },
             onDirectTeleport = { x, y, sid -> onOverlayDirectTeleport(x, y, sid) },
             onRandomTeleport = { onOverlayRandomTeleport() },
             onAllianceTeleport = { onOverlayAllianceTeleport() },
             onFlyToRally = { x, y, sid -> onOverlayFlyToRally(x, y, sid) },
+            onRelocateAll = { route -> onRouteRelocateAll(route) },
+            onRepositionPointOnMap = { route, point -> onRoutePointRepositionOnMap(route, point) },
+            onExportRouteToRaid = { route -> onExportRouteToRaid(route) },
+            onScheduleRelocateAll = { route, minutes -> onScheduleRouteRelocateAll(route, minutes) },
             installModalCompose = { scrim, compose, content ->
                 installOverlayModalCompose(scrim, compose, content)
             },
@@ -1487,6 +1548,8 @@ class CombatOverlayService : Service() {
         registerScreenOnReceiver()
         registerRaidShareReceiver()
         registerBookmarkReceiver()
+        registerMapRelocPanelReceiver()
+        registerRoutePlacementReceiver()
         registerAssaultJoinReceiver()
         registerAllianceRosterReceiver()
         registerAllianceRallyReceiver()
@@ -4007,6 +4070,134 @@ class CombatOverlayService : Service() {
         Toast.makeText(this, R.string.overlay_teleport_map_sent, Toast.LENGTH_SHORT).show()
     }
 
+    /** R4/R5: команда «Переместить всех» — рассылка в «Рейд» + локальная очередь для своих точек. */
+    private fun onRouteRelocateAll(route: com.lastasylum.alliance.game.RoutePlannerRoute) {
+        if (route.points.isEmpty()) return
+        if (!com.lastasylum.alliance.game.RoutePlannerAccess.canCreateRoutes(this)) return
+        val encoded = com.lastasylum.alliance.game.RouteRelocateAllCommand.encode(route)
+        serviceScope.launch {
+            ensureOverlayRaidRoomReadyForSend()
+            val mine = com.lastasylum.alliance.game.RouteRelocateAllExecutor.filterPointsForCurrentPlayer(
+                this@CombatOverlayService,
+                route.points,
+            )
+            withContext(Dispatchers.Main) {
+                if (mine.isNotEmpty()) {
+                    com.lastasylum.alliance.game.RouteRelocateAllExecutor.start(
+                        this@CombatOverlayService,
+                        encoded.batchId,
+                        route.points,
+                    )
+                }
+            }
+            val result = sendOverlayRaidQuickCommandHttp(text = encoded.messageText)
+            withContext(Dispatchers.Main) {
+                val msg = if (result.isSuccess) {
+                    getString(R.string.overlay_route_relocate_all_sent, encoded.pointCount)
+                } else {
+                    getString(R.string.overlay_teleport_failed)
+                }
+                Toast.makeText(this@CombatOverlayService, msg, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    /** Отправка текста маршрута в канал «Рейд» (доступно всем участникам команды). */
+    private fun onExportRouteToRaid(route: com.lastasylum.alliance.game.RoutePlannerRoute) {
+        if (route.points.isEmpty()) return
+        val text = com.lastasylum.alliance.game.RoutePlannerExport.buildRaidMessage(route)
+        serviceScope.launch {
+            ensureOverlayRaidRoomReadyForSend()
+            val result = sendOverlayRaidQuickCommandHttp(text = text)
+            withContext(Dispatchers.Main) {
+                val msg = if (result.isSuccess) {
+                    getString(R.string.overlay_route_route_exported)
+                } else {
+                    getString(R.string.overlay_teleport_failed)
+                }
+                Toast.makeText(this@CombatOverlayService, msg, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun onScheduleRouteRelocateAll(
+        route: com.lastasylum.alliance.game.RoutePlannerRoute,
+        delayMinutes: Int,
+    ) {
+        if (route.points.isEmpty()) return
+        if (!com.lastasylum.alliance.game.RoutePlannerAccess.canCreateRoutes(this)) return
+        val minutes = delayMinutes.coerceIn(1, 180)
+        val delayMs = minutes * 60_000L
+        routeRelocateScheduler.schedule(route, delayMs)
+        val pushText = getString(R.string.overlay_route_relocate_schedule_push, route.name, minutes)
+        serviceScope.launch {
+            ensureOverlayRaidRoomReadyForSend()
+            sendOverlayRaidQuickCommandHttp(text = pushText)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    this@CombatOverlayService,
+                    getString(R.string.overlay_route_relocate_scheduled, minutes),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
+    private fun tryIngestRouteRelocateAllCommand(msg: ChatMessage): Boolean {
+        val payload = com.lastasylum.alliance.game.RouteRelocateAllCommand.parse(msg.text) ?: return false
+        val started = com.lastasylum.alliance.game.RouteRelocateAllExecutor.start(
+            this,
+            payload.batchId,
+            payload.toPlannerPoints(),
+        )
+        if (started) {
+            Toast.makeText(
+                this,
+                getString(R.string.overlay_route_relocate_all_received, payload.routeName),
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+        return true
+    }
+
+    /** Кэш команды для ранга R4/R5 и teamId маршрутов. */
+    private fun hydrateOverlayTeamContextForTeleportPanel() {
+        val container = AppContainer.from(this)
+        val uid = container.usersRepository.peekMyProfile()?.id?.trim()
+            ?: container.usersRepository.peekMyProfileDisk()?.id?.trim()
+            ?: return
+        OverlayTeamContextCache.hydrateFromDisk(
+            uid,
+            container.usersRepository,
+            container.launchDiskCache,
+        )
+    }
+
+    private fun syncRoutePlannerFromServer() {
+        val teamId = com.lastasylum.alliance.game.RoutePlannerAccess.resolveTeamId(this)?.trim().orEmpty()
+        if (teamId.isEmpty()) return
+        serviceScope.launch {
+            val pulled = com.lastasylum.alliance.game.RoutePlannerSync.pullIfNewer(this@CombatOverlayService, teamId)
+            if (pulled) {
+                withContext(Dispatchers.Main) {
+                    teleportPanelOpenTick.value++
+                }
+            }
+        }
+    }
+
+    private fun pushRoutePlannerAfterMutation() {
+        val teamId = com.lastasylum.alliance.game.RoutePlannerAccess.resolveTeamId(this)?.trim().orEmpty()
+        if (teamId.isEmpty()) return
+        if (!com.lastasylum.alliance.game.RoutePlannerAccess.canCreateRoutes(this)) return
+        serviceScope.launch {
+            com.lastasylum.alliance.game.RoutePlannerSync.push(this@CombatOverlayService, teamId)
+            withContext(Dispatchers.Main) {
+                teleportPanelOpenTick.value++
+            }
+        }
+    }
+
     private fun overlayVoiceSoundDisplayedOn(): Boolean {
         voiceSession?.let { return it.soundOn }
         return AppContainer.from(this).userSettingsPreferences.isOverlayVoiceSoundEnabled()
@@ -4778,6 +4969,16 @@ class CombatOverlayService : Service() {
         unregisterBookmarkReceiver()
         mainHandler.removeCallbacks(bookmarkHideRunnable)
         runCatching { (windowManager ?: systemWindowManager())?.let { overlayBookmarkPanel.hide(it) } }
+        unregisterMapRelocPanelReceiver()
+        unregisterRoutePlacementReceiver()
+        runCatching {
+            val mgr = windowManager ?: systemWindowManager()
+            mgr?.let {
+                overlayMapRelocStrip.hide(it)
+                overlayRoutePlacementBar.hide(it)
+                overlayRouteAssignPanel.hide(it)
+            }
+        }
         unregisterAssaultJoinReceiver()
         unregisterAllianceRosterReceiver()
         unregisterAllianceRallyReceiver()
@@ -5530,6 +5731,223 @@ class CombatOverlayService : Service() {
         bookmarkReceiverRegistered = false
     }
 
+    private fun registerMapRelocPanelReceiver() {
+        if (mapRelocPanelReceiverRegistered) return
+        val filter = IntentFilter(com.lastasylum.alliance.game.MapRelocPanelBridge.ACTION_RELOC_PANEL)
+        runCatching {
+            ContextCompat.registerReceiver(
+                this,
+                mapRelocPanelReceiver,
+                filter,
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            mapRelocPanelReceiverRegistered = true
+        }.onFailure { e -> Log.w(TAG, "registerMapRelocPanelReceiver failed", e) }
+    }
+
+    private fun unregisterMapRelocPanelReceiver() {
+        if (!mapRelocPanelReceiverRegistered) return
+        runCatching { unregisterReceiver(mapRelocPanelReceiver) }
+        mapRelocPanelReceiverRegistered = false
+    }
+
+    private fun registerRoutePlacementReceiver() {
+        if (routePlacementReceiverRegistered) return
+        val filter = IntentFilter(com.lastasylum.alliance.game.RoutePlacementBridge.ACTION_ROUTE_PLACEMENT)
+        runCatching {
+            ContextCompat.registerReceiver(
+                this,
+                routePlacementReceiver,
+                filter,
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            routePlacementReceiverRegistered = true
+        }.onFailure { e -> Log.w(TAG, "registerRoutePlacementReceiver failed", e) }
+    }
+
+    private fun unregisterRoutePlacementReceiver() {
+        if (!routePlacementReceiverRegistered) return
+        runCatching { unregisterReceiver(routePlacementReceiver) }
+        routePlacementReceiverRegistered = false
+    }
+
+    /** Игровая панель перемещения по пустой клетке — показать кнопку «Маршрут». */
+    private fun handleMapRelocPanelBroadcast(payload: String?) {
+        val target = com.lastasylum.alliance.game.MapRelocPanelTarget.fromJson(payload) ?: return
+        val backJump = lastMapRelocPanelSeq - target.seq
+        if (backJump in 1..RAID_SHARE_SEQ_REORDER_WINDOW) return
+        if (backJump > RAID_SHARE_SEQ_REORDER_WINDOW) lastMapRelocPanelSeq = 0L
+        val deliver = Runnable {
+            val mgr = windowManager ?: systemWindowManager() ?: return@Runnable
+            if (!isOverlayPanelUserEnabled()) return@Runnable
+            lastMapRelocPanelSeq = target.seq
+            if (target.open && target.isValid) {
+                mapRelocPanelOpen = true
+                if (com.lastasylum.alliance.game.RoutePlannerAccess.canCreateRoutes(this) && !routePlacementActive) {
+                    overlayMapRelocStrip.show(mgr, target)
+                }
+            } else {
+                mapRelocPanelOpen = false
+                overlayMapRelocStrip.hide(mgr)
+                if (!overlayRouteAssignPanel.isShowing) {
+                    onRoutePlacementCancel(silent = true)
+                }
+            }
+        }
+        if (Looper.myLooper() == mainHandler.looper) deliver.run() else mainHandler.post(deliver)
+    }
+
+    private fun onMapRelocRouteClick(target: com.lastasylum.alliance.game.MapRelocPanelTarget) {
+        val mgr = windowManager ?: systemWindowManager() ?: return
+        overlayMapRelocStrip.hide(mgr)
+        val started = com.lastasylum.alliance.game.GameRoutePlacementBridge.start(
+            this,
+            target.x,
+            target.y,
+            target.sid,
+        )
+        if (!started) {
+            runCatching {
+                Toast.makeText(this, getString(R.string.overlay_route_placement_failed), Toast.LENGTH_SHORT).show()
+            }
+            if (mapRelocPanelOpen) overlayMapRelocStrip.show(mgr, target)
+            return
+        }
+        routePlacementActive = true
+        overlayRoutePlacementBar.show(mgr)
+        com.lastasylum.alliance.game.GameCityTeleportBridge.requestAllianceRallyRefresh(this)
+    }
+
+    private fun onRoutePointRepositionOnMap(
+        route: com.lastasylum.alliance.game.RoutePlannerRoute,
+        point: com.lastasylum.alliance.game.RoutePlannerPoint,
+    ) {
+        if (!com.lastasylum.alliance.game.RoutePlannerAccess.canCreateRoutes(this)) return
+        val mgr = windowManager ?: systemWindowManager() ?: return
+        pendingRoutePointReposition = point
+        pendingRoutePointRepositionRouteId = route.id
+        pendingRoutePlacement = null
+        overlayTeleportPanel.hide(mgr)
+        overlayRouteAssignPanel.hide(mgr)
+        val started = com.lastasylum.alliance.game.GameRoutePlacementBridge.start(
+            this,
+            point.x,
+            point.y,
+            point.sid,
+        )
+        if (!started) {
+            pendingRoutePointReposition = null
+            pendingRoutePointRepositionRouteId = null
+            Toast.makeText(this, R.string.overlay_route_placement_failed, Toast.LENGTH_SHORT).show()
+            return
+        }
+        routePlacementActive = true
+        overlayRoutePlacementBar.show(mgr)
+        Toast.makeText(this, R.string.overlay_route_point_reposition_hint, Toast.LENGTH_LONG).show()
+    }
+
+    private fun onRoutePlacementCancel(silent: Boolean = false) {
+        routePlacementActive = false
+        pendingRoutePlacement = null
+        pendingRoutePointReposition = null
+        pendingRoutePointRepositionRouteId = null
+        com.lastasylum.alliance.game.GameRoutePlacementBridge.cancel(this)
+        (windowManager ?: systemWindowManager())?.let { overlayRoutePlacementBar.hide(it) }
+        if (!silent) {
+            (windowManager ?: systemWindowManager())?.let { overlayRouteAssignPanel.hide(it) }
+        }
+    }
+
+    private fun onRoutePlacementConfirm() {
+        com.lastasylum.alliance.game.GameRoutePlacementBridge.confirm(this)
+    }
+
+    private fun handleRoutePlacementBroadcast(payload: String?) {
+        val result = com.lastasylum.alliance.game.RoutePlacementResult.fromJson(payload) ?: return
+        val deliver = Runnable {
+            val mgr = windowManager ?: systemWindowManager() ?: return@Runnable
+            if (!result.ok) {
+                routePlacementActive = false
+                pendingRoutePointReposition = null
+                pendingRoutePointRepositionRouteId = null
+                overlayRoutePlacementBar.hide(mgr)
+                runCatching {
+                    Toast.makeText(this, getString(R.string.overlay_route_placement_failed), Toast.LENGTH_SHORT).show()
+                }
+                return@Runnable
+            }
+            val repositionPoint = pendingRoutePointReposition
+            val repositionRouteId = pendingRoutePointRepositionRouteId?.trim().orEmpty()
+            if (repositionPoint != null && repositionRouteId.isNotEmpty()) {
+                routePlacementActive = false
+                overlayRoutePlacementBar.hide(mgr)
+                pendingRoutePointReposition = null
+                pendingRoutePointRepositionRouteId = null
+                val teamId = com.lastasylum.alliance.game.RoutePlannerAccess.resolveTeamId(this)?.trim().orEmpty()
+                if (teamId.isNotEmpty()) {
+                    val updated = repositionPoint.withCoords(result.x, result.y, result.sid)
+                    com.lastasylum.alliance.game.RoutePlannerStore.updatePoint(
+                        this,
+                        teamId,
+                        repositionRouteId,
+                        updated,
+                    )
+                    pushRoutePlannerAfterMutation()
+                    com.lastasylum.alliance.game.GameRoutePlacementBridge.cancel(this)
+                    teleportPanelOpenTick.value++
+                    Toast.makeText(this, R.string.overlay_route_point_updated, Toast.LENGTH_SHORT).show()
+                }
+                return@Runnable
+            }
+            pendingRoutePlacement = result
+            routePlacementActive = false
+            overlayRoutePlacementBar.hide(mgr)
+            val teamId = com.lastasylum.alliance.game.RoutePlannerAccess.resolveTeamId(this)
+            val routes = teamId?.let { com.lastasylum.alliance.game.RoutePlannerStore.list(this, it) }.orEmpty()
+            val members = AllianceRosterCache.peek().takeIf { it.isNotEmpty() }
+                ?: AllianceRosterCache.parse(
+                    AppContainer.from(this).userSettingsPreferences.getAllianceRosterJson(),
+                )
+            if (members.isNotEmpty()) AllianceRosterCache.update(members)
+            overlayRouteAssignPanel.show(mgr, routes, members)
+        }
+        if (Looper.myLooper() == mainHandler.looper) deliver.run() else mainHandler.post(deliver)
+    }
+
+    private fun onRoutePointAssign(route: com.lastasylum.alliance.game.RoutePlannerRoute, member: AllianceMember) {
+        val placement = pendingRoutePlacement ?: return
+        val teamId = com.lastasylum.alliance.game.RoutePlannerAccess.resolveTeamId(this)?.trim().orEmpty()
+        if (teamId.isEmpty()) return
+        val point = runCatching {
+            com.lastasylum.alliance.game.RoutePlannerPoint.create(
+                x = placement.x,
+                y = placement.y,
+                sid = placement.sid,
+                memberId = member.id,
+                memberName = member.name,
+            )
+        }.getOrNull() ?: return
+        com.lastasylum.alliance.game.RoutePlannerStore.addPoint(this, teamId, route.id, point)
+        pushRoutePlannerAfterMutation()
+        com.lastasylum.alliance.game.GameRoutePlacementBridge.cancel(this)
+        pendingRoutePlacement = null
+        teleportPanelOpenTick.value++
+        (windowManager ?: systemWindowManager())?.let { overlayRouteAssignPanel.hide(it) }
+        runCatching {
+            Toast.makeText(
+                this,
+                getString(R.string.overlay_route_point_saved, route.name),
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
+    private fun onRouteAssignDismiss() {
+        pendingRoutePlacement = null
+        com.lastasylum.alliance.game.GameRoutePlacementBridge.cancel(this)
+        (windowManager ?: systemWindowManager())?.let { overlayRouteAssignPanel.hide(it) }
+    }
+
     private fun registerAssaultJoinReceiver() {
         if (assaultJoinReceiverRegistered) return
         val filter = IntentFilter(com.lastasylum.alliance.game.AssaultJoinBridge.ACTION_ASSAULT_JOIN)
@@ -5679,6 +6097,22 @@ class CombatOverlayService : Service() {
         Log.i(TAG, "handleRelocateResultBroadcast payload=$payload")
         val result = com.lastasylum.alliance.game.RelocateResult.parse(payload) ?: return
         com.lastasylum.alliance.game.GameCityTeleportBridge.requestRelocateItemsRefresh(this)
+        if (com.lastasylum.alliance.game.RouteRelocateAllExecutor.onRelocateResult(this, result.ok)) {
+            if (!result.ok) {
+                Toast.makeText(
+                    this,
+                    relocateFailureMessageRes(result.error),
+                    Toast.LENGTH_LONG,
+                ).show()
+            } else if (!com.lastasylum.alliance.game.RouteRelocateAllExecutor.isActive()) {
+                Toast.makeText(
+                    this,
+                    R.string.overlay_route_relocate_all_done,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+            return
+        }
         val messageRes = if (result.ok) {
             R.string.overlay_teleport_sent
         } else {
@@ -7239,6 +7673,7 @@ class CombatOverlayService : Service() {
 
     private fun dispatchOverlayIncomingChatMessage(msg: ChatMessage) {
         if (!isOverlayChatRoutingActive()) return
+        tryIngestRouteRelocateAllCommand(msg)
         ChatDeliveryMetrics.logSocketReceived(msg.roomId, msg._id)
         val msgRoomId = msg.roomId.trim()
         if (msgRoomId.isNotEmpty()) {

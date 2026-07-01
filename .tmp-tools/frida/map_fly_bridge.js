@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '72';
+const BRIDGE_VERSION = '76';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -37,7 +37,6 @@ const ALLIANCE_RALLY_FILE_LUA = "'" + ALLIANCE_RALLY_FILE + "'";
 const ALLIANCE_RALLY_ACTION = 'com.lastasylum.alliance.action.ALLIANCE_RALLY';
 const ALLIANCE_RALLY_PULSE_FILE = '/data/data/com.phs.global/files/squadrelay_alliance_rally_pulse.json';
 const ALLIANCE_RALLY_PULSE_SDCARD = '/sdcard/Download/squadrelay_alliance_rally_pulse.json';
-const ALLIANCE_RALLY_SCAN_INTERVAL_MS = 3000;
 
 // Остаток предметов перемещения в инвентаре (Data.ItemData.itemsCount).
 const RELOCATE_ITEMS_FILE = '/data/data/com.phs.global/files/squadrelay_relocate_items.json';
@@ -69,6 +68,24 @@ const SHARE_APP_PKG = 'com.lastasylum.alliance';
 const BOOKMARK_FILE = '/data/data/com.phs.global/files/squadrelay_bookmark.json';
 const BOOKMARK_OK_FILE = '/data/data/com.phs.global/files/squadrelay_bookmark_hook.ok';
 const BOOKMARK_ACTION = 'com.lastasylum.alliance.action.BOOKMARK_TARGET';
+
+// Панель «Перемещение» при тапе по пустой клетке карты (WorldCityRelocationPosWin).
+const RELOC_PANEL_FILE = '/data/data/com.phs.global/files/squadrelay_reloc_panel.json';
+const RELOC_PANEL_OK_FILE = '/data/data/com.phs.global/files/squadrelay_reloc_panel_hook.ok';
+const RELOC_PANEL_ACTION = 'com.lastasylum.alliance.action.MAP_RELOC_PANEL';
+
+// Режим прокладки точки маршрута (3×3 без расхода предмета).
+const ROUTE_PLACEMENT_FILE = '/data/data/com.phs.global/files/squadrelay_route_placement.json';
+const ROUTE_PLACEMENT_SDCARD = '/sdcard/Download/squadrelay_route_placement.json';
+const ROUTE_PLACEMENT_RESULT_FILE = '/data/data/com.phs.global/files/squadrelay_route_placement_result.json';
+const ROUTE_PLACEMENT_ACTION = 'com.lastasylum.alliance.action.ROUTE_PLACEMENT';
+
+// Метки точек маршрута на карте (JSON от приложения).
+const ROUTE_MARKERS_FILE = '/data/data/com.phs.global/files/squadrelay_route_markers.json';
+const ROUTE_MARKERS_SDCARD = '/sdcard/Download/squadrelay_route_markers.json';
+const ROUTE_MARKERS_PULSE_FILE = '/data/data/com.phs.global/files/squadrelay_route_markers_pulse.json';
+const ROUTE_MARKERS_PULSE_SDCARD = '/sdcard/Download/squadrelay_route_markers_pulse.json';
+
 const BOOKMARK_HOOK_LUA = [
   'pcall(function()',
   "pcall(function() require('Logic.UI.Panel.Collect.SearchCollectPanel') end)",
@@ -164,6 +181,67 @@ const BOOKMARK_HOOK_LUA = [
   'idx.OnExit=function(self,...) pcall(function() if bmpt(self) then _G.__bm_panel=nil publish(self,false) end end) if ox then return ox(self,...) end end',
   'end',
   "local g=io.open(OK,'w') if g then g:write('ok') g:close() end",
+  'end)',
+].join(' ');
+
+const RELOC_PANEL_HOOK_LUA = [
+  'pcall(function()',
+  "pcall(function() require('UIs.WorldMapUI.WorldCityRelocationPosWin') end)",
+  'local pl=package.loaded',
+  "local idx=pl['UIs.WorldMapUI.WorldCityRelocationPosWin']",
+  'if not idx then return end',
+  'local classIdx=(getmetatable(idx) or {}).__index or idx',
+  "local F='/data/data/com.phs.global/files/squadrelay_reloc_panel.json'",
+  "local OK='/data/data/com.phs.global/files/squadrelay_reloc_panel_hook.ok'",
+  'local function pt(self)',
+  '  local p=nil',
+  '  if self.paramTable then',
+  '    local a=self.paramTable[1]',
+  '    if type(a)=="table" then p=a.point or a end',
+  '    if not p and type(self.paramTable[2])=="table" then p=self.paramTable[2].point end',
+  '  end',
+  '  p=p or self.point or self.cellPos or self.targetPoint',
+  '  if type(p)~="table" or p.x==nil or p.y==nil then return nil end return p end',
+  'local function calcBottom(self)',
+  '  local ok,y=pcall(function()',
+  '    local go=self.gameObject if not go then return nil end',
+  '    local roots=CS.UIRoot.list if not roots or roots.Count<1 then return nil end',
+  '    local manual=roots[0].manualHeight local sh=CS.UnityEngine.Screen.height',
+  '    local py=go.transform.position.y',
+  '    if manual and manual>0 and py then return math.floor((1-py/manual)*sh)+math.floor(sh*0.08) end return nil end)',
+  '  return ok and y or nil end',
+  'local function publish(self,open)',
+  '  local p=pt(self) if not p then return end',
+  '  _G.__rp_seq=(_G.__rp_seq or 0)+1 local seq=_G.__rp_seq',
+  "  if not open then local f=io.open(F,'w') if f then f:write('{\"seq\":'..seq..',\"open\":false}') f:close() end return end",
+  "  local bot=calcBottom(self) local s='{\"seq\":'..seq..',\"open\":true,\"x\":'..tostring(p.x or 0)..',\"y\":'..tostring(p.y or 0)..',\"sid\":'..tostring(p.sid or 0)",
+  '  if bot and bot>0 then s=s..",\"panelBottomPx\":"..tostring(bot) end',
+  "  s=s..'}' local f=io.open(F,'w') if f then f:write(s) f:close() end",
+  'end',
+  "if rawget(classIdx,'__rp_oe')==nil then",
+  '_G.__rp_seq=_G.__rp_seq or 0',
+  'local oe=classIdx.OnEnter classIdx.__rp_oe=oe or false',
+  'classIdx.OnEnter=function(self,...) local r if oe then r=oe(self,...) end pcall(function() publish(self,true) end) return r end',
+  'local ox=classIdx.OnExit classIdx.__rp_ox=ox or false',
+  'classIdx.OnExit=function(self,...) pcall(function() publish(self,false) end) if ox then return ox(self,...) end end',
+  'end',
+  "local g=io.open(OK,'w') if g then g:write('ok') g:close() end",
+  'end)',
+].join(' ');
+
+const ROUTE_MODE_INSTALL_LUA = [
+  'pcall(function()',
+  "  pcall(function() require('UIs.WorldMapUI.WorldCityRelocationPosWin') end)",
+  '  local idx=package.loaded["UIs.WorldMapUI.WorldCityRelocationPosWin"]',
+  '  local classIdx=idx and ((getmetatable(idx) or {}).__index or idx)',
+  '  if classIdx and rawget(classIdx,"__sr_cr_wrap")==nil then',
+  '    local orig=classIdx.CityRelocationHandler',
+  '    classIdx.__sr_cr_wrap=true',
+  '    classIdx.CityRelocationHandler=function(win, rtype)',
+  '      if _G.__sr_route_mode then return end',
+  '      if orig then return orig(win, rtype) end',
+  '    end',
+  '  end',
   'end)',
 ].join(' ');
 
@@ -346,7 +424,7 @@ const ALLIANCE_ROSTER_LUA = [
   '  end',
   'end)',
 ].join('\n');
-// Пункт сбора альянса — отдельный опрос (не ждём bridgeAssaultReady / ростер).
+// Пункт сбора альянса — только по pulse (открытие «Перемещение») или вместе с ростером.
 const ALLIANCE_RALLY_LUA = [
   'pcall(function()',
   '  local q=string.char(34)',
@@ -1350,7 +1428,6 @@ let lastOpenChatText = '';
 let lastCityRelocateText = '';
 let lastAllianceRallyText = '';
 let allianceRallyLastBroadcastMs = 0;
-let allianceRallyLastTick = 0;
 let relocateItemsLastTick = 0;
 let lastRelocateItemsText = '';
 let relocateItemsLastBroadcastMs = 0;
@@ -3174,6 +3251,289 @@ function cityRelocateRandom() {
   runCityRelocateLua('random', 'random', inner);
 }
 
+function sendRelocPanelBroadcast(payload) {
+  sendAppPayloadBroadcast(RELOC_PANEL_ACTION, payload);
+}
+
+function sendRoutePlacementBroadcast(payload) {
+  sendAppPayloadBroadcast(ROUTE_PLACEMENT_ACTION, payload);
+}
+
+function sendAppPayloadBroadcast(action, payload) {
+  if (typeof Java === 'undefined' || !Java.available) {
+    log('broadcast skipped (no Java): ' + action);
+    return;
+  }
+  try {
+    Java.perform(function () {
+      const ActivityThread = Java.use('android.app.ActivityThread');
+      const app = ActivityThread.currentApplication();
+      if (app === null) return;
+      const ctx = app.getApplicationContext();
+      const Intent = Java.use('android.content.Intent');
+      const intent = Intent.$new(action);
+      intent.setPackage(SHARE_APP_PKG);
+      intent.putExtra.overload('java.lang.String', 'java.lang.String').call(intent, 'payload', payload);
+      intent.addFlags(0x10000000);
+      ctx.sendBroadcast(intent);
+      log('broadcast -> ' + action);
+    });
+  } catch (e) {
+    log('broadcast failed ' + action + ': ' + e);
+  }
+}
+
+function routePlacementStart(x, y, sid) {
+  const xi = Math.floor(Number(x));
+  const yi = Math.floor(Number(y));
+  const si = Math.floor(Number(sid));
+  if (!xi || !yi || !si) {
+    sendRoutePlacementBroadcast(JSON.stringify({ ok: false, error: 'invalid_coords' }));
+    return;
+  }
+  const inner = [
+    '    _G.__sr_route_mode = true',
+    '    pcall(function() require("Logic.Map.WorldMapEnum") end)',
+    '    pcall(function() require("Logic.Map.MapLogic.Helper.WorldMapHelper") end)',
+    '    local RT = package.loaded["Logic.Map.WorldMapEnum"] and package.loaded["Logic.Map.WorldMapEnum"].RelocationType',
+    '    local CITY = RT and RT.CITY or 1',
+    '    local x=' + xi + ' local y=' + yi + ' local sid=' + si,
+    '    local gmc = _G.GlobalMapCtrlManager',
+    '    local wm = gmc and gmc.GetWorldManager and gmc:GetWorldManager()',
+    '    local muv = wm and wm.mapUnitsView',
+    '    if not muv or not muv.ShowCityRelocationItem then error("no_map_view") end',
+    '    if muv.HideCityRelocationItem then pcall(function() muv:HideCityRelocationItem() end) end',
+    '    muv:ShowCityRelocationItem(x, y, sid)',
+    '    local item = muv.CityRelocationItem',
+    '    if not item or not item.SetCellPos then error("no_relocation_item") end',
+    '    item:SetCellPos(x, y, sid, CITY)',
+    '    if wm and wm.relocationStatusIsOpen ~= nil then wm.relocationStatusIsOpen = true end',
+  ].join('\n');
+  log('route-placement start x=' + xi + ' y=' + yi + ' sid=' + si);
+  mainThreadFlyQueue.push(function () {
+    runLua(ROUTE_MODE_INSTALL_LUA);
+    if (!liveLuaEnv || liveLuaEnv.isNull() || !doStringNow(inner)) {
+      sendRoutePlacementBroadcast(JSON.stringify({ ok: false, error: 'lua_failed' }));
+    }
+  });
+}
+
+function routePlacementCancel() {
+  const inner = [
+    '    _G.__sr_route_mode = false',
+    '    _G.__sr_route_pending = nil',
+    '    local gmc = _G.GlobalMapCtrlManager',
+    '    local wm = gmc and gmc.GetWorldManager and gmc:GetWorldManager()',
+    '    local muv = wm and wm.mapUnitsView',
+    '    if muv and muv.HideCityRelocationItem then pcall(function() muv:HideCityRelocationItem() end) end',
+    '    local item = muv and muv.CityRelocationItem',
+    '    if item and item.Hide then pcall(function() item:Hide() end) end',
+    '    if wm and wm.relocationStatusIsOpen ~= nil then wm.relocationStatusIsOpen = false end',
+  ].join('\n');
+  log('route-placement cancel');
+  mainThreadFlyQueue.push(function () {
+    if (liveLuaEnv && !liveLuaEnv.isNull()) doStringNow(inner);
+  });
+}
+
+function routePlacementConfirm() {
+  const inner = [
+    '    local gmc = _G.GlobalMapCtrlManager',
+    '    local wm = gmc and gmc.GetWorldManager and gmc:GetWorldManager()',
+    '    local muv = wm and wm.mapUnitsView',
+    '    local item = muv and muv.CityRelocationItem',
+    '    if not item then error("no_item") end',
+    '    local x = tonumber(item.cellX or item.x or (item.cellPos and item.cellPos.x)) or 0',
+    '    local y = tonumber(item.cellY or item.y or (item.cellPos and item.cellPos.y)) or 0',
+    '    local sid = tonumber(item.sid or (item.cellPos and item.cellPos.sid)) or 0',
+    '    if item.GetCellPos then',
+    '      local ok, cx, cy, cs = pcall(function() return item:GetCellPos() end)',
+    '      if ok and cx and cy then x, y = tonumber(cx) or x, tonumber(cy) or y end',
+    '      if ok and cs then sid = tonumber(cs) or sid end',
+    '    end',
+    '    if x <= 0 or y <= 0 or sid <= 0 then error("bad_coords") end',
+    '    _G.__sr_route_pending = { x = x, y = y, sid = sid }',
+    '    local RF = "' + ROUTE_PLACEMENT_RESULT_FILE + '"',
+    '    local f = io.open(RF, "w")',
+    '    if f then f:write("{\"ok\":true,\"x\":"..x..",\"y\":"..y..",\"sid\":"..sid.."}") f:close() end',
+  ].join('\n');
+  log('route-placement confirm');
+  mainThreadFlyQueue.push(function () {
+    writeFileEmpty(ROUTE_PLACEMENT_RESULT_FILE);
+    if (!liveLuaEnv || liveLuaEnv.isNull() || !doStringNow(inner)) {
+      sendRoutePlacementBroadcast(JSON.stringify({ ok: false, error: 'lua_failed' }));
+      return;
+    }
+    let raw = '';
+    try {
+      raw = readFileUtf8(ROUTE_PLACEMENT_RESULT_FILE, 512).trim();
+    } catch (e) {}
+    if (raw) {
+      sendRoutePlacementBroadcast(raw);
+    } else {
+      sendRoutePlacementBroadcast(JSON.stringify({ ok: false, error: 'no_result' }));
+    }
+  });
+}
+
+function refreshRouteMarkersFromFile() {
+  const paths = [ROUTE_MARKERS_SDCARD, ROUTE_MARKERS_FILE];
+  let text = '';
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      text = readFileUtf8(paths[i], 256 * 1024).trim();
+      if (text) break;
+    } catch (e) {}
+  }
+  if (!text) return;
+  let markers = [];
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && Array.isArray(parsed.markers)) markers = parsed.markers;
+  } catch (e) {
+    log('route-markers parse failed: ' + e);
+    return;
+  }
+  const rows = [];
+  for (let i = 0; i < markers.length; i++) {
+    const m = markers[i];
+    if (!m || !m.x || !m.y || !m.sid) continue;
+    const label = String(m.label || m.routeName || 'route').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    rows.push(
+      '{id="' +
+        String(m.id || i) +
+        '",x=' +
+        Math.floor(Number(m.x)) +
+        ',y=' +
+        Math.floor(Number(m.y)) +
+        ',sid=' +
+        Math.floor(Number(m.sid)) +
+        ',label="' +
+        label +
+        '"}',
+    );
+  }
+  const lua = [
+    'pcall(function()',
+    '  _G.__sr_route_markers = {' + rows.join(',') + '}',
+    '  _G.__sr_route_labels = {}',
+    '  for _, m in ipairs(_G.__sr_route_markers) do',
+    '    if m.label then _G.__sr_route_labels[m.id or (tostring(m.x)..":"..tostring(m.y))] = m.label end',
+    '  end',
+    '  _G.__sr_route_mode = false',
+    '  local gmc = _G.GlobalMapCtrlManager',
+    '  local wm = gmc and gmc.GetWorldManager and gmc:GetWorldManager()',
+    '  local muv = wm and wm.mapUnitsView',
+    '  if muv and muv.HideCityRelocationItem then pcall(function() muv:HideCityRelocationItem() end) end',
+    '  if wm and wm.relocationStatusIsOpen ~= nil then wm.relocationStatusIsOpen = false end',
+    'end)',
+  ].join('\n');
+  mainThreadFlyQueue.push(function () {
+    if (liveLuaEnv && !liveLuaEnv.isNull()) doStringNow(lua);
+    log('route-markers refresh count=' + rows.length);
+  });
+}
+
+function pollRoutePlacementFile() {
+  const now = Date.now();
+  if (!bridgeAutoHelpReady(now)) return;
+  const paths = [ROUTE_PLACEMENT_FILE, ROUTE_PLACEMENT_SDCARD];
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const text = readFileUtf8(paths[i]);
+      if (!text || !text.trim()) continue;
+      const modeM = text.match(/"mode"\s*:\s*"([^"]+)"/);
+      const mode = modeM ? modeM[1] : '';
+      log('route-placement trigger: ' + text.trim());
+      if (mode === 'start') {
+        const mx = text.match(/"x"\s*:\s*(-?\d+)/);
+        const my = text.match(/"y"\s*:\s*(-?\d+)/);
+        const ms = text.match(/"sid"\s*:\s*(-?\d+)/);
+        if (mx && my && ms) {
+          routePlacementStart(parseInt(mx[1], 10), parseInt(my[1], 10), parseInt(ms[1], 10));
+        }
+      } else if (mode === 'cancel') {
+        routePlacementCancel();
+      } else if (mode === 'confirm') {
+        routePlacementConfirm();
+      }
+      writeFileEmpty(paths[i]);
+      return;
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes('No such file') && !msg.includes('not found')) {
+        log('route-placement poll error: ' + e);
+      }
+    }
+  }
+}
+
+let relocPanelHookOk = false;
+let lastRelocPanelInstallAt = 0;
+let lastRelocPanelText = '';
+
+function maybeInstallRelocPanelHook() {
+  if (!liveLuaEnv || liveLuaEnv.isNull()) return;
+  const now = Date.now();
+  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
+  const interval = relocPanelHookOk ? 2000 : 100;
+  if (now - lastRelocPanelInstallAt < interval) return;
+  lastRelocPanelInstallAt = now;
+  runLua(RELOC_PANEL_HOOK_LUA);
+  runLua(ROUTE_MODE_INSTALL_LUA);
+  if (!relocPanelHookOk) {
+    const ok = readFileUtf8(RELOC_PANEL_OK_FILE);
+    if (ok && ok.indexOf('ok') >= 0) {
+      relocPanelHookOk = true;
+      log('reloc-panel hook armed (re-arming every 2s)');
+    }
+  }
+}
+
+function pollRelocPanelFile() {
+  try {
+    const text = readFileUtf8(RELOC_PANEL_FILE);
+    if (!text || !text.trim() || text === lastRelocPanelText) return;
+    lastRelocPanelText = text;
+    log('reloc-panel payload: ' + text.trim());
+    sendRelocPanelBroadcast(text.trim());
+  } catch (e) {
+    const msg = String(e);
+    if (!msg.includes('No such file') && !msg.includes('not found')) {
+      log('reloc-panel poll error: ' + e);
+    }
+  }
+}
+
+let lastRouteMarkersPulse = '';
+let lastRouteMarkerStartupPullAt = 0;
+
+function tickRouteMarkerStartupPull(nowMs) {
+  if (nowMs - lastRouteMarkerStartupPullAt < 8000) return;
+  if (!bridgeBackgroundLuaReady(nowMs)) return;
+  lastRouteMarkerStartupPullAt = nowMs;
+  refreshRouteMarkersFromFile();
+}
+
+function pollRouteMarkersPulse() {
+  const paths = [ROUTE_MARKERS_PULSE_SDCARD, ROUTE_MARKERS_PULSE_FILE];
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const text = readFileUtf8(paths[i]);
+      if (!text || !text.trim() || text === lastRouteMarkersPulse) return;
+      lastRouteMarkersPulse = text;
+      writeFileEmpty(paths[i]);
+      refreshRouteMarkersFromFile();
+      return;
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes('No such file') && !msg.includes('not found')) {
+        log('route-markers pulse error: ' + e);
+      }
+    }
+  }
+}
+
 function pollCityRelocateFile() {
   const now = Date.now();
   if (!bridgeAutoHelpReady(now)) return;
@@ -3723,7 +4083,6 @@ function maybeAllianceRallyPulse() {
       const text = readFileUtf8(paths[i], 256);
       if (!text || !text.trim()) continue;
       writeFileEmpty(paths[i]);
-      allianceRallyLastTick = 0;
       lastAllianceRallyText = '';
       return true;
     } catch (e) {
@@ -3738,18 +4097,17 @@ function maybeAllianceRallyPulse() {
 
 function tickAllianceRally() {
   const pulsed = maybeAllianceRallyPulse();
+  if (!pulsed) return;
   if (!liveLuaEnv || liveLuaEnv.isNull()) return;
   const now = Date.now();
   if (!bridgeLuaStartupReady(now)) return;
-  if (!pulsed && now - allianceRallyLastTick < ALLIANCE_RALLY_SCAN_INTERVAL_MS) return;
-  allianceRallyLastTick = now;
   try {
     runLua(ALLIANCE_RALLY_LUA);
   } catch (e) {
     log('alliance-rally scan error: ' + e);
     return;
   }
-  pollAllianceRallyFile(now, pulsed);
+  pollAllianceRallyFile(now, true);
 }
 
 function maybeRelocateItemsPulse() {
@@ -4164,6 +4522,10 @@ setImmediate(function () {
   writeFileEmpty(SHARE_CLOSE_FILE);
   writeFileEmpty(BOOKMARK_FILE);
   writeFileEmpty(BOOKMARK_OK_FILE);
+  writeFileEmpty(RELOC_PANEL_FILE);
+  writeFileEmpty(RELOC_PANEL_OK_FILE);
+  lastRelocPanelText = '';
+  relocPanelHookOk = false;
   shareHookOk = false;
   lastShareText = '';
   bookmarkHookOk = false;
@@ -4186,21 +4548,30 @@ setImmediate(function () {
     tickAllianceRoster();
     tickAllianceRally();
     tickRelocateItems();
+    tickRouteMarkerStartupPull(nowMs);
     maybeInstallShareHook();
     pollShareFile();
     pollShareCloseFile();
     maybeInstallBookmarkHook();
     pollBookmarkFile();
+    maybeInstallRelocPanelHook();
+    pollRelocPanelFile();
+    pollRoutePlacementFile();
+    pollRouteMarkersPulse();
     if (libBase() && pendingFlies.length) scheduleDrainPendingFlies();
   }, 400);
   setInterval(function () {
     pollTriggerFile();
     pollCityRelocateFile();
+    pollRoutePlacementFile();
+    pollRouteMarkersPulse();
     maybeInstallShareHook();
     pollShareFile();
     pollShareCloseFile();
     maybeInstallBookmarkHook();
     pollBookmarkFile();
+    maybeInstallRelocPanelHook();
+    pollRelocPanelFile();
     if (libBase() && pendingFlies.length) scheduleDrainPendingFlies();
   }, 100);
 });

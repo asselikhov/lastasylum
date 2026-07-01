@@ -40,6 +40,21 @@ class TeamsRepository(
         }
     }
 
+    suspend fun getRoutePlanner(teamId: String): Result<TeamRoutePlannerSnapshotDto> {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return Result.failure(IllegalArgumentException("team_required"))
+        return runCatching { teamsApi.getRoutePlanner(tid) }
+    }
+
+    suspend fun putRoutePlanner(
+        teamId: String,
+        body: PutTeamRoutePlannerBody,
+    ): Result<TeamRoutePlannerSnapshotDto> {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return Result.failure(IllegalArgumentException("team_required"))
+        return runCatching { teamsApi.putRoutePlanner(tid, body) }
+    }
+
     suspend fun submitJoinRequest(teamId: String): Result<SubmitJoinResponse> =
         runCatching {
             teamsApi.submitJoinRequest(teamId).requireTeamsSuccess()

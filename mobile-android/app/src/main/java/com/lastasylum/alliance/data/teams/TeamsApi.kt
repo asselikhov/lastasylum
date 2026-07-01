@@ -249,4 +249,15 @@ interface TeamsApi {
         @Path("messageId") messageId: String,
         @Body body: ToggleReactionRequest,
     ): TeamForumMessageDto
+
+    @GET("teams/{teamId}/route-planner")
+    suspend fun getRoutePlanner(
+        @Path("teamId") teamId: String,
+    ): TeamRoutePlannerSnapshotDto
+
+    @PUT("teams/{teamId}/route-planner")
+    suspend fun putRoutePlanner(
+        @Path("teamId") teamId: String,
+        @Body body: PutTeamRoutePlannerBody,
+    ): TeamRoutePlannerSnapshotDto
 }

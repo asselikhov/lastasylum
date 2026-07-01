@@ -55,6 +55,8 @@ import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import { TeamNewsService } from './team-news.service';
 import { TeamForumService } from './team-forum.service';
 import { TeamsService } from './teams.service';
+import { TeamRoutePlannerService } from './team-route-planner.service';
+import { PutTeamRoutePlannerDto } from './dto/put-team-route-planner.dto';
 import { ToggleReactionDto } from '../chat/dto/toggle-reaction.dto';
 
 type RequestUser = {
@@ -70,6 +72,7 @@ export class TeamsController {
     private readonly teamNewsAttachments: TeamNewsAttachmentsService,
     private readonly teamForum: TeamForumService,
     private readonly teamForumGateway: TeamForumGateway,
+    private readonly teamRoutePlanner: TeamRoutePlannerService,
   ) {}
 
   @Post()
@@ -237,6 +240,25 @@ export class TeamsController {
     @Param('teamId') teamId: string,
   ) {
     return this.teams.getTeamOverlayPresence(teamId, req.user.userId);
+  }
+
+  @Get(':teamId/route-planner')
+  @Roles(AllianceRole.MEMBER)
+  getRoutePlanner(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+  ) {
+    return this.teamRoutePlanner.getSnapshot(teamId, req.user.userId);
+  }
+
+  @Put(':teamId/route-planner')
+  @Roles(AllianceRole.MEMBER)
+  putRoutePlanner(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Body() dto: PutTeamRoutePlannerDto,
+  ) {
+    return this.teamRoutePlanner.replaceRoutes(teamId, req.user.userId, dto);
   }
 
   @Get(':teamId/inbox-badges')
