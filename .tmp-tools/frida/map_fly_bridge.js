@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '66';
+const BRIDGE_VERSION = '67';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -3075,33 +3075,45 @@ function cityRelocateAlliance() {
   runCityRelocateLua('alliance', 'alliance', inner);
 }
 
-// Случайное перемещение: WorldCityRelocateC2S + RelocationType.RANDOM (не 0 — иначе «Ошибка типа перемещения»).
+// Случайное перемещение (item_UseUp_randomMove): relocateType=0 + ShowNornalPanel + OnOkClickHandler
+// с CityRelocationItem — как подтверждение в игре после предмета из сумки.
 function cityRelocateRandom() {
   const inner = [
-    '    pcall(function() require("Logic.Proto.Send.world") end)',
-    '    pcall(function() require("Logic.Map.WorldMapEnum") end)',
     '    pcall(function() require("UIs.WorldMapUI.WorldCityRelocationPosWin") end)',
-    '    local RT = package.loaded["Logic.Map.WorldMapEnum"] and package.loaded["Logic.Map.WorldMapEnum"].RelocationType',
-    '    local RND = RT and (RT.RANDOM or RT.Random or RT.RANDOM_MOVE or RT.RandomMove)',
-    '    if not RND and type(RT) == "table" then',
-    '      for k, v in pairs(RT) do',
-    '        if string.find(string.lower(tostring(k)), "random", 1, true) then RND = v break end',
-    '      end',
-    '    end',
-    '    if not RND or tonumber(RND) == 0 then RND = 3 end',
+    '    pcall(function() require("Logic.Proto.Send.world") end)',
+    '    local RND = 0',
     '    local idx = package.loaded["UIs.WorldMapUI.WorldCityRelocationPosWin"]',
     '    local classIdx = idx and ((getmetatable(idx) or {}).__index or idx)',
-    '    if classIdx and classIdx.OnOkClickHandler then',
-    '      local win = { relocateType = RND, paramTable = { {}, {} } }',
-    '      setmetatable(win, { __index = classIdx })',
+    '    if not classIdx then error("no_handler") end',
+    '    local gmc = _G.GlobalMapCtrlManager',
+    '    local wm = gmc and gmc.GetWorldManager and gmc:GetWorldManager()',
+    '    local muv = wm and wm.mapUnitsView',
+    '    if not muv then error("no_map_view") end',
+    '    local cityItem = muv.CityRelocationItem',
+    '    local allyItem = muv.AllyBossRelocationItem or cityItem',
+    '    if not cityItem then error("no_relocation_item") end',
+    '    local win = {',
+    '      relocateType = RND,',
+    '      type = RND,',
+    '      paramTable = { {}, {} },',
+    '      cityRelocationItem = cityItem,',
+    '      allyBossRelocationItem = allyItem,',
+    '    }',
+    '    setmetatable(win, { __index = classIdx })',
+    '    if classIdx.ShowNornalPanel then',
+    '      pcall(function() classIdx.ShowNornalPanel(win, RND) end)',
+    '    end',
+    '    if classIdx.OnOkClickHandler then',
     '      classIdx.OnOkClickHandler(win)',
+    '    elseif classIdx.OnOkClick2Handler then',
+    '      classIdx.OnOkClick2Handler(win)',
     '    else',
     '      local sw = package.loaded["Logic.Proto.Send.world"]',
     '      if not sw or not sw.WorldCityRelocateC2S then error("no_api") end',
     '      sw.WorldCityRelocateC2S({ relocateType = RND, type = RND }, {})',
     '    end',
   ].join('\n');
-  log('city-relocate random');
+  log('city-relocate random (type=0 + relocation item)');
   runCityRelocateLua('random', 'random', inner);
 }
 

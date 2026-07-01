@@ -11,7 +11,7 @@ import java.io.File
 
 /**
  * Телепорт территории (города) в игре: sdcard-триггер + broadcast в пропатченную игру.
- * Frida-мост: прямое — CityRelocationItem + CityRelocationHandler; альянс — RequestRallyPointRelocateC2S; случайное — WorldCityRelocateC2S.
+ * Frida-мост: прямое — CityRelocationItem + CityRelocationHandler; альянс — RequestRallyPointRelocateC2S; случайное — ShowNornalPanel + OnOkClickHandler (type=0).
  */
 object GameCityTeleportBridge {
   private const val EXTRA_CITY_RELOCATE = "cityrelocate"
@@ -39,8 +39,10 @@ object GameCityTeleportBridge {
   fun sendAlliance(context: Context): Boolean =
     dispatch(context, MODE_ALLIANCE, -1, -1, -1)
 
-  fun sendRandom(context: Context): Boolean =
-    dispatch(context, MODE_RANDOM, -1, -1, -1)
+  fun sendRandom(context: Context): Boolean {
+    logInfo("sendRandom: dispatching mode=$MODE_RANDOM")
+    return dispatch(context, MODE_RANDOM, -1, -1, -1)
+  }
 
   /** Просит игровой мост немедленно перечитать инвентарь предметов перемещения. */
   fun requestRelocateItemsRefresh(context: Context) {
@@ -104,6 +106,7 @@ object GameCityTeleportBridge {
       try {
         appContext.sendBroadcast(intent)
         broadcastSent = true
+        logInfo("city-relocate broadcast mode=$mode pkg=$trimmed x=$x y=$y sid=$serverNumber")
         logDebug("city-relocate broadcast mode=$mode pkg=$trimmed")
       } catch (e: Exception) {
         Log.w(TAG, "city-relocate broadcast failed pkg=$trimmed", e)
@@ -141,5 +144,9 @@ object GameCityTeleportBridge {
 
   private fun logDebug(message: String) {
     if (BuildConfig.DEBUG) Log.d(TAG, message)
+  }
+
+  private fun logInfo(message: String) {
+    Log.i(TAG, message)
   }
 }

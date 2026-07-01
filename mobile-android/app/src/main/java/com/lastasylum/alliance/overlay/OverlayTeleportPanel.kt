@@ -31,7 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -231,29 +231,23 @@ private fun TeleportPanelContent(
   val rallyPoint by rallyPointFlow.collectAsState()
   val openTick by panelOpenTick.collectAsState()
 
-  var serverText by remember { mutableStateOf("") }
-  var xText by remember { mutableStateOf("") }
-  var yText by remember { mutableStateOf("") }
+  val initialCoords = remember { loadDirectTeleportCoordTexts(prefs, defaultServer) }
+  var serverText by remember { mutableStateOf(initialCoords.server) }
+  var xText by remember { mutableStateOf(initialCoords.x) }
+  var yText by remember { mutableStateOf(initialCoords.y) }
+  var lastSyncedOpenTick by remember { mutableStateOf(0) }
+
+  SideEffect {
+    if (openTick <= lastSyncedOpenTick) return@SideEffect
+    val loaded = loadDirectTeleportCoordTexts(prefs, defaultServer)
+    serverText = loaded.server
+    xText = loaded.x
+    yText = loaded.y
+    lastSyncedOpenTick = openTick
+  }
 
   fun persistCoords() {
     prefs.setDirectTeleportCoordTexts(serverText, xText, yText)
-  }
-
-  LaunchedEffect(openTick) {
-    if (openTick <= 0) return@LaunchedEffect
-    val savedServer = prefs.getDirectTeleportServerText()
-    val savedX = prefs.getDirectTeleportXText()
-    val savedY = prefs.getDirectTeleportYText()
-    val hasSaved = savedServer.isNotBlank() || savedX.isNotBlank() || savedY.isNotBlank()
-    serverText = if (hasSaved && savedServer.isNotBlank()) {
-      savedServer
-    } else if (hasSaved) {
-      savedServer
-    } else {
-      defaultServer?.takeIf { it > 0 }?.toString() ?: "109"
-    }
-    xText = savedX
-    yText = savedY
   }
 
   val server = serverText.trim().toIntOrNull()
@@ -534,3 +528,25 @@ private fun contextString(resId: Int, vararg args: Any): String {
 
 private const val MIN_SERVER = 1
 private const val MAX_SERVER = 9999
+
+private data class DirectTeleportCoordTexts(
+  val server: String,
+  val x: String,
+  val y: String,
+)
+
+private fun loadDirectTeleportCoordTexts(
+  prefs: UserSettingsPreferences,
+  defaultServer: Int?,
+): DirectTeleportCoordTexts {
+  val savedServer = prefs.getDirectTeleportServerText()
+  val savedX = prefs.getDirectTeleportXText()
+  val savedY = prefs.getDirectTeleportYText()
+  val hasSaved = savedServer.isNotBlank() || savedX.isNotBlank() || savedY.isNotBlank()
+  val server = if (hasSaved) {
+    savedServer
+  } else {
+    defaultServer?.takeIf { it > 0 }?.toString() ?: "109"
+  }
+  return DirectTeleportCoordTexts(server, savedX, savedY)
+}

@@ -3994,6 +3994,7 @@ class CombatOverlayService : Service() {
 
     private fun onOverlayRandomTeleport() {
         overlayCommandsPopover.hide()
+        Log.i(TAG, "onOverlayRandomTeleport: user tapped random relocate")
         com.lastasylum.alliance.game.GameCityTeleportBridge.sendRandom(this)
     }
 
@@ -5644,6 +5645,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun handleRelocateResultBroadcast(payload: String?) {
+        Log.i(TAG, "handleRelocateResultBroadcast payload=$payload")
         val result = com.lastasylum.alliance.game.RelocateResult.parse(payload) ?: return
         com.lastasylum.alliance.game.GameCityTeleportBridge.requestRelocateItemsRefresh(this)
         val messageRes = if (result.ok) {
