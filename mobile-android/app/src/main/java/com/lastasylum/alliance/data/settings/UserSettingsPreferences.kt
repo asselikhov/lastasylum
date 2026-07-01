@@ -377,6 +377,13 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().putString(KEY_ALLIANCE_RALLY_JSON, json).apply()
     }
 
+    /** JSON остатка предметов перемещения: `{"direct":N,"alliance":M,"random":R}`. */
+    fun getRelocateItemsJson(): String? = prefs.getString(KEY_RELOCATE_ITEMS_JSON, null)
+
+    fun setRelocateItemsJson(json: String) {
+        prefs.edit().putString(KEY_RELOCATE_ITEMS_JSON, json).apply()
+    }
+
     fun getDirectTeleportServer(): Int? =
         prefs.getInt(KEY_DIRECT_TELEPORT_SERVER, -1).takeIf { it > 0 }
 
@@ -392,6 +399,44 @@ class UserSettingsPreferences(context: Context) {
             .putInt(KEY_DIRECT_TELEPORT_Y, y)
             .putInt(KEY_DIRECT_TELEPORT_SERVER, serverNumber)
             .apply()
+        setDirectTeleportCoordTexts(
+            server = serverNumber.toString(),
+            x = x.toString(),
+            y = y.toString(),
+        )
+    }
+
+    fun getDirectTeleportServerText(): String =
+        prefs.getString(KEY_DIRECT_TELEPORT_SERVER_TEXT, null)
+            ?: getDirectTeleportServer()?.takeIf { it > 0 }?.toString()
+            ?: ""
+
+    fun getDirectTeleportXText(): String =
+        prefs.getString(KEY_DIRECT_TELEPORT_X_TEXT, null)
+            ?: getDirectTeleportX()?.takeIf { it > 0 }?.toString()
+            ?: ""
+
+    fun getDirectTeleportYText(): String =
+        prefs.getString(KEY_DIRECT_TELEPORT_Y_TEXT, null)
+            ?: getDirectTeleportY()?.takeIf { it > 0 }?.toString()
+            ?: ""
+
+    fun setDirectTeleportCoordTexts(server: String, x: String, y: String) {
+        prefs.edit()
+            .putString(KEY_DIRECT_TELEPORT_SERVER_TEXT, server)
+            .putString(KEY_DIRECT_TELEPORT_X_TEXT, x)
+            .putString(KEY_DIRECT_TELEPORT_Y_TEXT, y)
+            .apply()
+        val sid = server.trim().toIntOrNull()
+        val xi = x.trim().toIntOrNull()
+        val yi = y.trim().toIntOrNull()
+        if (sid != null && sid > 0 && xi != null && xi > 0 && yi != null && yi > 0) {
+            prefs.edit()
+                .putInt(KEY_DIRECT_TELEPORT_SERVER, sid)
+                .putInt(KEY_DIRECT_TELEPORT_X, xi)
+                .putInt(KEY_DIRECT_TELEPORT_Y, yi)
+                .apply()
+        }
     }
 
     /** Индексы отрядов 0…2 (в игре teamIndex), CSV «0,1,2». */
@@ -892,9 +937,13 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_AUTO_ASSAULT_JOIN_LOG = "auto_assault_join_log"
         private const val KEY_ALLIANCE_ROSTER_JSON = "alliance_roster_json"
         private const val KEY_ALLIANCE_RALLY_JSON = "alliance_rally_json"
+        private const val KEY_RELOCATE_ITEMS_JSON = "relocate_items_json"
         private const val KEY_DIRECT_TELEPORT_SERVER = "direct_teleport_server"
         private const val KEY_DIRECT_TELEPORT_X = "direct_teleport_x"
         private const val KEY_DIRECT_TELEPORT_Y = "direct_teleport_y"
+        private const val KEY_DIRECT_TELEPORT_SERVER_TEXT = "direct_teleport_server_text"
+        private const val KEY_DIRECT_TELEPORT_X_TEXT = "direct_teleport_x_text"
+        private const val KEY_DIRECT_TELEPORT_Y_TEXT = "direct_teleport_y_text"
         const val AUTO_ASSAULT_TYPE_MONSTER = "monster"
         const val AUTO_ASSAULT_TYPE_PLAYER = "player"
         const val AUTO_ASSAULT_TYPE_CITY = "city"

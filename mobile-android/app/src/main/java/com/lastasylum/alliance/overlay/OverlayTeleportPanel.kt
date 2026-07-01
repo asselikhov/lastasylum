@@ -6,7 +6,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
@@ -19,12 +18,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -35,6 +31,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,10 +51,11 @@ import androidx.compose.ui.unit.sp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.game.AllianceRallyPoint
-import com.lastasylum.alliance.ui.theme.SquadRelayTheme
+import com.lastasylum.alliance.game.RelocateItemCounts
+import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Компактное центральное окно «Перемещение»: прямое / альянс + пункт сбора.
+ * Компактное центральное окно «Перемещение»: прямое / случайное / альянс + пункт сбора.
  */
 class OverlayTeleportPanel(
   private val context: Context,
@@ -64,12 +63,19 @@ class OverlayTeleportPanel(
   private val dp: (Int) -> Int,
   private val prefs: UserSettingsPreferences,
   private val defaultServerProvider: () -> Int?,
-  private val rallyPointProvider: () -> AllianceRallyPoint?,
+  private val rallyPointFlow: StateFlow<AllianceRallyPoint?>,
+  private val relocateItemsFlow: StateFlow<RelocateItemCounts?>,
+  private val panelOpenTick: StateFlow<Int>,
+  private val onPanelShown: () -> Unit,
+  private val installModalCompose: (View, ComposeView, @Composable () -> Unit) -> Unit,
   private val onDirectTeleport: (x: Int, y: Int, serverNumber: Int) -> Unit,
+  private val onRandomTeleport: () -> Unit,
   private val onAllianceTeleport: () -> Unit,
   private val onFlyToRally: (x: Int, y: Int, serverNumber: Int) -> Unit,
 ) {
   private var scrim: FrameLayout? = null
+  private var composeView: ComposeView? = null
+  private var composeContentInstalled = false
   private var attached = false
   private var attachedWindowManager: WindowManager? = null
 
@@ -88,13 +94,12 @@ class OverlayTeleportPanel(
           .onSuccess {
             attached = true
             attachedWindowManager = windowManager
+            ensureComposeInstalled(root)
+            onPanelShown()
           }
           .onFailure { e -> Log.w(TAG, "addView failed", e) }
-      } else if (attachedWindowManager != windowManager) {
-        runCatching { attachedWindowManager?.removeView(root) }
-        attached = false
-        attachedWindowManager = null
-        show(windowManager)
+      } else {
+        onPanelShown()
       }
     }
   }
@@ -136,37 +141,47 @@ class OverlayTeleportPanel(
     }
   }
 
+  private fun ensureComposeInstalled(root: FrameLayout) {
+    if (composeContentInstalled) return
+    val compose = composeView ?: return
+    installModalCompose(root, compose) {
+      TeleportPanelContent(
+        prefs = prefs,
+        defaultServer = defaultServerProvider(),
+        rallyPointFlow = rallyPointFlow,
+        relocateItemsFlow = relocateItemsFlow,
+        panelOpenTick = panelOpenTick,
+        onDismiss = {
+          attachedWindowManager?.let { hide(it) }
+        },
+        onDirectTeleport = { x, y, sid ->
+          prefs.setDirectTeleportCoords(x, y, sid)
+          onDirectTeleport(x, y, sid)
+          attachedWindowManager?.let { hide(it) }
+        },
+        onRandomTeleport = {
+          onRandomTeleport()
+          attachedWindowManager?.let { hide(it) }
+        },
+        onAllianceTeleport = {
+          onAllianceTeleport()
+          attachedWindowManager?.let { hide(it) }
+        },
+        onFlyToRally = { x, y, sid ->
+          onFlyToRally(x, y, sid)
+          attachedWindowManager?.let { hide(it) }
+        },
+      )
+    }
+    composeContentInstalled = true
+  }
+
   private fun buildScrim(): FrameLayout {
     val frame = FrameLayout(context).apply {
       setBackgroundColor(Color.parseColor("#99000000"))
     }
-    val compose = ComposeView(context).apply {
-      setContent {
-        SquadRelayTheme {
-          TeleportPanelContent(
-            prefs = prefs,
-            defaultServer = defaultServerProvider(),
-            rallyPoint = rallyPointProvider(),
-            onDismiss = {
-              attachedWindowManager?.let { hide(it) }
-            },
-            onDirectTeleport = { x, y, sid ->
-              prefs.setDirectTeleportCoords(x, y, sid)
-              onDirectTeleport(x, y, sid)
-              attachedWindowManager?.let { hide(it) }
-            },
-            onAllianceTeleport = {
-              onAllianceTeleport()
-              attachedWindowManager?.let { hide(it) }
-            },
-            onFlyToRally = { x, y, sid ->
-              onFlyToRally(x, y, sid)
-              attachedWindowManager?.let { hide(it) }
-            },
-          )
-        }
-      }
-    }
+    val compose = ComposeView(context)
+    composeView = compose
     frame.addView(
       compose,
       FrameLayout.LayoutParams(
@@ -174,7 +189,7 @@ class OverlayTeleportPanel(
         FrameLayout.LayoutParams.MATCH_PARENT,
       ),
     )
-    frame.setOnTouchListener { v, event ->
+    frame.setOnTouchListener { _, event ->
       if (event.action == MotionEvent.ACTION_DOWN) {
         val child = compose
         val loc = IntArray(2)
@@ -203,24 +218,42 @@ class OverlayTeleportPanel(
 private fun TeleportPanelContent(
   prefs: UserSettingsPreferences,
   defaultServer: Int?,
-  rallyPoint: AllianceRallyPoint?,
+  rallyPointFlow: StateFlow<AllianceRallyPoint?>,
+  relocateItemsFlow: StateFlow<RelocateItemCounts?>,
+  panelOpenTick: StateFlow<Int>,
   onDismiss: () -> Unit,
   onDirectTeleport: (x: Int, y: Int, serverNumber: Int) -> Unit,
+  onRandomTeleport: () -> Unit,
   onAllianceTeleport: () -> Unit,
   onFlyToRally: (x: Int, y: Int, serverNumber: Int) -> Unit,
 ) {
-  var serverText by remember {
-    mutableStateOf(
-      prefs.getDirectTeleportServer()?.takeIf { it > 0 }?.toString()
-        ?: defaultServer?.takeIf { it > 0 }?.toString()
-        ?: "109",
-    )
+  val itemCounts by relocateItemsFlow.collectAsState()
+  val rallyPoint by rallyPointFlow.collectAsState()
+  val openTick by panelOpenTick.collectAsState()
+
+  var serverText by remember { mutableStateOf("") }
+  var xText by remember { mutableStateOf("") }
+  var yText by remember { mutableStateOf("") }
+
+  fun persistCoords() {
+    prefs.setDirectTeleportCoordTexts(serverText, xText, yText)
   }
-  var xText by remember {
-    mutableStateOf(prefs.getDirectTeleportX()?.takeIf { it > 0 }?.toString().orEmpty())
-  }
-  var yText by remember {
-    mutableStateOf(prefs.getDirectTeleportY()?.takeIf { it > 0 }?.toString().orEmpty())
+
+  LaunchedEffect(openTick) {
+    if (openTick <= 0) return@LaunchedEffect
+    val savedServer = prefs.getDirectTeleportServerText()
+    val savedX = prefs.getDirectTeleportXText()
+    val savedY = prefs.getDirectTeleportYText()
+    val hasSaved = savedServer.isNotBlank() || savedX.isNotBlank() || savedY.isNotBlank()
+    serverText = if (hasSaved && savedServer.isNotBlank()) {
+      savedServer
+    } else if (hasSaved) {
+      savedServer
+    } else {
+      defaultServer?.takeIf { it > 0 }?.toString() ?: "109"
+    }
+    xText = savedX
+    yText = savedY
   }
 
   val server = serverText.trim().toIntOrNull()
@@ -228,6 +261,12 @@ private fun TeleportPanelContent(
   val y = yText.trim().toIntOrNull()
   val directReady = server != null && server in MIN_SERVER..MAX_SERVER &&
     x != null && x > 0 && y != null && y > 0
+  val directCount = itemCounts?.direct
+  val randomCount = itemCounts?.random
+  val allianceCount = itemCounts?.alliance
+  val directEnabled = directReady && directCount != null && directCount > 0
+  val randomEnabled = randomCount != null && randomCount > 0
+  val allianceEnabled = allianceCount != null && allianceCount > 0
 
   val cardShape = RoundedCornerShape(16.dp)
   val cardBg = Brush.verticalGradient(
@@ -257,7 +296,7 @@ private fun TeleportPanelContent(
           onClick = {},
         )
         .padding(horizontal = 14.dp, vertical = 12.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp),
+      verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
       Text(
         text = contextString(R.string.overlay_teleport_title),
@@ -273,13 +312,6 @@ private fun TeleportPanelContent(
         onFly = onFlyToRally,
       )
 
-      Text(
-        text = contextString(R.string.overlay_teleport_direct_section),
-        color = ComposeColor(0xFFB0BEC5),
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Medium,
-      )
-
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -288,62 +320,109 @@ private fun TeleportPanelContent(
         CoordField(
           label = "#",
           value = serverText,
-          onValueChange = { serverText = it.filter { ch -> ch.isDigit() }.take(4) },
+          onValueChange = {
+            serverText = it.filter { ch -> ch.isDigit() }.take(4)
+            persistCoords()
+          },
           modifier = Modifier.weight(0.85f),
         )
         CoordField(
           label = "X",
           value = xText,
-          onValueChange = { xText = it.filter { ch -> ch.isDigit() }.take(4) },
+          onValueChange = {
+            xText = it.filter { ch -> ch.isDigit() }.take(4)
+            persistCoords()
+          },
           modifier = Modifier.weight(1f),
         )
         CoordField(
           label = "Y",
           value = yText,
-          onValueChange = { yText = it.filter { ch -> ch.isDigit() }.take(4) },
+          onValueChange = {
+            yText = it.filter { ch -> ch.isDigit() }.take(4)
+            persistCoords()
+          },
           modifier = Modifier.weight(1f),
         )
       }
 
-      Button(
-        onClick = {
-          if (directReady) {
-            onDirectTeleport(x!!, y!!, server!!)
-          }
-        },
-        enabled = directReady,
+      Column(
         modifier = Modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-          containerColor = ComposeColor(0xFF2E7D6E),
-          disabledContainerColor = ComposeColor(0xFF2A3038),
-          contentColor = ComposeColor.White,
-          disabledContentColor = ComposeColor(0xFF6B7280),
-        ),
-        shape = RoundedCornerShape(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
       ) {
-        Text(
-          text = contextString(R.string.overlay_teleport_direct_action),
-          fontSize = 14.sp,
-          fontWeight = FontWeight.Medium,
-        )
-      }
+        Button(
+          onClick = {
+            if (directEnabled && server != null && x != null && y != null) {
+              onDirectTeleport(x, y, server)
+            }
+          },
+          enabled = directEnabled,
+          modifier = Modifier.fillMaxWidth(),
+          colors = ButtonDefaults.buttonColors(
+            containerColor = ComposeColor(0xFF2E7D6E),
+            disabledContainerColor = ComposeColor(0xFF2A3038),
+            contentColor = ComposeColor.White,
+            disabledContentColor = ComposeColor(0xFF6B7280),
+          ),
+          shape = RoundedCornerShape(10.dp),
+          contentPadding = ButtonDefaults.ContentPadding,
+        ) {
+          Text(
+            text = teleportActionLabel(
+              baseRes = R.string.overlay_teleport_direct_action,
+              withCountRes = R.string.overlay_teleport_direct_action_with_count,
+              count = directCount,
+            ),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+          )
+        }
 
-      Spacer(modifier = Modifier.height(2.dp))
+        OutlinedButton(
+          onClick = onRandomTeleport,
+          enabled = randomEnabled,
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(10.dp),
+          colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = ComposeColor(0xFF90CAF9),
+            disabledContentColor = ComposeColor(0xFF6B7280),
+          ),
+          border = androidx.compose.foundation.BorderStroke(1.dp, ComposeColor(0x665A9BD5)),
+          contentPadding = ButtonDefaults.ContentPadding,
+        ) {
+          Text(
+            text = teleportActionLabel(
+              baseRes = R.string.overlay_teleport_random_action,
+              withCountRes = R.string.overlay_teleport_random_action_with_count,
+              count = randomCount,
+            ),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+          )
+        }
 
-      OutlinedButton(
-        onClick = onAllianceTeleport,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        colors = ButtonDefaults.outlinedButtonColors(
-          contentColor = ComposeColor(0xFF80CBC4),
-        ),
-        border = androidx.compose.foundation.BorderStroke(1.dp, ComposeColor(0x6640A090)),
-      ) {
-        Text(
-          text = contextString(R.string.overlay_teleport_alliance_action),
-          fontSize = 14.sp,
-          fontWeight = FontWeight.Medium,
-        )
+        OutlinedButton(
+          onClick = onAllianceTeleport,
+          enabled = allianceEnabled,
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(10.dp),
+          colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = ComposeColor(0xFF80CBC4),
+            disabledContentColor = ComposeColor(0xFF6B7280),
+          ),
+          border = androidx.compose.foundation.BorderStroke(1.dp, ComposeColor(0x6640A090)),
+          contentPadding = ButtonDefaults.ContentPadding,
+        ) {
+          Text(
+            text = teleportActionLabel(
+              baseRes = R.string.overlay_teleport_alliance_action,
+              withCountRes = R.string.overlay_teleport_alliance_action_with_count,
+              count = allianceCount,
+            ),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+          )
+        }
       }
     }
   }
@@ -436,6 +515,15 @@ private fun CoordField(
     ),
     shape = RoundedCornerShape(8.dp),
   )
+}
+
+@Composable
+private fun teleportActionLabel(baseRes: Int, withCountRes: Int, count: Int?): String {
+  return if (count == null) {
+    contextString(baseRes)
+  } else {
+    contextString(withCountRes, count)
+  }
 }
 
 @Composable

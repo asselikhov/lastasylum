@@ -63,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -138,6 +139,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.savedstate.compose.LocalSavedStateRegistryOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -329,6 +331,24 @@ class CombatOverlayService : Service() {
             handleAllianceRallyBroadcast(payload)
         }
     }
+    private var relocateItemsReceiverRegistered = false
+    private val relocateItemsFlow = MutableStateFlow<com.lastasylum.alliance.game.RelocateItemCounts?>(null)
+    private val teleportPanelOpenTick = MutableStateFlow(0)
+    private val relocateItemsReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            if (intent?.action != com.lastasylum.alliance.game.RelocateItemsBridge.ACTION_RELOCATE_ITEMS) return
+            val payload = intent.getStringExtra(com.lastasylum.alliance.game.RelocateItemsBridge.EXTRA_PAYLOAD)
+            handleRelocateItemsBroadcast(payload)
+        }
+    }
+    private var relocateResultReceiverRegistered = false
+    private val relocateResultReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            if (intent?.action != com.lastasylum.alliance.game.RelocateResultBridge.ACTION_RELOCATE_RESULT) return
+            val payload = intent.getStringExtra(com.lastasylum.alliance.game.RelocateResultBridge.EXTRA_PAYLOAD)
+            handleRelocateResultBroadcast(payload)
+        }
+    }
     private val overlayTeleportPanel by lazy {
         OverlayTeleportPanel(
             context = this,
@@ -336,15 +356,20 @@ class CombatOverlayService : Service() {
             dp = { dp(it) },
             prefs = AppContainer.from(this).userSettingsPreferences,
             defaultServerProvider = { resolveOverlayActiveServerNumber() },
-            rallyPointProvider = {
-                allianceRallyFlow.value
-                    ?: com.lastasylum.alliance.game.AllianceRallyPoint.parse(
-                        AppContainer.from(this).userSettingsPreferences.getAllianceRallyJson(),
-                    )
+            rallyPointFlow = allianceRallyFlow,
+            relocateItemsFlow = relocateItemsFlow,
+            panelOpenTick = teleportPanelOpenTick,
+            onPanelShown = {
+                teleportPanelOpenTick.value++
+                com.lastasylum.alliance.game.GameCityTeleportBridge.requestRelocateItemsRefresh(this)
             },
             onDirectTeleport = { x, y, sid -> onOverlayDirectTeleport(x, y, sid) },
+            onRandomTeleport = { onOverlayRandomTeleport() },
             onAllianceTeleport = { onOverlayAllianceTeleport() },
             onFlyToRally = { x, y, sid -> onOverlayFlyToRally(x, y, sid) },
+            installModalCompose = { scrim, compose, content ->
+                installOverlayModalCompose(scrim, compose, content)
+            },
         )
     }
     private val overlayPresenceCoordinator by lazy {
@@ -1087,6 +1112,26 @@ class CombatOverlayService : Service() {
         }
     }
 
+    /** Modal overlay windows: attach owners on scrim root, then setContent (after [WindowManager.addView]). */
+    internal fun installOverlayModalCompose(
+        scrim: View,
+        compose: ComposeView,
+        content: @Composable () -> Unit,
+    ) {
+        val owner = obtainOverlayPopoverComposeOwner()
+        attachOverlayComposeTree(scrim, compose)
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalLifecycleOwner provides owner,
+                LocalViewModelStoreOwner provides owner,
+                LocalSavedStateRegistryOwner provides owner,
+                LocalOnBackPressedDispatcherOwner provides owner,
+            ) {
+                SquadRelayTheme(content = content)
+            }
+        }
+    }
+
     private val stripTickRunnable = Runnable {
         if (!isInGameOverlayUiActive() || !isOverlayShellActive()) {
             cancelStripTick()
@@ -1443,8 +1488,13 @@ class CombatOverlayService : Service() {
         registerAssaultJoinReceiver()
         registerAllianceRosterReceiver()
         registerAllianceRallyReceiver()
+        registerRelocateItemsReceiver()
+        registerRelocateResultReceiver()
         allianceRallyFlow.value = com.lastasylum.alliance.game.AllianceRallyPoint.parse(
             AppContainer.from(this).userSettingsPreferences.getAllianceRallyJson(),
+        )
+        relocateItemsFlow.value = com.lastasylum.alliance.game.RelocateItemCounts.parse(
+            AppContainer.from(this).userSettingsPreferences.getRelocateItemsJson(),
         )
         startOverlayFcmTokenRegistration()
         serviceScope.launch {
@@ -3935,13 +3985,16 @@ class CombatOverlayService : Service() {
     private fun onOverlayDirectTeleport(x: Int, y: Int, serverNumber: Int) {
         overlayCommandsPopover.hide()
         com.lastasylum.alliance.game.GameCityTeleportBridge.sendDirect(this, x, y, serverNumber)
-        Toast.makeText(this, R.string.overlay_teleport_sent, Toast.LENGTH_SHORT).show()
     }
 
     private fun onOverlayAllianceTeleport() {
         overlayCommandsPopover.hide()
         com.lastasylum.alliance.game.GameCityTeleportBridge.sendAlliance(this)
-        Toast.makeText(this, R.string.overlay_teleport_sent, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun onOverlayRandomTeleport() {
+        overlayCommandsPopover.hide()
+        com.lastasylum.alliance.game.GameCityTeleportBridge.sendRandom(this)
     }
 
     private fun onOverlayFlyToRally(x: Int, y: Int, serverNumber: Int) {
@@ -4724,6 +4777,8 @@ class CombatOverlayService : Service() {
         unregisterAssaultJoinReceiver()
         unregisterAllianceRosterReceiver()
         unregisterAllianceRallyReceiver()
+        unregisterRelocateItemsReceiver()
+        unregisterRelocateResultReceiver()
         runCatching { (windowManager ?: systemWindowManager())?.let { overlayTeleportPanel.hide(it) } }
         unregisterVoiceMicPermissionReceiver()
         if (AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
@@ -5537,6 +5592,77 @@ class CombatOverlayService : Service() {
         allianceRallyFlow.value = point
         runCatching {
             AppContainer.from(this).userSettingsPreferences.setAllianceRallyJson(payload!!.trim())
+        }
+    }
+
+    private fun registerRelocateItemsReceiver() {
+        if (relocateItemsReceiverRegistered) return
+        val filter = IntentFilter(com.lastasylum.alliance.game.RelocateItemsBridge.ACTION_RELOCATE_ITEMS)
+        runCatching {
+            ContextCompat.registerReceiver(
+                this,
+                relocateItemsReceiver,
+                filter,
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            relocateItemsReceiverRegistered = true
+        }.onFailure { e -> Log.w(TAG, "registerRelocateItemsReceiver failed", e) }
+    }
+
+    private fun unregisterRelocateItemsReceiver() {
+        if (!relocateItemsReceiverRegistered) return
+        runCatching { unregisterReceiver(relocateItemsReceiver) }
+        relocateItemsReceiverRegistered = false
+    }
+
+    private fun handleRelocateItemsBroadcast(payload: String?) {
+        val counts = com.lastasylum.alliance.game.RelocateItemCounts.parse(payload) ?: return
+        relocateItemsFlow.value = counts
+        runCatching {
+            AppContainer.from(this).userSettingsPreferences.setRelocateItemsJson(payload!!.trim())
+        }
+    }
+
+    private fun registerRelocateResultReceiver() {
+        if (relocateResultReceiverRegistered) return
+        val filter = IntentFilter(com.lastasylum.alliance.game.RelocateResultBridge.ACTION_RELOCATE_RESULT)
+        runCatching {
+            ContextCompat.registerReceiver(
+                this,
+                relocateResultReceiver,
+                filter,
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            relocateResultReceiverRegistered = true
+        }.onFailure { e -> Log.w(TAG, "registerRelocateResultReceiver failed", e) }
+    }
+
+    private fun unregisterRelocateResultReceiver() {
+        if (!relocateResultReceiverRegistered) return
+        runCatching { unregisterReceiver(relocateResultReceiver) }
+        relocateResultReceiverRegistered = false
+    }
+
+    private fun handleRelocateResultBroadcast(payload: String?) {
+        val result = com.lastasylum.alliance.game.RelocateResult.parse(payload) ?: return
+        com.lastasylum.alliance.game.GameCityTeleportBridge.requestRelocateItemsRefresh(this)
+        val messageRes = if (result.ok) {
+            R.string.overlay_teleport_sent
+        } else {
+            relocateFailureMessageRes(result.error)
+        }
+        Toast.makeText(this, messageRes, Toast.LENGTH_LONG).show()
+    }
+
+    private fun relocateFailureMessageRes(error: String?): Int {
+        val code = error?.trim().orEmpty()
+        return when {
+            code.contains("cell_blocked", ignoreCase = true) -> R.string.overlay_teleport_failed_cell_blocked
+            code.contains("relocate_not_enabled", ignoreCase = true) ||
+                code.contains("relocate disabled", ignoreCase = true) -> R.string.overlay_teleport_failed_not_enabled
+            code.contains("no_map_view", ignoreCase = true) ||
+                code.contains("lua_env_not_ready", ignoreCase = true) -> R.string.overlay_teleport_failed_no_map
+            else -> R.string.overlay_teleport_failed
         }
     }
 

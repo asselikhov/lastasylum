@@ -11,7 +11,7 @@ import java.io.File
 
 /**
  * Телепорт территории (города) в игре: sdcard-триггер + broadcast в пропатченную игру.
- * Frida-мост вызывает WorldCityRelocateC2S (прямое) или RequestRallyPointRelocateC2S (альянс).
+ * Frida-мост: прямое — CityRelocationItem + CityRelocationHandler; альянс — RequestRallyPointRelocateC2S; случайное — WorldCityRelocateC2S.
  */
 object GameCityTeleportBridge {
   private const val EXTRA_CITY_RELOCATE = "cityrelocate"
@@ -24,6 +24,8 @@ object GameCityTeleportBridge {
   private const val SDCARD_TRIGGER = "/sdcard/Download/squadrelay_city_relocate.json"
   private const val MODE_DIRECT = "direct"
   private const val MODE_ALLIANCE = "alliance"
+  private const val MODE_RANDOM = "random"
+  private const val RELOCATE_ITEMS_PULSE_SDCARD = "/sdcard/Download/squadrelay_relocate_items_pulse.json"
 
   private const val BRIDGE_DELAY_MS = 750L
 
@@ -36,6 +38,22 @@ object GameCityTeleportBridge {
 
   fun sendAlliance(context: Context): Boolean =
     dispatch(context, MODE_ALLIANCE, -1, -1, -1)
+
+  fun sendRandom(context: Context): Boolean =
+    dispatch(context, MODE_RANDOM, -1, -1, -1)
+
+  /** Просит игровой мост немедленно перечитать инвентарь предметов перемещения. */
+  fun requestRelocateItemsRefresh(context: Context) {
+    runCatching {
+      val json = JSONObject().apply {
+        put("ts", System.currentTimeMillis())
+      }
+      File(RELOCATE_ITEMS_PULSE_SDCARD).writeText(json.toString())
+      logDebug("relocate-items pulse $json")
+    }.onFailure { e ->
+      Log.w(TAG, "relocate-items pulse write failed", e)
+    }
+  }
 
   private fun dispatch(
     context: Context,

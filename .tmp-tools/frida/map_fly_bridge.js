@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '60';
+const BRIDGE_VERSION = '66';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -35,6 +35,15 @@ const CITY_RELOCATE_SDCARD = '/sdcard/Download/squadrelay_city_relocate.json';
 const ALLIANCE_RALLY_FILE = '/data/data/com.phs.global/files/squadrelay_alliance_rally.json';
 const ALLIANCE_RALLY_FILE_LUA = "'" + ALLIANCE_RALLY_FILE + "'";
 const ALLIANCE_RALLY_ACTION = 'com.lastasylum.alliance.action.ALLIANCE_RALLY';
+
+// Остаток предметов перемещения в инвентаре (Data.ItemData.itemsCount).
+const RELOCATE_ITEMS_FILE = '/data/data/com.phs.global/files/squadrelay_relocate_items.json';
+const RELOCATE_ITEMS_FILE_LUA = "'" + RELOCATE_ITEMS_FILE + "'";
+const RELOCATE_ITEMS_ACTION = 'com.lastasylum.alliance.action.RELOCATE_ITEMS';
+const RELOCATE_ITEMS_PULSE_FILE = '/data/data/com.phs.global/files/squadrelay_relocate_items_pulse.json';
+const RELOCATE_ITEMS_PULSE_SDCARD = '/sdcard/Download/squadrelay_relocate_items_pulse.json';
+const RELOCATE_ITEMS_SCAN_INTERVAL_MS = 3000;
+const RELOCATE_ITEMS_REBROADCAST_MS = 15000;
 
 // Канал произвольного Lua для отладки/реверса: приложение/adb пишет Lua-код в файл, мост его
 // выполняет на main-thread (код сам пишет результат через io.open). Срабатывает только при
@@ -331,6 +340,80 @@ const ALLIANCE_ROSTER_LUA = [
   '    local rs = math.floor(tonumber(rp.sid) or 0)',
   '    local rf = io.open(' + ALLIANCE_RALLY_FILE_LUA + ', "w")',
   '    if rf then rf:write("{"..q.."x"..q..":"..tostring(rx)..","..q.."y"..q..":"..tostring(ry)..","..q.."sid"..q..":"..tostring(rs).."}") rf:close() end',
+  '  end',
+  'end)',
+].join('\n');
+// Счётчики предметов перемещения: itemsCount + Config.Item/itemDic (VIP-магазин может не попадать в один ключ).
+const RELOCATE_ITEMS_LUA = [
+  'pcall(function()',
+  '  local id = _G.Data and _G.Data.ItemData',
+  '  if type(id) ~= "table" then return end',
+  '  local ic = id.itemsCount',
+  '  if type(ic) ~= "table" then return end',
+  '  local cfg = _G.Config and _G.Config.Item',
+  '  local function n(v) return math.max(0, math.floor(tonumber(v) or 0)) end',
+  '  local function ls(s) return string.lower(tostring(s)) end',
+  '  local function sumIc(pred)',
+  '    local t = 0',
+  '    for k, v in pairs(ic) do if pred(ls(k)) then t = t + n(v) end end',
+  '    return t',
+  '  end',
+  '  local function isDirectKey(k)',
+  '    if string.find(k, "random", 1, true) or string.find(k, "union", 1, true) then return false end',
+  '    return k == "item_useup_targetmove" or string.find(k, "targetmove", 1, true) or string.find(k, "directmove", 1, true)',
+  '  end',
+  '  local function isDirectCfg(ut, ck)',
+  '    if isDirectKey(ut) or isDirectKey(ck) then return true end',
+  '    return false',
+  '  end',
+  '  local function isAllianceKey(k) return string.find(k, "unionmove", 1, true) ~= nil end',
+  '  local function isRandomKey(k) return string.find(k, "randommove", 1, true) ~= nil end',
+  '  local direct = sumIc(isDirectKey)',
+  '  local alliance = sumIc(isAllianceKey)',
+  '  local random = sumIc(isRandomKey)',
+  '  if type(cfg) == "table" then',
+  '    for k, v in pairs(ic) do',
+  '      local cid = tonumber(k)',
+  '      if cid then',
+  '        local row = cfg[cid] or cfg[tostring(cid)]',
+  '        if type(row) == "table" and isDirectCfg(ls(row.useUpType or row.useType or row.effectType or ""), ls(cid)) then',
+  '          direct = direct + n(v)',
+  '        end',
+  '      end',
+  '    end',
+  '    local dic = id.itemDic or id.itemsDic or id.bagDic',
+  '    if type(dic) == "table" then',
+  '      local bag = 0',
+  '      for k, e in pairs(dic) do',
+  '        local cid = k',
+  '        if type(e) == "table" then cid = e.itemId or e.id or e.cfgId or e.configId or k end',
+  '        local row = cfg[cid] or cfg[tostring(cid)] or cfg[tonumber(cid)]',
+  '        if type(row) == "table" and isDirectCfg(ls(row.useUpType or row.useType or row.effectType or ""), ls(cid)) then',
+  '          local num = 0',
+  '          if type(e) == "table" then num = n(e.num or e.count or e.itemNum or e.amount) else num = n(e) end',
+  '          bag = bag + num',
+  '        end',
+  '      end',
+  '      if bag > direct then direct = bag end',
+  '    end',
+  '  end',
+  '  local gic = id.GetItemCount or id.GetItemNum or id.getItemCount',
+  '  if type(gic) == "function" then',
+  '    local api = 0',
+  '    for _, key in ipairs({',
+  '      "item_UseUp_targetMove", "item_UseUp_vipTargetMove", "item_vip_targetMove",',
+  '      "item_UseUp_DirectMove", "item_UseUp_directMove",',
+  '    }) do',
+  '      local ok, c = pcall(gic, id, key)',
+  '      if ok then api = api + n(c) end',
+  '    end',
+  '    if api > direct then direct = api end',
+  '  end',
+  '  local q = string.char(34)',
+  '  local f = io.open(' + RELOCATE_ITEMS_FILE_LUA + ', "w")',
+  '  if f then',
+  '    f:write("{"..q.."direct"..q..":"..tostring(direct)..","..q.."alliance"..q..":"..tostring(alliance)..","..q.."random"..q..":"..tostring(random).."}")',
+  '    f:close()',
   '  end',
   'end)',
 ].join('\n');
@@ -1220,6 +1303,9 @@ let lastOpenChatText = '';
 let lastCityRelocateText = '';
 let lastAllianceRallyText = '';
 let allianceRallyLastBroadcastMs = 0;
+let relocateItemsLastTick = 0;
+let lastRelocateItemsText = '';
+let relocateItemsLastBroadcastMs = 0;
 let lastEvalText = '';
 let actionSeen = {};
 let actionCatchUntil = 0;
@@ -2839,62 +2925,201 @@ function openPrivateChat(pid, name) {
   runLua(code);
 }
 
-// Прямое перемещение территории (расход предмета «Прямое перемещение»).
-// Реверс v1.0.81: Logic.Proto.Send.world.WorldCityRelocateC2S + RelocationType.CITY (=1).
+const RELOCATE_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_relocate_err.txt';
+const RELOCATE_RESULT_FILE = '/data/data/com.phs.global/files/squadrelay_relocate_result.json';
+const RELOCATE_RESULT_ACTION = 'com.lastasylum.alliance.action.RELOCATE_RESULT';
+
+function sendRelocateResultBroadcast(payload) {
+  if (typeof Java === 'undefined' || !Java.available) return;
+  try {
+    Java.perform(function () {
+      const ActivityThread = Java.use('android.app.ActivityThread');
+      const app = ActivityThread.currentApplication();
+      if (app === null) return;
+      const ctx = app.getApplicationContext();
+      const Intent = Java.use('android.content.Intent');
+      const intent = Intent.$new(RELOCATE_RESULT_ACTION);
+      intent.setPackage(SHARE_APP_PKG);
+      intent.putExtra.overload('java.lang.String', 'java.lang.String').call(intent, 'payload', payload);
+      intent.addFlags(0x10000000);
+      ctx.sendBroadcast(intent);
+      log('relocate-result broadcast -> ' + SHARE_APP_PKG + ' (' + payload.length + 'b)');
+    });
+  } catch (e) {
+    log('relocate-result broadcast failed: ' + e);
+  }
+}
+
+function runCityRelocateLua(tag, mode, innerLua) {
+  const code = [
+    'pcall(function()',
+    '  local RF = "' + RELOCATE_RESULT_FILE + '"',
+    '  local MODE = "' + mode + '"',
+    '  local function writeResult(ok, err)',
+    '    local q = string.char(34)',
+    '    local e = string.gsub(tostring(err or ""), q, " ")',
+    '    e = string.gsub(e, "[\\r\\n]", " ")',
+    '    if #e > 240 then e = string.sub(e, 1, 240) end',
+    '    local f = io.open(RF, "w")',
+    '    if f then',
+    '      f:write("{"..q.."ok"..q..":"..(ok and "true" or "false")..","..q.."mode"..q..":"..q..MODE..q..","..q.."error"..q..":"..q..e..q.."}")',
+    '      f:close()',
+    '    end',
+    '  end',
+    '  local ok, e = pcall(function()',
+    innerLua,
+    '  end)',
+    '  if ok then writeResult(true, "") else',
+    '    local f = io.open("' + RELOCATE_ERR_FILE + '", "a")',
+    '    if f then f:write("' + tag + ' "..tostring(e).."\\n") f:close() end',
+    '    writeResult(false, e)',
+    '  end',
+    'end)',
+  ].join('\n');
+  mainThreadFlyQueue.push(function () {
+    writeFileEmpty(RELOCATE_RESULT_FILE);
+    if (!liveLuaEnv || liveLuaEnv.isNull()) {
+      sendRelocateResultBroadcast(
+        JSON.stringify({ ok: false, mode: mode, error: 'lua_env_not_ready' }),
+      );
+      return;
+    }
+    if (!doStringNow(code)) {
+      sendRelocateResultBroadcast(JSON.stringify({ ok: false, mode: mode, error: 'lua_exec_failed' }));
+      return;
+    }
+    let raw = '';
+    try {
+      raw = readFileUtf8(RELOCATE_RESULT_FILE, 2048).trim();
+    } catch (e) {
+      log('relocate-result read error: ' + e);
+    }
+    if (!raw) {
+      sendRelocateResultBroadcast(JSON.stringify({ ok: false, mode: mode, error: 'no_result' }));
+      return;
+    }
+    sendRelocateResultBroadcast(raw);
+  });
+}
+
+// Прямое перемещение: карта 3×3 (CityRelocationItem) + CityRelocationHandler — как кнопка «Перенос» в игре.
 function cityRelocateDirect(x, y, sid) {
   const xi = Math.floor(Number(x));
   const yi = Math.floor(Number(y));
   const si = Math.floor(Number(sid));
   if (!xi || !yi || !si) {
     log('city-relocate direct: invalid coords x=' + x + ' y=' + y + ' sid=' + sid);
+    sendRelocateResultBroadcast(
+      JSON.stringify({ ok: false, mode: 'direct', error: 'invalid_coords' }),
+    );
     return;
   }
-  const code = [
-    'pcall(function()',
-    '  local x=' + xi + ' local y=' + yi + ' local sid=' + si,
-    '  local sw=package.loaded["Logic.Proto.Send.world"]',
-    '  local RT=package.loaded["Logic.Map.WorldMapEnum"] and package.loaded["Logic.Map.WorldMapEnum"].RelocationType',
-    '  local rtype=RT and RT.CITY or 1',
-    '  if not sw or not sw.WorldCityRelocateC2S then return end',
-    '  local pt={x=x,y=y,sid=sid}',
-    '  sw.WorldCityRelocateC2S({point=pt,relocateType=rtype,x=x,y=y,sid=sid}, {})',
-    'end)',
+  const inner = [
+    '    pcall(function() require("Logic.Map.WorldMapEnum") end)',
+    '    pcall(function() require("UIs.WorldMapUI.WorldCityRelocationPosWin") end)',
+    '    pcall(function() require("Logic.Map.MapLogic.Helper.WorldMapHelper") end)',
+    '    local RT = package.loaded["Logic.Map.WorldMapEnum"] and package.loaded["Logic.Map.WorldMapEnum"].RelocationType',
+    '    local CITY = RT and RT.CITY or 1',
+    '    local x=' + xi + ' local y=' + yi + ' local sid=' + si,
+    '    local pt = { x = x, y = y, sid = sid }',
+    '    local WH = package.loaded["Logic.Map.MapLogic.Helper.WorldMapHelper"]',
+    '    if WH and WH.IsEnable_Relocate then',
+    '      local en = WH.IsEnable_Relocate(CITY, x, y, sid)',
+    '      if not en then error("relocate_not_enabled") end',
+    '    end',
+    '    local gmc = _G.GlobalMapCtrlManager',
+    '    local wm = gmc and gmc.GetWorldManager and gmc:GetWorldManager()',
+    '    local muv = wm and wm.mapUnitsView',
+    '    if not muv or not muv.ShowCityRelocationItem then error("no_map_view") end',
+    '    if muv.HideCityRelocationItem then pcall(function() muv:HideCityRelocationItem() end) end',
+    '    muv:ShowCityRelocationItem(x, y, sid)',
+    '    local item = muv.CityRelocationItem',
+    '    if not item or not item.SetCellPos then error("no_relocation_item") end',
+    '    item:SetCellPos(x, y, sid, CITY)',
+    '    if item.CheckCellAvailable then',
+    '      local av = item:CheckCellAvailable(x, y, sid)',
+    '      if not av then error("cell_blocked") end',
+    '    end',
+    '    local idx = package.loaded["UIs.WorldMapUI.WorldCityRelocationPosWin"]',
+    '    local classIdx = idx and ((getmetatable(idx) or {}).__index or idx)',
+    '    if not classIdx or not classIdx.CityRelocationHandler then error("no_handler") end',
+    '    local win = {',
+    '      relocateType = CITY,',
+    '      paramTable = { pt, { point = pt } },',
+    '      cellX = x, cellY = y, cellPos = pt, point = pt, targetPoint = pt,',
+    '      cityRelocationItem = item,',
+    '    }',
+    '    setmetatable(win, { __index = classIdx })',
+    '    classIdx.CityRelocationHandler(win, CITY)',
+    '    if muv.HideCityRelocationItem then pcall(function() muv:HideCityRelocationItem() end) end',
+    '    if item.Hide then pcall(function() item:Hide() end) end',
+    '    if wm and wm.relocationStatusIsOpen ~= nil then wm.relocationStatusIsOpen = false end',
+    '    if WH and WH.RelocateCityUpdateWorldMapView then pcall(function() WH:RelocateCityUpdateWorldMapView() end) end',
   ].join('\n');
   log('city-relocate direct x=' + xi + ' y=' + yi + ' sid=' + si);
-  runLua(code);
+  runCityRelocateLua('direct', 'direct', inner);
 }
 
-// Перемещение альянса (расход предмета «Перемещение альянса») — к зоне альянса / rally.
-// Реверс v1.0.81: Logic.Proto.Send.union_territory.RequestRallyPointRelocateC2S + RelocationType.ALLY_BOSS (=2).
+// Перемещение альянса: RequestRallyPointRelocateC2S (проверено в v62).
 function cityRelocateAlliance() {
-  const code = [
-    'pcall(function()',
-    '  local ut=package.loaded["Logic.Proto.Send.union_territory"]',
-    '  local RT=package.loaded["Logic.Map.WorldMapEnum"] and package.loaded["Logic.Map.WorldMapEnum"].RelocationType',
-    '  local rtype=RT and RT.ALLY_BOSS or 2',
-    '  if not ut or not ut.RequestRallyPointRelocateC2S then return end',
-    '  ut.RequestRallyPointRelocateC2S({relocateType=rtype,type=rtype}, {})',
-    'end)',
+  const inner = [
+    '    pcall(function() require("Logic.Proto.Send.union_territory") end)',
+    '    pcall(function() require("Logic.Map.WorldMapEnum") end)',
+    '    local ut = package.loaded["Logic.Proto.Send.union_territory"]',
+    '    if not ut or not ut.RequestRallyPointRelocateC2S then error("no_api") end',
+    '    local RT = package.loaded["Logic.Map.WorldMapEnum"] and package.loaded["Logic.Map.WorldMapEnum"].RelocationType',
+    '    local ALLY = RT and RT.ALLY_BOSS or 2',
+    '    ut.RequestRallyPointRelocateC2S({ relocateType = ALLY, type = ALLY }, {})',
   ].join('\n');
   log('city-relocate alliance');
-  runLua(code);
+  runCityRelocateLua('alliance', 'alliance', inner);
+}
+
+// Случайное перемещение: WorldCityRelocateC2S + RelocationType.RANDOM (не 0 — иначе «Ошибка типа перемещения»).
+function cityRelocateRandom() {
+  const inner = [
+    '    pcall(function() require("Logic.Proto.Send.world") end)',
+    '    pcall(function() require("Logic.Map.WorldMapEnum") end)',
+    '    pcall(function() require("UIs.WorldMapUI.WorldCityRelocationPosWin") end)',
+    '    local RT = package.loaded["Logic.Map.WorldMapEnum"] and package.loaded["Logic.Map.WorldMapEnum"].RelocationType',
+    '    local RND = RT and (RT.RANDOM or RT.Random or RT.RANDOM_MOVE or RT.RandomMove)',
+    '    if not RND and type(RT) == "table" then',
+    '      for k, v in pairs(RT) do',
+    '        if string.find(string.lower(tostring(k)), "random", 1, true) then RND = v break end',
+    '      end',
+    '    end',
+    '    if not RND or tonumber(RND) == 0 then RND = 3 end',
+    '    local idx = package.loaded["UIs.WorldMapUI.WorldCityRelocationPosWin"]',
+    '    local classIdx = idx and ((getmetatable(idx) or {}).__index or idx)',
+    '    if classIdx and classIdx.OnOkClickHandler then',
+    '      local win = { relocateType = RND, paramTable = { {}, {} } }',
+    '      setmetatable(win, { __index = classIdx })',
+    '      classIdx.OnOkClickHandler(win)',
+    '    else',
+    '      local sw = package.loaded["Logic.Proto.Send.world"]',
+    '      if not sw or not sw.WorldCityRelocateC2S then error("no_api") end',
+    '      sw.WorldCityRelocateC2S({ relocateType = RND, type = RND }, {})',
+    '    end',
+  ].join('\n');
+  log('city-relocate random');
+  runCityRelocateLua('random', 'random', inner);
 }
 
 function pollCityRelocateFile() {
   const now = Date.now();
-  if (!bridgeLuaStartupReady(now) || !bridgeBackgroundLuaReady(now)) return;
+  if (!bridgeAutoHelpReady(now)) return;
   const paths = [CITY_RELOCATE_FILE, CITY_RELOCATE_SDCARD];
   for (let i = 0; i < paths.length; i++) {
     try {
       const text = readFileUtf8(paths[i]);
       if (!text || !text.trim()) continue;
-      if (text === lastCityRelocateText) return;
-      lastCityRelocateText = text;
       const modeM = text.match(/"mode"\s*:\s*"([^"]+)"/);
       const mode = modeM ? modeM[1] : '';
       log('city-relocate trigger: ' + text.trim());
       if (mode === 'alliance') {
         cityRelocateAlliance();
+      } else if (mode === 'random') {
+        cityRelocateRandom();
       } else if (mode === 'direct') {
         const mx = text.match(/"x"\s*:\s*(-?\d+)/);
         const my = text.match(/"y"\s*:\s*(-?\d+)/);
@@ -3422,6 +3647,78 @@ function sendAllianceRallyBroadcast(payload) {
   }
 }
 
+function maybeRelocateItemsPulse() {
+  const paths = [RELOCATE_ITEMS_PULSE_FILE, RELOCATE_ITEMS_PULSE_SDCARD];
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const text = readFileUtf8(paths[i], 256);
+      if (!text || !text.trim()) continue;
+      writeFileEmpty(paths[i]);
+      relocateItemsLastTick = 0;
+      lastRelocateItemsText = '';
+      return true;
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes('No such file') && !msg.includes('not found')) {
+        log('relocate-items pulse error: ' + e);
+      }
+    }
+  }
+  return false;
+}
+
+function tickRelocateItems() {
+  const pulsed = maybeRelocateItemsPulse();
+  if (!liveLuaEnv || liveLuaEnv.isNull()) return;
+  const now = Date.now();
+  // ItemData доступен после логина, не ждём world-ready (иначе после VIP-покупки долго остаётся 0).
+  if (!bridgeLuaStartupReady(now)) return;
+  if (!pulsed && now - relocateItemsLastTick < RELOCATE_ITEMS_SCAN_INTERVAL_MS) return;
+  relocateItemsLastTick = now;
+  try {
+    runLua(RELOCATE_ITEMS_LUA);
+  } catch (e) {
+    log('relocate-items scan error: ' + e);
+    return;
+  }
+  try {
+    const text = readFileUtf8(RELOCATE_ITEMS_FILE, 4096);
+    if (!text || !text.trim()) return;
+    const changed = text !== lastRelocateItemsText;
+    const due = now - relocateItemsLastBroadcastMs >= RELOCATE_ITEMS_REBROADCAST_MS;
+    if (!changed && !due && !pulsed) return;
+    lastRelocateItemsText = text;
+    relocateItemsLastBroadcastMs = now;
+    sendRelocateItemsBroadcast(text.trim());
+  } catch (e) {
+    const msg = String(e);
+    if (!msg.includes('No such file') && !msg.includes('not found')) {
+      log('relocate-items poll error: ' + e);
+    }
+  }
+}
+
+function sendRelocateItemsBroadcast(payload) {
+  if (typeof Java === 'undefined' || !Java.available) return;
+  try {
+    Java.perform(function () {
+      const ActivityThread = Java.use('android.app.ActivityThread');
+      const app = ActivityThread.currentApplication();
+      if (app === null) return;
+      const ctx = app.getApplicationContext();
+      const Intent = Java.use('android.content.Intent');
+      const intent = Intent.$new(RELOCATE_ITEMS_ACTION);
+      intent.setPackage(SHARE_APP_PKG);
+      intent.putExtra.overload('java.lang.String', 'java.lang.String').call(intent, 'payload', payload);
+      intent.addFlags(0x10000000);
+      ctx.sendBroadcast(intent);
+      log('relocate-items broadcast -> ' + SHARE_APP_PKG + ' (' + payload.length + 'b)');
+    });
+  } catch (e) {
+    log('relocate-items broadcast failed: ' + e);
+  }
+}
+
 function logIl2cppExportsOnce() {
   if (logIl2cppExportsOnce.done) return;
   logIl2cppExportsOnce.done = true;
@@ -3784,6 +4081,7 @@ setImmediate(function () {
     tickAutoHelp();
     tickAutoAssault();
     tickAllianceRoster();
+    tickRelocateItems();
     maybeInstallShareHook();
     pollShareFile();
     pollShareCloseFile();
