@@ -4,6 +4,8 @@ package com.lastasylum.alliance.game
 object MapRelocPanelBridge {
     const val ACTION_RELOC_PANEL = "com.lastasylum.alliance.action.MAP_RELOC_PANEL"
     const val EXTRA_PAYLOAD = "payload"
+    /** Дублирует payload из игры — резервный канал, если broadcast не дошёл. */
+    const val SDCARD_PANEL_FILE = "/sdcard/Download/squadrelay_reloc_panel.json"
 }
 
 /** Канал «режим прокладки маршрута: координаты подтверждены в игре». */

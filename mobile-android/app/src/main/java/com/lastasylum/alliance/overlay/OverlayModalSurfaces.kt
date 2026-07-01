@@ -29,6 +29,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import com.lastasylum.alliance.R
 import androidx.compose.ui.Modifier
@@ -36,6 +38,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 
 /**
@@ -316,5 +320,61 @@ fun OverlayAwareDialog(
             properties = properties,
             content = content,
         )
+    }
+}
+
+/**
+ * Modal overlay that does not participate in parent layout (Popup layer).
+ * Use inside compact overlay panels where [OverlayAwareDialog] would stretch the host card.
+ */
+@Composable
+fun OverlayFloatingDialog(
+    onDismissRequest: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    if (LocalOverlayUiMode.current) {
+        OverlayInteractionSuppressEffect()
+        BackHandler(onBack = onDismissRequest)
+        val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+        val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+        Popup(
+            alignment = Alignment.Center,
+            onDismissRequest = onDismissRequest,
+            properties = PopupProperties(
+                focusable = true,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false,
+            ),
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(screenWidth)
+                    .height(screenHeight)
+                    .background(Color.Black.copy(alpha = 0.62f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismissRequest,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 24.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                        ),
+                ) {
+                    content()
+                }
+            }
+        }
+    } else {
+        Dialog(onDismissRequest = onDismissRequest) {
+            content()
+        }
     }
 }

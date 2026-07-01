@@ -308,6 +308,7 @@ class CombatOverlayService : Service() {
     }
     private var mapRelocPanelReceiverRegistered = false
     private var lastMapRelocPanelSeq = 0L
+    private var lastMapRelocPanelSdcardText = ""
     private var mapRelocPanelOpen = false
     private var pendingRoutePlacement: com.lastasylum.alliance.game.RoutePlacementResult? = null
     private var pendingRoutePointReposition: com.lastasylum.alliance.game.RoutePlannerPoint? = null
@@ -1550,6 +1551,7 @@ class CombatOverlayService : Service() {
         registerRaidShareReceiver()
         registerBookmarkReceiver()
         registerMapRelocPanelReceiver()
+        startMapRelocPanelSdcardPoll()
         registerRoutePlacementReceiver()
         registerAssaultJoinReceiver()
         registerAllianceRosterReceiver()
@@ -4971,6 +4973,7 @@ class CombatOverlayService : Service() {
         mainHandler.removeCallbacks(bookmarkHideRunnable)
         runCatching { (windowManager ?: systemWindowManager())?.let { overlayBookmarkPanel.hide(it) } }
         unregisterMapRelocPanelReceiver()
+        stopMapRelocPanelSdcardPoll()
         unregisterRoutePlacementReceiver()
         runCatching {
             val mgr = windowManager ?: systemWindowManager()
@@ -5774,7 +5777,9 @@ class CombatOverlayService : Service() {
 
     /** Игровая панель перемещения по пустой клетке — показать кнопку «Маршрут». */
     private fun handleMapRelocPanelBroadcast(payload: String?) {
-        val target = com.lastasylum.alliance.game.MapRelocPanelTarget.fromJson(payload) ?: return
+        val raw = com.lastasylum.alliance.game.MapRelocPanelTarget.fromJson(payload) ?: return
+        val sidFallback = resolveOverlayActiveServerNumber()
+        val target = raw.withResolvedSid(sidFallback)
         val backJump = lastMapRelocPanelSeq - target.seq
         if (backJump in 1..RAID_SHARE_SEQ_REORDER_WINDOW) return
         if (backJump > RAID_SHARE_SEQ_REORDER_WINDOW) lastMapRelocPanelSeq = 0L
@@ -5782,7 +5787,7 @@ class CombatOverlayService : Service() {
             val mgr = windowManager ?: systemWindowManager() ?: return@Runnable
             if (!isOverlayPanelUserEnabled()) return@Runnable
             lastMapRelocPanelSeq = target.seq
-            if (target.open && target.isValid) {
+            if (target.open && target.isValidWithSid(sidFallback)) {
                 mapRelocPanelOpen = true
                 if (com.lastasylum.alliance.game.RoutePlannerAccess.canCreateRoutes(this) && !routePlacementActive) {
                     overlayMapRelocStrip.show(mgr, target)
@@ -5796,6 +5801,34 @@ class CombatOverlayService : Service() {
             }
         }
         if (Looper.myLooper() == mainHandler.looper) deliver.run() else mainHandler.post(deliver)
+    }
+
+    private val mapRelocPanelSdcardPollRunnable = object : Runnable {
+        override fun run() {
+            pollMapRelocPanelSdcard()
+            if (isServiceInstanceActive) {
+                mainHandler.postDelayed(this, 400L)
+            }
+        }
+    }
+
+    private fun startMapRelocPanelSdcardPoll() {
+        mainHandler.removeCallbacks(mapRelocPanelSdcardPollRunnable)
+        mainHandler.post(mapRelocPanelSdcardPollRunnable)
+    }
+
+    private fun stopMapRelocPanelSdcardPoll() {
+        mainHandler.removeCallbacks(mapRelocPanelSdcardPollRunnable)
+    }
+
+    private fun pollMapRelocPanelSdcard() {
+        if (!isOverlayPanelUserEnabled()) return
+        val text = runCatching {
+            java.io.File(com.lastasylum.alliance.game.MapRelocPanelBridge.SDCARD_PANEL_FILE).readText()
+        }.getOrNull()?.trim().orEmpty()
+        if (text.isEmpty() || text == lastMapRelocPanelSdcardText) return
+        lastMapRelocPanelSdcardText = text
+        handleMapRelocPanelBroadcast(text)
     }
 
     private fun onMapRelocRouteClick(target: com.lastasylum.alliance.game.MapRelocPanelTarget) {

@@ -18,12 +18,15 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +36,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -277,11 +281,16 @@ private fun TeleportPanelContent(
   onScheduleRelocateAll: (route: RoutePlannerRoute, delayMinutes: Int) -> Unit,
 ) {
   var selectedTab by remember { mutableStateOf(TeleportPanelTab.Teleport) }
+  var plannerModalLayer by remember { mutableStateOf<(@Composable () -> Unit)?>(null) }
 
   val cardShape = RoundedCornerShape(16.dp)
   val cardBg = Brush.verticalGradient(
     colors = listOf(ComposeColor(0xF2141C2A), ComposeColor(0xF20B1018)),
   )
+
+  if (selectedTab != TeleportPanelTab.Planner) {
+    SideEffect { plannerModalLayer = null }
+  }
 
   Box(
     modifier = Modifier
@@ -296,6 +305,8 @@ private fun TeleportPanelContent(
     Column(
       modifier = Modifier
         .widthIn(max = 340.dp)
+        .wrapContentHeight()
+        .heightIn(max = 520.dp)
         .padding(horizontal = 16.dp)
         .clip(cardShape)
         .background(cardBg)
@@ -333,8 +344,13 @@ private fun TeleportPanelContent(
           onRepositionPointOnMap = onRepositionPointOnMap,
           onExportRouteToRaid = onExportRouteToRaid,
           onScheduleRelocateAll = onScheduleRelocateAll,
+          onModalLayer = { plannerModalLayer = it },
         )
       }
+    }
+
+    if (selectedTab == TeleportPanelTab.Planner) {
+      plannerModalLayer?.invoke()
     }
   }
 }
@@ -558,6 +574,7 @@ private fun RoutePlannerTabContent(
   onRepositionPointOnMap: (route: RoutePlannerRoute, point: RoutePlannerPoint) -> Unit,
   onExportRouteToRaid: (route: RoutePlannerRoute) -> Unit,
   onScheduleRelocateAll: (route: RoutePlannerRoute, delayMinutes: Int) -> Unit,
+  onModalLayer: (layer: (@Composable () -> Unit)?) -> Unit,
 ) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
@@ -626,161 +643,153 @@ private fun RoutePlannerTabContent(
     }
   }
 
-  if (showCreateDialog) {
-    CreateRouteDialog(
-      onDismiss = { showCreateDialog = false },
-      onConfirm = { name, type ->
-        val tid = teamId?.trim().orEmpty()
-        if (tid.isEmpty()) return@CreateRouteDialog
-        val route = runCatching { RoutePlannerRoute.create(name, type) }.getOrNull() ?: return@CreateRouteDialog
-        if (RoutePlannerStore.add(context, tid, route)) {
-          afterMutation(tid)
-          Toast.makeText(
-            context,
-            context.getString(R.string.overlay_route_planner_created, route.name),
-            Toast.LENGTH_SHORT,
-          ).show()
-        }
-        showCreateDialog = false
-      },
-    )
+  val onlineCountForRelocate = remember(relocateAllConfirmRoute?.id, openTick) {
+    OverlayTeamPresenceCache.peek(teamId.orEmpty())?.ingame?.size ?: 0
   }
 
-  editingRoute?.let { route ->
-    CreateRouteDialog(
-      titleRes = R.string.overlay_route_route_edit_title,
-      confirmRes = R.string.overlay_route_planner_save,
-      initialName = route.name,
-      initialType = route.type,
-      onDismiss = { editingRoute = null },
-      onConfirm = { name, type ->
-        val tid = teamId?.trim().orEmpty()
-        if (tid.isEmpty()) return@CreateRouteDialog
-        if (RoutePlannerStore.updateRoute(context, tid, route.id, name, type) != null) {
-          afterMutation(tid)
-          Toast.makeText(context, R.string.overlay_route_route_updated, Toast.LENGTH_SHORT).show()
-        }
-        editingRoute = null
-      },
-    )
-  }
-
-  deletingRoute?.let { route ->
-    DeleteRouteConfirmDialog(
-      route = route,
-      onDismiss = { deletingRoute = null },
-      onConfirm = {
-        val tid = teamId?.trim().orEmpty()
-        if (tid.isNotEmpty()) {
-          RoutePlannerStore.deleteRoute(context, tid, route.id)
-          afterMutation(tid)
-          Toast.makeText(context, R.string.overlay_route_route_deleted, Toast.LENGTH_SHORT).show()
-        }
-        deletingRoute = null
-      },
-    )
-  }
-
-  relocateAllConfirmRoute?.let { route ->
-    val onlineCount = remember(route.id, openTick) {
-      OverlayTeamPresenceCache.peek(teamId.orEmpty())?.ingame?.size ?: 0
-    }
-    RelocateAllConfirmDialog(
-      route = route,
-      onlineInOverlay = onlineCount,
-      onDismiss = { relocateAllConfirmRoute = null },
-      onConfirm = {
-        relocateAllConfirmRoute = null
-        onRelocateAll(route)
-      },
-      onSchedule = {
-        relocateAllConfirmRoute = null
-        scheduleRelocateRoute = route
-      },
-    )
-  }
-
-  scheduleRelocateRoute?.let { route ->
-    ScheduleRelocateDialog(
-      route = route,
-      onDismiss = { scheduleRelocateRoute = null },
-      onConfirm = { minutes ->
-        scheduleRelocateRoute = null
-        onScheduleRelocateAll(route, minutes)
-      },
-    )
-  }
-
-  editPointTarget?.let { target ->
-    EditRoutePointDialog(
-      point = target.point,
-      onDismiss = { editPointTarget = null },
-      onSaveMember = { member ->
-        val tid = teamId?.trim().orEmpty()
-        if (tid.isEmpty()) return@EditRoutePointDialog
-        val updated = target.point.withMember(member.id, member.name)
-        if (RoutePlannerStore.updatePoint(context, tid, target.route.id, updated) != null) {
-          afterMutation(tid)
-          Toast.makeText(context, R.string.overlay_route_point_updated, Toast.LENGTH_SHORT).show()
-        }
-        editPointTarget = null
-      },
-      onRepositionOnMap = {
-        editPointTarget = null
-        onRepositionPointOnMap(target.route, target.point)
-      },
-      onDelete = {
-        editPointTarget = null
-        deletePointTarget = target
-      },
-    )
-  }
-
-  deletePointTarget?.let { target ->
-    OverlayAwareDialog(onDismissRequest = { deletePointTarget = null }) {
-      Column(
-        modifier = Modifier
-          .widthIn(min = 280.dp, max = 320.dp)
-          .clip(RoundedCornerShape(14.dp))
-          .background(ComposeColor(0xF2141C2A))
-          .border(1.dp, ComposeColor(0x55FFFFFF), RoundedCornerShape(14.dp))
-          .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-      ) {
-        Text(
-          text = contextString(R.string.overlay_route_point_delete_confirm, target.point.memberName),
-          color = ComposeColor(0xFFE8EAED),
-          fontSize = 14.sp,
-          lineHeight = 20.sp,
-        )
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.End,
-        ) {
-          TextButton(onClick = { deletePointTarget = null }) {
-            Text(contextString(R.string.overlay_route_planner_cancel))
-          }
-          Button(
-            onClick = {
-              val tid = teamId?.trim().orEmpty()
-              if (tid.isNotEmpty()) {
-                RoutePlannerStore.deletePoint(context, tid, target.route.id, target.point.id)
-                afterMutation(tid)
-                Toast.makeText(context, R.string.overlay_route_point_deleted, Toast.LENGTH_SHORT).show()
-              }
-              deletePointTarget = null
-            },
-            colors = ButtonDefaults.buttonColors(
-              containerColor = ComposeColor(0xFFB71C1C),
-              contentColor = ComposeColor.White,
-            ),
-            shape = RoundedCornerShape(8.dp),
-          ) {
-            Text(contextString(R.string.overlay_route_point_delete))
+  SideEffect {
+    onModalLayer(
+      when {
+        showCreateDialog -> {
+          {
+            CreateRouteDialog(
+              onDismiss = { showCreateDialog = false },
+              onConfirm = { name, type ->
+                val tid = teamId?.trim().orEmpty()
+                if (tid.isEmpty()) return@CreateRouteDialog
+                val route = runCatching { RoutePlannerRoute.create(name, type) }.getOrNull()
+                  ?: return@CreateRouteDialog
+                if (RoutePlannerStore.add(context, tid, route)) {
+                  afterMutation(tid)
+                  Toast.makeText(
+                    context,
+                    context.getString(R.string.overlay_route_planner_created, route.name),
+                    Toast.LENGTH_SHORT,
+                  ).show()
+                }
+                showCreateDialog = false
+              },
+            )
           }
         }
-      }
-    }
+        editingRoute != null -> {
+          val route = editingRoute!!
+          {
+            CreateRouteDialog(
+              titleRes = R.string.overlay_route_route_edit_title,
+              confirmRes = R.string.overlay_route_planner_save,
+              initialName = route.name,
+              initialType = route.type,
+              onDismiss = { editingRoute = null },
+              onConfirm = { name, type ->
+                val tid = teamId?.trim().orEmpty()
+                if (tid.isEmpty()) return@CreateRouteDialog
+                if (RoutePlannerStore.updateRoute(context, tid, route.id, name, type) != null) {
+                  afterMutation(tid)
+                  Toast.makeText(context, R.string.overlay_route_route_updated, Toast.LENGTH_SHORT).show()
+                }
+                editingRoute = null
+              },
+            )
+          }
+        }
+        deletingRoute != null -> {
+          val route = deletingRoute!!
+          {
+            DeleteRouteConfirmDialog(
+              route = route,
+              onDismiss = { deletingRoute = null },
+              onConfirm = {
+                val tid = teamId?.trim().orEmpty()
+                if (tid.isNotEmpty()) {
+                  RoutePlannerStore.deleteRoute(context, tid, route.id)
+                  afterMutation(tid)
+                  Toast.makeText(context, R.string.overlay_route_route_deleted, Toast.LENGTH_SHORT).show()
+                }
+                deletingRoute = null
+              },
+            )
+          }
+        }
+        relocateAllConfirmRoute != null -> {
+          val route = relocateAllConfirmRoute!!
+          {
+            RelocateAllConfirmDialog(
+              route = route,
+              onlineInOverlay = onlineCountForRelocate,
+              onDismiss = { relocateAllConfirmRoute = null },
+              onConfirm = {
+                relocateAllConfirmRoute = null
+                onRelocateAll(route)
+              },
+              onSchedule = {
+                relocateAllConfirmRoute = null
+                scheduleRelocateRoute = route
+              },
+            )
+          }
+        }
+        scheduleRelocateRoute != null -> {
+          val route = scheduleRelocateRoute!!
+          {
+            ScheduleRelocateDialog(
+              route = route,
+              onDismiss = { scheduleRelocateRoute = null },
+              onConfirm = { minutes ->
+                scheduleRelocateRoute = null
+                onScheduleRelocateAll(route, minutes)
+              },
+            )
+          }
+        }
+        editPointTarget != null -> {
+          val target = editPointTarget!!
+          {
+            EditRoutePointDialog(
+              point = target.point,
+              onDismiss = { editPointTarget = null },
+              onSaveMember = { member ->
+                val tid = teamId?.trim().orEmpty()
+                if (tid.isEmpty()) return@EditRoutePointDialog
+                val updated = target.point.withMember(member.id, member.name)
+                if (RoutePlannerStore.updatePoint(context, tid, target.route.id, updated) != null) {
+                  afterMutation(tid)
+                  Toast.makeText(context, R.string.overlay_route_point_updated, Toast.LENGTH_SHORT).show()
+                }
+                editPointTarget = null
+              },
+              onRepositionOnMap = {
+                editPointTarget = null
+                onRepositionPointOnMap(target.route, target.point)
+              },
+              onDelete = {
+                editPointTarget = null
+                deletePointTarget = target
+              },
+            )
+          }
+        }
+        deletePointTarget != null -> {
+          val target = deletePointTarget!!
+          {
+            DeleteRoutePointConfirmDialog(
+              target = target,
+              onDismiss = { deletePointTarget = null },
+              onConfirm = {
+                val tid = teamId?.trim().orEmpty()
+                if (tid.isNotEmpty()) {
+                  RoutePlannerStore.deletePoint(context, tid, target.route.id, target.point.id)
+                  afterMutation(tid)
+                  Toast.makeText(context, R.string.overlay_route_point_deleted, Toast.LENGTH_SHORT).show()
+                }
+                deletePointTarget = null
+              },
+            )
+          }
+        }
+        else -> null
+      },
+    )
   }
 
   Column(
@@ -935,6 +944,122 @@ private fun loadAllianceMembers(context: android.content.Context): List<Alliance
   RoutePlannerAllianceMembers.load(context)
 
 @Composable
+private fun PlannerModalCard(
+  modifier: Modifier = Modifier,
+  content: @Composable ColumnScope.() -> Unit,
+) {
+  Surface(
+    modifier = modifier.widthIn(min = 300.dp, max = 340.dp),
+    shape = RoundedCornerShape(18.dp),
+    color = ComposeColor(0xF218222F),
+    border = androidx.compose.foundation.BorderStroke(1.dp, ComposeColor(0x33FFFFFF)),
+    shadowElevation = 18.dp,
+    tonalElevation = 6.dp,
+  ) {
+    Column(
+      modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp),
+      content = content,
+    )
+  }
+}
+
+@Composable
+private fun PlannerModalHeader(
+  title: String,
+  subtitle: String? = null,
+) {
+  Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Box(
+      modifier = Modifier
+        .widthIn(min = 32.dp, max = 48.dp)
+        .height(3.dp)
+        .clip(RoundedCornerShape(2.dp))
+        .background(
+          Brush.horizontalGradient(
+            colors = listOf(ComposeColor(0xFF5C6BC0), ComposeColor(0xFF2E7D6E)),
+          ),
+        ),
+    )
+    Text(
+      text = title,
+      color = ComposeColor(0xFFF1F3F6),
+      fontSize = 17.sp,
+      fontWeight = FontWeight.SemiBold,
+      lineHeight = 22.sp,
+    )
+    if (!subtitle.isNullOrBlank()) {
+      Text(
+        text = subtitle,
+        color = ComposeColor(0xFF90A4AE),
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+      )
+    }
+  }
+}
+
+@Composable
+private fun PlannerModalActions(
+  confirmLabel: String,
+  onDismiss: () -> Unit,
+  onConfirm: () -> Unit,
+  confirmEnabled: Boolean = true,
+  confirmDanger: Boolean = false,
+) {
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
+  ) {
+    OutlinedButton(
+      onClick = onDismiss,
+      modifier = Modifier.weight(1f),
+      shape = RoundedCornerShape(10.dp),
+      colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFFB0BEC5)),
+      border = androidx.compose.foundation.BorderStroke(1.dp, ComposeColor(0x44FFFFFF)),
+    ) {
+      Text(contextString(R.string.overlay_route_planner_cancel), fontSize = 13.sp)
+    }
+    Button(
+      onClick = onConfirm,
+      enabled = confirmEnabled,
+      modifier = Modifier.weight(1f),
+      colors = ButtonDefaults.buttonColors(
+        containerColor = if (confirmDanger) ComposeColor(0xFFC62828) else ComposeColor(0xFF3949AB),
+        contentColor = ComposeColor.White,
+        disabledContainerColor = ComposeColor(0xFF2A3038),
+        disabledContentColor = ComposeColor(0xFF6B7280),
+      ),
+      shape = RoundedCornerShape(10.dp),
+    ) {
+      Text(confirmLabel, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+    }
+  }
+}
+
+@Composable
+private fun DeleteRoutePointConfirmDialog(
+  target: RoutePointEditTarget,
+  onDismiss: () -> Unit,
+  onConfirm: () -> Unit,
+) {
+  OverlayFloatingDialog(onDismissRequest = onDismiss) {
+    PlannerModalCard {
+      PlannerModalHeader(
+        title = contextString(R.string.overlay_route_point_delete),
+        subtitle = contextString(R.string.overlay_route_point_delete_confirm, target.point.memberName),
+      )
+      PlannerModalActions(
+        confirmLabel = contextString(R.string.overlay_route_point_delete),
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
+        confirmDanger = true,
+      )
+    }
+  }
+}
+
+@Composable
 private fun EditRoutePointDialog(
   point: RoutePlannerPoint,
   onDismiss: () -> Unit,
@@ -951,33 +1076,19 @@ private fun EditRoutePointDialog(
     )
   }
 
-    OverlayAwareDialog(onDismissRequest = onDismiss) {
-    Column(
-      modifier = Modifier
-        .widthIn(min = 280.dp, max = 340.dp)
-        .clip(RoundedCornerShape(14.dp))
-        .background(ComposeColor(0xF2141C2A))
-        .border(1.dp, ComposeColor(0x55FFFFFF), RoundedCornerShape(14.dp))
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp),
+  OverlayFloatingDialog(onDismissRequest = onDismiss) {
+    PlannerModalCard(
+      modifier = Modifier.heightIn(max = 420.dp),
     ) {
-      Text(
-        text = contextString(R.string.overlay_route_point_edit_title),
-        color = ComposeColor(0xFFE8EAED),
-        fontSize = 16.sp,
-        fontWeight = FontWeight.SemiBold,
-      )
-      Text(
-        text = contextString(
+      PlannerModalHeader(
+        title = contextString(R.string.overlay_route_point_edit_title),
+        subtitle = contextString(
           R.string.overlay_route_point_coords,
           point.sid,
           point.x,
           point.y,
           point.memberName,
         ),
-        color = ComposeColor(0xFF90A4AE),
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
       )
       Text(
         text = contextString(R.string.overlay_route_point_edit_member),
@@ -1020,28 +1131,15 @@ private fun EditRoutePointDialog(
           Text(contextString(R.string.overlay_route_point_delete), fontSize = 12.sp)
         }
       }
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-      ) {
-        TextButton(onClick = onDismiss) {
-          Text(contextString(R.string.overlay_route_planner_cancel))
-        }
-        Button(
-          onClick = {
-            val member = members.firstOrNull { it.id == selectedMemberId } ?: return@Button
-            onSaveMember(member)
-          },
-          enabled = selectedMemberId != null && members.isNotEmpty(),
-          colors = ButtonDefaults.buttonColors(
-            containerColor = ComposeColor(0xFF3949AB),
-            contentColor = ComposeColor.White,
-          ),
-          shape = RoundedCornerShape(8.dp),
-        ) {
-          Text(contextString(R.string.overlay_route_assign_confirm))
-        }
-      }
+      PlannerModalActions(
+        confirmLabel = contextString(R.string.overlay_route_assign_confirm),
+        onDismiss = onDismiss,
+        onConfirm = {
+          val member = members.firstOrNull { it.id == selectedMemberId } ?: return@PlannerModalActions
+          onSaveMember(member)
+        },
+        confirmEnabled = selectedMemberId != null && members.isNotEmpty(),
+      )
     }
   }
 }
@@ -1377,31 +1475,15 @@ private fun RelocateAllConfirmDialog(
   onSchedule: () -> Unit,
 ) {
   val stats = RoutePlannerRelocateStats.forRoute(route, emptySet())
-    OverlayAwareDialog(onDismissRequest = onDismiss) {
-    Column(
-      modifier = Modifier
-        .widthIn(min = 280.dp, max = 320.dp)
-        .clip(RoundedCornerShape(14.dp))
-        .background(ComposeColor(0xF2141C2A))
-        .border(1.dp, ComposeColor(0x55FFFFFF), RoundedCornerShape(14.dp))
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Text(
-        text = contextString(R.string.overlay_route_relocate_all_confirm_title),
-        color = ComposeColor(0xFFE8EAED),
-        fontSize = 16.sp,
-        fontWeight = FontWeight.SemiBold,
-      )
-      Text(
-        text = contextString(
+  OverlayFloatingDialog(onDismissRequest = onDismiss) {
+    PlannerModalCard {
+      PlannerModalHeader(
+        title = contextString(R.string.overlay_route_relocate_all_confirm_title),
+        subtitle = contextString(
           R.string.overlay_route_relocate_all_confirm_body,
           route.points.size,
           route.name,
         ),
-        color = ComposeColor(0xFFB0BEC5),
-        fontSize = 13.sp,
-        lineHeight = 18.sp,
       )
       Text(
         text = contextString(
@@ -1421,7 +1503,7 @@ private fun RelocateAllConfirmDialog(
         OutlinedButton(
           onClick = onSchedule,
           modifier = Modifier.weight(1f),
-          shape = RoundedCornerShape(8.dp),
+          shape = RoundedCornerShape(10.dp),
           colors = ButtonDefaults.outlinedButtonColors(contentColor = ComposeColor(0xFF80CBC4)),
         ) {
           Text(contextString(R.string.overlay_route_relocate_schedule), fontSize = 12.sp)
@@ -1433,7 +1515,7 @@ private fun RelocateAllConfirmDialog(
             containerColor = ComposeColor(0xFF047857),
             contentColor = ComposeColor.White,
           ),
-          shape = RoundedCornerShape(8.dp),
+          shape = RoundedCornerShape(10.dp),
         ) {
           Text(contextString(R.string.overlay_route_relocate_all), fontSize = 12.sp)
         }
@@ -1443,7 +1525,7 @@ private fun RelocateAllConfirmDialog(
         horizontalArrangement = Arrangement.End,
       ) {
         TextButton(onClick = onDismiss) {
-          Text(contextString(R.string.overlay_route_planner_cancel))
+          Text(contextString(R.string.overlay_route_planner_cancel), color = ComposeColor(0xFF90A4AE))
         }
       }
     }
@@ -1457,26 +1539,11 @@ private fun ScheduleRelocateDialog(
   onConfirm: (minutes: Int) -> Unit,
 ) {
   var minutesText by remember { mutableStateOf("5") }
-    OverlayAwareDialog(onDismissRequest = onDismiss) {
-    Column(
-      modifier = Modifier
-        .widthIn(min = 280.dp, max = 320.dp)
-        .clip(RoundedCornerShape(14.dp))
-        .background(ComposeColor(0xF2141C2A))
-        .border(1.dp, ComposeColor(0x55FFFFFF), RoundedCornerShape(14.dp))
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Text(
-        text = contextString(R.string.overlay_route_relocate_schedule_title),
-        color = ComposeColor(0xFFE8EAED),
-        fontSize = 16.sp,
-        fontWeight = FontWeight.SemiBold,
-      )
-      Text(
-        text = contextString(R.string.overlay_route_relocate_schedule_body),
-        color = ComposeColor(0xFFB0BEC5),
-        fontSize = 13.sp,
+  OverlayFloatingDialog(onDismissRequest = onDismiss) {
+    PlannerModalCard {
+      PlannerModalHeader(
+        title = contextString(R.string.overlay_route_relocate_schedule_title),
+        subtitle = contextString(R.string.overlay_route_relocate_schedule_body),
       )
       OutlinedTextField(
         value = minutesText,
@@ -1485,29 +1552,17 @@ private fun ScheduleRelocateDialog(
         singleLine = true,
         label = { Text("мин", fontSize = 12.sp) },
         colors = plannerFieldColors(),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(10.dp),
       )
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-      ) {
-        TextButton(onClick = onDismiss) {
-          Text(contextString(R.string.overlay_route_planner_cancel))
-        }
-        Button(
-          onClick = {
-            val minutes = minutesText.toIntOrNull()?.coerceIn(1, 180) ?: return@Button
-            onConfirm(minutes)
-          },
-          colors = ButtonDefaults.buttonColors(
-            containerColor = ComposeColor(0xFF3949AB),
-            contentColor = ComposeColor.White,
-          ),
-          shape = RoundedCornerShape(8.dp),
-        ) {
-          Text(contextString(R.string.overlay_route_relocate_schedule_confirm))
-        }
-      }
+      PlannerModalActions(
+        confirmLabel = contextString(R.string.overlay_route_relocate_schedule_confirm),
+        onDismiss = onDismiss,
+        onConfirm = {
+          val minutes = minutesText.toIntOrNull()?.coerceIn(1, 180) ?: return@PlannerModalActions
+          onConfirm(minutes)
+        },
+        confirmEnabled = minutesText.toIntOrNull()?.coerceIn(1, 180) != null,
+      )
     }
   }
 }
@@ -1518,40 +1573,18 @@ private fun DeleteRouteConfirmDialog(
   onDismiss: () -> Unit,
   onConfirm: () -> Unit,
 ) {
-    OverlayAwareDialog(onDismissRequest = onDismiss) {
-    Column(
-      modifier = Modifier
-        .widthIn(min = 280.dp, max = 320.dp)
-        .clip(RoundedCornerShape(14.dp))
-        .background(ComposeColor(0xF2141C2A))
-        .border(1.dp, ComposeColor(0x55FFFFFF), RoundedCornerShape(14.dp))
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Text(
-        text = contextString(R.string.overlay_route_route_delete_confirm, route.name),
-        color = ComposeColor(0xFFE8EAED),
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
+  OverlayFloatingDialog(onDismissRequest = onDismiss) {
+    PlannerModalCard {
+      PlannerModalHeader(
+        title = contextString(R.string.overlay_route_route_delete),
+        subtitle = contextString(R.string.overlay_route_route_delete_confirm, route.name),
       )
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-      ) {
-        TextButton(onClick = onDismiss) {
-          Text(contextString(R.string.overlay_route_planner_cancel))
-        }
-        Button(
-          onClick = onConfirm,
-          colors = ButtonDefaults.buttonColors(
-            containerColor = ComposeColor(0xFFB71C1C),
-            contentColor = ComposeColor.White,
-          ),
-          shape = RoundedCornerShape(8.dp),
-        ) {
-          Text(contextString(R.string.overlay_route_route_delete))
-        }
-      }
+      PlannerModalActions(
+        confirmLabel = contextString(R.string.overlay_route_route_delete),
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
+        confirmDanger = true,
+      )
     }
   }
 }
@@ -1569,21 +1602,15 @@ private fun CreateRouteDialog(
   var selectedType by remember(initialType) { mutableStateOf(initialType) }
   var nameError by remember { mutableStateOf(false) }
 
-    OverlayAwareDialog(onDismissRequest = onDismiss) {
-    Column(
-      modifier = Modifier
-        .widthIn(min = 280.dp, max = 320.dp)
-        .clip(RoundedCornerShape(14.dp))
-        .background(ComposeColor(0xF2141C2A))
-        .border(1.dp, ComposeColor(0x55FFFFFF), RoundedCornerShape(14.dp))
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Text(
-        text = contextString(titleRes),
-        color = ComposeColor(0xFFE8EAED),
-        fontSize = 16.sp,
-        fontWeight = FontWeight.SemiBold,
+  OverlayFloatingDialog(onDismissRequest = onDismiss) {
+    PlannerModalCard {
+      PlannerModalHeader(
+        title = contextString(titleRes),
+        subtitle = if (titleRes == R.string.overlay_route_planner_create_title) {
+          contextString(R.string.overlay_route_planner_empty_hint)
+        } else {
+          null
+        },
       )
 
       OutlinedTextField(
@@ -1602,13 +1629,14 @@ private fun CreateRouteDialog(
           null
         },
         colors = plannerFieldColors(),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(10.dp),
       )
 
       Text(
         text = contextString(R.string.overlay_route_planner_type_label),
         color = ComposeColor(0xFF90A4AE),
         fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
       )
 
       Row(
@@ -1621,48 +1649,47 @@ private fun CreateRouteDialog(
             RoutePlannerType.PVP -> R.string.overlay_route_planner_type_pvp
             RoutePlannerType.PVE -> R.string.overlay_route_planner_type_pve
           }
+          val accent = when (type) {
+            RoutePlannerType.PVP -> ComposeColor(0xFFE57373)
+            RoutePlannerType.PVE -> ComposeColor(0xFF81C784)
+          }
           Box(
             modifier = Modifier
               .weight(1f)
-              .clip(RoundedCornerShape(8.dp))
-              .background(if (selected) ComposeColor(0xFF3949AB) else ComposeColor(0xFF1A222E))
+              .clip(RoundedCornerShape(10.dp))
+              .background(
+                if (selected) accent.copy(alpha = 0.22f) else ComposeColor(0xFF1A222E),
+              )
               .border(
                 1.dp,
-                if (selected) ComposeColor(0xFF7986CB) else ComposeColor(0x33445566),
-                RoundedCornerShape(8.dp),
+                if (selected) accent.copy(alpha = 0.85f) else ComposeColor(0x33445566),
+                RoundedCornerShape(10.dp),
               )
               .clickable { selectedType = type }
-              .padding(vertical = 10.dp),
+              .padding(vertical = 11.dp),
             contentAlignment = Alignment.Center,
           ) {
             Text(
               text = contextString(labelRes),
               color = if (selected) ComposeColor.White else ComposeColor(0xFFB0BEC5),
               fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+              fontSize = 13.sp,
             )
           }
         }
       }
 
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-      ) {
-        TextButton(onClick = onDismiss) {
-          Text(contextString(R.string.overlay_route_planner_cancel), color = ComposeColor(0xFF90A4AE))
-        }
-        TextButton(
-          onClick = {
-            if (name.trim().isEmpty()) {
-              nameError = true
-              return@TextButton
-            }
-            onConfirm(name, selectedType)
-          },
-        ) {
-          Text(contextString(confirmRes), color = ComposeColor(0xFF80CBC4))
-        }
-      }
+      PlannerModalActions(
+        confirmLabel = contextString(confirmRes),
+        onDismiss = onDismiss,
+        onConfirm = {
+          if (name.trim().isEmpty()) {
+            nameError = true
+            return@PlannerModalActions
+          }
+          onConfirm(name, selectedType)
+        },
+      )
     }
   }
 }

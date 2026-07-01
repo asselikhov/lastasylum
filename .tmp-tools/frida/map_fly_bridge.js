@@ -9,7 +9,7 @@
 import Java from 'frida-java-bridge';
 
 // Bump on bridge logic changes; logged at startup to confirm the deployed build.
-const BRIDGE_VERSION = '76';
+const BRIDGE_VERSION = '77';
 const AUTOASSAULT_SCAN_ERR_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_err.txt';
 const AUTOASSAULT_SCAN_ERR_FILE_LUA = "'" + AUTOASSAULT_SCAN_ERR_FILE + "'";
 const AUTOASSAULT_SCAN_DIAG_FILE = '/data/data/com.phs.global/files/squadrelay_aa_scan_diag.txt';
@@ -71,6 +71,7 @@ const BOOKMARK_ACTION = 'com.lastasylum.alliance.action.BOOKMARK_TARGET';
 
 // Панель «Перемещение» при тапе по пустой клетке карты (WorldCityRelocationPosWin).
 const RELOC_PANEL_FILE = '/data/data/com.phs.global/files/squadrelay_reloc_panel.json';
+const RELOC_PANEL_SDCARD = '/sdcard/Download/squadrelay_reloc_panel.json';
 const RELOC_PANEL_OK_FILE = '/data/data/com.phs.global/files/squadrelay_reloc_panel_hook.ok';
 const RELOC_PANEL_ACTION = 'com.lastasylum.alliance.action.MAP_RELOC_PANEL';
 
@@ -192,6 +193,7 @@ const RELOC_PANEL_HOOK_LUA = [
   'if not idx then return end',
   'local classIdx=(getmetatable(idx) or {}).__index or idx',
   "local F='/data/data/com.phs.global/files/squadrelay_reloc_panel.json'",
+  "local S='/sdcard/Download/squadrelay_reloc_panel.json'",
   "local OK='/data/data/com.phs.global/files/squadrelay_reloc_panel_hook.ok'",
   'local function pt(self)',
   '  local p=nil',
@@ -202,6 +204,82 @@ const RELOC_PANEL_HOOK_LUA = [
   '  end',
   '  p=p or self.point or self.cellPos or self.targetPoint',
   '  if type(p)~="table" or p.x==nil or p.y==nil then return nil end return p end',
+  'local function resolveSid(p)',
+  '  local sid=tonumber(p.sid)',
+  '  if sid and sid>0 then return sid end',
+  '  pcall(function()',
+  '    local pd=_G.Data and (_G.Data.PlayerData or _G.Data.UserData)',
+  '    if pd then sid=tonumber(pd.serverId or pd.sid or pd.worldServerId or pd.worldId) end',
+  '    if (not sid or sid<=0) and _G.GlobalMapCtrlManager then',
+  '      local gm=_G.GlobalMapCtrlManager',
+  '      if gm.GetCurServerId then sid=tonumber(gm:GetCurServerId()) end',
+  '    end',
+  '  end)',
+  '  return sid and sid>0 and sid or 0',
+  'end',
+  'local function rectPx(w)',
+  '  local ok,l,t,r,b=pcall(function()',
+  '    if not w then return end',
+  '    local corners=w.worldCorners',
+  '    if not corners or corners.Length<4 then return end',
+  '    local cam=CS.UICamera.currentCamera',
+  '    if (not cam) or cam.isNull then return end',
+  '    local minx,maxx=1e9,-1e9 local miny,maxy=1e9,-1e9',
+  '    for i=0,3 do',
+  '      local sp=cam:WorldToScreenPoint(corners[i])',
+  '      minx=math.min(minx,sp.x) maxx=math.max(maxx,sp.x)',
+  '      miny=math.min(miny,sp.y) maxy=math.max(maxy,sp.y)',
+  '    end',
+  '    local sh=CS.UnityEngine.Screen.height',
+  '    return math.floor(minx),math.floor(sh-maxy),math.floor(maxx),math.floor(sh-miny)',
+  '  end)',
+  '  if not ok or not l then return nil end return l,t,r,b',
+  'end',
+  'local function labelMatch(tx)',
+  '  if not tx or tx=="" then return false end',
+  '  local low=string.lower(tostring(tx))',
+  '  if string.find(low,"перемещ",1,true) then return true end',
+  '  if string.find(low,"reloc",1,true) then return true end',
+  '  return false',
+  'end',
+  'local function findRelocBtn(self)',
+  '  local best,bw=nil,0',
+  '  local function pick(w)',
+  '    if not w then return end',
+  '    local l,t,r,b=rectPx(w)',
+  '    if not l then return end',
+  '    local ww=r-l',
+  '    if ww>bw then best=w bw=ww end',
+  '  end',
+  '  for _,n in ipairs({"btnMove","btnRelocation","BtnMove","moveBtn","btnGreen","btnConfirm","btnOk","Button"}) do',
+  '    if self[n] then pick(self[n]) end',
+  '  end',
+  '  pcall(function()',
+  '    local go=self.gameObject',
+  '    if not go then return end',
+  '    local labels=go:GetComponentsInChildren(typeof(CS.UILabel),true)',
+  '    if not labels then return end',
+  '    for i=0,labels.Length-1 do',
+  '      local lb=labels[i]',
+  '      if lb and labelMatch(lb.text) then',
+  '        local wg=lb.gameObject:GetComponent(typeof(CS.UIWidget))',
+  '        if wg then pick(wg) end',
+  '      end',
+  '    end',
+  '  end)',
+  '  return best',
+  'end',
+  'local function btnColorRgb(w)',
+  '  local ok,c=pcall(function()',
+  '    local sp=w.sprite',
+  '    if not sp then sp=w:GetComponent(typeof(CS.UISprite)) end',
+  '    if sp and sp.color then',
+  '      local cl=sp.color',
+  '      return math.floor(cl.r*255)*65536+math.floor(cl.g*255)*256+math.floor(cl.b*255)',
+  '    end',
+  '  end)',
+  '  return ok and c or nil',
+  'end',
   'local function calcBottom(self)',
   '  local ok,y=pcall(function()',
   '    local go=self.gameObject if not go then return nil end',
@@ -210,18 +288,37 @@ const RELOC_PANEL_HOOK_LUA = [
   '    local py=go.transform.position.y',
   '    if manual and manual>0 and py then return math.floor((1-py/manual)*sh)+math.floor(sh*0.08) end return nil end)',
   '  return ok and y or nil end',
+  'local function wr(s)',
+  '  local f=io.open(F,"w") if f then f:write(s) f:close() end',
+  '  f=io.open(S,"w") if f then f:write(s) f:close() end',
+  'end',
   'local function publish(self,open)',
   '  local p=pt(self) if not p then return end',
   '  _G.__rp_seq=(_G.__rp_seq or 0)+1 local seq=_G.__rp_seq',
-  "  if not open then local f=io.open(F,'w') if f then f:write('{\"seq\":'..seq..',\"open\":false}') f:close() end return end",
-  "  local bot=calcBottom(self) local s='{\"seq\":'..seq..',\"open\":true,\"x\":'..tostring(p.x or 0)..',\"y\":'..tostring(p.y or 0)..',\"sid\":'..tostring(p.sid or 0)",
+  "  if not open then wr('{\"seq\":'..seq..',\"open\":false}') return end",
+  '  local sid=resolveSid(p)',
+  "  local bot=calcBottom(self) local s='{\"seq\":'..seq..',\"open\":true,\"x\":'..tostring(p.x or 0)..',\"y\":'..tostring(p.y or 0)..',\"sid\":'..tostring(sid or 0)",
   '  if bot and bot>0 then s=s..",\"panelBottomPx\":"..tostring(bot) end',
-  "  s=s..'}' local f=io.open(F,'w') if f then f:write(s) f:close() end",
+  '  local btn=findRelocBtn(self)',
+  '  if btn then',
+  '    local l,t,r,b=rectPx(btn)',
+  '    if l then',
+  '      s=s..",\"relocBtnLeftPx\":"..l..",\"relocBtnTopPx\":"..t..",\"relocBtnRightPx\":"..r..",\"relocBtnBottomPx\":"..b',
+  '      s=s..",\"relocBtnWidthPx\":"..(r-l)..",\"relocBtnHeightPx\":"..(b-t)',
+  '      local c=btnColorRgb(btn)',
+  '      if c then s=s..",\"relocBtnColorArgb\":"..c end',
+  '    end',
+  '  end',
+  "  s=s..'}' wr(s)",
   'end',
   "if rawget(classIdx,'__rp_oe')==nil then",
   '_G.__rp_seq=_G.__rp_seq or 0',
   'local oe=classIdx.OnEnter classIdx.__rp_oe=oe or false',
-  'classIdx.OnEnter=function(self,...) local r if oe then r=oe(self,...) end pcall(function() publish(self,true) end) return r end',
+  'classIdx.OnEnter=function(self,...) local r if oe then r=oe(self,...) end',
+  '  local function pub() pcall(function() publish(self,true) end) end',
+  '  pub()',
+  '  pcall(function() if _G.DelayCall then _G.DelayCall(0.15,pub) elseif _G.Timer and _G.Timer.New then _G.Timer.New(0.15,pub) end end)',
+  '  return r end',
   'local ox=classIdx.OnExit classIdx.__rp_ox=ox or false',
   'classIdx.OnExit=function(self,...) pcall(function() publish(self,false) end) if ox then return ox(self,...) end end',
   'end',
@@ -3491,16 +3588,20 @@ function maybeInstallRelocPanelHook() {
 }
 
 function pollRelocPanelFile() {
-  try {
-    const text = readFileUtf8(RELOC_PANEL_FILE);
-    if (!text || !text.trim() || text === lastRelocPanelText) return;
-    lastRelocPanelText = text;
-    log('reloc-panel payload: ' + text.trim());
-    sendRelocPanelBroadcast(text.trim());
-  } catch (e) {
-    const msg = String(e);
-    if (!msg.includes('No such file') && !msg.includes('not found')) {
-      log('reloc-panel poll error: ' + e);
+  const paths = [RELOC_PANEL_SDCARD, RELOC_PANEL_FILE];
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const text = readFileUtf8(paths[i]);
+      if (!text || !text.trim() || text === lastRelocPanelText) return;
+      lastRelocPanelText = text;
+      log('reloc-panel payload: ' + text.trim());
+      sendRelocPanelBroadcast(text.trim());
+      return;
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes('No such file') && !msg.includes('not found')) {
+        log('reloc-panel poll error: ' + e);
+      }
     }
   }
 }

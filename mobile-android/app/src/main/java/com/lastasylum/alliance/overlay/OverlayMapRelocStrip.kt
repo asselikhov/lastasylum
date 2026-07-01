@@ -19,7 +19,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.game.MapRelocPanelTarget
 
 /**
- * Кнопка «Маршрут» рядом с игровой «Перемещение» при тапе по пустой клетке карты.
+ * Кнопка «Маршрут» сразу справа от игровой «Перемещение» при тапе по пустой клетке карты.
  */
 class OverlayMapRelocStrip(
     private val context: Context,
@@ -28,6 +28,7 @@ class OverlayMapRelocStrip(
     private val onRouteClick: (target: MapRelocPanelTarget) -> Unit,
 ) {
     private var root: LinearLayout? = null
+    private var routeBtn: TextView? = null
     private var target: MapRelocPanelTarget? = null
     private var attached = false
     private var attachedWindowManager: WindowManager? = null
@@ -39,9 +40,9 @@ class OverlayMapRelocStrip(
         runOnMain {
             this.target = panelTarget
             val view = root ?: buildView().also { root = it }
+            styleRouteButton(panelTarget)
             if (!attached) {
-                val params = buildParams().also { layoutParams = it }
-                params.y = computeY(panelTarget.panelBottomPx)
+                val params = buildParams(panelTarget).also { layoutParams = it }
                 runCatching { windowManager.addView(view, params) }
                     .onSuccess {
                         attached = true
@@ -49,7 +50,7 @@ class OverlayMapRelocStrip(
                     }
                     .onFailure { e -> Log.w(TAG, "addView failed", e) }
             } else {
-                applyPosition(panelTarget.panelBottomPx)
+                applyLayout(panelTarget)
             }
         }
     }
@@ -72,7 +73,7 @@ class OverlayMapRelocStrip(
         if (Looper.myLooper() == mainHandler.looper) block() else mainHandler.post(block)
     }
 
-    private fun buildParams(): WindowManager.LayoutParams {
+    private fun buildParams(panelTarget: MapRelocPanelTarget): WindowManager.LayoutParams {
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -87,53 +88,109 @@ class OverlayMapRelocStrip(
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            x = dp(72)
+            applyAnchor(this, panelTarget)
         }
     }
 
-    private fun computeY(panelBottomPx: Int?): Int {
+    private fun applyLayout(panelTarget: MapRelocPanelTarget) {
+        val view = root ?: return
+        val wm = attachedWindowManager ?: return
+        val params = layoutParams ?: return
+        applyAnchor(params, panelTarget)
+        styleRouteButton(panelTarget)
+        runCatching { wm.updateViewLayout(view, params) }
+    }
+
+    private fun applyAnchor(params: WindowManager.LayoutParams, panelTarget: MapRelocPanelTarget) {
+        val screenW = context.resources.displayMetrics.widthPixels
+        val gap = dp(6)
+        if (panelTarget.hasRelocButtonAnchor()) {
+            val btnW = panelTarget.relocBtnWidthPx ?: dp(96)
+            val btnH = panelTarget.relocBtnHeightPx ?: dp(42)
+            val left = (panelTarget.relocBtnRightPx ?: 0) + gap
+            val top = panelTarget.relocBtnTopPx ?: 0
+            params.gravity = Gravity.TOP or Gravity.START
+            params.x = left.coerceIn(0, (screenW - btnW - dp(4)).coerceAtLeast(0))
+            params.y = top.coerceAtLeast(0)
+            routeBtn?.layoutParams = LinearLayout.LayoutParams(btnW, btnH)
+        } else {
+            params.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            params.x = dp(72)
+            params.y = computeFallbackY(panelTarget.panelBottomPx)
+            routeBtn?.layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            )
+            routeBtn?.minimumHeight = dp(42)
+        }
+    }
+
+    private fun computeFallbackY(panelBottomPx: Int?): Int {
         val screenH = context.resources.displayMetrics.heightPixels
         val fromPanel = panelBottomPx?.let { screenH - it + dp(8) } ?: dp(120)
         return fromPanel.coerceAtLeast(dp(80))
     }
 
-    private fun applyPosition(panelBottomPx: Int?) {
-        val view = root ?: return
-        val wm = attachedWindowManager ?: return
-        val params = layoutParams ?: return
-        params.y = computeY(panelBottomPx)
-        runCatching { wm.updateViewLayout(view, params) }
+    private fun styleRouteButton(panelTarget: MapRelocPanelTarget) {
+        val btn = routeBtn ?: return
+        val density = context.resources.displayMetrics.density
+        val heightPx = panelTarget.relocBtnHeightPx ?: dp(42)
+        val textSp = (heightPx / density * 0.34f).coerceIn(11f, 16f)
+        btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp)
+
+        val baseRgb = panelTarget.relocBtnColorRgb ?: DEFAULT_GAME_BTN_RGB
+        val topColor = brighten(baseRgb, 1.08f)
+        val bottomColor = darken(baseRgb, 0.88f)
+        val corner = (heightPx * 0.22f).coerceIn(dp(8).toFloat(), dp(14).toFloat())
+        btn.background = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(topColor or 0xFF000000.toInt(), bottomColor or 0xFF000000.toInt()),
+        ).apply {
+            this.cornerRadius = corner
+            setStroke(dp(1), Color.argb(70, 255, 255, 255))
+        }
+        val hPad = (heightPx * 0.28f).toInt().coerceAtLeast(dp(10))
+        btn.setPadding(hPad, 0, hPad, 0)
+        btn.gravity = Gravity.CENTER
     }
 
     private fun buildView(): LinearLayout {
-        val routeBtn = TextView(context).apply {
+        val routeButton = TextView(context).apply {
             text = context.getString(R.string.overlay_route_map_button)
-            gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             typeface = Typeface.DEFAULT_BOLD
-            minimumHeight = dp(42)
-            setPadding(dp(20), dp(10), dp(20), dp(10))
-            background = GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(Color.parseColor("#FF2563EB"), Color.parseColor("#FF4F46E5")),
-            ).apply {
-                cornerRadius = dp(10).toFloat()
-                setStroke(dp(1), Color.parseColor("#55FFFFFF"))
-            }
+            includeFontPadding = false
             setOnClickListener {
                 val t = target ?: return@setOnClickListener
                 onRouteClick(t)
             }
         }
+        routeBtn = routeButton
         return LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(routeBtn, ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(
+                routeButton,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
+            )
         }
+    }
+
+    private fun brighten(rgb: Int, factor: Float): Int {
+        fun ch(c: Int) = (c * factor).toInt().coerceIn(0, 255)
+        return (ch((rgb shr 16) and 0xFF) shl 16) or (ch((rgb shr 8) and 0xFF) shl 8) or ch(rgb and 0xFF)
+    }
+
+    private fun darken(rgb: Int, factor: Float): Int {
+        fun ch(c: Int) = (c * factor).toInt().coerceIn(0, 255)
+        return (ch((rgb shr 16) and 0xFF) shl 16) or (ch((rgb shr 8) and 0xFF) shl 8) or ch(rgb and 0xFF)
     }
 
     companion object {
         private const val TAG = "OverlayMapRelocStrip"
+        /** Типичный зелёный «Перемещение» в игре (fallback). */
+        private const val DEFAULT_GAME_BTN_RGB = 0x3D8A5C
     }
 }
