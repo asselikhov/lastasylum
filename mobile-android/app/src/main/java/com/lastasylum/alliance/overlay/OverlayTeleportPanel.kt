@@ -352,7 +352,7 @@ private fun TeleportPanelContent(
       ) {
         Button(
           onClick = {
-            if (directEnabled && server != null && x != null && y != null) {
+            if (directEnabled) {
               onDirectTeleport(x, y, server)
             }
           },
@@ -433,7 +433,7 @@ private fun RallyPointRow(
   rallyPoint: AllianceRallyPoint?,
   onFly: (x: Int, y: Int, serverNumber: Int) -> Unit,
 ) {
-  val valid = rallyPoint?.isValid() == true
+  val activeRally = rallyPoint?.takeIf { it.isValid() }
   Row(
     modifier = Modifier
       .fillMaxWidth()
@@ -441,9 +441,9 @@ private fun RallyPointRow(
       .background(ComposeColor(0xFF1A222E))
       .border(1.dp, ComposeColor(0x334CAF50), RoundedCornerShape(10.dp))
       .then(
-        if (valid && rallyPoint != null) {
+        if (activeRally != null) {
           Modifier.clickable {
-            onFly(rallyPoint.x, rallyPoint.y, rallyPoint.serverNumber)
+            onFly(activeRally.x, activeRally.y, activeRally.serverNumber)
           }
         } else {
           Modifier
@@ -461,12 +461,12 @@ private fun RallyPointRow(
         fontWeight = FontWeight.Medium,
       )
       Text(
-        text = if (valid && rallyPoint != null) {
+        text = if (activeRally != null) {
           contextString(
             R.string.overlay_teleport_rally_coords,
-            rallyPoint.serverNumber,
-            rallyPoint.x,
-            rallyPoint.y,
+            activeRally.serverNumber,
+            activeRally.x,
+            activeRally.y,
           )
         } else {
           contextString(R.string.overlay_teleport_rally_unknown)
@@ -475,7 +475,7 @@ private fun RallyPointRow(
         fontSize = 13.sp,
       )
     }
-    if (valid) {
+    if (activeRally != null) {
       Text(
         text = contextString(R.string.overlay_teleport_rally_fly),
         color = ComposeColor(0xFF4DD0E1),
