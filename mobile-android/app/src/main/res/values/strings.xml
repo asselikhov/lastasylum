@@ -244,7 +244,8 @@
     <string name="map_patch_badge_ready">Установлен</string>
     <string name="map_patch_badge_not_installed">Не установлен</string>
     <string name="map_patch_badge_outdated">Нужно обновить</string>
-    <string name="map_patch_badge_game_not_found">Игра не найдена</string>
+    <string name="map_patch_badge_game_not_found">Игра не установлена</string>
+    <string name="game_patch_fresh_install_hint">Можно установить патч без Google Play — это полная версия игры v%1$s с мостом v%2$s.</string>
     <string name="settings_patch_version_installed">Установленный патч: игра %1$s · мост v%2$s</string>
     <string name="settings_patch_version_available">Актуальный патч: игра %1$s · мост v%2$s</string>
     <string name="game_patch_account_warning">Важно: привяжите игровой аккаунт перед установкой — после патча нужно войти заново.</string>

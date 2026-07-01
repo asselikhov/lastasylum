@@ -380,16 +380,30 @@ fun OverlayControlScreen() {
                         ) {
                             PatchStatusPill(mapPatchStatus.state)
                             PatchVersionLine(mapPatchStatus)
+                            if (mapPatchStatus.state == GameMapPatchStatus.State.GAME_NOT_FOUND) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.game_patch_fresh_install_hint,
+                                        mapPatchStatus.supportedGameVersion.ifBlank { "—" },
+                                        BuildConfig.MAP_BRIDGE_VERSION.trim().ifBlank { "—" },
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
 
                             val ready = mapPatchStatus.state == GameMapPatchStatus.State.PATCH_READY
                             // Патч скачан, но ещё не установлен (например, процесс перезапустился
                             // после удаления игры) — даём добить установку вручную.
                             val installPending = !ready &&
                                 pendingPatchApk?.takeIf { it.exists() } != null
+                            // Патч — universal APK (полная игра): можно ставить и без установленной игры
+                            // (GAME_NOT_FOUND), например после удаления для смены подписи.
                             val patchActionable = installPending ||
                                 mapPatchStatus.state ==
                                 GameMapPatchStatus.State.PATCH_NOT_INSTALLED ||
-                                mapPatchStatus.state == GameMapPatchStatus.State.PATCH_OUTDATED
+                                mapPatchStatus.state == GameMapPatchStatus.State.PATCH_OUTDATED ||
+                                mapPatchStatus.state == GameMapPatchStatus.State.GAME_NOT_FOUND
                             val success = PremiumColors.liveIndicator
 
                             Button(

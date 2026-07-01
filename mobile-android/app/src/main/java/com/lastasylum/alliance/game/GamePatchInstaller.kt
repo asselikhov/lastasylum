@@ -25,6 +25,8 @@ import java.security.MessageDigest
  * The patched APK is signed with the patch keystore (not Google's), so the first switch from a
  * stock install needs an uninstall ([requestUninstallStockGame]); re-patches between game
  * versions keep the same signature and install over the previous patch directly.
+ * If the game is not installed at all ([GameMapPatchStatus.State.GAME_NOT_FOUND]), the same
+ * universal APK is installed as a fresh app — Play Store is not required.
  */
 object GamePatchInstaller {
     private const val PATCH_ENDPOINT = "mobile/game-patch"
