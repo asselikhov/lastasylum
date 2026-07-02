@@ -23,6 +23,8 @@ data class MapRelocPanelTarget(
     val relocBtnHeightPx: Int? = null,
     /** RGB 0xRRGGBB (без alpha) цвета спрайта игровой кнопки. */
     val relocBtnColorRgb: Int? = null,
+    /** Кнопка «Маршрут» создана в NGUI рядом с «Перемещение» (не оверлей). */
+    val inGameRouteBtn: Boolean = false,
 ) {
     val hasCoords: Boolean get() = x > 0 && y > 0
 
@@ -63,6 +65,25 @@ data class MapRelocPanelTarget(
                     relocBtnHeightPx = o.optInt("relocBtnHeightPx", 0).takeIf { it > 0 },
                     relocBtnColorRgb = o.optInt("relocBtnColorArgb", 0).takeIf { it > 0 }
                         ?: o.optInt("relocBtnColorRgb", 0).takeIf { it > 0 },
+                    inGameRouteBtn = o.optBoolean("inGameRouteBtn", false),
+                )
+            }.getOrNull()
+        }
+
+        /** Payload от тапа по внутриигровой кнопке «Маршрут». */
+        fun fromRouteClickJson(json: String?): MapRelocPanelTarget? {
+            val raw = json?.trim().orEmpty()
+            if (raw.isEmpty()) return null
+            return runCatching {
+                val o = JSONObject(raw)
+                MapRelocPanelTarget(
+                    seq = o.optLong("ts", System.currentTimeMillis()),
+                    open = true,
+                    x = o.optInt("x", 0),
+                    y = o.optInt("y", 0),
+                    sid = o.optInt("sid", 0),
+                    panelBottomPx = null,
+                    inGameRouteBtn = true,
                 )
             }.getOrNull()
         }

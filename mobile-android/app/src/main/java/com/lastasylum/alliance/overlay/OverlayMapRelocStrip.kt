@@ -19,7 +19,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.game.MapRelocPanelTarget
 
 /**
- * Кнопка «Маршрут» сразу справа от игровой «Перемещение» при тапе по пустой клетке карты.
+ * Fallback-кнопка «Маршрут» (оверлей), если внутриигровая NGUI-кнопка не создалась.
  */
 class OverlayMapRelocStrip(
     private val context: Context,

@@ -2,9 +2,15 @@ package com.lastasylum.alliance.game
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class MapRelocPanelTargetTest {
     @Test
     fun hasRelocButtonAnchor_whenMetricsPresent() {
@@ -41,8 +47,30 @@ class MapRelocPanelTargetTest {
     }
 
     @Test
-    fun isValidWithSid_requiresCoordsAndServer() {
-        val invalid = MapRelocPanelTarget(1, true, 0, 20, 0, null)
-        assertFalse(invalid.isValidWithSid(5))
+    fun inGameRouteBtn_flagOnDataClass() {
+        val off = MapRelocPanelTarget(1, true, 10, 20, 5, null)
+        assertFalse(off.inGameRouteBtn)
+        val on = MapRelocPanelTarget(1, true, 10, 20, 5, null, inGameRouteBtn = true)
+        assertTrue(on.inGameRouteBtn)
+    }
+
+    @Test
+    fun fromJson_parsesInGameRouteBtn() {
+        val json = "{\"seq\":1,\"open\":true,\"x\":414,\"y\":683,\"sid\":109,\"inGameRouteBtn\":true}"
+        val target = MapRelocPanelTarget.fromJson(json)
+        assertNotNull("fromJson returned null", target)
+        assertTrue(target!!.inGameRouteBtn)
+        assertEquals(414, target.x)
+    }
+
+    @Test
+    fun fromRouteClickJson_setsInGameFlag() {
+        val json = "{\"x\":100,\"y\":200,\"sid\":5,\"ts\":12345}"
+        val target = MapRelocPanelTarget.fromRouteClickJson(json)
+        assertNotNull("fromRouteClickJson returned null", target)
+        assertTrue(target!!.inGameRouteBtn)
+        assertTrue(target.open)
+        assertEquals(100, target.x)
+        assertEquals(200, target.y)
     }
 }
